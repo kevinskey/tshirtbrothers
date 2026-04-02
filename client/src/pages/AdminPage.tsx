@@ -43,6 +43,8 @@ import {
   fetchCustomerDesigns,
   fetchOrders,
   sendQuotePrice,
+  fetchSettings,
+  updateSettings,
   type Quote,
   type Product,
   type Category,
@@ -91,6 +93,9 @@ export default function AdminPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'business' | 'notifications' | 'payment'>('business');
+  const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   // Send Price modal state
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
@@ -165,6 +170,36 @@ export default function AdminPage() {
     queryFn: () => fetchOrders(orderFilter),
     enabled: activeSection === 'orders',
   });
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: fetchSettings,
+    enabled: activeSection === 'settings',
+  });
+
+  // Load settings into form when fetched
+  useEffect(() => {
+    if (settingsData && Object.keys(settingsForm).length === 0) {
+      setSettingsForm(settingsData);
+    }
+  }, [settingsData, settingsForm]);
+
+  const handleSettingsChange = (key: string, value: string) => {
+    setSettingsForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleSaveSettings = async () => {
+    setSettingsSaving(true);
+    try {
+      await updateSettings(settingsForm);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      alert('Settings saved!');
+    } catch {
+      alert('Failed to save settings');
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   // Mutations
   const statusMutation = useMutation({
@@ -1031,8 +1066,153 @@ export default function AdminPage() {
         {activeSection === 'settings' && (
           <div>
             <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Settings</h2>
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <p className="text-gray-500 text-sm">Settings panel coming soon.</p>
+
+            {/* Tabs */}
+            <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+              {(['business', 'notifications', 'payment'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setSettingsTab(tab)}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition ${
+                    settingsTab === tab ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tab === 'business' ? 'Business Info' : tab === 'notifications' ? 'Notifications' : 'Payment & Pricing'}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+              {settingsTab === 'business' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                    <input value={settingsForm.companyName || ''} onChange={e => handleSettingsChange('companyName', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
+                    <input value={settingsForm.address1 || ''} onChange={e => handleSettingsChange('address1', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>
+                    <input value={settingsForm.address2 || ''} onChange={e => handleSettingsChange('address2', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                      <input value={settingsForm.phone || ''} onChange={e => handleSettingsChange('phone', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                      <input value={settingsForm.email || ''} onChange={e => handleSettingsChange('email', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Business Hours</label>
+                    <textarea rows={3} value={settingsForm.businessHours || ''} onChange={e => handleSettingsChange('businessHours', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Area</label>
+                    <input value={settingsForm.serviceArea || ''} onChange={e => handleSettingsChange('serviceArea', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </>
+              )}
+
+              {settingsTab === 'notifications' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">Email Notifications</p>
+                      <p className="text-xs text-gray-500">Send email notifications for quotes and orders</p>
+                    </div>
+                    <button
+                      onClick={() => handleSettingsChange('emailNotifications', settingsForm.emailNotifications === 'true' ? 'false' : 'true')}
+                      className={`w-12 h-6 rounded-full transition ${settingsForm.emailNotifications === 'true' ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settingsForm.emailNotifications === 'true' ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">SMS Notifications</p>
+                      <p className="text-xs text-gray-500">Send SMS alerts via Twilio</p>
+                    </div>
+                    <button
+                      onClick={() => handleSettingsChange('smsNotifications', settingsForm.smsNotifications === 'true' ? 'false' : 'true')}
+                      className={`w-12 h-6 rounded-full transition ${settingsForm.smsNotifications === 'true' ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${settingsForm.smsNotifications === 'true' ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Admin Email</label>
+                    <input value={settingsForm.adminEmail || ''} onChange={e => handleSettingsChange('adminEmail', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Admin Phone (for SMS)</label>
+                    <input value={settingsForm.adminPhone || ''} onChange={e => handleSettingsChange('adminPhone', e.target.value)} placeholder="+14706224845" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">From Email (Resend sender)</label>
+                    <input value={settingsForm.fromEmail || ''} onChange={e => handleSettingsChange('fromEmail', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </>
+              )}
+
+              {settingsTab === 'payment' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Deposit Percentage</label>
+                      <div className="relative">
+                        <input type="number" value={settingsForm.depositPercent || ''} onChange={e => handleSettingsChange('depositPercent', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <span className="absolute right-3 top-2 text-sm text-gray-400">%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate</label>
+                      <div className="relative">
+                        <input type="number" step="0.1" value={settingsForm.taxRate || ''} onChange={e => handleSettingsChange('taxRate', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm pr-8 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <span className="absolute right-3 top-2 text-sm text-gray-400">%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Rush Fee</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2 text-sm text-gray-400">$</span>
+                        <input type="number" value={settingsForm.rushFee || ''} onChange={e => handleSettingsChange('rushFee', e.target.value)} className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Design Fee</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-2 text-sm text-gray-400">$</span>
+                        <input type="number" value={settingsForm.designFee || ''} onChange={e => handleSettingsChange('designFee', e.target.value)} className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Free Shipping Threshold</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-sm text-gray-400">$</span>
+                      <input type="number" value={settingsForm.freeShippingThreshold || ''} onChange={e => handleSettingsChange('freeShippingThreshold', e.target.value)} className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Save button */}
+              <div className="pt-4 border-t border-gray-100">
+                <button
+                  onClick={handleSaveSettings}
+                  disabled={settingsSaving}
+                  className="px-6 py-2.5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                  {settingsSaving ? 'Saving...' : 'Save Settings'}
+                </button>
+              </div>
             </div>
           </div>
         )}

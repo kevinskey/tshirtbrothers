@@ -250,3 +250,19 @@ export async function fetchOrders(status?: string) {
   const query = status && status !== 'all' ? `?status=${status}` : '';
   return authRequest<Order[]>(`/admin/orders${query}`);
 }
+
+// Settings
+export async function fetchSettings(): Promise<Record<string, string>> {
+  return authRequest<Record<string, string>>('/admin/settings');
+}
+
+export async function updateSettings(settings: Record<string, string>): Promise<{ success: boolean }> {
+  const token = localStorage.getItem('tsb_token') || localStorage.getItem('token');
+  const res = await fetch(`${API_BASE}/admin/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error('Failed to save settings');
+  return res.json();
+}

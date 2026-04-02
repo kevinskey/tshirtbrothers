@@ -223,4 +223,33 @@ router.get('/orders', async (req, res, next) => {
   }
 });
 
+// GET /settings - Get all settings as key-value object
+router.get('/settings', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT key, value FROM settings ORDER BY key');
+    const settings = {};
+    for (const row of rows) settings[row.key] = row.value;
+    res.json(settings);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /settings - Upsert settings
+router.put('/settings', async (req, res, next) => {
+  try {
+    const entries = Object.entries(req.body);
+    for (const [key, value] of entries) {
+      await pool.query(
+        `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+        [key, String(value)]
+      );
+    }
+    res.json({ success: true, updated: entries.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
