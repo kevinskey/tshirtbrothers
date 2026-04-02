@@ -495,56 +495,7 @@ export default function QuotePage() {
       });
     };
 
-    const TshirtSVG = ({ side }: { side: 'front' | 'back' }) => (
-      <svg viewBox="0 0 200 260" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* T-shirt outline */}
-        <path
-          d="M60 30 L30 50 L10 100 L40 110 L40 240 L160 240 L160 110 L190 100 L170 50 L140 30 C135 15 120 5 100 5 C80 5 65 15 60 30Z"
-          stroke="#d1d5db"
-          strokeWidth="2"
-          fill="#f9fafb"
-        />
-        {/* Collar */}
-        <path d="M60 30 C75 45 125 45 140 30" stroke="#d1d5db" strokeWidth="2" fill="none" />
-        {/* Sleeve seams */}
-        <path d="M40 110 L40 55" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 3" />
-        <path d="M160 110 L160 55" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 3" />
-
-        {/* Print area highlights */}
-        {side === 'front' && formData.printAreas.includes('Full Front') && (
-          <rect x="55" y="70" width="90" height="100" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
-        )}
-        {side === 'front' && formData.printAreas.includes('Left Chest') && (
-          <rect x="107" y="55" width="35" height="30" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
-        )}
-        {side === 'back' && formData.printAreas.includes('Full Back') && (
-          <rect x="55" y="60" width="90" height="110" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
-        )}
-        {side === 'front' && formData.printAreas.includes('Left Arm') && (
-          <rect x="12" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
-        )}
-        {side === 'front' && formData.printAreas.includes('Right Arm') && (
-          <rect x="163" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
-        )}
-
-        {/* Labels */}
-        {side === 'front' && formData.printAreas.includes('Full Front') && (
-          <text x="100" y="125" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL FRONT</text>
-        )}
-        {side === 'front' && formData.printAreas.includes('Left Chest') && (
-          <text x="125" y="73" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ea580c">CHEST</text>
-        )}
-        {side === 'back' && formData.printAreas.includes('Full Back') && (
-          <text x="100" y="120" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL BACK</text>
-        )}
-        {side === 'front' && formData.printAreas.includes('Left Arm') && (
-          <text x="24" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">L</text>
-        )}
-        {side === 'front' && formData.printAreas.includes('Right Arm') && (
-          <text x="176" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">R</text>
-        )}
-      </svg>
-    );
+    const productImg = formData.color?.image || formData.product?.image_url;
 
     return (
       <div>
@@ -578,15 +529,49 @@ export default function QuotePage() {
             <p className="text-xs text-gray-400 mt-2">Pricing will be included in your quote.</p>
           </div>
 
-          {/* Visual t-shirt outlines */}
-          <div className="flex flex-1 items-start justify-center gap-6">
-            <div className="flex flex-col items-center gap-2 w-44">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Front</span>
-              <div className="w-full"><TshirtSVG side="front" /></div>
-            </div>
-            <div className="flex flex-col items-center gap-2 w-44">
-              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Back</span>
-              <div className="w-full"><TshirtSVG side="back" /></div>
+          {/* Product image with print area overlays */}
+          <div className="flex flex-1 items-start justify-center">
+            <div className="relative w-72">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Print Placement</span>
+              <div className="relative bg-gray-50 rounded-2xl overflow-hidden">
+                {productImg ? (
+                  <img src={productImg} alt="Product" className="w-full object-contain p-4" />
+                ) : (
+                  <div className="aspect-square flex items-center justify-center text-gray-300">
+                    <Shirt className="h-32 w-32" />
+                  </div>
+                )}
+
+                {/* Overlay zones */}
+                {formData.printAreas.includes('Full Front') && (
+                  <div className="absolute top-[25%] left-[20%] right-[20%] bottom-[30%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-orange-600 bg-white/80 px-2 py-0.5 rounded">FULL FRONT</span>
+                  </div>
+                )}
+                {formData.printAreas.includes('Full Back') && !formData.printAreas.includes('Full Front') && (
+                  <div className="absolute top-[20%] left-[20%] right-[20%] bottom-[25%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-orange-600 bg-white/80 px-2 py-0.5 rounded">FULL BACK</span>
+                  </div>
+                )}
+                {formData.printAreas.includes('Left Chest') && (
+                  <div className="absolute top-[22%] right-[18%] w-[22%] h-[15%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[7px] font-bold text-orange-600 bg-white/80 px-1 rounded">CHEST</span>
+                  </div>
+                )}
+                {formData.printAreas.includes('Left Arm') && (
+                  <div className="absolute top-[20%] left-[2%] w-[14%] h-[18%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[7px] font-bold text-orange-600">L</span>
+                  </div>
+                )}
+                {formData.printAreas.includes('Right Arm') && (
+                  <div className="absolute top-[20%] right-[2%] w-[14%] h-[18%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[7px] font-bold text-orange-600">R</span>
+                  </div>
+                )}
+              </div>
+              {formData.printAreas.includes('Full Back') && formData.printAreas.includes('Full Front') && (
+                <p className="text-xs text-orange-600 font-medium text-center mt-2">+ Full Back selected</p>
+              )}
             </div>
           </div>
         </div>
