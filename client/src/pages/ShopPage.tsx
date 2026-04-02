@@ -235,7 +235,7 @@ export default function ShopPage() {
   // Infinite scroll observer
   const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
     const [entry] = entries;
-    if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+    if (entry?.isIntersecting && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
@@ -292,7 +292,6 @@ export default function ShopPage() {
               value={brand}
               onChange={(e) => {
                 setBrand(e.target.value);
-                setPage(1);
               }}
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
@@ -309,7 +308,6 @@ export default function ShopPage() {
               value={category}
               onChange={(e) => {
                 setCategory(e.target.value);
-                setPage(1);
               }}
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
