@@ -446,23 +446,6 @@ export default function QuotePage() {
   const colors = productDetails?.colors ?? [];
   const productSizes = productDetails?.sizes && productDetails.sizes.length > 0 ? productDetails.sizes : (colorsLoading ? [] : SIZES);
 
-  // Fetch S&S pricing for estimated cost
-  const { data: pricingData } = useQuery({
-    queryKey: ['product-pricing', productStyleId],
-    queryFn: async () => {
-      const res = await fetch(`/api/products/pricing/${productStyleId}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      return data.pricing as { customerPrice: number; retailPrice: number } | null;
-    },
-    enabled: !!productStyleId,
-    staleTime: 1000 * 60 * 30,
-  });
-
-  // Estimated price per item (2x wholesale markup)
-  const estimatedPerItem = pricingData ? Math.ceil(pricingData.retailPrice * 1.5 * 100) / 100 : null;
-  const estimatedTotal = estimatedPerItem ? estimatedPerItem * totalQty : null;
-
   // Order summary sidebar component
   const orderSummary = formData.product ? (
     <div className="sticky top-20 bg-white border border-gray-200 rounded-xl p-5 space-y-4">
@@ -528,21 +511,9 @@ export default function QuotePage() {
           <span className="text-gray-900">{formData.printAreas.join(', ')}</span>
         </div>
       )}
-      {estimatedPerItem && (
-        <div className="border-t pt-3 space-y-1">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Est. per item</span>
-            <span className="font-semibold text-gray-900">~${estimatedPerItem.toFixed(2)}</span>
-          </div>
-          {estimatedTotal && totalQty > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Est. total</span>
-              <span className="font-bold text-orange-600 text-lg">~${estimatedTotal.toFixed(2)}</span>
-            </div>
-          )}
-          <p className="text-[10px] text-gray-400 mt-1">*Final price set after review by our team</p>
-        </div>
-      )}
+      <div className="border-t pt-3">
+        <p className="text-xs text-gray-500 text-center">We'll send you a detailed quote with pricing after review.</p>
+      </div>
     </div>
   ) : null;
 
