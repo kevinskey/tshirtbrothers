@@ -211,14 +211,16 @@ function filterSampleProducts(
 export default function ShopPage() {
   const [searchParams] = useSearchParams();
   const urlCategory = searchParams.get('category') || '';
+  const urlBrand = searchParams.get('brand') || '';
   const [search, setSearch] = useState('');
-  const [brand, setBrand] = useState('');
+  const [brand, setBrand] = useState(urlBrand);
   const [category, setCategory] = useState(urlCategory);
 
-  // Sync category from URL when nav links are clicked
+  // Sync filters from URL when links are clicked
   useEffect(() => {
     setCategory(urlCategory);
-  }, [urlCategory]);
+    setBrand(urlBrand);
+  }, [urlCategory, urlBrand]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Fetch filter options from API
