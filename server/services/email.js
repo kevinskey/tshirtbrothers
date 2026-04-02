@@ -128,7 +128,8 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
     ? quote.print_areas.join(', ')
     : quote.print_areas || 'N/A';
 
-  const acceptUrl = `${DOMAIN}/quote/accept/${quote.id}?token=${quote.accept_token}`;
+  // Payment link goes to a page that creates a Stripe Checkout session
+  const acceptUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token}`;
   const declineUrl = `${DOMAIN}/quote/decline/${quote.id}?token=${quote.accept_token}`;
 
   const priceRows =

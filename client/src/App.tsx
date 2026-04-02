@@ -10,6 +10,7 @@ import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
 import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,9 @@ function App() {
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/payment/checkout" element={<PaymentCheckout />} />
+          <Route path="/payment/success" element={<PaymentSuccess />} />
+          <Route path="/payment/cancel" element={<PaymentCancel />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
