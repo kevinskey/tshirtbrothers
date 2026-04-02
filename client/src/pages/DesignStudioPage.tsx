@@ -231,6 +231,7 @@ export default function DesignStudioPage() {
   const [artSearch, setArtSearch] = useState('');
   const [artIcons, setArtIcons] = useState<{ prefix: string; name: string }[]>([]);
   const [artLoading, setArtLoading] = useState(false);
+  const [artColor, setArtColor] = useState('#000000');
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
@@ -745,9 +746,10 @@ export default function DesignStudioPage() {
   }, []);
 
   const handleArtIconClick = useCallback((prefix: string, name: string) => {
-    const svgUrl = `https://api.iconify.design/${prefix}/${name}.svg?height=128&color=black`;
+    const encodedColor = encodeURIComponent(artColor);
+    const svgUrl = `https://api.iconify.design/${prefix}/${name}.svg?height=128&color=${encodedColor}`;
     addDesignElement({ type: 'image', x: 25, y: 20, width: 20, content: svgUrl });
-  }, [addDesignElement]);
+  }, [addDesignElement, artColor]);
 
   const artPanelContent = (
     <div className="p-4 space-y-3">
@@ -767,6 +769,29 @@ export default function DesignStudioPage() {
           }}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         />
+      </div>
+
+      {/* Art color picker */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-gray-500">Icon Color</span>
+        <div className="flex items-center gap-2">
+          {['#000000', '#FFFFFF', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#ec4899'].map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setArtColor(c)}
+              className={`h-6 w-6 rounded-full border-2 transition ${artColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'}`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+          <input
+            type="color"
+            value={artColor}
+            onChange={e => setArtColor(e.target.value)}
+            className="h-6 w-6 cursor-pointer rounded border-none"
+            title="Custom color"
+          />
+        </div>
       </div>
 
       {artCategory ? (
@@ -797,7 +822,7 @@ export default function DesignStudioPage() {
                   title={ic.name}
                 >
                   <img
-                    src={`https://api.iconify.design/${ic.prefix}/${ic.name}.svg?height=48&color=%23333333`}
+                    src={`https://api.iconify.design/${ic.prefix}/${ic.name}.svg?height=48&color=${encodeURIComponent(artColor)}`}
                     alt={ic.name}
                     className="w-8 h-8 object-contain"
                     loading="lazy"
