@@ -108,17 +108,44 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
 }
 
 const FONT_OPTIONS = [
-  'Inter',
-  'Arial',
-  'Georgia',
-  'Times New Roman',
-  'Courier New',
-  'Impact',
-  'Comic Sans MS',
-  'Trebuchet MS',
-  'Verdana',
-  'Palatino',
+  // Sans-serif
+  'Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Raleway',
+  'Nunito', 'Ubuntu', 'Oswald', 'Rubik', 'Work Sans', 'Quicksand', 'Mulish',
+  'Barlow', 'Karla', 'Cabin', 'Exo 2', 'Titillium Web', 'Varela Round',
+  'Archivo', 'Outfit', 'Sora', 'DM Sans', 'Space Grotesk', 'Manrope',
+  'Plus Jakarta Sans', 'Albert Sans', 'Figtree',
+  // Serif
+  'Playfair Display', 'Merriweather', 'Lora', 'PT Serif', 'Bitter', 'Libre Baskerville',
+  'EB Garamond', 'Crimson Text', 'Cormorant Garamond', 'Spectral', 'Source Serif 4',
+  'DM Serif Display', 'Noto Serif',
+  // Display / Decorative
+  'Bebas Neue', 'Anton', 'Righteous', 'Passion One', 'Bungee', 'Bangers',
+  'Fredoka One', 'Lobster', 'Pacifico', 'Permanent Marker', 'Press Start 2P',
+  'Russo One', 'Orbitron', 'Audiowide', 'Black Ops One', 'Bungee Shade',
+  'Creepster', 'Fascinate Inline', 'Monoton', 'Racing Sans One', 'Sigmar One',
+  'Special Elite', 'Titan One', 'Ultra',
+  // Handwriting / Script
+  'Dancing Script', 'Great Vibes', 'Sacramento', 'Satisfy', 'Kalam',
+  'Caveat', 'Indie Flower', 'Shadows Into Light', 'Patrick Hand', 'Architects Daughter',
+  'Amatic SC', 'Gloria Hallelujah', 'Covered By Your Grace', 'Rock Salt',
+  // Monospace
+  'Roboto Mono', 'Source Code Pro', 'Fira Code', 'JetBrains Mono', 'Space Mono', 'DM Mono',
+  // System fallbacks
+  'Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Verdana', 'Comic Sans MS',
 ];
+
+// Track which Google Fonts have been loaded
+const loadedFonts = new Set<string>();
+const SYSTEM_FONTS = ['Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Verdana', 'Comic Sans MS', 'Inter'];
+
+function loadGoogleFont(fontName: string) {
+  if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return;
+  loadedFonts.add(fontName);
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
+  document.head.appendChild(link);
+}
 
 interface ProductColor {
   name: string;
@@ -805,6 +832,7 @@ export default function DesignStudioPage() {
           {/* Design elements on canvas */}
           {designElements.map(el => {
             const isSelected = selectedElementId === el.id;
+            if (el.type === 'text' && el.fontFamily) loadGoogleFont(el.fontFamily);
             return (
               <div
                 key={el.id}
@@ -1060,18 +1088,53 @@ export default function DesignStudioPage() {
         />
 
         {/* Change Font */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Change Font</span>
-          <select
-            value={selectedEl.fontFamily ?? 'Inter'}
-            onChange={e => updateElement(selectedEl.id, { fontFamily: e.target.value })}
-            className="text-sm font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        <div>
+          <span className="text-sm text-gray-600 mb-2 block">Change Font</span>
+          <div
+            className="text-lg font-bold border border-gray-200 rounded-lg px-4 py-3 mb-2 cursor-pointer hover:bg-gray-50 transition"
             style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}
+            onClick={() => {
+              const el = document.getElementById('font-search');
+              if (el) el.focus();
+            }}
           >
+            {selectedEl.fontFamily ?? 'Inter'}
+          </div>
+          <input
+            id="font-search"
+            type="text"
+            placeholder="Search fonts..."
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={e => {
+              const container = document.getElementById('font-list');
+              if (!container) return;
+              const query = e.target.value.toLowerCase();
+              Array.from(container.children).forEach(child => {
+                const name = child.getAttribute('data-font') ?? '';
+                (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
+              });
+            }}
+          />
+          <div id="font-list" className="max-h-48 overflow-y-auto rounded-lg border border-gray-200">
             {FONT_OPTIONS.map(f => (
-              <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+              <button
+                key={f}
+                type="button"
+                data-font={f}
+                onMouseEnter={() => loadGoogleFont(f)}
+                onClick={() => {
+                  loadGoogleFont(f);
+                  updateElement(selectedEl.id, { fontFamily: f });
+                }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${
+                  (selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                }`}
+                style={{ fontFamily: f }}
+              >
+                {f}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
         {/* Edit Color */}
