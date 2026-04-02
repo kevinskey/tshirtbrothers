@@ -146,7 +146,9 @@ async function fetchProductDetails(ssId: string): Promise<{ colors: SSColor[]; s
 
 export default function QuotePage() {
   const location = useLocation();
-  const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; designImage?: string } | null);
+  interface DesignElement { id: string; type: string; x: number; y: number; width: number; content: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string; }
+  const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; designImage?: string; designElements?: DesignElement[] } | null);
+  const savedDesignElements = designState?.designElements || [];
 
   const [currentStep, setCurrentStep] = useState(designState?.fromDesignStudio ? 2 : 1);
   const stepContentRef = useRef<HTMLDivElement>(null);
@@ -257,8 +259,8 @@ export default function QuotePage() {
         sizes: sizeEntries,
         quantity: totalQty,
         print_areas: formData.printAreas,
-        design_type: designUrl ? 'upload' : formData.designIdea ? 'description' : null,
-        design_url: designUrl,
+        design_type: savedDesignElements.length > 0 ? 'design-studio' : designUrl ? 'upload' : formData.designIdea ? 'description' : null,
+        design_url: designUrl || (formData.color?.image || formData.product?.image_url) || null,
         customer_name: formData.customerName,
         customer_email: formData.customerEmail,
         customer_phone: formData.customerPhone,
@@ -465,14 +467,40 @@ export default function QuotePage() {
   const orderSummary = formData.product ? (
     <div className="sticky top-20 bg-white border border-gray-200 rounded-xl p-5 space-y-4">
       <h3 className="font-display font-bold text-gray-900">Order Summary</h3>
-      <div className="flex items-center gap-3">
-        {formData.product.image_url && (
-          <img src={formData.product.image_url} alt="" className="h-14 w-14 rounded-lg bg-gray-100 object-contain" />
+      {/* Product preview with design elements */}
+      <div className="relative bg-gray-50 rounded-xl overflow-hidden">
+        {(formData.color?.image || formData.product.image_url) && (
+          <img src={formData.color?.image || formData.product.image_url} alt="" className="w-full object-contain p-2" />
         )}
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{formData.product.name}</p>
-          <p className="text-xs text-gray-500">{formData.product.brand}</p>
-        </div>
+        {savedDesignElements.length > 0 && (
+          <div className="absolute inset-0">
+            {savedDesignElements.map(el => (
+              <div
+                key={el.id}
+                className="absolute"
+                style={{ left: `${el.x}%`, top: `${el.y}%`, width: `${el.width}%`, transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}
+              >
+                {el.type === 'image' ? (
+                  <img src={el.content} alt="" className="w-full object-contain drop-shadow-md" />
+                ) : (
+                  <span className="block font-bold leading-tight drop-shadow-md" style={{
+                    fontSize: `${(el.fontSize ?? 24) * 0.3}px`,
+                    color: el.color ?? '#fff',
+                    fontFamily: el.fontFamily ?? 'Inter',
+                    textAlign: (el.textAlign as 'left' | 'center' | 'right') ?? 'center',
+                  }}>{el.content}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {savedDesignElements.length > 0 && (
+          <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
+        )}
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-gray-900">{formData.product.name}</p>
+        <p className="text-xs text-gray-500">{formData.product.brand}</p>
       </div>
       {formData.color && (
         <div className="flex items-center gap-2 text-sm">
