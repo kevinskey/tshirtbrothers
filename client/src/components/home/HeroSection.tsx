@@ -58,26 +58,12 @@ export default function HeroSection() {
 
           {/* Right Column */}
           <div className="relative">
-            <div className="bg-gray-100 rounded-2xl p-12 flex items-center justify-center min-h-[400px]">
-              {/* CSS T-Shirt Shape */}
-              <div className="relative">
-                {/* Sleeves */}
-                <div className="absolute -left-12 top-0 w-16 h-20 bg-red-600 rounded-bl-3xl -skew-x-12" />
-                <div className="absolute -right-12 top-0 w-16 h-20 bg-red-600 rounded-br-3xl skew-x-12" />
-                {/* Body */}
-                <div className="relative w-48 h-64 bg-red-600 rounded-b-[60px]">
-                  {/* Neckline */}
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-6 bg-gray-100 rounded-b-full" />
-                  {/* Logo Area */}
-                  <div className="absolute inset-0 flex items-center justify-center pt-8">
-                    <div className="border-2 border-dashed border-white/60 rounded-lg px-4 py-3">
-                      <span className="text-white/80 text-xs font-bold uppercase tracking-wider">
-                        YOUR LOGO HERE
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="bg-gray-50 rounded-2xl overflow-hidden min-h-[400px] flex items-center justify-center">
+              <img
+                src="https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
+                alt="Custom printed t-shirts on display"
+                className="w-full h-full object-cover"
+              />
             </div>
 
             {/* Floating Card - Top Right */}
