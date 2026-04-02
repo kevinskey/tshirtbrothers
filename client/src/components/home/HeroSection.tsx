@@ -57,57 +57,14 @@ export default function HeroSection() {
           </div>
 
           {/* Right Column */}
-          <div className="relative">
-            <div className="bg-gray-50 rounded-2xl overflow-hidden min-h-[400px] flex items-center justify-center">
+          <div>
+            <div className="rounded-2xl overflow-hidden max-h-[420px]">
               <img
-                src="https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&q=80"
+                src="https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&h=420&q=80"
                 alt="Custom printed t-shirts on display"
                 className="w-full h-full object-cover"
               />
             </div>
-
-            {/* Floating Card - Top Right */}
-            <div className="absolute -top-4 -right-4 md:top-4 md:right-4 bg-white rounded-xl shadow-lg p-4 animate-float">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <span className="text-green-600 text-sm">&#10003;</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Order Complete</p>
-                  <p className="text-xs text-gray-500">Ready for pickup</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Floating Card - Bottom Left */}
-            <div className="absolute -bottom-4 -left-4 md:bottom-4 md:left-4 bg-white rounded-xl shadow-lg p-4 animate-float-delayed">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 text-sm">&#9632;</span>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">78 Colors</p>
-                  <p className="text-xs text-gray-500">Available in stock</p>
-                </div>
-              </div>
-            </div>
-
-            <style>{`
-              @keyframes float {
-                0%, 100% { transform: translateY(0px); }
-                50% { transform: translateY(-10px); }
-              }
-              @keyframes float-delayed {
-                0%, 100% { transform: translateY(0px); }
-                50% { transform: translateY(-8px); }
-              }
-              .animate-float {
-                animation: float 3s ease-in-out infinite;
-              }
-              .animate-float-delayed {
-                animation: float-delayed 3.5s ease-in-out infinite 0.5s;
-              }
-            `}</style>
           </div>
         </div>
       </div>
