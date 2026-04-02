@@ -44,7 +44,7 @@ import {
   type Product,
   type Category,
   type Customer,
-  type CustomerDetail,
+  // type CustomerDetail,
   type CustomerDesign,
   type Order,
 } from '@/lib/api';
