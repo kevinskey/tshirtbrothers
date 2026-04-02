@@ -31,10 +31,12 @@ export default function Navbar() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center gap-4">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2.5 flex-shrink-0">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600">
-                <span className="text-sm font-bold text-white">TSB</span>
-              </div>
+            <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+              <img
+                src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
+                alt="TShirt Brothers"
+                className="h-10 w-10 object-contain"
+              />
               <span
                 className="text-lg font-bold text-gray-900 hidden sm:inline"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}

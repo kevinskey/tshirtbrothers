@@ -664,7 +664,8 @@ export default function DesignStudioPage() {
         <Link to="/" className="text-gray-500 hover:text-gray-900 transition">
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <span className="text-lg font-bold text-red-600 hidden sm:inline">TShirt Brothers</span>
+        <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
+        <span className="text-lg font-bold text-gray-900 hidden sm:inline">TShirt Brothers</span>
       </div>
 
       {/* Center: design name */}

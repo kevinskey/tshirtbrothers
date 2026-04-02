@@ -299,10 +299,9 @@ export default function AdminPage() {
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
       <aside className="fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30">
-        <div className="p-6 border-b border-gray-800">
-          <h1 className="font-display text-xl font-bold tracking-tight">
-            <span className="text-red-500">TSB</span> Admin
-          </h1>
+        <div className="p-6 border-b border-gray-800 flex items-center gap-3">
+          <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
+          <h1 className="font-display text-xl font-bold tracking-tight">Admin</h1>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">

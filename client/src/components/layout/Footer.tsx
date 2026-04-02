@@ -22,10 +22,12 @@ export default function Footer() {
         <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
           {/* Brand column */}
           <div>
-            <Link to="/" className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600">
-                <span className="text-sm font-bold text-white">TSB</span>
-              </div>
+            <Link to="/" className="flex items-center gap-2">
+              <img
+                src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
+                alt="TShirt Brothers"
+                className="h-10 w-10 object-contain"
+              />
               <span
                 className="text-lg font-bold text-white"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
