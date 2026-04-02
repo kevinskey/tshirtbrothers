@@ -200,6 +200,30 @@ export default function QuotePage() {
       const sizeEntries = Object.fromEntries(
         Object.entries(formData.sizes).filter(([, v]) => v > 0),
       );
+
+      // Upload design file to server if one was selected
+      let designUrl: string | null = null;
+      if (formData.designPreview && formData.designFile) {
+        const reader = new FileReader();
+        const base64 = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(formData.designFile!);
+        });
+        const uploadRes = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: base64,
+            filename: formData.designFile.name,
+            customerEmail: formData.customerEmail,
+          }),
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          designUrl = uploadData.url;
+        }
+      }
+
       await submitQuote({
         product_id: null,
         product_name: formData.product?.name,
@@ -207,8 +231,8 @@ export default function QuotePage() {
         sizes: sizeEntries,
         quantity: totalQty,
         print_areas: formData.printAreas,
-        design_type: formData.designPreview ? 'upload' : formData.designIdea ? 'description' : null,
-        design_url: formData.designPreview || null,
+        design_type: designUrl ? 'upload' : formData.designIdea ? 'description' : null,
+        design_url: designUrl,
         customer_name: formData.customerName,
         customer_email: formData.customerEmail,
         customer_phone: formData.customerPhone,
