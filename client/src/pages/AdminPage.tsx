@@ -913,6 +913,50 @@ export default function AdminPage() {
                           <Eye className="w-3 h-3" />
                           Open in Studio
                         </Link>
+                        {Array.isArray(d.elements) && d.elements.length > 0 && (
+                          <button
+                            onClick={async () => {
+                              const els = d.elements as { id: string; type: string; x: number; y: number; width: number; content: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string }[];
+                              const canvas = document.createElement('canvas');
+                              canvas.width = 3000;
+                              canvas.height = 3000;
+                              const ctx = canvas.getContext('2d');
+                              if (!ctx) return;
+                              ctx.clearRect(0, 0, 3000, 3000);
+                              for (const el of els) {
+                                const x = (el.x / 100) * 3000;
+                                const y = (el.y / 100) * 3000;
+                                const w = (el.width / 100) * 3000;
+                                if (el.type === 'image') {
+                                  try {
+                                    const img = document.createElement('img');
+                                    img.crossOrigin = 'anonymous';
+                                    await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(); img.src = el.content; });
+                                    const aspect = img.naturalHeight / img.naturalWidth;
+                                    ctx.drawImage(img, x, y, w, w * aspect);
+                                  } catch { /* skip */ }
+                                } else {
+                                  const fontSize = ((el.fontSize ?? 24) * 3000) / 800;
+                                  ctx.save();
+                                  if (el.rotation) { ctx.translate(x + w / 2, y + fontSize / 2); ctx.rotate((el.rotation * Math.PI) / 180); ctx.translate(-(x + w / 2), -(y + fontSize / 2)); }
+                                  ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
+                                  ctx.fillStyle = el.color ?? '#000000';
+                                  ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+                                  ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
+                                  ctx.restore();
+                                }
+                              }
+                              const link = document.createElement('a');
+                              link.download = `${d.name || 'design'}-print-ready.png`;
+                              link.href = canvas.toDataURL('image/png');
+                              link.click();
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-purple-600 hover:text-purple-700 bg-purple-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Download className="w-3 h-3" />
+                            Design Only
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             if (confirm('Delete this design? This cannot be undone.')) {
