@@ -183,6 +183,8 @@ export interface PriceBreakdown {
   designFee: number;
   rushFee: number;
   total: number;
+  shipping?: number;
+  sizeMarkups?: Record<string, string>;
 }
 
 export interface SendQuotePricePayload {

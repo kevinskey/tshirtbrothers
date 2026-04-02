@@ -159,8 +159,8 @@ export default function AdminPage() {
 
   // Send Price modal state
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
-  const [priceBase, setPriceBase] = useState('');
-  const [pricePrinting, setPricePrinting] = useState('');
+  const [, setPriceBase] = useState('');
+  const [, setPricePrinting] = useState('');
   const [priceDesignFee, setPriceDesignFee] = useState('0');
   const [priceRushFee, setPriceRushFee] = useState('0');
   const [priceShipping, setPriceShipping] = useState('0');
