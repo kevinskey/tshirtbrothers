@@ -201,24 +201,22 @@ export default function QuotePage() {
         Object.entries(formData.sizes).filter(([, v]) => v > 0),
       );
       await submitQuote({
-        productId: formData.product?.id,
-        productName: formData.product?.name,
-        brand: formData.product?.brand,
+        product_id: formData.product?.ss_id || formData.product?.id,
+        product_name: formData.product?.name,
         color: formData.color?.name,
         sizes: sizeEntries,
         quantity: totalQty,
-        printAreas: formData.printAreas,
-        hasDesign: !!formData.designPreview,
-        designNotes: formData.designNotes,
-        designIdea: formData.designIdea,
-        customerName: formData.customerName,
-        customerEmail: formData.customerEmail,
-        customerPhone: formData.customerPhone,
-        notes: formData.notes,
+        print_areas: formData.printAreas,
+        design_type: formData.designPreview ? 'upload' : formData.designIdea ? 'description' : null,
+        design_url: formData.designPreview || null,
+        customer_name: formData.customerName,
+        customer_email: formData.customerEmail,
+        customer_phone: formData.customerPhone,
+        notes: [formData.designNotes, formData.designIdea, formData.notes].filter(Boolean).join('\n'),
       });
       setSubmitted(true);
-    } catch {
-      // error handling could go here
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to submit quote. Please try again.');
     } finally {
       setSubmitting(false);
     }
