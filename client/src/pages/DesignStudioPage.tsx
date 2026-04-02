@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -205,17 +205,19 @@ const DEFAULT_PRODUCT_ID = '39'; // Gildan Unisex Ultra Cotton T-Shirt
 export default function DesignStudioPage() {
   const [searchParams] = useSearchParams();
   const initialProductId = searchParams.get('product') || '';
+  const location = useLocation();
+  const loadState = location.state as { loadDesign?: boolean; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
-  const [showWelcome, setShowWelcome] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(!loadState?.loadDesign);
   const [activeTool, setActiveTool] = useState<ToolName>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedColorIdx, setSelectedColorIdx] = useState(0);
+  const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [currentView, setCurrentView] = useState<ViewName>('front');
-  const [designElements, setDesignElements] = useState<DesignElement[]>([]);
+  const [designElements, setDesignElements] = useState<DesignElement[]>(loadState?.elements || []);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [designName, setDesignName] = useState('Untitled design');
+  const [designName, setDesignName] = useState(loadState?.designName || 'Untitled design');
   const [isEditingName, setIsEditingName] = useState(false);
   const [savedDesignId, setSavedDesignId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
