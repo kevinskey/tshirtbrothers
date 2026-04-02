@@ -75,6 +75,16 @@ export default function DesignStudioPage() {
   /* Placement */
   const [designPosition, setDesignPosition] = useState('Full Center');
 
+  /* Drag & resize for overlay */
+  const [overlayPos, setOverlayPos] = useState({ x: 30, y: 25 }); // percent
+  const [overlaySize, setOverlaySize] = useState(40); // percent width
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [dragStart, setDragStart] = useState({ mx: 0, my: 0, ox: 0, oy: 0 });
+  const [resizeStart, setResizeStart] = useState({ mx: 0, size: 40 });
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [overlaySelected, setOverlaySelected] = useState(false);
+
   /* Accordion */
   const [openSection, setOpenSection] = useState<'text' | 'upload' | 'placement'>('upload');
 
@@ -124,6 +134,68 @@ export default function DesignStudioPage() {
   const handleFile = (file: File) => setUploadedImage(URL.createObjectURL(file));
 
   const hasDesign = textElements.length > 0 || uploadedImage;
+
+  /* Reset overlay position when placement changes */
+  useEffect(() => {
+    const positions: Record<string, { x: number; y: number; size: number }> = {
+      'Full Center': { x: 30, y: 25, size: 40 },
+      'Left Chest': { x: 15, y: 20, size: 20 },
+      'Right Chest': { x: 65, y: 20, size: 20 },
+      'Full Back': { x: 30, y: 25, size: 40 },
+    };
+    const p = positions[designPosition] || positions['Full Center'];
+    setOverlayPos({ x: p.x, y: p.y });
+    setOverlaySize(p.size);
+  }, [designPosition]);
+
+  /* Drag handlers */
+  const handleOverlayMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOverlaySelected(true);
+    setIsDragging(true);
+    setDragStart({ mx: e.clientX, my: e.clientY, ox: overlayPos.x, oy: overlayPos.y });
+  };
+
+  const handleResizeMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizing(true);
+    setResizeStart({ mx: e.clientX, size: overlaySize });
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+
+      if (isDragging) {
+        const dx = ((e.clientX - dragStart.mx) / rect.width) * 100;
+        const dy = ((e.clientY - dragStart.my) / rect.height) * 100;
+        setOverlayPos({
+          x: Math.max(0, Math.min(100 - overlaySize, dragStart.ox + dx)),
+          y: Math.max(0, Math.min(90, dragStart.oy + dy)),
+        });
+      }
+
+      if (isResizing) {
+        const dx = ((e.clientX - resizeStart.mx) / rect.width) * 100;
+        setOverlaySize(Math.max(10, Math.min(80, resizeStart.size + dx)));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+    };
+
+    if (isDragging || isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, isResizing, dragStart, resizeStart, overlaySize]);
 
   /* ---------------------------------------------------------------- */
   /*  Product Picker                                                   */
@@ -425,22 +497,26 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const preview = (
-    <div className="flex flex-1 flex-col items-center justify-center bg-gray-100 p-6 lg:p-10">
+    <div
+      className="flex flex-1 flex-col items-center justify-center bg-gray-100 p-6 lg:p-10"
+      onClick={() => setOverlaySelected(false)}
+    >
       {/* Product image with design overlay */}
-      <div className="relative w-full max-w-lg">
-        <div className="aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center">
+      <div className="relative w-full max-w-lg" ref={canvasRef}>
+        <div className="aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center relative select-none">
           {displayImage ? (
             <img
               src={displayImage}
               alt={selectedProduct?.name || 'Product'}
-              className="w-full h-full object-contain p-4"
+              className="w-full h-full object-contain p-4 pointer-events-none"
+              draggable={false}
             />
           ) : (
             <div className="text-center text-gray-400">
               <p className="text-lg font-semibold mb-2">No product selected</p>
               <button
                 type="button"
-                onClick={() => setShowProductPicker(true)}
+                onClick={(e) => { e.stopPropagation(); setShowProductPicker(true); }}
                 className="text-sm text-red-600 font-medium hover:underline"
               >
                 Choose a product to start designing
@@ -448,36 +524,62 @@ export default function DesignStudioPage() {
             </div>
           )}
 
-          {/* Design overlay */}
-          {displayImage && (
+          {/* Draggable + Resizable design overlay */}
+          {displayImage && hasDesign && (
             <div
-              className={`absolute flex flex-col items-center justify-center gap-1 pointer-events-none ${
-                designPosition === 'Left Chest'
-                  ? 'left-[22%] top-[28%] h-[18%] w-[18%]'
-                  : designPosition === 'Right Chest'
-                    ? 'right-[22%] top-[28%] h-[18%] w-[18%]'
-                    : designPosition === 'Full Back'
-                      ? 'left-1/2 top-[45%] h-[35%] w-[40%] -translate-x-1/2 -translate-y-1/2'
-                      : 'left-1/2 top-[45%] h-[35%] w-[40%] -translate-x-1/2 -translate-y-1/2'
+              onMouseDown={handleOverlayMouseDown}
+              onClick={(e) => e.stopPropagation()}
+              className={`absolute flex flex-col items-center justify-center gap-1 cursor-move ${
+                overlaySelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''
               }`}
+              style={{
+                left: `${overlayPos.x}%`,
+                top: `${overlayPos.y}%`,
+                width: `${overlaySize}%`,
+              }}
             >
               {uploadedImage && (
-                <img src={uploadedImage} alt="Design" className="max-h-full max-w-full object-contain drop-shadow-lg" />
+                <img
+                  src={uploadedImage}
+                  alt="Design"
+                  className="max-w-full object-contain drop-shadow-lg pointer-events-none"
+                  draggable={false}
+                />
               )}
               {textElements.map(el => (
                 <span
                   key={el.id}
-                  className="whitespace-nowrap font-display font-bold leading-tight drop-shadow-md"
+                  className="whitespace-nowrap font-display font-bold leading-tight drop-shadow-md pointer-events-none"
                   style={{ fontSize: `${el.fontSize * 0.4}px`, color: el.color }}
                 >
                   {el.text}
                 </span>
               ))}
-              {!hasDesign && displayImage && (
-                <span className="text-xs font-semibold text-gray-400 bg-white/70 px-2 py-1 rounded">
-                  YOUR DESIGN HERE
-                </span>
+
+              {/* Resize handle */}
+              {overlaySelected && (
+                <div
+                  onMouseDown={handleResizeMouseDown}
+                  className="absolute -bottom-2 -right-2 w-5 h-5 bg-blue-500 rounded-full cursor-se-resize border-2 border-white shadow-md z-10"
+                />
               )}
+            </div>
+          )}
+
+          {/* Placeholder when no design */}
+          {displayImage && !hasDesign && (
+            <div
+              className="absolute flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg"
+              style={{
+                left: `${overlayPos.x}%`,
+                top: `${overlayPos.y}%`,
+                width: `${overlaySize}%`,
+                aspectRatio: '1',
+              }}
+            >
+              <span className="text-xs font-semibold text-gray-400 bg-white/80 px-2 py-1 rounded">
+                YOUR DESIGN HERE
+              </span>
             </div>
           )}
         </div>
