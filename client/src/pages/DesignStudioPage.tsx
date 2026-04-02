@@ -240,7 +240,7 @@ export default function DesignStudioPage() {
     // Draw product image if requested
     if (includeProduct && displayImage) {
       try {
-        const img = new Image();
+        const img = document.createElement('img');
         img.crossOrigin = 'anonymous';
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
@@ -265,7 +265,7 @@ export default function DesignStudioPage() {
 
       if (el.type === 'image') {
         try {
-          const img = new Image();
+          const img = document.createElement('img');
           img.crossOrigin = 'anonymous';
           await new Promise<void>((resolve, reject) => {
             img.onload = () => resolve();
