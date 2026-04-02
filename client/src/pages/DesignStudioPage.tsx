@@ -260,19 +260,26 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Auto-select product from URL param or default
+  // Fetch the default product directly by searching for it
+  const targetId = initialProductId || DEFAULT_PRODUCT_ID;
+  const { data: defaultProductData } = useQuery({
+    queryKey: ['default-product', targetId],
+    queryFn: async () => {
+      const res = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
+      if (!res.ok) return null;
+      const data = await res.json() as { products: Product[] };
+      // Find the exact match by ss_id, or first Gildan t-shirt
+      return data.products.find(p => p.ss_id === targetId) || data.products[0] || null;
+    },
+    enabled: !selectedProduct,
+  });
+
+  // Auto-select default product
   useEffect(() => {
-    if (products.length > 0 && !selectedProduct) {
-      const targetId = initialProductId || DEFAULT_PRODUCT_ID;
-      const match = products.find(p => p.ss_id === targetId);
-      if (match) {
-        setSelectedProduct(match);
-      } else if (products.length > 0) {
-        // Fallback to first product
-        setSelectedProduct(products[0] ?? null);
-      }
+    if (!selectedProduct && defaultProductData) {
+      setSelectedProduct(defaultProductData);
     }
-  }, [initialProductId, products, selectedProduct]);
+  }, [defaultProductData, selectedProduct]);
 
   // Fetch colors for selected product from S&S API
   const { data: colorsData } = useQuery({
