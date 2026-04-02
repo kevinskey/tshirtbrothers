@@ -840,7 +840,7 @@ export default function AdminPage() {
                       <p className="text-xs text-gray-400 mt-2">
                         {new Date(d.created_at).toLocaleDateString()}
                       </p>
-                      <div className="flex gap-2 mt-3">
+                      <div className="flex flex-wrap gap-2 mt-3">
                         {d.mockup_url && (
                           <a
                             href={d.mockup_url}
