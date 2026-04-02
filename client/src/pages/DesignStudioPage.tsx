@@ -981,7 +981,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const bottomBar = (
-    <div className="fixed bottom-0 left-0 right-0 z-30 hidden md:flex items-center h-16 bg-white border-t border-gray-200 px-4 gap-4">
+    <div className="fixed bottom-0 left-0 right-0 z-40 hidden md:flex items-center h-16 bg-white border-t border-gray-200 px-4 gap-4" onClick={e => e.stopPropagation()}>
       {/* Add Products button */}
       <button
         type="button"
@@ -1025,7 +1025,7 @@ export default function DesignStudioPage() {
                   Change Product Color
                 </button>
                 {showColorPicker && productColors.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-2 rounded-lg bg-white border border-gray-200 shadow-xl p-3 min-w-[200px] z-50">
+                  <div className="absolute bottom-full left-0 mb-3 rounded-xl bg-white border border-gray-200 shadow-2xl p-4 min-w-[240px] z-[100]">
                     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Colors</p>
                     <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
                       {productColors.map((c, i) => (
