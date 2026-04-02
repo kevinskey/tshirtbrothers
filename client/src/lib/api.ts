@@ -75,11 +75,24 @@ export async function syncProducts() {
 export interface Quote {
   id: string;
   createdAt: string;
+  created_at?: string;
   customerName: string;
+  customer_name?: string;
   customerEmail: string;
+  customer_email?: string;
+  customerPhone?: string;
+  customer_phone?: string;
   productName: string;
+  product_name?: string;
   quantity: number;
-  status: 'pending' | 'approved' | 'completed' | 'rejected';
+  status: 'pending' | 'reviewed' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
+  estimated_price?: number | null;
+  notes?: string;
+  sizes?: unknown;
+  print_areas?: unknown;
+  design_type?: string;
+  price_breakdown?: PriceBreakdown | null;
+  deposit_amount?: number | null;
 }
 
 export interface Product {
@@ -146,6 +159,27 @@ export async function deleteCategory(id: string) {
 
 export async function generateDesign(data: Record<string, unknown>) {
   return request<unknown>('/design/generate', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export interface PriceBreakdown {
+  basePrice: number;
+  printingCost: number;
+  designFee: number;
+  rushFee: number;
+  total: number;
+}
+
+export interface SendQuotePricePayload {
+  quoteId: string;
+  priceBreakdown: PriceBreakdown;
+  message?: string;
+}
+
+export async function sendQuotePrice(data: SendQuotePricePayload) {
+  return authRequest<{ success: boolean; quote: unknown }>('/quotes/admin/send-price', {
     method: 'POST',
     body: JSON.stringify(data),
   });

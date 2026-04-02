@@ -26,6 +26,8 @@ import {
   Download,
   Eye,
   X,
+  DollarSign,
+  Send,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -40,6 +42,7 @@ import {
   fetchCustomer,
   fetchCustomerDesigns,
   fetchOrders,
+  sendQuotePrice,
   type Quote,
   type Product,
   type Category,
@@ -47,10 +50,11 @@ import {
   // type CustomerDetail,
   type CustomerDesign,
   type Order,
+  type SendQuotePricePayload,
 } from '@/lib/api';
 
 type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'settings';
-type QuoteFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
+type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
 
 const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
@@ -66,7 +70,10 @@ const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[]
 
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
+  reviewed: 'bg-orange-100 text-orange-800',
+  quoted: 'bg-purple-100 text-purple-800',
   approved: 'bg-green-100 text-green-800',
+  accepted: 'bg-emerald-100 text-emerald-800',
   completed: 'bg-blue-100 text-blue-800',
   rejected: 'bg-red-100 text-red-800',
 };
@@ -84,6 +91,14 @@ export default function AdminPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+
+  // Send Price modal state
+  const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
+  const [priceBase, setPriceBase] = useState('');
+  const [pricePrinting, setPricePrinting] = useState('');
+  const [priceDesignFee, setPriceDesignFee] = useState('0');
+  const [priceRushFee, setPriceRushFee] = useState('0');
+  const [priceMessage, setPriceMessage] = useState('');
 
   // Category form state
   const [catName, setCatName] = useState('');
@@ -187,6 +202,45 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
     },
   });
+
+  const sendPriceMutation = useMutation({
+    mutationFn: (data: SendQuotePricePayload) => sendQuotePrice(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+      setPriceModalQuote(null);
+      setPriceBase('');
+      setPricePrinting('');
+      setPriceDesignFee('0');
+      setPriceRushFee('0');
+      setPriceMessage('');
+    },
+  });
+
+  function handleSendPrice(e: FormEvent) {
+    e.preventDefault();
+    if (!priceModalQuote) return;
+    const basePrice = parseFloat(priceBase) || 0;
+    const printingCost = parseFloat(pricePrinting) || 0;
+    const designFee = parseFloat(priceDesignFee) || 0;
+    const rushFee = parseFloat(priceRushFee) || 0;
+    const total = basePrice + printingCost + designFee + rushFee;
+    sendPriceMutation.mutate({
+      quoteId: priceModalQuote.id,
+      priceBreakdown: { basePrice, printingCost, designFee, rushFee, total },
+      message: priceMessage || undefined,
+    });
+  }
+
+  function openPriceModal(quote: Quote) {
+    setPriceModalQuote(quote);
+    setPriceBase('');
+    setPricePrinting('');
+    setPriceDesignFee('0');
+    setPriceRushFee('0');
+    setPriceMessage('');
+    setOpenActionMenu(null);
+  }
 
   function handleAddCategory(e: FormEvent) {
     e.preventDefault();
@@ -335,7 +389,7 @@ export default function AdminPage() {
 
             {/* Filter Tabs */}
             <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
-              {(['all', 'pending', 'approved', 'completed'] as QuoteFilter[]).map((f) => (
+              {(['all', 'pending', 'quoted', 'accepted', 'approved', 'completed'] as QuoteFilter[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setQuoteFilter(f)}
@@ -387,7 +441,16 @@ export default function AdminPage() {
                             Actions <ChevronDown className="w-3 h-3" />
                           </button>
                           {openActionMenu === q.id && (
-                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-36">
+                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-44">
+                              {(q.status === 'pending' || q.status === 'reviewed') && (
+                                <button
+                                  onClick={() => openPriceModal(q)}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-purple-700 font-medium"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  Send Price
+                                </button>
+                              )}
                               {['approved', 'completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
@@ -970,6 +1033,152 @@ export default function AdminPage() {
             <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Settings</h2>
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <p className="text-gray-500 text-sm">Settings panel coming soon.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Send Price Modal */}
+        {priceModalQuote && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <h3 className="font-display font-semibold text-gray-900">Send Price Quote</h3>
+                <button
+                  onClick={() => setPriceModalQuote(null)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6">
+                {/* Quote Summary */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <p className="text-sm font-medium text-gray-900">{priceModalQuote.customerName || priceModalQuote.customer_name}</p>
+                  <p className="text-sm text-gray-500">{priceModalQuote.customerEmail || priceModalQuote.customer_email}</p>
+                  <div className="flex gap-4 mt-2 text-sm text-gray-600">
+                    <span>Product: {priceModalQuote.productName || priceModalQuote.product_name || 'N/A'}</span>
+                    <span>Qty: {priceModalQuote.quantity}</span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSendPrice} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (apparel) *</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          value={priceBase}
+                          onChange={(e) => setPriceBase(e.target.value)}
+                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Printing Cost *</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          value={pricePrinting}
+                          onChange={(e) => setPricePrinting(e.target.value)}
+                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Design Fee</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={priceDesignFee}
+                          onChange={(e) => setPriceDesignFee(e.target.value)}
+                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Rush Fee</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={priceRushFee}
+                          onChange={(e) => setPriceRushFee(e.target.value)}
+                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Total Preview */}
+                  <div className="bg-gray-900 rounded-lg p-4 text-center">
+                    <p className="text-sm text-gray-400 mb-1">Total Quote</p>
+                    <p className="text-2xl font-bold text-white">
+                      ${((parseFloat(priceBase) || 0) + (parseFloat(pricePrinting) || 0) + (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0)).toFixed(2)}
+                    </p>
+                    <p className="text-sm text-gray-400 mt-1">
+                      50% deposit: ${(((parseFloat(priceBase) || 0) + (parseFloat(pricePrinting) || 0) + (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0)) * 0.5).toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Personal Message (optional)</label>
+                    <textarea
+                      value={priceMessage}
+                      onChange={(e) => setPriceMessage(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition resize-none"
+                      rows={3}
+                      placeholder="Add a personal note to the customer..."
+                    />
+                  </div>
+
+                  {sendPriceMutation.isError && (
+                    <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">
+                      Failed to send price quote. Please try again.
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPriceModalQuote(null)}
+                      className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={sendPriceMutation.isPending || !priceBase || !pricePrinting}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    >
+                      {sendPriceMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                      Send Quote to Customer
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
         )}
