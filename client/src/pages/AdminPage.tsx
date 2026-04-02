@@ -334,11 +334,13 @@ export default function AdminPage() {
     const rushFee = parseFloat(priceRushFee) || 0;
     const shipping = parseFloat(priceShipping) || 0;
     const total = garmentTotal + designFee + rushFee + shipping;
-    sendPriceMutation.mutate({
-      quoteId: priceModalQuote.id,
+    const payload = {
+      quoteId: String(priceModalQuote.id),
       priceBreakdown: { basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total, shipping, sizeMarkups },
       message: priceMessage || undefined,
-    });
+    };
+    console.log('Sending price payload:', JSON.stringify(payload));
+    sendPriceMutation.mutate(payload);
   }
 
   function openPriceModal(quote: Quote) {

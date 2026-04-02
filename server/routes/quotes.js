@@ -170,6 +170,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
   try {
     const { quoteId, priceBreakdown, message } = req.body;
 
+    console.log('[send-price] Received:', JSON.stringify({ quoteId, hasBreakdown: !!priceBreakdown, total: priceBreakdown?.total }));
     if (!quoteId || !priceBreakdown || priceBreakdown.total === undefined) {
       return res.status(400).json({
         error: 'quoteId and priceBreakdown (with total) are required',
