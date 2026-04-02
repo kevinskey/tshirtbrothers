@@ -150,3 +150,69 @@ export async function generateDesign(data: Record<string, unknown>) {
     body: JSON.stringify(data),
   });
 }
+
+// Customer types & API
+export interface Customer {
+  id: string;
+  email: string;
+  name: string;
+  created_at: string;
+  design_count: number;
+  quote_count: number;
+}
+
+export interface CustomerDetail extends Customer {
+  designs: CustomerDesign[];
+  quotes: CustomerQuote[];
+}
+
+export interface CustomerDesign {
+  id: string;
+  name: string;
+  product_name: string;
+  mockup_url: string | null;
+  print_url: string | null;
+  created_at: string;
+  user_name: string;
+  user_email: string;
+}
+
+export interface CustomerQuote {
+  id: string;
+  product_name: string;
+  quantity: number;
+  status: string;
+  estimated_price: number | null;
+  created_at: string;
+}
+
+export interface Order {
+  id: string;
+  product_name: string;
+  quantity: number;
+  status: string;
+  estimated_price: number | null;
+  created_at: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+}
+
+export async function fetchCustomers(search?: string) {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return authRequest<Customer[]>(`/admin/customers${query}`);
+}
+
+export async function fetchCustomer(id: string) {
+  return authRequest<CustomerDetail>(`/admin/customers/${id}`);
+}
+
+export async function fetchCustomerDesigns(search?: string) {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
+}
+
+export async function fetchOrders(status?: string) {
+  const query = status && status !== 'all' ? `?status=${status}` : '';
+  return authRequest<Order[]>(`/admin/orders${query}`);
+}

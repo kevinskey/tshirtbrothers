@@ -19,6 +19,13 @@ import {
   Tags,
   Plus,
   Trash2,
+  Palette,
+  Users,
+  ShoppingBag,
+  ExternalLink,
+  Download,
+  Eye,
+  X,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -29,17 +36,29 @@ import {
   createCategory,
   deleteCategory,
   syncProducts,
+  fetchCustomers,
+  fetchCustomer,
+  fetchCustomerDesigns,
+  fetchOrders,
   type Quote,
   type Product,
   type Category,
+  type Customer,
+  type CustomerDetail,
+  type CustomerDesign,
+  type Order,
 } from '@/lib/api';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
+type OrderFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
 
 const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'quotes', label: 'Quotes', icon: FileText },
+  { key: 'orders', label: 'Orders', icon: ShoppingBag },
+  { key: 'designs', label: 'Designs', icon: Palette },
+  { key: 'customers', label: 'Customers', icon: Users },
   { key: 'products', label: 'Products', icon: Package },
   { key: 'categories', label: 'Categories', icon: FolderTree },
   { key: 'settings', label: 'Settings', icon: Settings },
@@ -59,6 +78,12 @@ export default function AdminPage() {
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [productSearch, setProductSearch] = useState('');
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+
+  // New section state
+  const [designSearch, setDesignSearch] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   // Category form state
   const [catName, setCatName] = useState('');
@@ -100,6 +125,30 @@ export default function AdminPage() {
     queryKey: ['admin', 'categories'],
     queryFn: fetchCategories,
     enabled: activeSection === 'categories' || activeSection === 'dashboard',
+  });
+
+  const designsQuery = useQuery({
+    queryKey: ['admin', 'customer-designs', designSearch],
+    queryFn: () => fetchCustomerDesigns(designSearch),
+    enabled: activeSection === 'designs',
+  });
+
+  const customersQuery = useQuery({
+    queryKey: ['admin', 'customers', customerSearch],
+    queryFn: () => fetchCustomers(customerSearch),
+    enabled: activeSection === 'customers',
+  });
+
+  const customerDetailQuery = useQuery({
+    queryKey: ['admin', 'customer', selectedCustomerId],
+    queryFn: () => fetchCustomer(selectedCustomerId!),
+    enabled: !!selectedCustomerId,
+  });
+
+  const ordersQuery = useQuery({
+    queryKey: ['admin', 'orders', orderFilter],
+    queryFn: () => fetchOrders(orderFilter),
+    enabled: activeSection === 'orders',
   });
 
   // Mutations
@@ -152,6 +201,10 @@ export default function AdminPage() {
   const quotes = quotesQuery.data ?? [];
   const products = productsQuery.data ?? [];
   const categories = categoriesQuery.data ?? [];
+  const designs = designsQuery.data ?? [];
+  const customers = customersQuery.data ?? [];
+  const orders = ordersQuery.data ?? [];
+  const customerDetail = customerDetailQuery.data ?? null;
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -529,6 +582,378 @@ export default function AdminPage() {
                       <tr>
                         <td colSpan={4} className="px-6 py-8 text-center text-gray-400">
                           No categories yet
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Customer Designs Section */}
+        {activeSection === 'designs' && (
+          <div>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Customer Designs</h2>
+
+            {/* Search */}
+            <div className="relative mb-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by customer name or design name..."
+                value={designSearch}
+                onChange={(e) => setDesignSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+              />
+            </div>
+
+            {designsQuery.isLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : designs.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-400">
+                No designs found
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {designs.map((d: CustomerDesign) => (
+                  <div key={d.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <div className="aspect-video bg-gray-100 relative">
+                      {d.mockup_url ? (
+                        <img
+                          src={d.mockup_url}
+                          alt={d.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Palette className="w-10 h-10 text-gray-300" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-semibold text-gray-900 mb-1">{d.name}</h3>
+                      <p className="text-sm text-gray-600">{d.user_name}</p>
+                      <p className="text-sm text-gray-400">{d.user_email}</p>
+                      {d.product_name && (
+                        <p className="text-sm text-gray-500 mt-1">Product: {d.product_name}</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-2">
+                        {new Date(d.created_at).toLocaleDateString()}
+                      </p>
+                      <div className="flex gap-2 mt-3">
+                        {d.mockup_url && (
+                          <a
+                            href={d.mockup_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View Mockup
+                          </a>
+                        )}
+                        {d.print_url && (
+                          <a
+                            href={d.print_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Download className="w-3 h-3" />
+                            Download Print File
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Customers Section */}
+        {activeSection === 'customers' && (
+          <div>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Customers</h2>
+
+            {/* Search */}
+            <div className="relative mb-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={customerSearch}
+                onChange={(e) => setCustomerSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+              />
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-500">
+                      <th className="px-6 py-3 font-medium">Name</th>
+                      <th className="px-6 py-3 font-medium">Email</th>
+                      <th className="px-6 py-3 font-medium">Designs</th>
+                      <th className="px-6 py-3 font-medium">Quotes</th>
+                      <th className="px-6 py-3 font-medium">Joined</th>
+                      <th className="px-6 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {customers.map((c: Customer) => (
+                      <tr key={c.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-gray-900 font-medium">{c.name}</td>
+                        <td className="px-6 py-3 text-gray-600">{c.email}</td>
+                        <td className="px-6 py-3 text-gray-600">{c.design_count}</td>
+                        <td className="px-6 py-3 text-gray-600">{c.quote_count}</td>
+                        <td className="px-6 py-3 text-gray-600">
+                          {new Date(c.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-3">
+                          <button
+                            onClick={() => setSelectedCustomerId(c.id)}
+                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {customers.length === 0 && !customersQuery.isLoading && (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
+                          No customers found
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Customer Detail Modal */}
+            {selectedCustomerId && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-y-auto">
+                  <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                    <h3 className="font-display font-semibold text-gray-900">Customer Details</h3>
+                    <button
+                      onClick={() => setSelectedCustomerId(null)}
+                      className="text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {customerDetailQuery.isLoading ? (
+                    <div className="flex justify-center py-12">
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                    </div>
+                  ) : customerDetail ? (
+                    <div className="p-6 space-y-6">
+                      {/* Customer Info */}
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900">{customerDetail.name}</h4>
+                        <p className="text-sm text-gray-500">{customerDetail.email}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Joined {new Date(customerDetail.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      {/* Saved Designs */}
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-3">
+                          Saved Designs ({customerDetail.designs.length})
+                        </h4>
+                        {customerDetail.designs.length === 0 ? (
+                          <p className="text-sm text-gray-400">No designs yet</p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {customerDetail.designs.map((d) => (
+                              <div key={d.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                                <div className="aspect-video bg-gray-100">
+                                  {d.mockup_url ? (
+                                    <img
+                                      src={d.mockup_url}
+                                      alt={d.name}
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <Palette className="w-6 h-6 text-gray-300" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="p-2">
+                                  <p className="text-xs font-medium text-gray-900 truncate">{d.name}</p>
+                                  <p className="text-xs text-gray-400">
+                                    {new Date(d.created_at).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Quote History */}
+                      <div>
+                        <h4 className="font-medium text-gray-900 mb-3">
+                          Quote History ({customerDetail.quotes.length})
+                        </h4>
+                        {customerDetail.quotes.length === 0 ? (
+                          <p className="text-sm text-gray-400">No quotes yet</p>
+                        ) : (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 text-left text-gray-500">
+                                  <th className="px-4 py-2 font-medium">Product</th>
+                                  <th className="px-4 py-2 font-medium">Qty</th>
+                                  <th className="px-4 py-2 font-medium">Price</th>
+                                  <th className="px-4 py-2 font-medium">Status</th>
+                                  <th className="px-4 py-2 font-medium">Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {customerDetail.quotes.map((q) => (
+                                  <tr key={q.id}>
+                                    <td className="px-4 py-2 text-gray-900">{q.product_name}</td>
+                                    <td className="px-4 py-2 text-gray-600">{q.quantity}</td>
+                                    <td className="px-4 py-2 text-gray-600">
+                                      {q.estimated_price != null
+                                        ? `$${Number(q.estimated_price).toFixed(2)}`
+                                        : '--'}
+                                    </td>
+                                    <td className="px-4 py-2">
+                                      <StatusBadge status={q.status} />
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-400">
+                                      {new Date(q.created_at).toLocaleDateString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-gray-400">Customer not found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Orders Section */}
+        {activeSection === 'orders' && (
+          <div>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Orders</h2>
+
+            {/* Filter Tabs */}
+            <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+              {(['all', 'pending', 'approved', 'completed', 'rejected'] as OrderFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setOrderFilter(f)}
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
+                    orderFilter === f
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-500">
+                      <th className="px-6 py-3 font-medium">Order #</th>
+                      <th className="px-6 py-3 font-medium">Date</th>
+                      <th className="px-6 py-3 font-medium">Customer</th>
+                      <th className="px-6 py-3 font-medium">Email</th>
+                      <th className="px-6 py-3 font-medium">Phone</th>
+                      <th className="px-6 py-3 font-medium">Product</th>
+                      <th className="px-6 py-3 font-medium">Qty</th>
+                      <th className="px-6 py-3 font-medium">Price</th>
+                      <th className="px-6 py-3 font-medium">Status</th>
+                      <th className="px-6 py-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {orders.map((o: Order) => (
+                      <tr key={o.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-gray-900 font-medium">#{o.id.slice(0, 8)}</td>
+                        <td className="px-6 py-3 text-gray-600">
+                          {new Date(o.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-3 text-gray-900">{o.customer_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.customer_email}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.customer_phone || '--'}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.product_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.quantity}</td>
+                        <td className="px-6 py-3 text-gray-600">
+                          {o.estimated_price != null
+                            ? `$${Number(o.estimated_price).toFixed(2)}`
+                            : '--'}
+                        </td>
+                        <td className="px-6 py-3">
+                          <StatusBadge status={o.status} />
+                        </td>
+                        <td className="px-6 py-3 relative">
+                          <button
+                            onClick={() =>
+                              setOpenActionMenu(openActionMenu === o.id ? null : o.id)
+                            }
+                            className="flex items-center gap-1 text-gray-500 hover:text-gray-700 text-sm"
+                          >
+                            Actions <ChevronDown className="w-3 h-3" />
+                          </button>
+                          {openActionMenu === o.id && (
+                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-36">
+                              {['approved', 'completed', 'rejected']
+                                .filter((s) => s !== o.status)
+                                .map((s) => (
+                                  <button
+                                    key={s}
+                                    onClick={() =>
+                                      statusMutation.mutate({ id: o.id, status: s })
+                                    }
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 capitalize"
+                                  >
+                                    {s === 'approved' ? 'Approve' : s === 'completed' ? 'Complete' : 'Reject'}
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {orders.length === 0 && !ordersQuery.isLoading && (
+                      <tr>
+                        <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
+                          No orders found
                         </td>
                       </tr>
                     )}

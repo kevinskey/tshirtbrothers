@@ -92,4 +92,135 @@ router.post('/upload-url', async (req, res, next) => {
   }
 });
 
+// GET /customers - List all registered customers with design/quote counts
+router.get('/customers', async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    let whereClause = "WHERE u.role = 'customer'";
+    const params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (u.name ILIKE $${params.length} OR u.email ILIKE $${params.length})`;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         u.id, u.email, u.name, u.created_at,
+         COALESCE(d.design_count, 0)::int AS design_count,
+         COALESCE(q.quote_count, 0)::int AS quote_count
+       FROM users u
+       LEFT JOIN (
+         SELECT user_id, COUNT(*) AS design_count FROM saved_designs GROUP BY user_id
+       ) d ON d.user_id = u.id
+       LEFT JOIN (
+         SELECT user_id, COUNT(*) AS quote_count FROM quotes GROUP BY user_id
+       ) q ON q.user_id = u.id
+       ${whereClause}
+       ORDER BY u.created_at DESC`,
+      params
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /customers/:id - Get single customer with their designs and quotes
+router.get('/customers/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const userResult = await pool.query(
+      "SELECT id, email, name, created_at FROM users WHERE id = $1 AND role = 'customer'",
+      [id]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const customer = userResult.rows[0];
+
+    const designsResult = await pool.query(
+      `SELECT id, name, product_name, mockup_url, print_url, created_at
+       FROM saved_designs WHERE user_id = $1 ORDER BY created_at DESC`,
+      [id]
+    );
+
+    const quotesResult = await pool.query(
+      `SELECT id, product_name, quantity, status, estimated_price, created_at
+       FROM quotes WHERE user_id = $1 ORDER BY created_at DESC`,
+      [id]
+    );
+
+    res.json({
+      ...customer,
+      designs: designsResult.rows,
+      quotes: quotesResult.rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /customer-designs - List all saved designs across all customers
+router.get('/customer-designs', async (req, res, next) => {
+  try {
+    const { search } = req.query;
+    let whereClause = '';
+    const params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause = `WHERE sd.name ILIKE $${params.length} OR u.name ILIKE $${params.length}`;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         sd.id, sd.name, sd.product_name, sd.mockup_url, sd.print_url, sd.created_at,
+         u.name AS user_name, u.email AS user_email
+       FROM saved_designs sd
+       JOIN users u ON u.id = sd.user_id
+       ${whereClause}
+       ORDER BY sd.created_at DESC`,
+      params
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /orders - List all orders (using quotes table)
+router.get('/orders', async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    let whereClause = '';
+    const params = [];
+
+    if (status && status !== 'all') {
+      params.push(status);
+      whereClause = `WHERE q.status = $${params.length}`;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         q.id, q.product_name, q.quantity, q.status, q.estimated_price,
+         q.created_at,
+         q.customer_name, q.customer_email, q.customer_phone
+       FROM quotes q
+       ${whereClause}
+       ORDER BY q.created_at DESC`,
+      params
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
