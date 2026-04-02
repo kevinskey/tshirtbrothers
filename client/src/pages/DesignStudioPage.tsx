@@ -143,7 +143,7 @@ export default function DesignStudioPage() {
       'Right Chest': { x: 65, y: 20, size: 20 },
       'Full Back': { x: 30, y: 25, size: 40 },
     };
-    const p = positions[designPosition] || positions['Full Center'];
+    const p = positions[designPosition] ?? { x: 30, y: 25, size: 40 };
     setOverlayPos({ x: p.x, y: p.y });
     setOverlaySize(p.size);
   }, [designPosition]);
