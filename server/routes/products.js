@@ -119,6 +119,22 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /filters - Distinct brands and categories for dropdowns
+router.get('/filters', async (req, res, next) => {
+  try {
+    const [brandsResult, categoriesResult] = await Promise.all([
+      pool.query("SELECT DISTINCT brand FROM products WHERE brand != '' ORDER BY brand"),
+      pool.query("SELECT DISTINCT category FROM products WHERE category != '' ORDER BY category"),
+    ]);
+    res.json({
+      brands: brandsResult.rows.map(r => r.brand),
+      categories: categoriesResult.rows.map(r => r.category),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /featured - Featured products
 router.get('/featured', async (req, res, next) => {
   try {

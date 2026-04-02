@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { Search, Loader2 } from 'lucide-react';
@@ -214,6 +214,19 @@ export default function ShopPage() {
   const [category, setCategory] = useState('');
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
+  // Fetch filter options from API
+  const { data: filtersData } = useQuery({
+    queryKey: ['product-filters'],
+    queryFn: async () => {
+      const res = await fetch('/api/products/filters');
+      if (!res.ok) return { brands: [] as string[], categories: [] as string[] };
+      return res.json() as Promise<{ brands: string[]; categories: string[] }>;
+    },
+    staleTime: 1000 * 60 * 30, // cache 30 min
+  });
+  const apiBrands = filtersData?.brands ?? [];
+  const apiCategories = filtersData?.categories ?? [];
+
   const {
     data,
     isError,
@@ -296,7 +309,7 @@ export default function ShopPage() {
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
               <option value="">All Brands</option>
-              {ALL_BRANDS.map((b) => (
+              {(apiBrands.length > 0 ? apiBrands : ALL_BRANDS).map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -312,7 +325,7 @@ export default function ShopPage() {
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
               <option value="">All Categories</option>
-              {ALL_CATEGORIES.map((c) => (
+              {(apiCategories.length > 0 ? apiCategories : ALL_CATEGORIES).map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
