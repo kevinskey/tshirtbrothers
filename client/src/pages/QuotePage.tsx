@@ -96,11 +96,11 @@ const STEPS = [
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 
 const PRINT_AREAS: { id: string; label: string; price: string; cost: number }[] = [
-  { id: 'Full Front', label: 'Full Front', price: 'Included', cost: 0 },
-  { id: 'Full Back', label: 'Full Back', price: '+$2.00/item', cost: 2 },
-  { id: 'Left Chest', label: 'Left Chest', price: '+$1.50/item', cost: 1.5 },
-  { id: 'Left Arm', label: 'Left Arm', price: '+$3.00/item', cost: 3 },
-  { id: 'Right Arm', label: 'Right Arm', price: '+$3.00/item', cost: 3 },
+  { id: 'Full Front', label: 'Full Front' },
+  { id: 'Full Back', label: 'Full Back' },
+  { id: 'Left Chest', label: 'Left Chest' },
+  { id: 'Left Arm', label: 'Left Sleeve' },
+  { id: 'Right Arm', label: 'Right Sleeve' },
 ];
 
 const PRODUCTS_PER_PAGE = 12;
@@ -492,12 +492,61 @@ export default function QuotePage() {
       });
     };
 
+    const TshirtSVG = ({ side }: { side: 'front' | 'back' }) => (
+      <svg viewBox="0 0 200 260" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
+        {/* T-shirt outline */}
+        <path
+          d="M60 30 L30 50 L10 100 L40 110 L40 240 L160 240 L160 110 L190 100 L170 50 L140 30 C135 15 120 5 100 5 C80 5 65 15 60 30Z"
+          stroke="#d1d5db"
+          strokeWidth="2"
+          fill="#f9fafb"
+        />
+        {/* Collar */}
+        <path d="M60 30 C75 45 125 45 140 30" stroke="#d1d5db" strokeWidth="2" fill="none" />
+        {/* Sleeve seams */}
+        <path d="M40 110 L40 55" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 3" />
+        <path d="M160 110 L160 55" stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 3" />
+
+        {/* Print area highlights */}
+        {side === 'front' && formData.printAreas.includes('Full Front') && (
+          <rect x="55" y="70" width="90" height="100" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
+        )}
+        {side === 'front' && formData.printAreas.includes('Left Chest') && (
+          <rect x="58" y="55" width="35" height="30" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
+        )}
+        {side === 'back' && formData.printAreas.includes('Full Back') && (
+          <rect x="55" y="60" width="90" height="110" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
+        )}
+        {formData.printAreas.includes('Left Arm') && (
+          <rect x="12" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
+        )}
+        {formData.printAreas.includes('Right Arm') && (
+          <rect x="163" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
+        )}
+
+        {/* Labels */}
+        {side === 'front' && formData.printAreas.includes('Full Front') && (
+          <text x="100" y="125" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL FRONT</text>
+        )}
+        {side === 'front' && formData.printAreas.includes('Left Chest') && (
+          <text x="75" y="73" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ea580c">CHEST</text>
+        )}
+        {side === 'back' && formData.printAreas.includes('Full Back') && (
+          <text x="100" y="120" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL BACK</text>
+        )}
+        {formData.printAreas.includes('Left Arm') && (
+          <text x="24" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">L</text>
+        )}
+        {formData.printAreas.includes('Right Arm') && (
+          <text x="176" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">R</text>
+        )}
+      </svg>
+    );
+
     return (
       <div>
-        <h2 className="font-display text-2xl font-bold">Choose print areas</h2>
-        <p className="mt-1 text-brand-gray-500">
-          Select where you want your design printed. At least one area is required.
-        </p>
+        <h2 className="font-display text-2xl font-bold">Choose Print Areas</h2>
+        <p className="mt-1 text-gray-500">Select where you want your design printed.</p>
 
         <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:gap-12">
           {/* Checkboxes */}
@@ -505,84 +554,36 @@ export default function QuotePage() {
             {PRINT_AREAS.map((pa) => (
               <label
                 key={pa.id}
-                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition hover:bg-brand-gray-50 ${
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition hover:bg-gray-50 ${
                   formData.printAreas.includes(pa.id)
-                    ? 'border-red-600 bg-red-50'
-                    : 'border-brand-gray-200'
+                    ? 'border-orange-500 bg-orange-50'
+                    : 'border-gray-200'
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={formData.printAreas.includes(pa.id)}
                   onChange={() => toggle(pa.id)}
-                  className="h-5 w-5 rounded border-brand-gray-300 text-red-600 accent-red-600"
+                  className="h-5 w-5 rounded border-gray-300 text-orange-600 accent-orange-600"
                 />
-                <span className="flex-1 font-medium">{pa.label}</span>
-                <span
-                  className={`text-sm font-semibold ${
-                    pa.cost === 0 ? 'text-green-600' : 'text-brand-gray-500'
-                  }`}
-                >
-                  {pa.price}
-                </span>
+                <span className="flex-1 font-medium text-gray-900">{pa.label}</span>
+                {formData.printAreas.includes(pa.id) && (
+                  <Check className="h-5 w-5 text-orange-600" />
+                )}
               </label>
             ))}
+            <p className="text-xs text-gray-400 mt-2">Pricing will be included in your quote.</p>
           </div>
 
-          {/* Visual garment outline */}
-          <div className="flex flex-1 items-start justify-center gap-8">
-            {/* Front */}
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-gray-400">
-                Front
-              </span>
-              <div className="relative flex h-52 w-40 items-center justify-center rounded-xl bg-brand-gray-100">
-                <Shirt className="h-32 w-32 text-brand-gray-300" />
-                {formData.printAreas.includes('Full Front') && (
-                  <span className="absolute inset-x-6 top-16 flex items-center justify-center rounded bg-red-600/20 py-3 text-[10px] font-bold text-red-700">
-                    FULL FRONT
-                  </span>
-                )}
-                {formData.printAreas.includes('Left Chest') && (
-                  <span className="absolute left-5 top-12 flex h-7 w-7 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
-                    LC
-                  </span>
-                )}
-                {formData.printAreas.includes('Left Arm') && (
-                  <span className="absolute left-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
-                    LA
-                  </span>
-                )}
-                {formData.printAreas.includes('Right Arm') && (
-                  <span className="absolute right-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
-                    RA
-                  </span>
-                )}
-              </div>
+          {/* Visual t-shirt outlines */}
+          <div className="flex flex-1 items-start justify-center gap-6">
+            <div className="flex flex-col items-center gap-2 w-44">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Front</span>
+              <div className="w-full"><TshirtSVG side="front" /></div>
             </div>
-            {/* Back */}
-            <div className="flex flex-col items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-gray-400">
-                Back
-              </span>
-              <div className="relative flex h-52 w-40 items-center justify-center rounded-xl bg-brand-gray-100">
-                <Shirt className="h-32 w-32 text-brand-gray-300" />
-                {formData.printAreas.includes('Full Back') && (
-                  <span className="absolute inset-x-6 top-16 flex items-center justify-center rounded bg-red-600/20 py-3 text-[10px] font-bold text-red-700">
-                    FULL BACK
-                  </span>
-                )}
-                {formData.printAreas.includes('Left Arm') && (
-                  <span className="absolute left-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
-                    LA
-                  </span>
-                )}
-                {formData.printAreas.includes('Right Arm') && (
-                  <span className="absolute right-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
-                    RA
-                  </span>
-                )}
-              </div>
+            <div className="flex flex-col items-center gap-2 w-44">
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Back</span>
+              <div className="w-full"><TshirtSVG side="back" /></div>
             </div>
           </div>
         </div>
