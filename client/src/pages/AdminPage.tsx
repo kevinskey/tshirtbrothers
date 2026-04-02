@@ -43,6 +43,7 @@ import {
   fetchCustomerDesigns,
   fetchOrders,
   deleteDesign,
+  deleteQuote,
   sendQuotePrice,
   fetchSettings,
   updateSettings,
@@ -300,6 +301,15 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'categories'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+    },
+  });
+
+  const deleteQuoteMutation = useMutation({
+    mutationFn: deleteQuote,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+      setOpenActionMenu(null);
     },
   });
 
@@ -594,6 +604,19 @@ export default function AdminPage() {
                                     {s === 'approved' ? 'Approve' : s === 'completed' ? 'Complete' : 'Reject'}
                                   </button>
                                 ))}
+                              <div className="border-t border-gray-100 mt-1 pt-1">
+                                <button
+                                  onClick={() => {
+                                    if (confirm('Delete this quote? This cannot be undone.')) {
+                                      deleteQuoteMutation.mutate(String(q.id));
+                                    }
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-medium"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Delete
+                                </button>
+                              </div>
                             </div>
                           )}
                         </td>
