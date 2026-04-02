@@ -306,7 +306,7 @@ export default function AdminPage() {
   const deleteDesignMutation = useMutation({
     mutationFn: deleteDesign,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'designs'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
     },
   });
 
