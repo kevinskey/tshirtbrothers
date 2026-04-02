@@ -517,10 +517,10 @@ export default function QuotePage() {
         {side === 'back' && formData.printAreas.includes('Full Back') && (
           <rect x="55" y="60" width="90" height="110" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
         )}
-        {formData.printAreas.includes('Left Arm') && (
+        {side === 'front' && formData.printAreas.includes('Left Arm') && (
           <rect x="12" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
         )}
-        {formData.printAreas.includes('Right Arm') && (
+        {side === 'front' && formData.printAreas.includes('Right Arm') && (
           <rect x="163" y="60" width="25" height="40" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
         )}
 
@@ -534,10 +534,10 @@ export default function QuotePage() {
         {side === 'back' && formData.printAreas.includes('Full Back') && (
           <text x="100" y="120" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL BACK</text>
         )}
-        {formData.printAreas.includes('Left Arm') && (
+        {side === 'front' && formData.printAreas.includes('Left Arm') && (
           <text x="24" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">L</text>
         )}
-        {formData.printAreas.includes('Right Arm') && (
+        {side === 'front' && formData.printAreas.includes('Right Arm') && (
           <text x="176" y="83" textAnchor="middle" fontSize="6" fontWeight="700" fill="#ea580c">R</text>
         )}
       </svg>
