@@ -9,7 +9,7 @@ import {
   Shirt,
   Trash2,
   Search,
-  ChevronDown,
+  // ChevronDown,
   Save,
   X,
   Loader2,
@@ -121,7 +121,7 @@ export default function DesignStudioPage() {
         setSelectedProduct(match);
       } else if (products.length > 0) {
         // Fallback to first product
-        setSelectedProduct(products[0]);
+        setSelectedProduct(products[0] ?? null);
       }
     }
   }, [initialProductId, products, selectedProduct]);
