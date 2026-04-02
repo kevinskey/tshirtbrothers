@@ -587,22 +587,32 @@ export default function DesignStudioPage() {
   /*  Drag / Resize handlers                                           */
   /* ---------------------------------------------------------------- */
 
-  const handleElementMouseDown = useCallback((e: React.MouseEvent, elementId: string, mode: 'move' | 'resize') => {
-    e.stopPropagation();
-    e.preventDefault();
+  const startDrag = useCallback((clientX: number, clientY: number, elementId: string, mode: 'move' | 'resize') => {
     setSelectedElementId(elementId);
     const el = designElements.find(d => d.id === elementId);
     if (!el) return;
     setDragState({
       elementId,
       mode,
-      startMx: e.clientX,
-      startMy: e.clientY,
+      startMx: clientX,
+      startMy: clientY,
       startX: el.x,
       startY: el.y,
       startWidth: el.width,
     });
   }, [designElements]);
+
+  const handleElementMouseDown = useCallback((e: React.MouseEvent, elementId: string, mode: 'move' | 'resize') => {
+    e.stopPropagation();
+    e.preventDefault();
+    startDrag(e.clientX, e.clientY, elementId, mode);
+  }, [startDrag]);
+
+  const handleElementTouchStart = useCallback((e: React.TouchEvent, elementId: string, mode: 'move' | 'resize') => {
+    e.stopPropagation();
+    const touch = e.touches[0];
+    if (touch) startDrag(touch.clientX, touch.clientY, elementId, mode);
+  }, [startDrag]);
 
   useEffect(() => {
     if (!dragState) return;
@@ -634,11 +644,21 @@ export default function DesignStudioPage() {
 
     const handleMouseUp = () => setDragState(null);
 
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (touch) handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
+    };
+    const handleTouchEnd = () => setDragState(null);
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [dragState]);
 
@@ -1217,7 +1237,7 @@ export default function DesignStudioPage() {
     >
       {/* Product image + overlay area */}
       <div className="relative w-full max-w-3xl px-4" ref={canvasRef}>
-        <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none">
+        <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none" style={{ touchAction: 'none' }}>
           {displayImage ? (
             <img
               src={displayImage}
@@ -1250,6 +1270,7 @@ export default function DesignStudioPage() {
               <div
                 key={el.id}
                 onMouseDown={e => handleElementMouseDown(e, el.id, 'move')}
+                onTouchStart={e => handleElementTouchStart(e, el.id, 'move')}
                 onClick={e => {
                   e.stopPropagation();
                   setSelectedElementId(el.id);
@@ -1308,6 +1329,7 @@ export default function DesignStudioPage() {
                       <div
                         key={corner}
                         onMouseDown={e => handleElementMouseDown(e, el.id, 'resize')}
+                        onTouchStart={e => handleElementTouchStart(e, el.id, 'resize')}
                         className={`absolute w-3 h-3 bg-white border-2 border-blue-500 cursor-se-resize z-10 ${
                           corner === 'top-left'
                             ? '-top-1.5 -left-1.5'
@@ -1763,7 +1785,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const welcomePanel = showWelcome ? (
-    <div className="fixed top-14 left-16 bottom-16 w-80 bg-white border-r border-gray-200 z-20 hidden md:flex flex-col p-6 overflow-y-auto">
+    <div className="fixed top-14 left-0 right-0 bottom-12 md:left-16 md:right-auto md:bottom-16 md:w-80 bg-white md:border-r border-gray-200 z-20 flex flex-col p-6 overflow-y-auto">
       <h2 className="text-xl font-bold text-gray-900 mb-6">How do you want to start?</h2>
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
