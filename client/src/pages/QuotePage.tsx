@@ -205,7 +205,7 @@ export default function QuotePage() {
     if (currentStep === 3) return formData.printAreas.length > 0;
     if (currentStep === 4) return true;
     if (currentStep === 5) {
-      return !!(formData.customerName && formData.customerEmail && formData.customerPhone);
+      return !!(formData.customerName && formData.customerEmail && formData.customerPhone && formData.dateNeeded);
     }
     return true;
   };
@@ -990,7 +990,7 @@ export default function QuotePage() {
         <div className="mt-8 space-y-4">
           <h3 className="font-display text-lg font-bold">When do you need it?</h3>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-600">Date needed</label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">Date needed <span className="text-red-600">*</span></label>
             <input
               type="date"
               value={formData.dateNeeded}
