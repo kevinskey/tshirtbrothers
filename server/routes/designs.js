@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { authenticate } from '../middleware/auth.js';
 import pool from '../db.js';
 
@@ -6,6 +7,32 @@ const router = Router();
 
 // All design routes require authentication
 router.use(authenticate);
+
+// Helper: upload base64 image to DO Spaces
+async function uploadToSpaces(base64Data, folder, filename) {
+  const spacesKey = process.env.SPACES_KEY;
+  const spacesSecret = process.env.SPACES_SECRET;
+  if (!spacesKey || !spacesSecret) return null;
+
+  const s3 = new S3Client({
+    endpoint: process.env.SPACES_ENDPOINT,
+    region: process.env.SPACES_REGION || 'nyc3',
+    credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
+  });
+
+  const buffer = Buffer.from(base64Data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+  const key = `${folder}/${filename}`;
+
+  await s3.send(new PutObjectCommand({
+    Bucket: process.env.SPACES_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: 'image/png',
+    ACL: 'public-read',
+  }));
+
+  return `${process.env.SPACES_ENDPOINT}/${process.env.SPACES_BUCKET}/${key}`;
+}
 
 // GET / - List user's saved designs
 router.get('/', async (req, res, next) => {
@@ -39,12 +66,35 @@ router.get('/:id', async (req, res, next) => {
 // POST / - Save a new design
 router.post('/', async (req, res, next) => {
   try {
-    const { name, product_ss_id, product_name, product_image, color_index, elements, thumbnail } = req.body;
+    const { name, product_ss_id, product_name, product_image, color_index, elements, mockup_image, print_file } = req.body;
+    const designName = name || 'Untitled design';
+    const timestamp = Date.now();
+    const safeName = designName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+
+    // Upload mockup and print file to DO Spaces
+    let mockupUrl = null;
+    let printUrl = null;
+
+    if (mockup_image) {
+      mockupUrl = await uploadToSpaces(
+        mockup_image,
+        `customers/${req.user.id}/mockups`,
+        `${safeName}-mockup-${timestamp}.png`
+      );
+    }
+    if (print_file) {
+      printUrl = await uploadToSpaces(
+        print_file,
+        `customers/${req.user.id}/print-ready`,
+        `${safeName}-print-300dpi-${timestamp}.png`
+      );
+    }
+
     const result = await pool.query(
-      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, name, updated_at`,
-      [req.user.id, name || 'Untitled design', product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(elements || []), thumbnail]
+      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail, mockup_url, print_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, name, updated_at, mockup_url, print_url`,
+      [req.user.id, designName, product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(elements || []), mockupUrl, mockupUrl, printUrl]
     );
     res.json(result.rows[0]);
   } catch (err) {
