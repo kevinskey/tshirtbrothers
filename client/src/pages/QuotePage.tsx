@@ -630,7 +630,7 @@ export default function QuotePage() {
         </div>
 
         {/* Step content */}
-        <div className="min-h-[400px]">{stepRenderers[currentStep - 1]()}</div>
+        <div className="min-h-[400px]">{stepRenderers[currentStep - 1]?.()}</div>
 
         {/* Navigation (hidden on step 5 once submitted or for submit btn) */}
         {currentStep < 5 && (

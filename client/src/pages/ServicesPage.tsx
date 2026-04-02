@@ -4,7 +4,6 @@ import {
   Shirt,
   Scissors,
   Trophy,
-  Zap,
   ShieldCheck,
   MapPin,
   Upload,
