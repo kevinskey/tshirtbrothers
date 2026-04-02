@@ -298,6 +298,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const toggleTool = useCallback((tool: ToolName) => {
+    setShowWelcome(false);
     setActiveTool(prev => (prev === tool ? null : tool));
   }, []);
 
@@ -1038,7 +1039,7 @@ export default function DesignStudioPage() {
       {/* Add Products button */}
       <button
         type="button"
-        onClick={() => setActiveTool('products')}
+        onClick={() => { setShowWelcome(false); setSelectedElementId(null); setActiveTool('products'); }}
         className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition"
       >
         <span className="text-lg">+</span> Add Products
@@ -1055,7 +1056,7 @@ export default function DesignStudioPage() {
               <p className="text-sm font-semibold text-gray-900 truncate">{selectedProduct.name}</p>
               <button
                 type="button"
-                onClick={() => setActiveTool('products')}
+                onClick={() => { setShowWelcome(false); setSelectedElementId(null); setActiveTool('products'); }}
                 className="text-xs font-medium text-red-600 hover:underline whitespace-nowrap"
               >
                 Change Product
