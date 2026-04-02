@@ -37,11 +37,10 @@ export default function HeroSection() {
             <div className="flex justify-center lg:justify-end">
               <div className="relative rounded-2xl overflow-hidden max-w-md w-full shadow-2xl">
                 <img
-                  src="https://images.unsplash.com/photo-1529374255404-311a2a4f1fd9?auto=format&fit=crop&w=800&h=500&q=80"
-                  alt="Person wearing custom printed t-shirt"
+                  src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero%20image.webp"
+                  alt="Custom branded products - shirts, hats, bags, and more"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-orange-500/20 mix-blend-multiply" />
               </div>
             </div>
           </div>
