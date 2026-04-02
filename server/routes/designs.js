@@ -145,4 +145,56 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// GET /uploads - Get user's upload library
+router.get('/uploads', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, url, filename, created_at FROM user_uploads WHERE user_id = $1 ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /uploads - Save an uploaded image to the user's library
+router.post('/uploads', async (req, res, next) => {
+  try {
+    const { imageBase64, filename } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+    const url = await uploadToSpaces(
+      imageBase64,
+      `customers/${req.user.id}/uploads`,
+      `${(filename || 'upload').replace(/[^a-zA-Z0-9.-]/g, '-')}-${Date.now()}.png`
+    );
+
+    if (!url) return res.status(500).json({ error: 'Upload failed' });
+
+    const result = await pool.query(
+      'INSERT INTO user_uploads (user_id, url, filename) VALUES ($1, $2, $3) RETURNING id, url, filename, created_at',
+      [req.user.id, url, filename || 'upload.png']
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /uploads/:id - Remove an upload from library
+router.delete('/uploads/:id', async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM user_uploads WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

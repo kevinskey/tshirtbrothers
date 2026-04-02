@@ -349,6 +349,24 @@ export default function DesignStudioPage() {
   const [pendingUpload, setPendingUpload] = useState<string | null>(null); // base64 of just-uploaded image
   const [isRemovingBg, setIsRemovingBg] = useState(false);
 
+  // Load user's saved upload library on mount
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return;
+    fetch('/api/designs/uploads', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : [])
+      .then((uploads: { url: string }[]) => {
+        if (uploads.length > 0) {
+          setUploadedImages(prev => {
+            const existing = new Set(prev);
+            const newUrls = uploads.map(u => u.url).filter(u => !existing.has(u));
+            return [...newUrls, ...prev];
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // --- Text panel state ---
   const [textInput, setTextInput] = useState('');
   const [textFontSize, setTextFontSize] = useState(24);
@@ -491,9 +509,25 @@ export default function DesignStudioPage() {
     reader.readAsDataURL(file);
   }, []);
 
-  const finishUpload = useCallback((imageUrl: string) => {
+  const finishUpload = useCallback(async (imageUrl: string) => {
     setUploadedImages(prev => [...prev, imageUrl]);
     setPendingUpload(null);
+    // Save to user's upload library if logged in
+    const token = getAuthToken();
+    if (token) {
+      try {
+        const res = await fetch('/api/designs/uploads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ imageBase64: imageUrl, filename: 'design-upload' }),
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          // Replace the local URL with the Spaces URL
+          setUploadedImages(prev => prev.map(u => u === imageUrl ? saved.url : u));
+        }
+      } catch { /* silently fail — local version still works */ }
+    }
   }, []);
 
   const handleRemoveBg = useCallback(async () => {
