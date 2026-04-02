@@ -46,8 +46,10 @@ interface Product {
   category: string;
 }
 
-type ToolName = 'upload' | 'text' | 'art' | 'products' | null;
+type ToolName = 'upload' | 'text' | 'art' | 'products' | 'details' | 'names' | null;
 type ViewName = 'front' | 'back' | 'sleeve';
+
+const DEFAULT_PRODUCT_ID = '32'; // Gildan Softstyle T-Shirt
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -58,6 +60,7 @@ export default function DesignStudioPage() {
   const initialProductId = searchParams.get('product') || '';
 
   // --- Core state ---
+  const [showWelcome, setShowWelcome] = useState(true);
   const [activeTool, setActiveTool] = useState<ToolName>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedColorIdx, setSelectedColorIdx] = useState(0);
@@ -109,11 +112,17 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Auto-select product from URL param
+  // Auto-select product from URL param or default
   useEffect(() => {
-    if (initialProductId && products.length > 0 && !selectedProduct) {
-      const match = products.find(p => p.ss_id === initialProductId);
-      if (match) setSelectedProduct(match);
+    if (products.length > 0 && !selectedProduct) {
+      const targetId = initialProductId || DEFAULT_PRODUCT_ID;
+      const match = products.find(p => p.ss_id === targetId);
+      if (match) {
+        setSelectedProduct(match);
+      } else if (products.length > 0) {
+        // Fallback to first product
+        setSelectedProduct(products[0]);
+      }
     }
   }, [initialProductId, products, selectedProduct]);
 
@@ -242,7 +251,8 @@ export default function DesignStudioPage() {
     { name: 'upload', icon: Upload, label: 'Upload' },
     { name: 'text', icon: Type, label: 'Add Text' },
     { name: 'art', icon: Image, label: 'Add Art' },
-    { name: 'products', icon: Shirt, label: 'Products' },
+    { name: 'details', icon: Shirt, label: 'Product\nDetails' },
+    { name: 'products', icon: Move, label: 'Change\nProducts' },
   ];
 
   /* ---------------------------------------------------------------- */
@@ -563,11 +573,62 @@ export default function DesignStudioPage() {
     </div>
   );
 
+  // --- Product Details Panel ---
+  const detailsPanelContent = (
+    <div className="p-5 space-y-4">
+      {selectedProduct ? (
+        <>
+          <div className="flex items-center gap-4">
+            {selectedProduct.image_url && (
+              <img src={selectedProduct.image_url} alt="" className="w-20 h-20 rounded-lg bg-gray-100 object-contain" />
+            )}
+            <div>
+              <p className="font-semibold text-gray-900">{selectedProduct.name}</p>
+              <p className="text-sm text-gray-500">{selectedProduct.brand}</p>
+              <p className="text-xs text-gray-400 mt-1">{selectedProduct.category}</p>
+            </div>
+          </div>
+          {productColors.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
+                Color: {productColors[selectedColorIdx]?.name}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {productColors.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    title={c.name}
+                    onClick={() => setSelectedColorIdx(i)}
+                    className={`h-8 w-8 rounded-full border-2 transition ${
+                      selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                    }`}
+                    style={{ backgroundColor: c.hex || '#ccc' }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => { setActiveTool('products'); }}
+            className="w-full rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Change Product
+          </button>
+        </>
+      ) : (
+        <p className="text-sm text-gray-500">No product selected</p>
+      )}
+    </div>
+  );
+
   const panelContentMap: Record<string, { title: string; content: React.ReactNode }> = {
     upload: { title: 'Upload Design', content: uploadPanelContent },
     text: { title: 'Add Text', content: textPanelContent },
     art: { title: 'Add Art', content: artPanelContent },
-    products: { title: 'Products', content: productsPanelContent },
+    details: { title: 'Product Details', content: detailsPanelContent },
+    products: { title: 'Change Products', content: productsPanelContent },
   };
 
   const activePanel = activeTool ? panelContentMap[activeTool] : null;
@@ -595,7 +656,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 pb-14 md:pb-0 md:ml-16 ${canvasLeftOffset} transition-all duration-200`}
+      className={`flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 pb-14 md:pb-16 md:ml-16 ${canvasLeftOffset} transition-all duration-200`}
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
@@ -744,60 +805,126 @@ export default function DesignStudioPage() {
   /*  Render: Bottom-Right Product Card                                */
   /* ---------------------------------------------------------------- */
 
-  const productCard = selectedProduct ? (
-    <div
-      className="fixed bottom-4 right-4 z-30 hidden md:flex items-center gap-3 rounded-xl bg-white p-4 shadow-lg border border-gray-100"
-      onClick={e => e.stopPropagation()}
-    >
-      <div className="h-12 w-12 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
-        {displayImage && (
-          <img src={displayImage} alt="" className="w-full h-full object-contain" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-gray-900 truncate max-w-[140px]">{selectedProduct.name}</p>
-        <p className="text-xs text-gray-500">{productColors[selectedColorIdx]?.name ?? 'Default'}</p>
-      </div>
-      <div className="flex flex-col gap-1 ml-2">
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTool('products');
-          }}
-          className="text-[11px] font-medium text-red-600 hover:underline whitespace-nowrap"
-        >
-          Change Product
-        </button>
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowColorPicker(prev => !prev)}
-            className="flex items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap"
-          >
-            Change Color <ChevronDown className="h-3 w-3" />
-          </button>
-          {showColorPicker && productColors.length > 0 && (
-            <div className="absolute bottom-full right-0 mb-2 rounded-lg bg-white border border-gray-200 shadow-lg p-3 min-w-[160px]">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Colors</p>
-              <div className="flex flex-wrap gap-1.5">
-                {productColors.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    title={c.name}
-                    onClick={() => {
-                      setSelectedColorIdx(i);
-                      setShowColorPicker(false);
-                    }}
-                    className={`h-6 w-6 rounded-full border transition ${
-                      selectedColorIdx === i ? 'ring-2 ring-red-500 ring-offset-1' : 'border-gray-200'
-                    }`}
-                    style={{ backgroundColor: c.hex || '#ccc' }}
-                  />
-                ))}
+  /* ---------------------------------------------------------------- */
+  /*  Render: Bottom Product Bar (CustomInk style)                     */
+  /* ---------------------------------------------------------------- */
+
+  const bottomBar = (
+    <div className="fixed bottom-0 left-0 right-0 z-30 hidden md:flex items-center h-16 bg-white border-t border-gray-200 px-4 gap-4">
+      {/* Add Products button */}
+      <button
+        type="button"
+        onClick={() => setActiveTool('products')}
+        className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition"
+      >
+        <span className="text-lg">+</span> Add Products
+      </button>
+
+      {/* Product thumbnail + info */}
+      {selectedProduct && (
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="h-12 w-12 rounded bg-gray-100 overflow-hidden flex-shrink-0">
+            {displayImage && <img src={displayImage} alt="" className="w-full h-full object-contain" />}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-gray-900 truncate">{selectedProduct.name}</p>
+              <button
+                type="button"
+                onClick={() => setActiveTool('products')}
+                className="text-xs font-medium text-red-600 hover:underline whitespace-nowrap"
+              >
+                Change Product
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {productColors[selectedColorIdx]?.hex && (
+                <span
+                  className="inline-block h-4 w-4 rounded-full border border-gray-300"
+                  style={{ backgroundColor: productColors[selectedColorIdx].hex }}
+                />
+              )}
+              <span className="text-xs text-gray-500">{productColors[selectedColorIdx]?.name ?? 'White'}</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowColorPicker(prev => !prev)}
+                  className="text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+                >
+                  Change Product Color
+                </button>
+                {showColorPicker && productColors.length > 0 && (
+                  <div className="absolute bottom-full left-0 mb-2 rounded-lg bg-white border border-gray-200 shadow-xl p-3 min-w-[200px] z-50">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Colors</p>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                      {productColors.map((c, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          title={c.name}
+                          onClick={() => { setSelectedColorIdx(i); setShowColorPicker(false); }}
+                          className={`h-7 w-7 rounded-full border-2 transition ${
+                            selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                          }`}
+                          style={{ backgroundColor: c.hex || '#ccc' }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Right actions */}
+      <div className="flex items-center gap-3 ml-auto">
+        <button type="button" className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition">
+          <Save className="h-4 w-4" /> Save | Share
+        </button>
+        <Link
+          to="/quote"
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
+        >
+          <Save className="h-4 w-4" /> Get Price
+        </Link>
+      </div>
+    </div>
+  );
+
+  /* ---------------------------------------------------------------- */
+  /*  Render: Welcome Panel                                            */
+  /* ---------------------------------------------------------------- */
+
+  const welcomePanel = showWelcome ? (
+    <div className={`absolute top-0 left-16 bottom-0 w-[420px] bg-white border-r border-gray-200 z-20 hidden md:flex flex-col p-8 overflow-y-auto`}>
+      <h2 className="text-2xl font-bold text-gray-900 mb-8">How do you want to start?</h2>
+      <div className="grid grid-cols-2 gap-4 mb-8">
+        {[
+          { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
+          { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
+          { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
+          { label: 'Change\nProducts', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
+        ].map(item => (
+          <button
+            key={item.label}
+            type="button"
+            onClick={item.action}
+            className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-gray-200 p-6 hover:border-blue-500 hover:bg-blue-50 transition group"
+          >
+            <item.icon className="h-10 w-10 text-blue-600 group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-semibold text-gray-700 whitespace-pre-line text-center">{item.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-auto">
+        <p className="text-sm font-bold text-gray-900 mb-2">Uploading anytime is simple!</p>
+        <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
+          <Move className="h-4 w-4 text-blue-500" /> Drag and drop anywhere
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <Upload className="h-4 w-4 text-blue-500" /> Copy and paste from clipboard
         </div>
       </div>
     </div>
@@ -812,9 +939,10 @@ export default function DesignStudioPage() {
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
-      {toolPanel}
+      {!showWelcome && toolPanel}
+      {welcomePanel}
       {canvas}
-      {productCard}
+      {bottomBar}
     </div>
   );
 }
