@@ -4,22 +4,59 @@ import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 
+interface ColorInfo {
+  name: string;
+  hex: string;
+  image?: string;
+}
+
 interface Product {
   id: string;
+  ss_id?: string;
   name: string;
   brand: string;
-  styleNumber: string;
+  styleNumber?: string;
+  style_number?: string;
   category: string;
-  colors: string[];
-  sizeRange: string;
+  colors: (string | ColorInfo)[];
+  sizes?: string[];
+  sizeRange?: string;
   imageUrl?: string;
+  image_url?: string;
 }
 
 interface ProductsResponse {
   products: Product[];
   totalPages: number;
-  currentPage: number;
-  totalProducts: number;
+  total: number;
+  page: number;
+  currentPage?: number;
+  totalProducts?: number;
+}
+
+// Normalize API product to display format
+function getProductImage(p: Product): string | undefined {
+  return p.imageUrl || p.image_url || undefined;
+}
+function getProductStyleNumber(p: Product): string {
+  return p.styleNumber || p.style_number || '';
+}
+function getProductColors(p: Product): { hex: string; name: string }[] {
+  if (!p.colors || p.colors.length === 0) return [];
+  return p.colors.map(c => {
+    if (typeof c === 'string') return { hex: c, name: c };
+    return { hex: c.hex || '#ccc', name: c.name || '' };
+  });
+}
+function getProductSizeRange(p: Product): string {
+  if (p.sizeRange) return p.sizeRange;
+  if (p.sizes && p.sizes.length > 0) {
+    return `${p.sizes[0]}-${p.sizes[p.sizes.length - 1]}`;
+  }
+  return '';
+}
+function getProductId(p: Product): string {
+  return p.id || p.ss_id || '';
 }
 
 const SAMPLE_PRODUCTS: Product[] = [
@@ -188,9 +225,9 @@ export default function ShopPage() {
     ? filterSampleProducts(search, brand, category)
     : [];
   const products = useFallback ? filtered : data.products;
-  const totalPages = useFallback ? 1 : data.totalPages;
-  const currentPage = useFallback ? 1 : data.currentPage;
-  const totalProducts = useFallback ? filtered.length : data.totalProducts;
+  const totalPages = useFallback ? 1 : (data.totalPages || 1);
+  const currentPage = useFallback ? 1 : (data.currentPage || data.page || 1);
+  const totalProducts = useFallback ? filtered.length : (data.totalProducts || data.total || 0);
 
   return (
     <Layout>
@@ -274,18 +311,26 @@ export default function ShopPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-              {products.map((product) => (
+              {products.map((product) => {
+                const imgUrl = getProductImage(product);
+                const colors = getProductColors(product);
+                const styleNum = getProductStyleNumber(product);
+                const sizeRange = getProductSizeRange(product);
+                const pid = getProductId(product);
+                return (
                 <div
-                  key={product.id}
+                  key={pid}
                   className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group"
                 >
-                  {/* Image placeholder */}
-                  <div className="bg-gray-100 aspect-square flex items-center justify-center">
-                    {product.imageUrl ? (
+                  {/* Image */}
+                  <div className="bg-gray-100 aspect-square flex items-center justify-center overflow-hidden">
+                    {imgUrl ? (
                       <img
-                        src={product.imageUrl}
+                        src={imgUrl}
                         alt={product.name}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain p-4"
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
                       <span className="text-gray-400 text-sm font-medium">
@@ -303,29 +348,31 @@ export default function ShopPage() {
                       {product.name}
                     </h3>
                     <p className="text-xs text-gray-500 mt-1">
-                      {product.styleNumber} &middot; {product.colors.length}{' '}
-                      colors &middot; {product.sizeRange}
+                      {styleNum}{styleNum && colors.length ? ' · ' : ''}{colors.length > 0 ? `${colors.length} colors` : ''}{sizeRange ? ` · ${sizeRange}` : ''}
                     </p>
 
                     {/* Color dots */}
+                    {colors.length > 0 && (
                     <div className="flex items-center gap-1.5 mt-3">
-                      {product.colors.slice(0, 5).map((color, i) => (
+                      {colors.slice(0, 5).map((color, i) => (
                         <span
                           key={i}
                           className="w-4 h-4 rounded-full border border-gray-200"
-                          style={{ backgroundColor: color }}
+                          style={{ backgroundColor: color.hex || '#ccc' }}
+                          title={color.name}
                         />
                       ))}
-                      {product.colors.length > 5 && (
+                      {colors.length > 5 && (
                         <span className="text-[10px] text-gray-400">
-                          +{product.colors.length - 5}
+                          +{colors.length - 5}
                         </span>
                       )}
                     </div>
+                    )}
 
                     {/* CTA */}
                     <Link
-                      to={`/shop/${product.id}`}
+                      to={`/design?product=${pid}`}
                       className="mt-4 block w-full bg-gray-900 hover:bg-gray-800 text-white text-center rounded-lg text-xs font-medium py-2.5 transition-colors"
                     >
                       View Details

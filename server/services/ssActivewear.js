@@ -63,21 +63,31 @@ export async function fetchStyle(styleId) {
   return raw ? transformStyle(raw) : null;
 }
 
+const SS_IMAGE_BASE = 'https://www.ssactivewear.com/';
+
+function toFullImageUrl(path) {
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return SS_IMAGE_BASE + path;
+}
+
 function transformStyle(raw) {
   return {
     ss_id: String(raw.styleID || raw.sku || raw.id),
     name: raw.title || raw.styleName || raw.name || '',
     brand: raw.brandName || raw.brand || '',
-    category: raw.styleName ? 'Apparel' : (raw.categoryName || raw.category || ''),
+    category: raw.baseCategory || raw.categoryName || raw.category || 'Apparel',
+    style_number: raw.styleName || raw.partNumber || '',
     base_price: parseFloat(raw.basePrice || raw.customerPrice || raw.price || 0),
     colors: Array.isArray(raw.styleColors) ? raw.styleColors.map(c => ({
       name: c.colorName || c.name || '',
       hex: c.hex1 || c.hex || '',
-      image: c.colorFrontImage || c.image || '',
+      image: toFullImageUrl(c.colorFrontImage || c.image),
     })) : [],
     sizes: Array.isArray(raw.styleSizes) ? raw.styleSizes.map(s => s.sizeName || s.name || s) : [],
-    image_url: raw.styleImage || raw.mainImage || raw.imageUrl || null,
-    back_image_url: raw.styleImageSide || raw.styleImageBack || null,
+    image_url: toFullImageUrl(raw.styleImage || raw.mainImage || raw.imageUrl),
+    brand_image: toFullImageUrl(raw.brandImage),
+    back_image_url: toFullImageUrl(raw.styleImageSide || raw.styleImageBack),
     specifications: {
       description: raw.description || '',
       material: raw.material || '',
