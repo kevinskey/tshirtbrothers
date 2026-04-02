@@ -395,16 +395,22 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Fetch the default product directly by searching for it
+  // Fetch the specific product by ss_id
   const targetId = initialProductId || DEFAULT_PRODUCT_ID;
   const { data: defaultProductData } = useQuery({
     queryKey: ['default-product', targetId],
     queryFn: async () => {
-      const res = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
-      if (!res.ok) return null;
-      const data = await res.json() as { products: Product[] };
-      // Find the exact match by ss_id, or first Gildan t-shirt
-      return data.products.find(p => p.ss_id === targetId) || data.products[0] || null;
+      // Try to find by ss_id first
+      const res = await fetch(`/api/products/by-ssid/${targetId}`);
+      if (res.ok) {
+        const p = await res.json();
+        if (p) return p as Product;
+      }
+      // Fallback: search for Gildan Ultra Cotton
+      const fallback = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
+      if (!fallback.ok) return null;
+      const data = await fallback.json() as { products: Product[] };
+      return data.products.find(p => String(p.ss_id) === String(targetId)) || data.products[0] || null;
     },
     enabled: !selectedProduct,
   });

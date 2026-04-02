@@ -292,6 +292,17 @@ router.get('/colors/:styleId', async (req, res, next) => {
   }
 });
 
+// GET /by-ssid/:ssId - Find product by ss_id
+router.get('/by-ssid/:ssId', async (req, res, next) => {
+  try {
+    const result = await pool.query('SELECT * FROM products WHERE ss_id = $1 LIMIT 1', [req.params.ssId]);
+    if (result.rows.length === 0) return res.status(404).json(null);
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /:id - Single product
 router.get('/:id', async (req, res, next) => {
   try {
