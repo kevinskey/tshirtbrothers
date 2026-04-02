@@ -119,29 +119,42 @@ export interface DashboardStats {
   totalCategories: number;
 }
 
-export async function fetchDashboardStats() {
-  return authRequest<DashboardStats>('/admin/stats');
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  // Build stats from multiple endpoints
+  const [quotesRes, productsRes, categoriesRes] = await Promise.all([
+    fetch(`${API_BASE}/quotes`, { headers: { ...getAuthHeaders() } }).then(r => r.ok ? r.json() : { quotes: [] }),
+    fetch(`${API_BASE}/products?limit=1`).then(r => r.ok ? r.json() : { total: 0 }),
+    fetch(`${API_BASE}/categories`).then(r => r.ok ? r.json() : []),
+  ]);
+  const quotes = Array.isArray(quotesRes) ? quotesRes : quotesRes.quotes || [];
+  return {
+    totalQuotes: quotes.length,
+    pendingQuotes: quotes.filter((q: Quote) => q.status === 'pending').length,
+    totalProducts: productsRes.total || 0,
+    totalCategories: Array.isArray(categoriesRes) ? categoriesRes.length : 0,
+  };
 }
 
 export async function fetchQuotes(status?: string) {
   const query = status && status !== 'all' ? `?status=${status}` : '';
-  return authRequest<Quote[]>(`/admin/quotes${query}`);
+  return authRequest<Quote[]>(`/quotes${query}`);
 }
 
 export async function updateQuoteStatus(id: string, status: string) {
-  return authRequest<Quote>(`/admin/quotes/${id}/status`, {
+  return authRequest<Quote>(`/quotes/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
 }
 
 export async function fetchAdminProducts(search?: string) {
-  const query = search ? `?search=${encodeURIComponent(search)}` : '';
-  return authRequest<Product[]>(`/admin/products${query}`);
+  const query = search ? `?search=${encodeURIComponent(search)}&limit=100` : '?limit=100';
+  const data = await request<{ products: Product[] }>(`/products${query}`);
+  return data.products || [];
 }
 
 export async function fetchCategories() {
-  return authRequest<Category[]>('/admin/categories');
+  return request<Category[]>('/categories');
 }
 
 export async function createCategory(data: { name: string; parentId?: string; description: string }) {
