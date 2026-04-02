@@ -1,28 +1,65 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
 import { submitQuote } from '@/lib/api';
 import {
-  Shirt,
+  Search,
   ChevronRight,
   ChevronLeft,
   Check,
   Upload,
-  Sparkles,
   X,
+  Shirt,
+  Palette,
+  Printer,
+  Image,
+  ClipboardCheck,
+  Loader2,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+interface SSProduct {
+  id: string;
+  ss_id?: string;
+  style_id?: string;
+  name: string;
+  brand: string;
+  category: string;
+  image_url?: string;
+  price?: number;
+}
+
+interface SSColor {
+  name: string;
+  hex: string;
+  image: string | null;
+  backImage: string | null;
+}
+
+interface ProductsResponse {
+  products: SSProduct[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
+interface ColorsResponse {
+  colors: SSColor[];
+}
+
 interface FormData {
-  garment: string;
-  color: string;
+  product: SSProduct | null;
+  color: SSColor | null;
   sizes: Record<string, number>;
   printAreas: string[];
   designFile: File | null;
   designPreview: string | null;
-  aiPrompt: string;
+  designNotes: string;
+  designIdea: string;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -30,13 +67,14 @@ interface FormData {
 }
 
 const INITIAL_FORM: FormData = {
-  garment: '',
-  color: '',
-  sizes: { S: 0, M: 0, L: 0, XL: 0, '2XL': 0, '3XL': 0 },
+  product: null,
+  color: null,
+  sizes: { XS: 0, S: 0, M: 0, L: 0, XL: 0, '2XL': 0, '3XL': 0, '4XL': 0, '5XL': 0 },
   printAreas: ['Full Front'],
   designFile: null,
   designPreview: null,
-  aiPrompt: '',
+  designNotes: '',
+  designIdea: '',
   customerName: '',
   customerEmail: '',
   customerPhone: '',
@@ -48,61 +86,46 @@ const INITIAL_FORM: FormData = {
 /* ------------------------------------------------------------------ */
 
 const STEPS = [
-  'Choose Garment',
-  'Select Color & Size',
-  'Print Areas',
-  'Upload Design',
-  'Review & Submit',
+  { label: 'Choose Product', icon: Shirt },
+  { label: 'Color & Sizes', icon: Palette },
+  { label: 'Print Areas', icon: Printer },
+  { label: 'Upload Design', icon: Image },
+  { label: 'Review & Submit', icon: ClipboardCheck },
 ];
 
-const GARMENTS = [
-  { id: 'tshirt', label: 'T-Shirt' },
-  { id: 'hoodie', label: 'Hoodie' },
-  { id: 'polo', label: 'Polo' },
-  { id: 'longsleeve', label: 'Long Sleeve' },
-  { id: 'sweatshirt', label: 'Sweatshirt' },
-  { id: 'tanktop', label: 'Tank Top' },
+const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
+
+const PRINT_AREAS: { id: string; label: string; price: string; cost: number }[] = [
+  { id: 'Full Front', label: 'Full Front', price: 'Included', cost: 0 },
+  { id: 'Full Back', label: 'Full Back', price: '+$2.00/item', cost: 2 },
+  { id: 'Left Chest', label: 'Left Chest', price: '+$1.50/item', cost: 1.5 },
+  { id: 'Left Arm', label: 'Left Arm', price: '+$3.00/item', cost: 3 },
+  { id: 'Right Arm', label: 'Right Arm', price: '+$3.00/item', cost: 3 },
 ];
 
-const COLORS: { name: string; hex: string }[] = [
-  { name: 'White', hex: '#FFFFFF' },
-  { name: 'Black', hex: '#000000' },
-  { name: 'Navy', hex: '#1e3a5f' },
-  { name: 'Red', hex: '#dc2626' },
-  { name: 'Green', hex: '#16a34a' },
-  { name: 'Gray', hex: '#6b7280' },
-  { name: 'Royal Blue', hex: '#2563eb' },
-  { name: 'Purple', hex: '#7c3aed' },
-  { name: 'Kelly Green', hex: '#15803d' },
-  { name: 'Maroon', hex: '#7f1d1d' },
-];
+const PRODUCTS_PER_PAGE = 12;
 
-const SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+/* ------------------------------------------------------------------ */
+/*  API helpers                                                        */
+/* ------------------------------------------------------------------ */
 
-const PRINT_AREAS: { id: string; label: string; price: string }[] = [
-  { id: 'Full Front', label: 'Full Front', price: 'included' },
-  { id: 'Full Back', label: 'Full Back', price: '+$2/shirt' },
-  { id: 'Left Chest', label: 'Left Chest', price: '+$1/shirt' },
-  { id: 'Left Sleeve', label: 'Left Sleeve', price: '+$3/shirt' },
-  { id: 'Right Sleeve', label: 'Right Sleeve', price: '+$3/shirt' },
-];
+async function fetchProductsPage({ search, page }: { search: string; page: number }): Promise<ProductsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(PRODUCTS_PER_PAGE),
+  });
+  if (search) params.set('search', search);
+  const res = await fetch(`/api/products?${params.toString()}`);
+  if (!res.ok) throw new Error('Failed to fetch products');
+  return res.json() as Promise<ProductsResponse>;
+}
 
-const PRINT_AREA_COST: Record<string, number> = {
-  'Full Front': 0,
-  'Full Back': 2,
-  'Left Chest': 1,
-  'Left Sleeve': 3,
-  'Right Sleeve': 3,
-};
-
-const BASE_PRICES: Record<string, number> = {
-  tshirt: 8,
-  hoodie: 18,
-  polo: 14,
-  longsleeve: 12,
-  sweatshirt: 16,
-  tanktop: 7,
-};
+async function fetchProductColors(ssId: string): Promise<SSColor[]> {
+  const res = await fetch(`/api/products/colors/${ssId}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as ColorsResponse;
+  return data.colors ?? [];
+}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -111,10 +134,12 @@ const BASE_PRICES: Record<string, number> = {
 export default function QuotePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<FormData>(INITIAL_FORM);
-  const [designTab, setDesignTab] = useState<'upload' | 'ai'>('upload');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* helpers */
   const update = useCallback(
@@ -122,21 +147,27 @@ export default function QuotePage() {
     [],
   );
 
-  const totalQty = Object.values(formData.sizes).reduce((a, b) => a + b, 0);
-
-  const printAreaExtra = formData.printAreas.reduce(
-    (sum, area) => sum + (PRINT_AREA_COST[area] ?? 0),
-    0,
+  const totalQty = useMemo(
+    () => Object.values(formData.sizes).reduce((a, b) => a + b, 0),
+    [formData.sizes],
   );
 
-  const unitPrice = (BASE_PRICES[formData.garment] ?? 0) + printAreaExtra;
-  const estimatedTotal = unitPrice * totalQty;
+  const handleSearchChange = useCallback((value: string) => {
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+    }, 400);
+  }, []);
 
   const canAdvance = (): boolean => {
-    if (currentStep === 1) return !!formData.garment;
-    if (currentStep === 2) return !!formData.color && totalQty > 0;
+    if (currentStep === 1) return formData.product !== null;
+    if (currentStep === 2) return formData.color !== null && totalQty > 0;
     if (currentStep === 3) return formData.printAreas.length > 0;
-    if (currentStep === 4) return !!(formData.designPreview || formData.aiPrompt);
+    if (currentStep === 4) return true;
+    if (currentStep === 5) {
+      return !!(formData.customerName && formData.customerEmail && formData.customerPhone);
+    }
     return true;
   };
 
@@ -155,94 +186,272 @@ export default function QuotePage() {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
+      const sizeEntries = Object.fromEntries(
+        Object.entries(formData.sizes).filter(([, v]) => v > 0),
+      );
       await submitQuote({
-        garment: formData.garment,
-        color: formData.color,
-        sizes: formData.sizes,
+        productId: formData.product?.id,
+        productName: formData.product?.name,
+        brand: formData.product?.brand,
+        color: formData.color?.name,
+        sizes: sizeEntries,
+        quantity: totalQty,
         printAreas: formData.printAreas,
         hasDesign: !!formData.designPreview,
-        aiPrompt: formData.aiPrompt,
+        designNotes: formData.designNotes,
+        designIdea: formData.designIdea,
         customerName: formData.customerName,
         customerEmail: formData.customerEmail,
         customerPhone: formData.customerPhone,
         notes: formData.notes,
-        estimatedTotal,
       });
       setSubmitted(true);
     } catch {
-      /* silently handle -- real app would show error */
+      // error handling could go here
     } finally {
       setSubmitting(false);
     }
   };
 
   /* ---------------------------------------------------------------- */
-  /*  Step renderers                                                    */
+  /*  Step 1: Choose Product                                           */
   /* ---------------------------------------------------------------- */
+
+  const {
+    data: productsData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: productsLoading,
+  } = useInfiniteQuery({
+    queryKey: ['quote-products', debouncedSearch],
+    queryFn: ({ pageParam }) =>
+      fetchProductsPage({ search: debouncedSearch, page: pageParam as number }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.totalPages ? lastPage.page + 1 : undefined,
+  });
+
+  const allProducts = useMemo(
+    () => productsData?.pages.flatMap((p) => p.products) ?? [],
+    [productsData],
+  );
 
   const renderStep1 = () => (
     <div>
-      <h2 className="font-display text-2xl font-bold">Choose your garment</h2>
-      <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3">
-        {GARMENTS.map((g) => (
-          <button
-            key={g.id}
-            type="button"
-            onClick={() => update({ garment: g.id })}
-            className={`flex flex-col items-center gap-3 rounded-xl border p-6 transition hover:shadow-md ${
-              formData.garment === g.id
-                ? 'ring-2 ring-red border-transparent'
-                : 'border-brand-gray-200'
-            }`}
-          >
-            <Shirt className="h-10 w-10 text-brand-gray-500" />
-            <span className="font-medium">{g.label}</span>
-          </button>
-        ))}
+      <h2 className="font-display text-2xl font-bold">Choose your product</h2>
+      <p className="mt-1 text-brand-gray-500">
+        Search our catalog of real products from S&S Activewear
+      </p>
+
+      {/* Search */}
+      <div className="relative mt-6">
+        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-gray-400" />
+        <input
+          type="text"
+          placeholder="Search products (e.g. Gildan, hoodie, polo)..."
+          value={search}
+          onChange={(e) => handleSearchChange(e.target.value)}
+          className="w-full rounded-xl border border-brand-gray-200 py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-red"
+        />
       </div>
+
+      {/* Selected product summary */}
+      {formData.product && (
+        <div className="mt-4 flex items-center gap-4 rounded-xl border-2 border-red-600 bg-red-50 p-4">
+          {formData.product.image_url && (
+            <img
+              src={formData.product.image_url}
+              alt={formData.product.name}
+              className="h-16 w-16 rounded-lg bg-white object-contain"
+            />
+          )}
+          <div className="flex-1">
+            <p className="text-xs font-semibold uppercase text-red-600">Selected</p>
+            <p className="font-display font-bold">{formData.product.name}</p>
+            <p className="text-sm text-brand-gray-500">{formData.product.brand}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => update({ product: null, color: null })}
+            className="rounded-full p-1 hover:bg-red-100"
+          >
+            <X className="h-5 w-5 text-red-600" />
+          </button>
+        </div>
+      )}
+
+      {/* Product grid */}
+      {productsLoading ? (
+        <div className="mt-10 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-brand-gray-400" />
+        </div>
+      ) : (
+        <>
+          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3">
+            {allProducts.map((product) => {
+              const isSelected = formData.product?.id === product.id;
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => update({ product, color: null })}
+                  className={`flex flex-col items-start overflow-hidden rounded-xl border text-left transition hover:shadow-md ${
+                    isSelected
+                      ? 'ring-2 ring-red-600 border-transparent'
+                      : 'border-brand-gray-200'
+                  }`}
+                >
+                  <div className="flex h-40 w-full items-center justify-center bg-brand-gray-50 p-2">
+                    {product.image_url ? (
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        className="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <Shirt className="h-16 w-16 text-brand-gray-300" />
+                    )}
+                  </div>
+                  <div className="w-full p-3">
+                    <p className="text-xs font-semibold uppercase text-brand-gray-400">
+                      {product.brand}
+                    </p>
+                    <p className="mt-0.5 text-sm font-bold leading-tight line-clamp-2">
+                      {product.name}
+                    </p>
+                    <p className="mt-1 text-xs text-brand-gray-500">{product.category}</p>
+                  </div>
+                  {isSelected && (
+                    <div className="flex w-full items-center justify-center bg-red-600 py-1.5 text-xs font-bold text-white">
+                      <Check className="mr-1 h-3 w-3" /> Selected
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {allProducts.length === 0 && !productsLoading && (
+            <p className="mt-10 text-center text-brand-gray-400">
+              No products found. Try a different search term.
+            </p>
+          )}
+
+          {hasNextPage && (
+            <div className="mt-8 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="inline-flex items-center gap-2 rounded-lg border border-brand-gray-200 px-6 py-2.5 font-semibold text-brand-gray-600 transition hover:bg-brand-gray-50 disabled:opacity-50"
+              >
+                {isFetchingNextPage ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Loading...
+                  </>
+                ) : (
+                  'Load More'
+                )}
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 
+  /* ---------------------------------------------------------------- */
+  /*  Step 2: Color & Sizes                                            */
+  /* ---------------------------------------------------------------- */
+
+  const productStyleId = formData.product?.ss_id ?? formData.product?.style_id ?? formData.product?.id ?? '';
+
+  const { data: colors = [], isLoading: colorsLoading } = useQuery({
+    queryKey: ['product-colors', productStyleId],
+    queryFn: () => fetchProductColors(productStyleId),
+    enabled: !!productStyleId && currentStep === 2,
+  });
+
   const renderStep2 = () => (
     <div>
+      {/* Product summary */}
+      {formData.product && (
+        <div className="mb-6 flex items-center gap-4 rounded-xl bg-brand-gray-50 p-4">
+          {formData.product.image_url && (
+            <img
+              src={formData.product.image_url}
+              alt={formData.product.name}
+              className="h-14 w-14 rounded-lg bg-white object-contain"
+            />
+          )}
+          <div>
+            <p className="font-display font-bold">{formData.product.name}</p>
+            <p className="text-sm text-brand-gray-500">{formData.product.brand}</p>
+          </div>
+        </div>
+      )}
+
       <h2 className="font-display text-2xl font-bold">Select color and sizes</h2>
 
       {/* Color picker */}
       <p className="mt-6 font-medium text-brand-gray-700">Color</p>
-      <div className="mt-3 flex flex-wrap gap-3">
-        {COLORS.map((c) => (
-          <button
-            key={c.name}
-            type="button"
-            title={c.name}
-            onClick={() => update({ color: c.name })}
-            className={`h-10 w-10 rounded-full border-2 transition ${
-              formData.color === c.name
-                ? 'ring-2 ring-red ring-offset-2'
-                : 'border-brand-gray-200'
-            }`}
-            style={{ backgroundColor: c.hex }}
-          />
-        ))}
-      </div>
-      {formData.color && (
-        <p className="mt-2 text-sm text-brand-gray-500">
-          Selected: {formData.color}
+      {colorsLoading ? (
+        <div className="mt-3 flex items-center gap-2 text-sm text-brand-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading colors...
+        </div>
+      ) : colors.length > 0 ? (
+        <>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {colors.map((c) => (
+              <button
+                key={c.name}
+                type="button"
+                title={c.name}
+                onClick={() => update({ color: c })}
+                className={`h-10 w-10 rounded-full border-2 transition ${
+                  formData.color?.name === c.name
+                    ? 'ring-2 ring-red-600 ring-offset-2 border-brand-gray-300'
+                    : 'border-brand-gray-200 hover:scale-110'
+                }`}
+                style={{ backgroundColor: c.hex }}
+              />
+            ))}
+          </div>
+          {formData.color && (
+            <p className="mt-2 text-sm text-brand-gray-500">
+              Selected: <span className="font-semibold text-brand-gray-700">{formData.color.name}</span>
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-3 text-sm text-brand-gray-400">
+          No color data available for this product. Please select any preferred color below.
         </p>
+      )}
+
+      {/* Color image preview */}
+      {formData.color?.image && (
+        <div className="mt-4">
+          <img
+            src={formData.color.image}
+            alt={formData.color.name}
+            className="h-32 w-32 rounded-lg border border-brand-gray-200 object-contain"
+          />
+        </div>
       )}
 
       {/* Sizes */}
       <p className="mt-8 font-medium text-brand-gray-700">Quantity per size</p>
-      <div className="mt-3 grid grid-cols-3 gap-4 sm:grid-cols-6">
+      <div className="mt-3 grid grid-cols-3 gap-4 sm:grid-cols-5 lg:grid-cols-9">
         {SIZES.map((size) => (
           <div key={size} className="flex flex-col items-center gap-1">
-            <label className="text-sm font-semibold text-brand-gray-600">
-              {size}
-            </label>
+            <label className="text-sm font-semibold text-brand-gray-600">{size}</label>
             <input
               type="number"
               min={0}
-              value={formData.sizes[size] || 0}
+              value={formData.sizes[size] ?? 0}
               onChange={(e) =>
                 update({
                   sizes: {
@@ -251,22 +460,25 @@ export default function QuotePage() {
                   },
                 })
               }
-              className="w-full rounded-lg border border-brand-gray-200 px-3 py-2 text-center focus:outline-none focus:ring-2 focus:ring-red"
+              className="w-full rounded-lg border border-brand-gray-200 px-2 py-2 text-center focus:outline-none focus:ring-2 focus:ring-red"
             />
           </div>
         ))}
       </div>
       {totalQty > 0 && (
-        <p className="mt-3 text-sm text-brand-gray-500">
-          Total quantity: {totalQty}
+        <p className="mt-3 text-sm font-semibold text-brand-gray-600">
+          Total quantity: <span className="text-red-600">{totalQty}</span>
         </p>
       )}
     </div>
   );
 
+  /* ---------------------------------------------------------------- */
+  /*  Step 3: Print Areas                                              */
+  /* ---------------------------------------------------------------- */
+
   const renderStep3 = () => {
     const toggle = (area: string) => {
-      if (area === 'Full Front') return; // always included
       update({
         printAreas: formData.printAreas.includes(area)
           ? formData.printAreas.filter((a) => a !== area)
@@ -277,23 +489,36 @@ export default function QuotePage() {
     return (
       <div>
         <h2 className="font-display text-2xl font-bold">Choose print areas</h2>
-        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:gap-12">
+        <p className="mt-1 text-brand-gray-500">
+          Select where you want your design printed. At least one area is required.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:gap-12">
           {/* Checkboxes */}
           <div className="flex-1 space-y-3">
             {PRINT_AREAS.map((pa) => (
               <label
                 key={pa.id}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-brand-gray-200 p-4 transition hover:bg-brand-gray-50"
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition hover:bg-brand-gray-50 ${
+                  formData.printAreas.includes(pa.id)
+                    ? 'border-red-600 bg-red-50'
+                    : 'border-brand-gray-200'
+                }`}
               >
                 <input
                   type="checkbox"
                   checked={formData.printAreas.includes(pa.id)}
                   onChange={() => toggle(pa.id)}
-                  disabled={pa.id === 'Full Front'}
-                  className="h-5 w-5 rounded border-brand-gray-300 text-red accent-red"
+                  className="h-5 w-5 rounded border-brand-gray-300 text-red-600 accent-red-600"
                 />
                 <span className="flex-1 font-medium">{pa.label}</span>
-                <span className="text-sm text-brand-gray-500">{pa.price}</span>
+                <span
+                  className={`text-sm font-semibold ${
+                    pa.cost === 0 ? 'text-green-600' : 'text-brand-gray-500'
+                  }`}
+                >
+                  {pa.price}
+                </span>
               </label>
             ))}
           </div>
@@ -305,16 +530,26 @@ export default function QuotePage() {
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-gray-400">
                 Front
               </span>
-              <div className="relative flex h-48 w-36 items-center justify-center rounded-xl bg-brand-gray-100">
-                <Shirt className="h-28 w-28 text-brand-gray-300" />
+              <div className="relative flex h-52 w-40 items-center justify-center rounded-xl bg-brand-gray-100">
+                <Shirt className="h-32 w-32 text-brand-gray-300" />
                 {formData.printAreas.includes('Full Front') && (
-                  <span className="absolute inset-x-6 top-14 flex items-center justify-center rounded bg-red/20 py-2 text-[10px] font-bold text-red">
-                    FRONT
+                  <span className="absolute inset-x-6 top-16 flex items-center justify-center rounded bg-red-600/20 py-3 text-[10px] font-bold text-red-700">
+                    FULL FRONT
                   </span>
                 )}
                 {formData.printAreas.includes('Left Chest') && (
-                  <span className="absolute left-4 top-12 flex h-6 w-6 items-center justify-center rounded-full bg-red/20 text-[8px] font-bold text-red">
+                  <span className="absolute left-5 top-12 flex h-7 w-7 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
                     LC
+                  </span>
+                )}
+                {formData.printAreas.includes('Left Arm') && (
+                  <span className="absolute left-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
+                    LA
+                  </span>
+                )}
+                {formData.printAreas.includes('Right Arm') && (
+                  <span className="absolute right-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
+                    RA
                   </span>
                 )}
               </div>
@@ -324,21 +559,21 @@ export default function QuotePage() {
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-gray-400">
                 Back
               </span>
-              <div className="relative flex h-48 w-36 items-center justify-center rounded-xl bg-brand-gray-100">
-                <Shirt className="h-28 w-28 text-brand-gray-300" />
+              <div className="relative flex h-52 w-40 items-center justify-center rounded-xl bg-brand-gray-100">
+                <Shirt className="h-32 w-32 text-brand-gray-300" />
                 {formData.printAreas.includes('Full Back') && (
-                  <span className="absolute inset-x-6 top-14 flex items-center justify-center rounded bg-red/20 py-2 text-[10px] font-bold text-red">
-                    BACK
+                  <span className="absolute inset-x-6 top-16 flex items-center justify-center rounded bg-red-600/20 py-3 text-[10px] font-bold text-red-700">
+                    FULL BACK
                   </span>
                 )}
-                {formData.printAreas.includes('Left Sleeve') && (
-                  <span className="absolute left-1 top-16 flex h-5 w-5 items-center justify-center rounded-full bg-red/20 text-[7px] font-bold text-red">
-                    LS
+                {formData.printAreas.includes('Left Arm') && (
+                  <span className="absolute left-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
+                    LA
                   </span>
                 )}
-                {formData.printAreas.includes('Right Sleeve') && (
-                  <span className="absolute right-1 top-16 flex h-5 w-5 items-center justify-center rounded-full bg-red/20 text-[7px] font-bold text-red">
-                    RS
+                {formData.printAreas.includes('Right Arm') && (
+                  <span className="absolute right-0 top-20 flex h-6 w-6 items-center justify-center rounded-full bg-red-600/20 text-[7px] font-bold text-red-700">
+                    RA
                   </span>
                 )}
               </div>
@@ -349,84 +584,42 @@ export default function QuotePage() {
     );
   };
 
+  /* ---------------------------------------------------------------- */
+  /*  Step 4: Upload Design                                            */
+  /* ---------------------------------------------------------------- */
+
   const renderStep4 = () => (
     <div>
       <h2 className="font-display text-2xl font-bold">Upload your design</h2>
+      <p className="mt-1 text-brand-gray-500">
+        Upload artwork or describe your design idea. This step is optional.
+      </p>
 
-      {/* Tabs */}
-      <div className="mt-6 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setDesignTab('upload')}
-          className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition ${
-            designTab === 'upload'
-              ? 'bg-red text-white'
-              : 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
-          }`}
+      {/* Drag & drop zone */}
+      <div className="mt-6">
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+          onClick={() => fileRef.current?.click()}
+          className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-12 text-center transition hover:border-red-600"
         >
-          <Upload className="h-4 w-4" /> Upload File
-        </button>
-        <button
-          type="button"
-          onClick={() => setDesignTab('ai')}
-          className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition ${
-            designTab === 'ai'
-              ? 'bg-red text-white'
-              : 'bg-brand-gray-100 text-brand-gray-600 hover:bg-brand-gray-200'
-          }`}
-        >
-          <Sparkles className="h-4 w-4" /> AI Generate
-        </button>
+          <Upload className="h-10 w-10 text-brand-gray-400" />
+          <p className="font-medium text-brand-gray-600">
+            Drag & drop your file here, or click to browse
+          </p>
+          <p className="text-sm text-brand-gray-400">PNG, JPG, or SVG accepted</p>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,.svg"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
       </div>
-
-      {/* Upload tab */}
-      {designTab === 'upload' && (
-        <div className="mt-6">
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-            onClick={() => fileRef.current?.click()}
-            className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-12 text-center transition hover:border-red"
-          >
-            <Upload className="h-10 w-10 text-brand-gray-400" />
-            <p className="font-medium text-brand-gray-600">
-              Drag & drop your file here, or click to browse
-            </p>
-            <p className="text-sm text-brand-gray-400">
-              PNG, JPG, or SVG accepted
-            </p>
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".png,.jpg,.jpeg,.svg"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-            }}
-          />
-        </div>
-      )}
-
-      {/* AI tab */}
-      {designTab === 'ai' && (
-        <div className="mt-6 space-y-4">
-          <textarea
-            rows={4}
-            placeholder="Describe the design you want (e.g., 'A bold eagle holding a flag with patriotic red and blue colors')"
-            value={formData.aiPrompt}
-            onChange={(e) => update({ aiPrompt: e.target.value })}
-            className="w-full rounded-xl border border-brand-gray-200 p-4 focus:outline-none focus:ring-2 focus:ring-red"
-          />
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-lg bg-red px-6 py-2.5 font-semibold text-white transition hover:bg-red-dark"
-          >
-            <Sparkles className="h-4 w-4" /> Generate
-          </button>
-        </div>
-      )}
 
       {/* Preview */}
       {formData.designPreview && (
@@ -441,15 +634,57 @@ export default function QuotePage() {
             <button
               type="button"
               onClick={() => update({ designFile: null, designPreview: null })}
-              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-brand-gray-800 text-white transition hover:bg-red"
+              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-brand-gray-800 text-white transition hover:bg-red-600"
             >
               <X className="h-3 w-3" />
             </button>
           </div>
         </div>
       )}
+
+      {/* Text notes */}
+      <div className="mt-6">
+        <label className="block text-sm font-medium text-brand-gray-700">
+          Notes about your design
+        </label>
+        <textarea
+          rows={2}
+          placeholder="Any specific instructions about colors, placement, size..."
+          value={formData.designNotes}
+          onChange={(e) => update({ designNotes: e.target.value })}
+          className="mt-2 w-full rounded-xl border border-brand-gray-200 p-4 focus:outline-none focus:ring-2 focus:ring-red"
+        />
+      </div>
+
+      {/* Design idea */}
+      <div className="mt-6">
+        <label className="block text-sm font-medium text-brand-gray-700">
+          Or describe your design idea
+        </label>
+        <textarea
+          rows={4}
+          placeholder="Don't have artwork yet? Describe what you want and we'll help create it..."
+          value={formData.designIdea}
+          onChange={(e) => update({ designIdea: e.target.value })}
+          className="mt-2 w-full rounded-xl border border-brand-gray-200 p-4 focus:outline-none focus:ring-2 focus:ring-red"
+        />
+      </div>
+
+      {/* Design Studio link */}
+      <div className="mt-6 rounded-xl bg-brand-gray-50 p-4">
+        <p className="text-sm text-brand-gray-600">
+          Want to create your design?{' '}
+          <Link to="/design-studio" className="font-semibold text-red-600 underline hover:text-red-700">
+            Use our Design Studio
+          </Link>
+        </p>
+      </div>
     </div>
   );
+
+  /* ---------------------------------------------------------------- */
+  /*  Step 5: Review & Submit                                          */
+  /* ---------------------------------------------------------------- */
 
   const renderStep5 = () => {
     if (submitted) {
@@ -458,18 +693,20 @@ export default function QuotePage() {
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
             <Check className="h-10 w-10 text-green-600" />
           </div>
-          <h2 className="mt-6 font-display text-3xl font-bold">
-            Quote submitted!
-          </h2>
+          <h2 className="mt-6 font-display text-3xl font-bold">Quote submitted!</h2>
           <p className="mt-3 text-lg text-brand-gray-500">
-            We'll respond within 24 hours.
+            We&apos;ll respond within 24 hours.
           </p>
+          <Link
+            to="/"
+            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-red-600 px-6 py-3 font-semibold text-white transition hover:bg-red-700"
+          >
+            Back to Home
+          </Link>
         </div>
       );
     }
 
-    const garmentLabel =
-      GARMENTS.find((g) => g.id === formData.garment)?.label ?? '';
     const sizeEntries = Object.entries(formData.sizes).filter(([, v]) => v > 0);
 
     return (
@@ -478,100 +715,161 @@ export default function QuotePage() {
 
         {/* Summary card */}
         <div className="mt-6 space-y-4 rounded-2xl border border-brand-gray-200 bg-brand-gray-50 p-6">
-          <div className="flex flex-wrap gap-8">
-            <div className="flex-1 space-y-2 text-sm">
-              <p>
-                <span className="font-semibold text-brand-gray-700">Garment:</span>{' '}
-                {garmentLabel}
-              </p>
-              <p>
-                <span className="font-semibold text-brand-gray-700">Color:</span>{' '}
-                {formData.color}
-              </p>
-              <p>
-                <span className="font-semibold text-brand-gray-700">Sizes:</span>{' '}
-                {sizeEntries.map(([s, q]) => `${s} x${q}`).join(', ')}
-              </p>
-              <p>
-                <span className="font-semibold text-brand-gray-700">
-                  Print areas:
-                </span>{' '}
-                {formData.printAreas.join(', ')}
-              </p>
+          <div className="flex flex-wrap gap-6">
+            {/* Product image */}
+            {formData.product?.image_url && (
+              <img
+                src={formData.product.image_url}
+                alt={formData.product.name}
+                className="h-28 w-28 rounded-xl border border-brand-gray-200 bg-white object-contain"
+              />
+            )}
+
+            <div className="flex-1 space-y-3 text-sm">
+              {/* Product */}
+              <div>
+                <span className="font-semibold text-brand-gray-500">Product</span>
+                <p className="font-bold">{formData.product?.name}</p>
+                <p className="text-brand-gray-500">{formData.product?.brand}</p>
+              </div>
+
+              {/* Color */}
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-brand-gray-500">Color:</span>
+                {formData.color && (
+                  <>
+                    <span
+                      className="inline-block h-4 w-4 rounded-full border border-brand-gray-300"
+                      style={{ backgroundColor: formData.color.hex }}
+                    />
+                    <span className="font-medium">{formData.color.name}</span>
+                  </>
+                )}
+              </div>
+
+              {/* Print areas */}
+              <div>
+                <span className="font-semibold text-brand-gray-500">Print Areas:</span>{' '}
+                <span className="font-medium">{formData.printAreas.join(', ')}</span>
+              </div>
             </div>
+
+            {/* Design preview */}
             {formData.designPreview && (
               <img
                 src={formData.designPreview}
                 alt="Design"
-                className="h-24 w-24 rounded-lg border border-brand-gray-200 object-contain"
+                className="h-28 w-28 rounded-xl border border-brand-gray-200 object-contain"
               />
             )}
           </div>
 
-          <div className="border-t border-brand-gray-200 pt-4">
-            <p className="text-lg font-bold">
-              Estimated total:{' '}
-              <span className="text-red">
-                ${estimatedTotal.toFixed(2)}
-              </span>
-            </p>
-            <p className="text-xs text-brand-gray-400">
-              ${unitPrice.toFixed(2)}/shirt x {totalQty} shirts
-            </p>
-          </div>
+          {/* Sizes table */}
+          {sizeEntries.length > 0 && (
+            <div className="border-t border-brand-gray-200 pt-4">
+              <p className="mb-2 text-sm font-semibold text-brand-gray-500">Sizes & Quantities</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-brand-gray-200">
+                      <th className="pb-2 text-left font-semibold text-brand-gray-500">Size</th>
+                      <th className="pb-2 text-right font-semibold text-brand-gray-500">Qty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sizeEntries.map(([size, qty]) => (
+                      <tr key={size} className="border-b border-brand-gray-100">
+                        <td className="py-1.5 font-medium">{size}</td>
+                        <td className="py-1.5 text-right">{qty}</td>
+                      </tr>
+                    ))}
+                    <tr className="font-bold">
+                      <td className="pt-2">Total</td>
+                      <td className="pt-2 text-right text-red-600">{totalQty}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Contact form */}
+        {/* Customer info form */}
         <div className="mt-8 space-y-4">
           <h3 className="font-display text-lg font-bold">Your information</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <input
-              placeholder="Full name *"
-              value={formData.customerName}
-              onChange={(e) => update({ customerName: e.target.value })}
-              className="rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
-            />
-            <input
-              type="email"
-              placeholder="Email address *"
-              value={formData.customerEmail}
-              onChange={(e) => update({ customerEmail: e.target.value })}
-              className="rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
-            />
-            <input
-              type="tel"
-              placeholder="Phone number *"
-              value={formData.customerPhone}
-              onChange={(e) => update({ customerPhone: e.target.value })}
-              className="rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+            <div>
+              <label className="mb-1 block text-sm font-medium text-brand-gray-600">
+                Full name <span className="text-red-600">*</span>
+              </label>
+              <input
+                placeholder="John Doe"
+                value={formData.customerName}
+                onChange={(e) => update({ customerName: e.target.value })}
+                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-brand-gray-600">
+                Email <span className="text-red-600">*</span>
+              </label>
+              <input
+                type="email"
+                placeholder="john@example.com"
+                value={formData.customerEmail}
+                onChange={(e) => update({ customerEmail: e.target.value })}
+                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-brand-gray-600">
+                Phone <span className="text-red-600">*</span>
+              </label>
+              <input
+                type="tel"
+                placeholder="(555) 123-4567"
+                value={formData.customerPhone}
+                onChange={(e) => update({ customerPhone: e.target.value })}
+                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-brand-gray-600">
+              Additional notes
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Any other details about your order..."
+              value={formData.notes}
+              onChange={(e) => update({ notes: e.target.value })}
+              className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
             />
           </div>
-          <textarea
-            rows={3}
-            placeholder="Additional notes (optional)"
-            value={formData.notes}
-            onChange={(e) => update({ notes: e.target.value })}
-            className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
-          />
         </div>
 
         {/* Submit */}
         <button
           type="button"
-          disabled={
-            submitting ||
-            !formData.customerName ||
-            !formData.customerEmail ||
-            !formData.customerPhone
-          }
-          onClick={handleSubmit}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-red px-8 py-3 font-semibold text-white transition hover:bg-red-dark disabled:opacity-50"
+          disabled={submitting || !canAdvance()}
+          onClick={() => void handleSubmit()}
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-red-600 px-8 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
         >
-          {submitting ? 'Submitting...' : 'Submit Quote'}
+          {submitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Submitting...
+            </>
+          ) : (
+            'Submit Quote Request'
+          )}
         </button>
       </div>
     );
   };
+
+  /* ---------------------------------------------------------------- */
+  /*  Step dispatcher                                                  */
+  /* ---------------------------------------------------------------- */
 
   const stepRenderers = [renderStep1, renderStep2, renderStep3, renderStep4, renderStep5];
 
@@ -585,45 +883,45 @@ export default function QuotePage() {
         {/* Progress bar */}
         <div className="mb-10">
           <div className="flex items-center justify-between">
-            {STEPS.map((label, i) => {
-              const step = i + 1;
-              const done = currentStep > step;
-              const active = currentStep === step;
+            {STEPS.map((step, i) => {
+              const stepNum = i + 1;
+              const done = currentStep > stepNum;
+              const active = currentStep === stepNum;
+              const Icon = step.icon;
               return (
-                <div
-                  key={label}
-                  className="flex flex-1 flex-col items-center gap-1"
-                >
+                <div key={step.label} className="flex flex-1 flex-col items-center gap-1.5">
                   <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold transition ${
+                    className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition ${
                       done
-                        ? 'bg-red text-white'
+                        ? 'bg-red-600 text-white'
                         : active
-                          ? 'bg-red text-white ring-4 ring-red-light'
+                          ? 'bg-red-600 text-white ring-4 ring-red-200'
                           : 'bg-brand-gray-200 text-brand-gray-500'
                     }`}
                   >
-                    {done ? <Check className="h-4 w-4" /> : step}
+                    {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
                   </div>
                   <span
                     className={`hidden text-center text-xs sm:block ${
-                      active ? 'font-semibold text-brand-gray-800' : 'text-brand-gray-400'
+                      active
+                        ? 'font-semibold text-brand-gray-800'
+                        : done
+                          ? 'font-medium text-red-600'
+                          : 'text-brand-gray-400'
                     }`}
                   >
-                    {label}
+                    {step.label}
                   </span>
                 </div>
               );
             })}
           </div>
-          {/* connector line */}
-          <div className="relative mt-[-30px] flex px-[18px]">
+          {/* Connector lines */}
+          <div className="relative mt-[-34px] flex px-[20px]">
             {STEPS.slice(1).map((_, i) => (
               <div
                 key={i}
-                className={`h-0.5 flex-1 ${
-                  currentStep > i + 1 ? 'bg-red' : 'bg-brand-gray-200'
-                }`}
+                className={`h-0.5 flex-1 ${currentStep > i + 1 ? 'bg-red-600' : 'bg-brand-gray-200'}`}
               />
             ))}
           </div>
@@ -632,8 +930,8 @@ export default function QuotePage() {
         {/* Step content */}
         <div className="min-h-[400px]">{stepRenderers[currentStep - 1]?.()}</div>
 
-        {/* Navigation (hidden on step 5 once submitted or for submit btn) */}
-        {currentStep < 5 && (
+        {/* Navigation */}
+        {!submitted && (
           <div className="mt-10 flex items-center justify-between">
             <button
               type="button"
@@ -643,26 +941,17 @@ export default function QuotePage() {
             >
               <ChevronLeft className="h-4 w-4" /> Back
             </button>
-            <button
-              type="button"
-              onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
-              disabled={!canAdvance()}
-              className="inline-flex items-center gap-2 rounded-lg bg-red px-6 py-2.5 font-semibold text-white transition hover:bg-red-dark disabled:opacity-50"
-            >
-              Next <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        )}
 
-        {currentStep === 5 && !submitted && (
-          <div className="mt-10 flex items-center justify-start">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(4)}
-              className="inline-flex items-center gap-2 rounded-lg border border-brand-gray-200 px-5 py-2.5 font-semibold text-brand-gray-600 transition hover:bg-brand-gray-50"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back
-            </button>
+            {currentStep < 5 && (
+              <button
+                type="button"
+                onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
+                disabled={!canAdvance()}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-6 py-2.5 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
           </div>
         )}
       </section>
