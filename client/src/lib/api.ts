@@ -5,14 +5,23 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const { headers: optHeaders, ...restOptions } = options || {};
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (init?.headers) {
+    const h = init.headers;
+    if (h instanceof Headers) {
+      h.forEach((v, k) => { headers[k] = v; });
+    } else if (Array.isArray(h)) {
+      h.forEach(([k, v]) => { headers[k] = v; });
+    } else {
+      Object.assign(headers, h);
+    }
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
-    ...restOptions,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(optHeaders as Record<string, string>),
-    },
+    method: init?.method,
+    body: init?.body,
+    headers,
   });
 
   if (!res.ok) {
@@ -23,12 +32,15 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function authRequest<T>(path: string, options?: RequestInit): Promise<T> {
+async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeaders = getAuthHeaders();
+  const existingHeaders = init?.headers || {};
   return request<T>(path, {
-    ...options,
+    method: init?.method,
+    body: init?.body,
     headers: {
-      ...getAuthHeaders(),
-      ...options?.headers,
+      ...authHeaders,
+      ...(existingHeaders as Record<string, string>),
     },
   });
 }
