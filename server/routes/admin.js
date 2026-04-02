@@ -12,7 +12,8 @@ router.use(authenticate, adminOnly);
 // POST /sync-products - Sync products from S&S Activewear
 router.post('/sync-products', async (req, res, next) => {
   try {
-    const products = await fetchProducts();
+    const result = await fetchProducts({ limit: 500 });
+    const products = result.products || [];
 
     let upserted = 0;
     for (const product of products) {
