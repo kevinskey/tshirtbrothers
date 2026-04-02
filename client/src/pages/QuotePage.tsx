@@ -880,6 +880,34 @@ export default function QuotePage() {
   return (
     <Layout>
       <section className="container py-12 md:py-16">
+        {/* Top bar: title + next button */}
+        {!submitted && (
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="font-display text-2xl md:text-3xl font-bold">Get Your Quote</h1>
+            <div className="flex items-center gap-3">
+              {currentStep > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Back
+                </button>
+              )}
+              {currentStep < 5 && (
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
+                  disabled={!canAdvance()}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Progress bar */}
         <div className="mb-10">
           <div className="flex items-center justify-between">
