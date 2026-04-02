@@ -656,7 +656,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 pb-14 md:pb-16 md:ml-16 ${canvasLeftOffset} transition-all duration-200`}
+      className={`flex-1 flex flex-col items-center bg-gray-100 pt-20 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
