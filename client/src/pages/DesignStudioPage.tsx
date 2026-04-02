@@ -222,7 +222,7 @@ export default function DesignStudioPage() {
   const [showShareMenu, setShowShareMenu] = useState(false);
 
   // Check if user is logged in
-  const getAuthToken = () => localStorage.getItem('token');
+  const getAuthToken = () => localStorage.getItem('tsb_token');
   const isLoggedIn = () => !!getAuthToken();
 
   // Save design handler
