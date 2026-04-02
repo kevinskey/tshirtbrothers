@@ -273,6 +273,56 @@ router.put('/products/bulk-markup', async (req, res, next) => {
   }
 });
 
+// --- Custom Products ---
+
+// GET /custom-products - List all custom products
+router.get('/custom-products', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM custom_products ORDER BY created_at DESC');
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /custom-products - Create custom product
+router.post('/custom-products', async (req, res, next) => {
+  try {
+    const { name, description, category, image_url, price, price_unit, sizes, options } = req.body;
+    if (!name) return res.status(400).json({ error: 'name required' });
+    const result = await pool.query(
+      `INSERT INTO custom_products (name, description, category, image_url, price, price_unit, sizes, options)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [name, description || null, category || 'Custom', image_url || null, price || null, price_unit || 'per item', JSON.stringify(sizes || []), JSON.stringify(options || [])]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// PUT /custom-products/:id - Update custom product
+router.put('/custom-products/:id', async (req, res, next) => {
+  try {
+    const { name, description, category, image_url, price, price_unit, sizes, options, is_active } = req.body;
+    const result = await pool.query(
+      `UPDATE custom_products SET
+        name = COALESCE($1, name), description = COALESCE($2, description), category = COALESCE($3, category),
+        image_url = COALESCE($4, image_url), price = COALESCE($5, price), price_unit = COALESCE($6, price_unit),
+        sizes = COALESCE($7, sizes), options = COALESCE($8, options), is_active = COALESCE($9, is_active), updated_at = NOW()
+       WHERE id = $10 RETURNING *`,
+      [name, description, category, image_url, price, price_unit, sizes ? JSON.stringify(sizes) : null, options ? JSON.stringify(options) : null, is_active, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /custom-products/:id - Delete custom product
+router.delete('/custom-products/:id', async (req, res, next) => {
+  try {
+    const result = await pool.query('DELETE FROM custom_products WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
 // GET /settings - Get all settings as key-value object
 router.get('/settings', async (req, res, next) => {
   try {
