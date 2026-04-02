@@ -37,7 +37,7 @@ interface DesignElement {
   shapeIntensity?: number; // 0-100
 }
 
-type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone';
+type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone' | 'circle' | 'circle-bottom';
 
 const TEXT_SHAPES: { name: TextShapeName; label: string }[] = [
   { name: 'normal', label: 'NORMAL' },
@@ -52,6 +52,8 @@ const TEXT_SHAPES: { name: TextShapeName; label: string }[] = [
   { name: 'downward', label: 'DOWNWARD' },
   { name: 'upward', label: 'UPWARD' },
   { name: 'cone', label: 'CONE' },
+  { name: 'circle', label: 'CIRCLE' },
+  { name: 'circle-bottom', label: 'CIRCLE ↓' },
 ];
 
 /* SVG paths for text shapes (viewBox 0 0 200 100) */
@@ -70,6 +72,14 @@ function getShapePath(shape: TextShapeName, intensity: number): string {
     case 'downward': return `M 10,${50 - d} Q 100,${50 + d * 2} 190,${50 - d}`;
     case 'upward': return `M 10,${50 + d} Q 100,${50 - d * 2} 190,${50 + d}`;
     case 'cone': return `M 10,${50 + d} L 100,${50 - d * 1.5} L 190,${50 + d}`;
+    case 'circle': {
+      const r = 40 + (i * 30);
+      return `M 100,${100 - r} A ${r},${r} 0 1,1 99.99,${100 - r}`;
+    }
+    case 'circle-bottom': {
+      const r2 = 40 + (i * 30);
+      return `M 100,${100 + r2} A ${r2},${r2} 0 1,0 99.99,${100 + r2}`;
+    }
     default: return 'M 10,50 L 190,50';
   }
 }
@@ -79,11 +89,13 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
   fontSize: number; color: string; fontFamily: string; outline?: boolean;
 }) {
   if (shape === 'normal') return null; // handled by regular span
-  const pathId = `shape-${shape}-${intensity}`;
+  const pathId = `shape-${shape}-${intensity}-${text.length}`;
   const path = getShapePath(shape, intensity);
-  const scaledSize = fontSize * 0.5;
+  const isCircle = shape === 'circle' || shape === 'circle-bottom';
+  const scaledSize = isCircle ? fontSize * 0.35 : fontSize * 0.5;
+  const vb = isCircle ? '0 0 200 200' : '0 0 200 100';
   return (
-    <svg viewBox="0 0 200 100" className="w-full" style={{ overflow: 'visible' }}>
+    <svg viewBox={vb} className="w-full" style={{ overflow: 'visible' }}>
       <defs>
         <path id={pathId} d={path} fill="none" />
       </defs>
