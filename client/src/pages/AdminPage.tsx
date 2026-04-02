@@ -163,7 +163,9 @@ export default function AdminPage() {
   const [pricePrinting, setPricePrinting] = useState('');
   const [priceDesignFee, setPriceDesignFee] = useState('0');
   const [priceRushFee, setPriceRushFee] = useState('0');
+  const [priceShipping, setPriceShipping] = useState('0');
   const [priceMessage, setPriceMessage] = useState('');
+  const [sizeMarkups, setSizeMarkups] = useState<Record<string, string>>({});
 
   // Category form state
   const [catName, setCatName] = useState('');
@@ -319,14 +321,22 @@ export default function AdminPage() {
   function handleSendPrice(e: FormEvent) {
     e.preventDefault();
     if (!priceModalQuote) return;
-    const basePrice = parseFloat(priceBase) || 0;
-    const printingCost = parseFloat(pricePrinting) || 0;
+    // Calculate garment total from per-size prices × quantities
+    const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
+    let garmentTotal = 0;
+    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
+      Object.entries(sizes).forEach(([size, qty]) => {
+        const pricePerItem = parseFloat(sizeMarkups[size] || '0');
+        garmentTotal += pricePerItem * Number(qty);
+      });
+    }
     const designFee = parseFloat(priceDesignFee) || 0;
     const rushFee = parseFloat(priceRushFee) || 0;
-    const total = basePrice + printingCost + designFee + rushFee;
+    const shipping = parseFloat(priceShipping) || 0;
+    const total = garmentTotal + designFee + rushFee + shipping;
     sendPriceMutation.mutate({
       quoteId: priceModalQuote.id,
-      priceBreakdown: { basePrice, printingCost, designFee, rushFee, total },
+      priceBreakdown: { basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total, shipping, sizeMarkups },
       message: priceMessage || undefined,
     });
   }
@@ -337,7 +347,17 @@ export default function AdminPage() {
     setPricePrinting('');
     setPriceDesignFee('0');
     setPriceRushFee('0');
+    setPriceShipping('0');
     setPriceMessage('');
+    // Initialize per-size markups from quote sizes
+    const sizes = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
+    const markups: Record<string, string> = {};
+    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
+      Object.entries(sizes).forEach(([size, qty]) => {
+        if (Number(qty) > 0) markups[size] = '';
+      });
+    }
+    setSizeMarkups(markups);
     setOpenActionMenu(null);
   }
 
@@ -540,13 +560,13 @@ export default function AdminPage() {
                           </button>
                           {openActionMenu === q.id && (
                             <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-44">
-                              {(q.status === 'pending' || q.status === 'reviewed') && (
+                              {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                                 <button
                                   onClick={() => openPriceModal(q)}
                                   className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-purple-700 font-medium"
                                 >
                                   <DollarSign className="w-3.5 h-3.5" />
-                                  Send Price
+                                  {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                                 </button>
                               )}
                               {['approved', 'completed', 'rejected']
@@ -1309,81 +1329,107 @@ export default function AdminPage() {
                 <SSPricingInfo productName={priceModalQuote.product_name || priceModalQuote.productName || ''} quantity={priceModalQuote.quantity} printAreas={priceModalQuote.print_areas} />
 
                 <form onSubmit={handleSendPrice} className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Base Price (apparel) *</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={priceBase}
-                          onChange={(e) => setPriceBase(e.target.value)}
-                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
-                          placeholder="0.00"
-                        />
-                      </div>
+                  {/* Per-size pricing table */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Price Per Garment (by size)</label>
+                    <p className="text-xs text-gray-500 mb-3">Set the customer price per item for each size (includes garment + printing).</p>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 text-left text-gray-500">
+                            <th className="px-4 py-2 font-medium">Size</th>
+                            <th className="px-4 py-2 font-medium">Qty</th>
+                            <th className="px-4 py-2 font-medium">Price/Item</th>
+                            <th className="px-4 py-2 font-medium text-right">Subtotal</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {Object.entries(sizeMarkups).map(([size, price]) => {
+                            const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
+                            const qty = Number((sizes as Record<string, number>)?.[size] || 0);
+                            const perItem = parseFloat(price) || 0;
+                            return (
+                              <tr key={size}>
+                                <td className="px-4 py-2 font-medium text-gray-900">{size}</td>
+                                <td className="px-4 py-2 text-gray-600">{qty}</td>
+                                <td className="px-4 py-2">
+                                  <div className="relative w-24">
+                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={price}
+                                      onChange={(e) => setSizeMarkups(prev => ({ ...prev, [size]: e.target.value }))}
+                                      className="w-full pl-5 pr-2 py-1.5 rounded border border-gray-300 text-sm focus:border-red-500 focus:outline-none"
+                                      placeholder="0.00"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-4 py-2 text-right font-medium text-gray-900">${(perItem * qty).toFixed(2)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Printing Cost *</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={pricePrinting}
-                          onChange={(e) => setPricePrinting(e.target.value)}
-                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
-                          placeholder="0.00"
-                        />
+                  </div>
+
+                  {/* Additional fees */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Additional Fees</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Artwork Fee</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={priceDesignFee} onChange={(e) => setPriceDesignFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Design Fee</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={priceDesignFee}
-                          onChange={(e) => setPriceDesignFee(e.target.value)}
-                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
-                          placeholder="0.00"
-                        />
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Rush Fee</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={priceRushFee} onChange={(e) => setPriceRushFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                        </div>
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Rush Fee</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={priceRushFee}
-                          onChange={(e) => setPriceRushFee(e.target.value)}
-                          className="w-full pl-7 pr-3 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
-                          placeholder="0.00"
-                        />
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Shipping</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={priceShipping} onChange={(e) => setPriceShipping(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Total Preview */}
-                  <div className="bg-gray-900 rounded-lg p-4 text-center">
-                    <p className="text-sm text-gray-400 mb-1">Total Quote</p>
-                    <p className="text-2xl font-bold text-white">
-                      ${((parseFloat(priceBase) || 0) + (parseFloat(pricePrinting) || 0) + (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0)).toFixed(2)}
-                    </p>
-                    <p className="text-sm text-gray-400 mt-1">
-                      50% deposit: ${(((parseFloat(priceBase) || 0) + (parseFloat(pricePrinting) || 0) + (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0)) * 0.5).toFixed(2)}
-                    </p>
-                  </div>
+                  {(() => {
+                    const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
+                    let garmentTotal = 0;
+                    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
+                      Object.entries(sizes).forEach(([size, qty]) => {
+                        garmentTotal += (parseFloat(sizeMarkups[size] || '0')) * Number(qty);
+                      });
+                    }
+                    const fees = (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0) + (parseFloat(priceShipping) || 0);
+                    const total = garmentTotal + fees;
+                    return (
+                      <div className="bg-gray-900 rounded-lg p-4">
+                        <div className="flex justify-between text-sm text-gray-400 mb-1">
+                          <span>Garments subtotal</span><span className="text-white">${garmentTotal.toFixed(2)}</span>
+                        </div>
+                        {(parseFloat(priceDesignFee) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Artwork fee</span><span className="text-white">${parseFloat(priceDesignFee).toFixed(2)}</span></div>}
+                        {(parseFloat(priceRushFee) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Rush fee</span><span className="text-white">${parseFloat(priceRushFee).toFixed(2)}</span></div>}
+                        {(parseFloat(priceShipping) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Shipping</span><span className="text-white">${parseFloat(priceShipping).toFixed(2)}</span></div>}
+                        <div className="border-t border-gray-700 mt-2 pt-2 flex justify-between">
+                          <span className="text-sm font-bold text-white">Total</span>
+                          <span className="text-xl font-bold text-white">${total.toFixed(2)}</span>
+                        </div>
+                        <div className="text-center text-sm text-gray-400 mt-1">50% deposit: ${(total * 0.5).toFixed(2)}</div>
+                      </div>
+                    );
+                  })()}
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Personal Message (optional)</label>
@@ -1412,7 +1458,7 @@ export default function AdminPage() {
                     </button>
                     <button
                       type="submit"
-                      disabled={sendPriceMutation.isPending || !priceBase || !pricePrinting}
+                      disabled={sendPriceMutation.isPending || Object.values(sizeMarkups).every(v => !v || parseFloat(v) === 0)}
                       className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                     >
                       {sendPriceMutation.isPending ? (
