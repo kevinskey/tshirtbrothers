@@ -235,6 +235,44 @@ router.delete('/designs/:id', async (req, res, next) => {
   }
 });
 
+// PUT /products/:id/pricing - Update product pricing
+router.put('/products/:id/pricing', async (req, res, next) => {
+  try {
+    const { custom_price, price_visible } = req.body;
+    const result = await pool.query(
+      `UPDATE products SET
+        custom_price = $1,
+        price_visible = COALESCE($2, price_visible)
+      WHERE id = $3 RETURNING id, name, base_price, custom_price, price_visible`,
+      [custom_price !== undefined ? custom_price : null, price_visible, req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /products/bulk-markup - Apply markup to all products without custom prices
+router.put('/products/bulk-markup', async (req, res, next) => {
+  try {
+    const { markupPercent } = req.body;
+    if (markupPercent === undefined) return res.status(400).json({ error: 'markupPercent required' });
+
+    // Update settings
+    await pool.query(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('defaultMarkup', $1, NOW()) ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = NOW()`,
+      [String(markupPercent)]
+    );
+
+    // Fetch S&S pricing and apply markup to products that don't have custom prices
+    // For now, just update the setting — pricing is calculated on the fly
+    res.json({ success: true, markupPercent });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /settings - Get all settings as key-value object
 router.get('/settings', async (req, res, next) => {
   try {

@@ -857,28 +857,63 @@ export default function AdminPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
-                      <th className="px-6 py-3 font-medium">Name</th>
-                      <th className="px-6 py-3 font-medium">Brand</th>
-                      <th className="px-6 py-3 font-medium">Category</th>
-                      <th className="px-6 py-3 font-medium">Price</th>
-                      <th className="px-6 py-3 font-medium">Colors</th>
+                      <th className="px-4 py-3 font-medium">Product</th>
+                      <th className="px-4 py-3 font-medium">Brand</th>
+                      <th className="px-4 py-3 font-medium">Category</th>
+                      <th className="px-4 py-3 font-medium">Wholesale</th>
+                      <th className="px-4 py-3 font-medium">Your Price</th>
+                      <th className="px-4 py-3 font-medium w-28">Set Price</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {products.map((p: Product) => (
+                    {products.map((p: Product) => {
+                      const wholesale = typeof p.base_price === 'number' ? p.base_price : parseFloat(String(p.base_price || '0'));
+                      const customPrice = (p as unknown as Record<string, unknown>).custom_price;
+                      const hasCustom = customPrice !== null && customPrice !== undefined;
+                      return (
                       <tr key={p.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-3 text-gray-900 font-medium">{p.name}</td>
-                        <td className="px-6 py-3 text-gray-600">{p.brand}</td>
-                        <td className="px-6 py-3 text-gray-600">{p.category}</td>
-                        <td className="px-6 py-3 text-gray-600">
-                          ${typeof p.price === 'number' ? p.price.toFixed(2) : p.price}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {p.image_url && <img src={String(p.image_url)} alt="" className="h-8 w-8 rounded bg-gray-100 object-contain" />}
+                            <span className="text-gray-900 font-medium text-xs">{p.name}</span>
+                          </div>
                         </td>
-                        <td className="px-6 py-3 text-gray-600">{p.colors?.length ?? 0}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">{p.brand}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">{p.category}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{wholesale > 0 ? `$${wholesale.toFixed(2)}` : '—'}</td>
+                        <td className="px-4 py-3">
+                          {hasCustom ? (
+                            <span className="text-green-700 font-semibold text-xs">${Number(customPrice).toFixed(2)}</span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">Not set</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="$0.00"
+                            defaultValue={hasCustom ? Number(customPrice).toFixed(2) : ''}
+                            onBlur={(e) => {
+                              const val = parseFloat(e.target.value);
+                              if (!isNaN(val) && val > 0) {
+                                fetch(`/api/admin/products/${p.id}/pricing`, {
+                                  method: 'PUT',
+                                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                  body: JSON.stringify({ custom_price: val }),
+                                }).then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }));
+                              }
+                            }}
+                            className="w-24 pl-2 pr-1 py-1 rounded border border-gray-200 text-xs focus:border-red-500 focus:outline-none"
+                          />
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {products.length === 0 && !productsQuery.isLoading && (
                       <tr>
-                        <td colSpan={5} className="px-6 py-8 text-center text-gray-400">
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
                           No products found
                         </td>
                       </tr>

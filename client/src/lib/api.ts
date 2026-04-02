@@ -114,6 +114,10 @@ export interface Product {
   brand: string;
   category: string;
   price: number;
+  base_price?: number;
+  custom_price?: number | null;
+  price_visible?: boolean;
+  image_url?: string;
   colors: string[];
 }
 
