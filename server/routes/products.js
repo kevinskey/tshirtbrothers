@@ -138,6 +138,40 @@ router.get('/brands', async (req, res, next) => {
   }
 });
 
+// GET /pricing/:styleId - Get S&S wholesale pricing for a style
+router.get('/pricing/:styleId', async (req, res, next) => {
+  try {
+    const { styleId } = req.params;
+    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
+    const apiKey = process.env.SS_API_KEY;
+    if (!accountNumber || !apiKey) return res.json({ pricing: null });
+
+    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
+    const response = await fetch(
+      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=customerPrice,retailPrice,piecePrice,salePrice`,
+      { headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) }
+    );
+    if (!response.ok) return res.json({ pricing: null });
+
+    const data = await response.json();
+    const items = Array.isArray(data) ? data : [];
+    if (items.length === 0) return res.json({ pricing: null });
+
+    // Get the first item's pricing (prices are same across colors for a style)
+    const p = items[0];
+    res.json({
+      pricing: {
+        customerPrice: p.customerPrice || 0,
+        retailPrice: p.retailPrice || 0,
+        piecePrice: p.piecePrice || 0,
+        salePrice: p.salePrice || 0,
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /filters - Distinct brands and categories for dropdowns
 router.get('/filters', async (req, res, next) => {
   try {

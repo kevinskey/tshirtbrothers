@@ -80,6 +80,66 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-800',
 };
 
+// S&S Pricing helper for the Send Price modal
+function SSPricingInfo({ productName, quantity, printAreas }: { productName: string; quantity: number; printAreas?: unknown }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['ss-pricing', productName],
+    queryFn: async () => {
+      // Search for product to get its ss_id, then fetch pricing
+      const searchRes = await fetch(`/api/products?search=${encodeURIComponent(productName)}&limit=1`);
+      if (!searchRes.ok) return null;
+      const searchData = await searchRes.json();
+      const product = searchData.products?.[0];
+      if (!product?.ss_id) return null;
+
+      const priceRes = await fetch(`/api/products/pricing/${product.ss_id}`);
+      if (!priceRes.ok) return null;
+      const priceData = await priceRes.json();
+      return priceData.pricing;
+    },
+    enabled: !!productName,
+    staleTime: 1000 * 60 * 30,
+  });
+
+  if (isLoading) return <div className="bg-blue-50 rounded-lg p-4 mb-4 text-sm text-blue-600">Loading S&S pricing...</div>;
+  if (!data) return null;
+
+  const areas = Array.isArray(printAreas) ? printAreas : [];
+  const wholesaleCost = data.customerPrice * quantity;
+  const retailValue = data.retailPrice * quantity;
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+      <h4 className="text-sm font-bold text-blue-900 mb-3">S&S Activewear Wholesale Cost</h4>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+        <div className="text-blue-700">Your cost per item:</div>
+        <div className="font-semibold text-blue-900">${data.customerPrice.toFixed(2)}</div>
+        <div className="text-blue-700">Retail price per item:</div>
+        <div className="font-semibold text-blue-900">${data.retailPrice.toFixed(2)}</div>
+        <div className="text-blue-700">Qty:</div>
+        <div className="font-semibold text-blue-900">{quantity}</div>
+        <div className="text-blue-700">Total wholesale cost:</div>
+        <div className="font-bold text-blue-900">${wholesaleCost.toFixed(2)}</div>
+        <div className="text-blue-700">Total retail value:</div>
+        <div className="font-semibold text-gray-500">${retailValue.toFixed(2)}</div>
+        {areas.length > 0 && (
+          <>
+            <div className="text-blue-700">Print areas:</div>
+            <div className="font-semibold text-blue-900">{areas.join(', ')}</div>
+          </>
+        )}
+      </div>
+      <div className="mt-3 pt-3 border-t border-blue-200">
+        <p className="text-xs text-blue-600">
+          Suggested markup: Set your base price above ${data.customerPrice.toFixed(2)}/item.
+          At 2x markup → ${(data.customerPrice * 2).toFixed(2)}/item (${(data.customerPrice * 2 * quantity).toFixed(2)} total).
+          Add printing costs on top.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1240,6 +1300,9 @@ export default function AdminPage() {
                     <span>Qty: {priceModalQuote.quantity}</span>
                   </div>
                 </div>
+
+                {/* S&S Wholesale Pricing Info */}
+                <SSPricingInfo productName={priceModalQuote.product_name || priceModalQuote.productName || ''} quantity={priceModalQuote.quantity} printAreas={priceModalQuote.print_areas} />
 
                 <form onSubmit={handleSendPrice} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
