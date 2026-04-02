@@ -134,10 +134,15 @@ async function fetchProductColors(ssId: string): Promise<SSColor[]> {
 export default function QuotePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const stepContentRef = useRef<HTMLDivElement>(null);
+  const isInitialMount = useRef(true);
 
-  // Scroll to step content area on step change
+  // Scroll to top of page on step change (skip initial mount)
   useEffect(() => {
-    stepContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [currentStep]);
   const [formData, setFormData] = useState<FormData>(INITIAL_FORM);
   const [search, setSearch] = useState('');
