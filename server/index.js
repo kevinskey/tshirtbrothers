@@ -10,6 +10,7 @@ import quotesRouter from './routes/quotes.js';
 import authRouter from './routes/auth.js';
 import adminRouter from './routes/admin.js';
 import designRouter from './routes/design.js';
+import designsRouter from './routes/designs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,6 +33,7 @@ app.use('/api/quotes', quotesRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/design', designRouter);
+app.use('/api/designs', designsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

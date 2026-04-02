@@ -216,6 +216,51 @@ export default function DesignStudioPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [designName, setDesignName] = useState('Untitled design');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [savedDesignId, setSavedDesignId] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+
+  // Check if user is logged in
+  const getAuthToken = () => localStorage.getItem('token');
+  const isLoggedIn = () => !!getAuthToken();
+
+  // Save design handler
+  const handleSave = async () => {
+    if (!isLoggedIn()) {
+      setShowLoginPrompt(true);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      const token = getAuthToken();
+      const body = {
+        name: designName,
+        product_ss_id: selectedProduct?.ss_id,
+        product_name: selectedProduct?.name,
+        product_image: displayImage,
+        color_index: selectedColorIdx,
+        elements: designElements,
+      };
+      const url = savedDesignId ? `/api/designs/${savedDesignId}` : '/api/designs';
+      const method = savedDesignId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to save');
+      }
+      const data = await res.json();
+      if (!savedDesignId && data.id) setSavedDesignId(data.id);
+      alert('Design saved!');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to save design');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // --- Upload panel state ---
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
@@ -490,9 +535,12 @@ export default function DesignStudioPage() {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
         >
-          <Save className="h-4 w-4" /> Save
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {isSaving ? 'Saving...' : 'Save'}
         </button>
         <Link
           to="/quote"
@@ -1255,8 +1303,14 @@ export default function DesignStudioPage() {
 
       {/* Right actions */}
       <div className="flex items-center gap-3 ml-auto">
-        <button type="button" className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition">
-          <Save className="h-4 w-4" /> Save | Share
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition disabled:opacity-50"
+        >
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {isSaving ? 'Saving...' : savedDesignId ? 'Saved' : 'Save | Share'}
         </button>
         <Link
           to="/quote"
@@ -1550,6 +1604,30 @@ export default function DesignStudioPage() {
   /*  Final Render                                                     */
   /* ---------------------------------------------------------------- */
 
+  const loginPromptModal = showLoginPrompt ? (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLoginPrompt(false)}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center" onClick={e => e.stopPropagation()}>
+        <Save className="h-10 w-10 text-blue-600 mx-auto mb-4" />
+        <h3 className="text-lg font-bold text-gray-900 mb-2">Sign in to save your design</h3>
+        <p className="text-sm text-gray-500 mb-6">Create an account or log in to save designs and access them from any device.</p>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowLoginPrompt(false)}
+            className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <Link
+            to="/auth"
+            className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition text-center"
+          >
+            Sign In
+          </Link>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-100">
       {headerBar}
@@ -1560,6 +1638,7 @@ export default function DesignStudioPage() {
       {textEditorPanel}
       {canvas}
       {bottomBar}
+      {loginPromptModal}
     </div>
   );
 }
