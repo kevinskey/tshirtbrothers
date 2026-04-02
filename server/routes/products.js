@@ -131,6 +131,37 @@ router.get('/featured', async (req, res, next) => {
   }
 });
 
+// Color name → hex fallback map for when S&S returns empty hex values
+const COLOR_HEX_MAP = {
+  'white': '#FFFFFF', 'black': '#000000', 'navy': '#1B2A4A', 'red': '#CC0000',
+  'royal': '#1E3F8F', 'royal blue': '#1E3F8F', 'sport grey': '#90949A', 'gray': '#808080',
+  'grey': '#808080', 'charcoal': '#36454F', 'dark heather': '#3C3C3C', 'heather grey': '#B0B0B0',
+  'forest green': '#1A472A', 'green': '#228B22', 'kelly green': '#00A550',
+  'maroon': '#6B1C2A', 'cardinal red': '#8C1515', 'cherry red': '#CC0033',
+  'orange': '#FF6600', 'gold': '#FFD700', 'yellow': '#FFFF00', 'sand': '#C2B280',
+  'natural': '#F5F0E1', 'light blue': '#ADD8E6', 'carolina blue': '#57A0D3',
+  'sapphire': '#0B5394', 'purple': '#6A0DAD', 'violet': '#8B00FF',
+  'light pink': '#FFB6C1', 'pink': '#FF69B4', 'azalea': '#D73B7D', 'heliconia': '#E84A7F',
+  'brown': '#6F4E37', 'chocolate': '#3C1414', 'dark chocolate': '#2C1608',
+  'military green': '#4B5320', 'olive': '#6B6B3D', 'indigo blue': '#2E3A87',
+  'iris': '#5A4FCF', 'ice grey': '#C9D1D3', 'ash': '#B2BEB5', 'safety green': '#47FF33',
+  'safety orange': '#FF6600', 'safety pink': '#FF7098', 'lime': '#BFFF00',
+  'daisy': '#F7E75E', 'coral silk': '#FF7F7F', 'mint green': '#98FF98',
+  'sky': '#87CEEB', 'heather navy': '#2F4F6F', 'heather red': '#B24444',
+  'heather sapphire': '#4A7FB5', 'heather military green': '#5A6B3A',
+  'tropical blue': '#007BB8', 'turf green': '#3B7A3B', 'neon blue': '#4666FF',
+  'neon green': '#39FF14', 'sunset': '#FAD6A5', 'tangerine': '#FF9966',
+  'old gold': '#CFB53B', 'russet': '#80461B', 'kiwi': '#8EE53F',
+  'antique cherry red': '#9B1B30', 'antique sapphire': '#2F5496', 'antique heliconia': '#C04E81',
+  'antique irish green': '#3A7D4B', 'antique jade dome': '#467B6B', 'antique orange': '#C55B2C',
+};
+
+function resolveHex(colorName, rawHex) {
+  if (rawHex && rawHex !== '#cccccc' && rawHex !== '') return rawHex;
+  const lower = (colorName || '').toLowerCase().trim();
+  return COLOR_HEX_MAP[lower] || COLOR_HEX_MAP[lower.replace(/\s+/g, ' ')] || '#AAAAAA';
+}
+
 // GET /colors/:styleId - Fetch available colors for a style from S&S
 router.get('/colors/:styleId', async (req, res, next) => {
   try {
@@ -164,7 +195,7 @@ router.get('/colors/:styleId', async (req, res, next) => {
       if (!seen.has(name)) {
         seen.set(name, {
           name,
-          hex: p.hex1 || '#cccccc',
+          hex: resolveHex(name, p.hex1),
           image: p.colorFrontImage ? `https://www.ssactivewear.com/${p.colorFrontImage}` : null,
           backImage: p.colorBackImage ? `https://www.ssactivewear.com/${p.colorBackImage}` : null,
         });
