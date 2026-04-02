@@ -12,7 +12,7 @@ export default function HeroSection() {
   return (
     <>
       {/* Hero */}
-      <section className="bg-gradient-to-r from-emerald-600 to-teal-700">
+      <section className="bg-gradient-to-r from-orange-500 to-orange-600">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 md:py-16 lg:py-20">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
             {/* Left: Text */}
