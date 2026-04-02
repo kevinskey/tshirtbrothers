@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
@@ -133,6 +133,12 @@ async function fetchProductColors(ssId: string): Promise<SSColor[]> {
 
 export default function QuotePage() {
   const [currentStep, setCurrentStep] = useState(1);
+  const stepContentRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to step content area on step change
+  useEffect(() => {
+    stepContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [currentStep]);
   const [formData, setFormData] = useState<FormData>(INITIAL_FORM);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -880,9 +886,9 @@ export default function QuotePage() {
   return (
     <Layout>
       <section className="container py-12 md:py-16">
-        {/* Top bar: title + next button */}
+        {/* Top bar: title + next button (sticky) */}
         {!submitted && (
-          <div className="flex items-center justify-between mb-6">
+          <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm -mx-4 px-4 py-4 flex items-center justify-between mb-2 border-b border-gray-100">
             <h1 className="font-display text-2xl md:text-3xl font-bold">Get Your Quote</h1>
             <div className="flex items-center gap-3">
               {currentStep > 1 && (
@@ -956,7 +962,7 @@ export default function QuotePage() {
         </div>
 
         {/* Step content */}
-        <div className="min-h-[400px]">{stepRenderers[currentStep - 1]?.()}</div>
+        <div ref={stepContentRef} className="min-h-[400px] scroll-mt-4">{stepRenderers[currentStep - 1]?.()}</div>
 
         {/* Navigation */}
         {!submitted && (
