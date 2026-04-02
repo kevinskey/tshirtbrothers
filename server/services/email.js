@@ -73,13 +73,19 @@ function primaryButton(text, href) {
  * Sends notification to admin when a new quote is submitted.
  */
 export async function sendQuoteRequestNotification(quote) {
-  const sizesDisplay = Array.isArray(quote.sizes)
-    ? quote.sizes.map(s => typeof s === 'object' ? `${s.size}: ${s.quantity}` : s).join(', ')
-    : quote.sizes || 'N/A';
+  const sizesDisplay = (() => {
+    const s = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
+    if (!s) return 'N/A';
+    if (Array.isArray(s)) return s.map(x => typeof x === 'object' ? `${x.size}: ${x.quantity}` : x).join(', ');
+    if (typeof s === 'object') return Object.entries(s).filter(([,v]) => v > 0).map(([k,v]) => `${k}: ${v}`).join(', ');
+    return String(s);
+  })();
 
-  const printAreasDisplay = Array.isArray(quote.print_areas)
-    ? quote.print_areas.join(', ')
-    : quote.print_areas || 'N/A';
+  const printAreasDisplay = (() => {
+    const pa = typeof quote.print_areas === 'string' ? JSON.parse(quote.print_areas) : quote.print_areas;
+    if (Array.isArray(pa)) return pa.join(', ');
+    return pa || 'N/A';
+  })();
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">New Quote Request</h2>
@@ -120,13 +126,19 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
   const { basePrice, printingCost, designFee, rushFee, total, message } = priceDetails;
   const deposit = (Number(total) * 0.5).toFixed(2);
 
-  const sizesDisplay = Array.isArray(quote.sizes)
-    ? quote.sizes.map(s => typeof s === 'object' ? `${s.size}: ${s.quantity}` : s).join(', ')
-    : quote.sizes || 'N/A';
+  const sizesDisplay = (() => {
+    const s = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
+    if (!s) return 'N/A';
+    if (Array.isArray(s)) return s.map(x => typeof x === 'object' ? `${x.size}: ${x.quantity}` : x).join(', ');
+    if (typeof s === 'object') return Object.entries(s).filter(([,v]) => v > 0).map(([k,v]) => `${k}: ${v}`).join(', ');
+    return String(s);
+  })();
 
-  const printAreasDisplay = Array.isArray(quote.print_areas)
-    ? quote.print_areas.join(', ')
-    : quote.print_areas || 'N/A';
+  const printAreasDisplay = (() => {
+    const pa = typeof quote.print_areas === 'string' ? JSON.parse(quote.print_areas) : quote.print_areas;
+    if (Array.isArray(pa)) return pa.join(', ');
+    return pa || 'N/A';
+  })();
 
   // Payment link goes to a page that creates a Stripe Checkout session
   const acceptUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token}`;
