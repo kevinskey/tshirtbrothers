@@ -50,9 +50,12 @@ router.get('/', async (req, res, next) => {
       let paramIndex = 1;
 
       if (search) {
-        conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex})`);
-        params.push(`%${search}%`);
-        paramIndex++;
+        const terms = search.trim().split(/\s+/).filter(Boolean);
+        for (const term of terms) {
+          conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
+          params.push(`%${term}%`);
+          paramIndex++;
+        }
       }
       if (category) {
         conditions.push(`category = $${paramIndex}`);
@@ -84,8 +87,11 @@ router.get('/', async (req, res, next) => {
 
     // Apply filters
     if (search) {
-      const q = search.toLowerCase();
-      styles = styles.filter(s => s.name?.toLowerCase().includes(q) || s.brand?.toLowerCase().includes(q));
+      const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      styles = styles.filter(s => {
+        const haystack = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
+        return terms.every(term => haystack.includes(term));
+      });
     }
     if (brand) {
       styles = styles.filter(s => s.brand === brand);
