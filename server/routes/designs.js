@@ -68,35 +68,33 @@ router.get('/:id', async (req, res, next) => {
 // POST / - Save a new design
 router.post('/', async (req, res, next) => {
   try {
-    const { name, product_ss_id, product_name, product_image, color_index, elements, mockup_image, print_file } = req.body;
+    const { name, product_ss_id, product_name, product_image, color_index, elements } = req.body;
     const designName = name || 'Untitled design';
-    const timestamp = Date.now();
-    const safeName = designName.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
-    // Upload mockup and print file to DO Spaces
-    let mockupUrl = null;
-    let printUrl = null;
-
-    if (mockup_image) {
-      mockupUrl = await uploadToSpaces(
-        mockup_image,
-        `customers/${req.user.id}/mockups`,
-        `${safeName}-mockup-${timestamp}.png`
-      );
-    }
-    if (print_file) {
-      printUrl = await uploadToSpaces(
-        print_file,
-        `customers/${req.user.id}/print-ready`,
-        `${safeName}-print-300dpi-${timestamp}.png`
-      );
+    // Upload any design element images that are data URLs to Spaces
+    const savedElements = [];
+    for (const el of (elements || [])) {
+      if (el.type === 'image' && el.content && el.content.startsWith('data:')) {
+        try {
+          const url = await uploadToSpaces(
+            el.content,
+            `customers/${req.user.id}/design-elements`,
+            `element-${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+          );
+          savedElements.push({ ...el, content: url || el.content });
+        } catch {
+          savedElements.push(el);
+        }
+      } else {
+        savedElements.push(el);
+      }
     }
 
     const result = await pool.query(
-      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail, mockup_url, print_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, name, updated_at, mockup_url, print_url`,
-      [req.user.id, designName, product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(elements || []), mockupUrl, mockupUrl, printUrl]
+      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, updated_at`,
+      [req.user.id, designName, product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(savedElements), product_image]
     );
     res.json(result.rows[0]);
   } catch (err) {

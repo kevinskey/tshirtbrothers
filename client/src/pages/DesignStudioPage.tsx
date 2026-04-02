@@ -228,73 +228,23 @@ export default function DesignStudioPage() {
 
   // Save design handler
   // Generate a canvas image from the design area
-  const generateCanvasImage = async (includeProduct: boolean, size: number): Promise<string | null> => {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    // Clear with transparent background
-    ctx.clearRect(0, 0, size, size);
-
-    // Draw product image if requested
-    if (includeProduct && displayImage) {
-      try {
-        const img = document.createElement('img');
-        img.crossOrigin = 'anonymous';
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject();
-          img.src = displayImage;
-        });
-        ctx.drawImage(img, 0, 0, size, size);
-      } catch {
-        // Product image might be cross-origin blocked, fill with white
-        if (includeProduct) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, size, size);
-        }
-      }
-    }
-
-    // Draw design elements
-    for (const el of designElements) {
-      const x = (el.x / 100) * size;
-      const y = (el.y / 100) * size;
-      const w = (el.width / 100) * size;
-
-      if (el.type === 'image') {
-        try {
-          const img = document.createElement('img');
-          img.crossOrigin = 'anonymous';
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject();
-            img.src = el.content;
-          });
-          const aspect = img.naturalHeight / img.naturalWidth;
-          ctx.drawImage(img, x, y, w, w * aspect);
-        } catch { /* skip failed images */ }
-      } else if (el.type === 'text') {
-        const fontSize = ((el.fontSize ?? 24) * size) / 800;
-        ctx.save();
-        if (el.rotation) {
-          ctx.translate(x + w / 2, y + fontSize / 2);
-          ctx.rotate((el.rotation * Math.PI) / 180);
-          ctx.translate(-(x + w / 2), -(y + fontSize / 2));
-        }
-        ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
-        ctx.fillStyle = el.color ?? '#000000';
-        ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-        const textX = el.textAlign === 'left' ? x : el.textAlign === 'right' ? x + w : x + w / 2;
-        ctx.fillText(el.content, textX, y + fontSize);
-        ctx.restore();
-      }
-    }
-
-    return canvas.toDataURL('image/png');
-  };
+  // Build a simple JSON representation of the design for server-side rendering
+  const getDesignData = () => ({
+    product: selectedProduct ? { name: selectedProduct.name, ss_id: selectedProduct.ss_id, image: displayImage } : null,
+    colorName: productColors[selectedColorIdx]?.name || 'Default',
+    elements: designElements.map(el => ({
+      type: el.type,
+      content: el.content,
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      fontSize: el.fontSize,
+      color: el.color,
+      fontFamily: el.fontFamily,
+      rotation: el.rotation,
+      textAlign: el.textAlign,
+    })),
+  });
 
   const handleSave = async () => {
     if (!isLoggedIn()) {
@@ -305,11 +255,7 @@ export default function DesignStudioPage() {
     try {
       const token = getAuthToken();
 
-      // Generate mockup (product + design) and print-ready (design only, 300 DPI = 3000px for 10" print area)
-      const [mockupBase64, printBase64] = await Promise.all([
-        generateCanvasImage(true, 800),
-        generateCanvasImage(false, 3000),
-      ]);
+      const designData = getDesignData();
 
       const body = {
         name: designName,
@@ -318,8 +264,7 @@ export default function DesignStudioPage() {
         product_image: displayImage,
         color_index: selectedColorIdx,
         elements: designElements,
-        mockup_image: mockupBase64,
-        print_file: printBase64,
+        design_data: designData,
       };
       const url = savedDesignId ? `/api/designs/${savedDesignId}` : '/api/designs';
       const method = savedDesignId ? 'PUT' : 'POST';
