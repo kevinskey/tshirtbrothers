@@ -195,6 +195,8 @@ export default function AdminPage() {
     queryKey: ['admin', 'quotes', quoteFilter],
     queryFn: () => fetchQuotes(quoteFilter),
     enabled: activeSection === 'dashboard' || activeSection === 'quotes',
+    staleTime: 10000, // 10 seconds for admin
+    refetchOnWindowFocus: true,
   });
 
   const productsQuery = useQuery({
