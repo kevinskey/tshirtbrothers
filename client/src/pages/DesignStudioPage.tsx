@@ -33,6 +33,78 @@ interface DesignElement {
   rotation?: number;
   textAlign?: 'left' | 'center' | 'right';
   outline?: boolean;
+  textShape?: TextShapeName;
+  shapeIntensity?: number; // 0-100
+}
+
+type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone';
+
+const TEXT_SHAPES: { name: TextShapeName; label: string }[] = [
+  { name: 'normal', label: 'NORMAL' },
+  { name: 'curve', label: 'CURVE' },
+  { name: 'arch', label: 'ARCH' },
+  { name: 'bridge', label: 'BRIDGE' },
+  { name: 'valley', label: 'VALLEY' },
+  { name: 'pinch', label: 'PINCH' },
+  { name: 'bulge', label: 'BULGE' },
+  { name: 'perspective', label: 'PERSPECTIVE' },
+  { name: 'pointed', label: 'POINTED' },
+  { name: 'downward', label: 'DOWNWARD' },
+  { name: 'upward', label: 'UPWARD' },
+  { name: 'cone', label: 'CONE' },
+];
+
+/* SVG paths for text shapes (viewBox 0 0 200 100) */
+function getShapePath(shape: TextShapeName, intensity: number): string {
+  const i = intensity / 100; // 0-1
+  const d = Math.round(40 * i); // deflection amount
+  switch (shape) {
+    case 'curve': return `M 10,${50 + d} Q 100,${50 - d * 2} 190,${50 + d}`;
+    case 'arch': return `M 10,${50 + d} Q 100,${50 - d * 2} 190,${50 + d}`;
+    case 'bridge': return `M 10,${50 - d} Q 60,${50 + d} 100,${50 - d} Q 140,${50 + d} 190,${50 - d}`;
+    case 'valley': return `M 10,${50 - d} Q 100,${50 + d * 2} 190,${50 - d}`;
+    case 'pinch': return `M 10,${50 + d} Q 60,50 100,${50 + d} Q 140,50 190,${50 + d}`;
+    case 'bulge': return `M 10,50 Q 60,${50 - d} 100,50 Q 140,${50 - d} 190,50`;
+    case 'perspective': return `M 10,${50 + d} L 190,${50 - d}`;
+    case 'pointed': return `M 10,${50 + d} L 100,${50 - d} L 190,${50 + d}`;
+    case 'downward': return `M 10,${50 - d} Q 100,${50 + d * 2} 190,${50 - d}`;
+    case 'upward': return `M 10,${50 + d} Q 100,${50 - d * 2} 190,${50 + d}`;
+    case 'cone': return `M 10,${50 + d} L 100,${50 - d * 1.5} L 190,${50 + d}`;
+    default: return 'M 10,50 L 190,50';
+  }
+}
+
+function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outline }: {
+  text: string; shape: TextShapeName; intensity: number;
+  fontSize: number; color: string; fontFamily: string; outline?: boolean;
+}) {
+  if (shape === 'normal') return null; // handled by regular span
+  const pathId = `shape-${shape}-${intensity}`;
+  const path = getShapePath(shape, intensity);
+  const scaledSize = fontSize * 0.5;
+  return (
+    <svg viewBox="0 0 200 100" className="w-full" style={{ overflow: 'visible' }}>
+      <defs>
+        <path id={pathId} d={path} fill="none" />
+      </defs>
+      <text
+        fill={color}
+        fontFamily={fontFamily}
+        fontSize={scaledSize}
+        fontWeight="700"
+        textAnchor="middle"
+        style={outline ? {
+          stroke: 'rgba(0,0,0,0.5)',
+          strokeWidth: 1,
+          paintOrder: 'stroke fill',
+        } : {}}
+      >
+        <textPath href={`#${pathId}`} startOffset="50%">
+          {text}
+        </textPath>
+      </text>
+    </svg>
+  );
 }
 
 const FONT_OPTIONS = [
@@ -756,6 +828,18 @@ export default function DesignStudioPage() {
                     className="w-full object-contain pointer-events-none drop-shadow-lg"
                     draggable={false}
                   />
+                ) : el.textShape && el.textShape !== 'normal' ? (
+                  <div className="pointer-events-none w-full">
+                    <ShapedText
+                      text={el.content}
+                      shape={el.textShape}
+                      intensity={el.shapeIntensity ?? 50}
+                      fontSize={el.fontSize ?? 24}
+                      color={el.color ?? '#fff'}
+                      fontFamily={el.fontFamily ?? 'Inter'}
+                      outline={el.outline}
+                    />
+                  </div>
                 ) : (
                   <span
                     className="block whitespace-pre-wrap leading-tight pointer-events-none"
@@ -1032,6 +1116,59 @@ export default function DesignStudioPage() {
           >
             {selectedEl.outline ? 'On' : 'Off'}
           </button>
+        </div>
+
+        {/* Text Shape */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-600">Text Shape</span>
+            <span className="text-xs text-gray-400 capitalize">{selectedEl.textShape ?? 'normal'}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {TEXT_SHAPES.map(shape => (
+              <button
+                key={shape.name}
+                type="button"
+                onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
+                className={`rounded-lg border px-2 py-2.5 text-[10px] font-bold transition ${
+                  (selectedEl.textShape ?? 'normal') === shape.name
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+                style={{
+                  fontStyle: shape.name === 'curve' || shape.name === 'arch' ? 'italic' : undefined,
+                  letterSpacing: shape.name === 'pinch' ? '-0.05em' : shape.name === 'bulge' ? '0.1em' : undefined,
+                }}
+              >
+                {shape.label}
+              </button>
+            ))}
+          </div>
+          {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">Shape Intensity</span>
+                <span className="text-xs text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                value={selectedEl.shapeIntensity ?? 50}
+                onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })}
+                className="w-full accent-blue-600"
+              />
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => updateElement(selectedEl.id, { textShape: 'normal', shapeIntensity: 50 })}
+                  className="text-xs text-gray-400 hover:text-gray-700 transition"
+                >
+                  Remove Shape
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Text Size */}
