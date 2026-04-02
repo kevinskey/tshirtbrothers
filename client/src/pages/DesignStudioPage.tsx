@@ -151,6 +151,7 @@ interface ProductColor {
   name: string;
   hex: string;
   image?: string;
+  backImage?: string;
 }
 
 interface Product {
@@ -243,10 +244,23 @@ export default function DesignStudioPage() {
     }
   }, [initialProductId, products, selectedProduct]);
 
-  const productColors = selectedProduct?.colors ?? [];
+  // Fetch colors for selected product from S&S API
+  const { data: colorsData } = useQuery({
+    queryKey: ['product-colors', selectedProduct?.ss_id],
+    queryFn: async () => {
+      if (!selectedProduct?.ss_id) return { colors: [] };
+      const res = await fetch(`/api/products/colors/${selectedProduct.ss_id}`);
+      if (!res.ok) return { colors: [] };
+      return res.json() as Promise<{ colors: ProductColor[] }>;
+    },
+    enabled: !!selectedProduct?.ss_id,
+    staleTime: 1000 * 60 * 30, // cache 30 min
+  });
+
+  const productColors = colorsData?.colors ?? selectedProduct?.colors ?? [];
   const selectedColorImage = productColors[selectedColorIdx]?.image;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
-  const backImage = selectedProduct?.back_image_url || frontImage;
+  const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   const displayImage = currentView === 'back' ? backImage : frontImage;
 
   /* ---------------------------------------------------------------- */

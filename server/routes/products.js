@@ -131,6 +131,52 @@ router.get('/featured', async (req, res, next) => {
   }
 });
 
+// GET /colors/:styleId - Fetch available colors for a style from S&S
+router.get('/colors/:styleId', async (req, res, next) => {
+  try {
+    const { styleId } = req.params;
+    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
+    const apiKey = process.env.SS_API_KEY;
+    if (!accountNumber || !apiKey) {
+      return res.json({ colors: [] });
+    }
+
+    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
+    const response = await fetch(
+      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,hex1,colorFrontImage,colorBackImage`,
+      {
+        headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
+
+    if (!response.ok) {
+      return res.json({ colors: [] });
+    }
+
+    const data = await response.json();
+    const items = Array.isArray(data) ? data : [];
+
+    // Deduplicate by color name
+    const seen = new Map();
+    for (const p of items) {
+      const name = p.colorName || '';
+      if (!seen.has(name)) {
+        seen.set(name, {
+          name,
+          hex: p.hex1 || '#cccccc',
+          image: p.colorFrontImage ? `https://www.ssactivewear.com/${p.colorFrontImage}` : null,
+          backImage: p.colorBackImage ? `https://www.ssactivewear.com/${p.colorBackImage}` : null,
+        });
+      }
+    }
+
+    res.json({ colors: Array.from(seen.values()) });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /:id - Single product
 router.get('/:id', async (req, res, next) => {
   try {
