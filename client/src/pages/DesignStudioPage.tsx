@@ -226,6 +226,12 @@ export default function DesignStudioPage() {
   const [textFontSize, setTextFontSize] = useState(24);
   const [textColor, setTextColor] = useState('#FFFFFF');
 
+  // --- Art panel state ---
+  const [artCategory, setArtCategory] = useState<string | null>(null);
+  const [artSearch, setArtSearch] = useState('');
+  const [artIcons, setArtIcons] = useState<{ prefix: string; name: string }[]>([]);
+  const [artLoading, setArtLoading] = useState(false);
+
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
@@ -693,18 +699,128 @@ export default function DesignStudioPage() {
   );
 
   // --- Art Panel ---
+
+  const ART_CATEGORIES = [
+    { name: 'Most Popular', emoji: '\u2764\uFE0F', query: 'popular' },
+    { name: 'Emojis', emoji: '\uD83D\uDE0A', query: 'emoji face' },
+    { name: 'Shapes & Symbols', emoji: '\u2B50', query: 'shape symbol' },
+    { name: 'Sports & Games', emoji: '\u26BD', query: 'sport ball game' },
+    { name: 'Letters & Numbers', emoji: '\uD83D\uDD24', query: 'letter alphabet' },
+    { name: 'Animals', emoji: '\uD83D\uDC3E', query: 'animal pet' },
+    { name: 'Mascots', emoji: '\uD83D\uDC3B', query: 'mascot bear lion' },
+    { name: 'Nature', emoji: '\uD83C\uDF3F', query: 'nature tree flower' },
+    { name: 'America', emoji: '\uD83C\uDDFA\uD83C\uDDF8', query: 'usa flag america' },
+    { name: 'Parties & Events', emoji: '\uD83C\uDF89', query: 'party celebration' },
+    { name: 'Military', emoji: '\u2B50', query: 'military army' },
+    { name: 'Occupations', emoji: '\uD83D\uDC77', query: 'occupation job work' },
+    { name: 'Colleges', emoji: '\uD83C\uDFDB\uFE0F', query: 'college university education' },
+    { name: 'Music', emoji: '\uD83C\uDFB5', query: 'music note instrument' },
+    { name: 'Transportation', emoji: '\uD83D\uDE97', query: 'car truck vehicle' },
+    { name: 'Greek Life', emoji: '\uD83C\uDFDB\uFE0F', query: 'greek fraternity' },
+    { name: 'School', emoji: '\uD83C\uDF93', query: 'school graduation' },
+    { name: 'Charity', emoji: '\uD83C\uDF97\uFE0F', query: 'charity ribbon heart' },
+    { name: 'People', emoji: '\uD83D\uDC65', query: 'people person family' },
+    { name: 'Religion', emoji: '\u271D\uFE0F', query: 'religion cross church' },
+    { name: 'Food & Drink', emoji: '\uD83C\uDF55', query: 'food drink coffee' },
+    { name: 'Seasons & Holidays', emoji: '\u2744\uFE0F', query: 'holiday christmas winter' },
+  ];
+
+  const fetchArtIcons = useCallback(async (query: string) => {
+    setArtLoading(true);
+    setArtIcons([]);
+    try {
+      const res = await fetch(`https://api.iconify.design/search?query=${encodeURIComponent(query)}&limit=40`);
+      const data = await res.json();
+      const icons: { prefix: string; name: string }[] = (data.icons ?? []).map((ic: string) => {
+        const parts = ic.split(':');
+        return { prefix: parts[0], name: parts[1] };
+      });
+      setArtIcons(icons);
+    } catch {
+      setArtIcons([]);
+    } finally {
+      setArtLoading(false);
+    }
+  }, []);
+
+  const handleArtIconClick = useCallback((prefix: string, name: string) => {
+    const svgUrl = `https://api.iconify.design/${prefix}:${name}.svg?height=128&color=black`;
+    addDesignElement({ type: 'image', x: 25, y: 20, width: 20, content: svgUrl });
+  }, [addDesignElement]);
+
   const artPanelContent = (
-    <div className="p-4">
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <Image className="h-12 w-12 text-gray-300 mb-3" />
-        <p className="text-sm font-semibold text-gray-500">Coming Soon</p>
-        <p className="text-xs text-gray-400 mt-1">Clipart and stock art will be available here</p>
-        <div className="grid grid-cols-4 gap-3 mt-6 opacity-30">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-square rounded-lg bg-gray-200" />
+    <div className="p-4 space-y-3">
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search clipart..."
+          value={artSearch}
+          onChange={e => setArtSearch(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && artSearch.trim()) {
+              setArtCategory(artSearch.trim());
+              fetchArtIcons(artSearch.trim());
+            }
+          }}
+          className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        />
+      </div>
+
+      {artCategory ? (
+        /* --- Icon results view --- */
+        <div>
+          <button
+            onClick={() => { setArtCategory(null); setArtIcons([]); setArtSearch(''); }}
+            className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 font-medium mb-3"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Categories
+          </button>
+          <p className="text-xs text-gray-500 mb-2">
+            Results for &ldquo;{artCategory}&rdquo;
+          </p>
+          {artLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+            </div>
+          ) : artIcons.length === 0 ? (
+            <p className="text-center text-gray-500 py-12 text-sm">No results found</p>
+          ) : (
+            <div className="grid grid-cols-4 gap-2">
+              {artIcons.map((ic) => (
+                <button
+                  key={`${ic.prefix}:${ic.name}`}
+                  onClick={() => handleArtIconClick(ic.prefix, ic.name)}
+                  className="aspect-square rounded-lg border border-gray-200 bg-white p-2 hover:border-red-400 hover:shadow-sm transition-all flex items-center justify-center"
+                  title={ic.name}
+                >
+                  <img
+                    src={`https://api.iconify.design/${ic.prefix}:${ic.name}.svg?height=48&color=%23333333`}
+                    alt={ic.name}
+                    className="w-8 h-8 object-contain"
+                    loading="lazy"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        /* --- Category grid --- */
+        <div className="grid grid-cols-2 gap-2">
+          {ART_CATEGORIES.map(cat => (
+            <button
+              key={cat.name}
+              onClick={() => { setArtCategory(cat.name); fetchArtIcons(cat.query); }}
+              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-red-400 hover:shadow-sm transition-all"
+            >
+              <span className="text-lg">{cat.emoji}</span>
+              <span className="text-xs font-medium text-gray-700 leading-tight">{cat.name}</span>
+            </button>
           ))}
         </div>
-      </div>
+      )}
     </div>
   );
 
