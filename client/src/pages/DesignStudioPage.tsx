@@ -9,7 +9,7 @@ import {
   Shirt,
   Trash2,
   Search,
-  // ChevronDown,
+  ChevronDown,
   Save,
   X,
   Loader2,
@@ -219,6 +219,7 @@ export default function DesignStudioPage() {
   const [savedDesignId, setSavedDesignId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
   // Check if user is logged in
   const getAuthToken = () => localStorage.getItem('token');
@@ -260,6 +261,47 @@ export default function DesignStudioPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // Download design as image
+  const handleDownload = async () => {
+    if (!displayImage) return;
+    try {
+      const response = await fetch(displayImage);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${designName.replace(/\s+/g, '-')}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      // If CORS blocks the fetch, open image in new tab
+      window.open(displayImage, '_blank');
+    }
+  };
+
+  // Share handlers
+  const getShareText = () => `Check out my custom design "${designName}" on TShirt Brothers!`;
+  const getShareUrl = () => typeof window !== 'undefined' ? window.location.href : 'https://tshirtbrothers.com/design';
+
+  const handleShareFacebook = () => {
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(getShareUrl())}&quote=${encodeURIComponent(getShareText())}`, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+  const handleShareTwitter = () => {
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(getShareText())}&url=${encodeURIComponent(getShareUrl())}`, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+  const handleShareEmail = () => {
+    window.location.href = `mailto:?subject=${encodeURIComponent(getShareText())}&body=${encodeURIComponent(`I created a custom design on TShirt Brothers! Check it out: ${getShareUrl()}`)}`;
+    setShowShareMenu(false);
+  };
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(getShareUrl()).then(() => alert('Link copied to clipboard!'));
+    setShowShareMenu(false);
   };
 
   // --- Upload panel state ---
@@ -1303,15 +1345,48 @@ export default function DesignStudioPage() {
 
       {/* Right actions */}
       <div className="flex items-center gap-3 ml-auto">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition disabled:opacity-50"
-        >
-          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {isSaving ? 'Saving...' : savedDesignId ? 'Saved' : 'Save | Share'}
-        </button>
+        <div className="relative">
+          <div className="flex">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center gap-2 rounded-l-lg border-2 border-r-0 border-blue-600 px-4 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowShareMenu(prev => !prev)}
+              className="flex items-center rounded-r-lg border-2 border-blue-600 px-2.5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+          {showShareMenu && (
+            <div className="absolute bottom-full right-0 mb-2 w-56 rounded-xl bg-white border border-gray-200 shadow-2xl py-2 z-[100]">
+              <p className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Share</p>
+              <button onClick={handleShareFacebook} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
+                <span className="text-blue-600">f</span> Share on Facebook
+              </button>
+              <button onClick={handleShareTwitter} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
+                <span className="text-sky-500">𝕏</span> Share on X / Twitter
+              </button>
+              <button onClick={handleShareEmail} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
+                <span>✉️</span> Email Design
+              </button>
+              <button onClick={handleCopyLink} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
+                <span>🔗</span> Copy Link
+              </button>
+              <div className="border-t border-gray-100 my-1" />
+              <p className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Download</p>
+              <button onClick={handleDownload} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
+                <span>⬇️</span> Download Image
+              </button>
+            </div>
+          )}
+        </div>
         <Link
           to="/quote"
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
