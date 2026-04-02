@@ -33,14 +33,15 @@ export default function HeroSection() {
               </Link>
             </div>
 
-            {/* Right: Image */}
+            {/* Right: Image with orange tint */}
             <div className="flex justify-center lg:justify-end">
-              <div className="rounded-2xl overflow-hidden max-w-md w-full shadow-2xl">
+              <div className="relative rounded-2xl overflow-hidden max-w-md w-full shadow-2xl">
                 <img
-                  src="https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=800&h=500&q=80"
-                  alt="Custom branded apparel and products"
+                  src="https://images.unsplash.com/photo-1562157873-818bc0726f68?auto=format&fit=crop&w=800&h=500&q=80"
+                  alt="Custom printed t-shirts"
                   className="w-full h-full object-cover"
                 />
+                <div className="absolute inset-0 bg-orange-500/20 mix-blend-multiply" />
               </div>
             </div>
           </div>
