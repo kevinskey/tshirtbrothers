@@ -119,6 +119,25 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /brands - All brands with product counts and a sample image
+router.get('/brands', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        brand,
+        COUNT(*)::int as count,
+        (array_agg(image_url ORDER BY name))[1] as image_url
+      FROM products
+      WHERE brand IS NOT NULL AND brand != ''
+      GROUP BY brand
+      ORDER BY brand
+    `);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /filters - Distinct brands and categories for dropdowns
 router.get('/filters', async (req, res, next) => {
   try {

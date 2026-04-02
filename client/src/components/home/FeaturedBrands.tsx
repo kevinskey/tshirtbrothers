@@ -24,7 +24,7 @@ export default function FeaturedBrands() {
             Shop Featured Brands
           </h2>
           <Link
-            to="/shop"
+            to="/brands"
             className="text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors whitespace-nowrap"
           >
             See All Brands &rarr;

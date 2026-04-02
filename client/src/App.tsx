@@ -10,6 +10,7 @@ import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
 import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import BrandsPage from '@/pages/BrandsPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
@@ -29,6 +30,7 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/shop" element={<ShopPage />} />
+          <Route path="/brands" element={<BrandsPage />} />
           <Route path="/quote" element={<QuotePage />} />
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/admin" element={<AdminPage />} />
