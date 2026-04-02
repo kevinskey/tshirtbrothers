@@ -314,7 +314,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const leftToolbar = (
-    <aside className="fixed left-0 top-14 bottom-0 z-40 hidden w-16 flex-col border-r border-gray-200 bg-white md:flex">
+    <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-16 flex-col justify-center border-r border-gray-200 bg-white md:flex">
       {tools.map(tool => {
         const isActive = activeTool === tool.name;
         const Icon = tool.icon;
@@ -323,13 +323,13 @@ export default function DesignStudioPage() {
             key={tool.name}
             type="button"
             onClick={() => toggleTool(tool.name)}
-            className={`relative flex w-full flex-col items-center py-3 transition ${
+            className={`relative flex w-full flex-col items-center py-4 transition ${
               isActive ? 'text-red-600 bg-red-50' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
             }`}
           >
             {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
-            <Icon className="h-5 w-5" />
-            <span className="mt-1 text-[10px] leading-tight">{tool.label}</span>
+            <Icon className="h-6 w-6" />
+            <span className="mt-1.5 text-[10px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
         );
       })}
@@ -652,7 +652,7 @@ export default function DesignStudioPage() {
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
-  const canvasLeftOffset = activeTool ? 'md:ml-80' : '';
+  const canvasLeftOffset = (activeTool || showWelcome) ? 'md:ml-80' : '';
 
   const canvas = (
     <main
@@ -898,9 +898,9 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const welcomePanel = showWelcome ? (
-    <div className={`absolute top-0 left-16 bottom-0 w-[420px] bg-white border-r border-gray-200 z-20 hidden md:flex flex-col p-8 overflow-y-auto`}>
-      <h2 className="text-2xl font-bold text-gray-900 mb-8">How do you want to start?</h2>
-      <div className="grid grid-cols-2 gap-4 mb-8">
+    <div className="fixed top-14 left-16 bottom-16 w-80 bg-white border-r border-gray-200 z-20 hidden md:flex flex-col p-6 overflow-y-auto">
+      <h2 className="text-xl font-bold text-gray-900 mb-6">How do you want to start?</h2>
+      <div className="grid grid-cols-2 gap-3 mb-6">
         {[
           { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
           { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
@@ -911,9 +911,9 @@ export default function DesignStudioPage() {
             key={item.label}
             type="button"
             onClick={item.action}
-            className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-gray-200 p-6 hover:border-blue-500 hover:bg-blue-50 transition group"
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-gray-200 p-4 hover:border-blue-500 hover:bg-blue-50 transition group"
           >
-            <item.icon className="h-10 w-10 text-blue-600 group-hover:scale-110 transition-transform" />
+            <item.icon className="h-8 w-8 text-blue-600 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-semibold text-gray-700 whitespace-pre-line text-center">{item.label}</span>
           </button>
         ))}
