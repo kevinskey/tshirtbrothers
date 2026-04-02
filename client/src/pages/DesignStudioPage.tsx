@@ -686,6 +686,13 @@ export default function DesignStudioPage() {
   ) : null;
 
   /* ---------------------------------------------------------------- */
+  /*  Selected element + text editor state                             */
+  /* ---------------------------------------------------------------- */
+
+  const selectedEl = designElements.find(e => e.id === selectedElementId);
+  const showTextEditor = selectedEl?.type === 'text';
+
+  /* ---------------------------------------------------------------- */
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
@@ -948,9 +955,6 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
   /*  Render: Edit Text Panel (shows when text element is selected)    */
   /* ---------------------------------------------------------------- */
-
-  const selectedEl = designElements.find(e => e.id === selectedElementId);
-  const showTextEditor = selectedEl?.type === 'text';
 
   const textEditorPanel = showTextEditor && selectedEl ? (
     <div className="fixed top-14 left-16 bottom-16 w-80 bg-white border-r border-gray-200 z-30 hidden md:flex flex-col overflow-y-auto">
