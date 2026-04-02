@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
 import { submitQuote } from '@/lib/api';
@@ -144,7 +144,10 @@ async function fetchProductColors(ssId: string): Promise<SSColor[]> {
 /* ------------------------------------------------------------------ */
 
 export default function QuotePage() {
-  const [currentStep, setCurrentStep] = useState(1);
+  const location = useLocation();
+  const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; designImage?: string } | null);
+
+  const [currentStep, setCurrentStep] = useState(designState?.fromDesignStudio ? 2 : 1);
   const stepContentRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
 
@@ -156,7 +159,17 @@ export default function QuotePage() {
     }
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [currentStep]);
-  const [formData, setFormData] = useState<FormData>(INITIAL_FORM);
+  const [formData, setFormData] = useState<FormData>(() => {
+    if (designState?.fromDesignStudio) {
+      return {
+        ...INITIAL_FORM,
+        product: designState.product || null,
+        color: designState.color || null,
+        designPreview: designState.designImage || null,
+      };
+    }
+    return INITIAL_FORM;
+  });
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);

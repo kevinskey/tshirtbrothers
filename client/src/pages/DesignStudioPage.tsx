@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -207,6 +207,7 @@ export default function DesignStudioPage() {
   const initialProductId = searchParams.get('product') || '';
 
   // --- Core state ---
+  const navigate = useNavigate();
   const [showWelcome, setShowWelcome] = useState(true);
   const [activeTool, setActiveTool] = useState<ToolName>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -342,6 +343,19 @@ export default function DesignStudioPage() {
   };
 
   // Download design as image
+  // Navigate to quote with design data pre-filled
+  const handleGetPrice = () => {
+    navigate('/quote', {
+      state: {
+        fromDesignStudio: true,
+        product: selectedProduct,
+        color: productColors[selectedColorIdx] || null,
+        designElements,
+        designImage: displayImage,
+      },
+    });
+  };
+
   const handleDownload = async () => {
     if (!displayImage) return;
     try {
@@ -701,12 +715,13 @@ export default function DesignStudioPage() {
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {isSaving ? 'Saving...' : 'Save'}
         </button>
-        <Link
-          to="/quote"
+        <button
+          type="button"
+          onClick={handleGetPrice}
           className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 transition"
         >
           Get Price
-        </Link>
+        </button>
       </div>
     </header>
   );
@@ -1504,12 +1519,13 @@ export default function DesignStudioPage() {
             </div>
           )}
         </div>
-        <Link
-          to="/quote"
+        <button
+          type="button"
+          onClick={handleGetPrice}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
         >
           <Save className="h-4 w-4" /> Get Price
-        </Link>
+        </button>
       </div>
     </div>
   );
