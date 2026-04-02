@@ -243,7 +243,7 @@ router.get('/colors/:styleId', async (req, res, next) => {
 
     const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
     const response = await fetch(
-      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,hex1,colorFrontImage,colorBackImage`,
+      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,hex1,colorFrontImage,colorBackImage,sizeName`,
       {
         headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
         signal: AbortSignal.timeout(15000),
@@ -271,7 +271,22 @@ router.get('/colors/:styleId', async (req, res, next) => {
       }
     }
 
-    res.json({ colors: Array.from(seen.values()) });
+    // Collect unique sizes
+    const sizeOrder = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL', '6XL', 'One Size', 'OSFA'];
+    const sizeSet = new Set();
+    for (const p of items) {
+      if (p.sizeName) sizeSet.add(p.sizeName);
+    }
+    const sizes = Array.from(sizeSet).sort((a, b) => {
+      const ai = sizeOrder.indexOf(a);
+      const bi = sizeOrder.indexOf(b);
+      if (ai >= 0 && bi >= 0) return ai - bi;
+      if (ai >= 0) return -1;
+      if (bi >= 0) return 1;
+      return a.localeCompare(b);
+    });
+
+    res.json({ colors: Array.from(seen.values()), sizes });
   } catch (err) {
     next(err);
   }

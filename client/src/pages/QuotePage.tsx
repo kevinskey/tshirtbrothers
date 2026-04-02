@@ -49,6 +49,7 @@ interface ProductsResponse {
 
 interface ColorsResponse {
   colors: SSColor[];
+  sizes?: string[];
 }
 
 interface FormData {
@@ -132,11 +133,11 @@ async function fetchProductsPage({ search, page }: { search: string; page: numbe
   return res.json() as Promise<ProductsResponse>;
 }
 
-async function fetchProductColors(ssId: string): Promise<SSColor[]> {
+async function fetchProductDetails(ssId: string): Promise<{ colors: SSColor[]; sizes: string[] }> {
   const res = await fetch(`/api/products/colors/${ssId}`);
-  if (!res.ok) return [];
+  if (!res.ok) return { colors: [], sizes: [] };
   const data = (await res.json()) as ColorsResponse;
-  return data.colors ?? [];
+  return { colors: data.colors ?? [], sizes: data.sizes ?? [] };
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,11 +435,13 @@ export default function QuotePage() {
 
   const productStyleId = formData.product?.ss_id ?? formData.product?.style_id ?? formData.product?.id ?? '';
 
-  const { data: colors = [], isLoading: colorsLoading } = useQuery({
-    queryKey: ['product-colors', productStyleId],
-    queryFn: () => fetchProductColors(productStyleId),
-    enabled: !!productStyleId && currentStep === 2,
+  const { data: productDetails, isLoading: colorsLoading } = useQuery({
+    queryKey: ['product-details', productStyleId],
+    queryFn: () => fetchProductDetails(productStyleId),
+    enabled: !!productStyleId && (currentStep === 2 || currentStep === 3),
   });
+  const colors = productDetails?.colors ?? [];
+  const productSizes = productDetails?.sizes ?? SIZES;
 
   const renderStep2 = () => (
     <div>
@@ -511,7 +514,7 @@ export default function QuotePage() {
       {/* Sizes */}
       <p className="mt-8 font-medium text-brand-gray-700">Quantity per size</p>
       <div className="mt-3 grid grid-cols-3 gap-4 sm:grid-cols-5 lg:grid-cols-9">
-        {SIZES.map((size) => (
+        {productSizes.map((size) => (
           <div key={size} className="flex flex-col items-center gap-1">
             <label className="text-sm font-semibold text-brand-gray-600">{size}</label>
             <input
