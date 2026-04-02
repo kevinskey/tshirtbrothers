@@ -63,8 +63,8 @@ router.get('/', async (req, res, next) => {
         }
       }
       if (category) {
-        conditions.push(`category = $${paramIndex}`);
-        params.push(category);
+        conditions.push(`category ILIKE $${paramIndex}`);
+        params.push(`%${category}%`);
         paramIndex++;
       }
       if (brand) {

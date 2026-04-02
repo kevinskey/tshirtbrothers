@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { Search, Loader2 } from 'lucide-react';
 
@@ -209,9 +209,16 @@ function filterSampleProducts(
 }
 
 export default function ShopPage() {
+  const [searchParams] = useSearchParams();
+  const urlCategory = searchParams.get('category') || '';
   const [search, setSearch] = useState('');
   const [brand, setBrand] = useState('');
-  const [category, setCategory] = useState('');
+  const [category, setCategory] = useState(urlCategory);
+
+  // Sync category from URL when nav links are clicked
+  useEffect(() => {
+    setCategory(urlCategory);
+  }, [urlCategory]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Fetch filter options from API

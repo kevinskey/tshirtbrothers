@@ -5,13 +5,14 @@ import { cn } from '@/lib/utils';
 
 const subNavLinks = [
   { label: 'Design Studio', href: '/design' },
-  { label: 'T-Shirts', href: '/shop' },
-  { label: 'Hoodies', href: '/shop' },
-  { label: 'Hats', href: '/shop' },
-  { label: 'Polos', href: '/shop' },
+  { label: 'T-Shirts', href: '/shop?category=T-Shirts' },
+  { label: 'Hoodies & Fleece', href: '/shop?category=Fleece' },
+  { label: 'Hats', href: '/shop?category=Headwear' },
+  { label: 'Polos', href: '/shop?category=Polos' },
+  { label: 'Outerwear', href: '/shop?category=Outerwear' },
   { label: 'All Products', href: '/shop' },
   { label: 'Get a Quote', href: '/quote' },
-  { label: 'About Us', href: '/services' },
+  { label: 'Services', href: '/services' },
 ];
 
 export default function Navbar() {
