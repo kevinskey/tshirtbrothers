@@ -744,7 +744,7 @@ export default function DesignStudioPage() {
   }, []);
 
   const handleArtIconClick = useCallback((prefix: string, name: string) => {
-    const svgUrl = `https://api.iconify.design/${prefix}:${name}.svg?height=128&color=black`;
+    const svgUrl = `https://api.iconify.design/${prefix}/${name}.svg?height=128&color=black`;
     addDesignElement({ type: 'image', x: 25, y: 20, width: 20, content: svgUrl });
   }, [addDesignElement]);
 
@@ -796,10 +796,11 @@ export default function DesignStudioPage() {
                   title={ic.name}
                 >
                   <img
-                    src={`https://api.iconify.design/${ic.prefix}:${ic.name}.svg?height=48&color=%23333333`}
+                    src={`https://api.iconify.design/${ic.prefix}/${ic.name}.svg?height=48&color=%23333333`}
                     alt={ic.name}
                     className="w-8 h-8 object-contain"
                     loading="lazy"
+                    onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
                   />
                 </button>
               ))}
