@@ -309,6 +309,10 @@ export default function AdminPage() {
       setPriceDesignFee('0');
       setPriceRushFee('0');
       setPriceMessage('');
+      alert('Quote sent to customer!');
+    },
+    onError: (err) => {
+      alert(`Failed to send quote: ${err instanceof Error ? err.message : 'Unknown error'}`);
     },
   });
 
