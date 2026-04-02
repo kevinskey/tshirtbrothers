@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 
 interface ColorInfo {
   name: string;
@@ -185,6 +185,7 @@ async function fetchCatalog(params: {
   if (params.category) query.set('category', params.category);
   query.set('page', String(params.page));
 
+  query.set('limit', '48');
   const res = await fetch(`/api/products?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch products');
   return res.json() as Promise<ProductsResponse>;
@@ -211,23 +212,48 @@ export default function ShopPage() {
   const [search, setSearch] = useState('');
   const [brand, setBrand] = useState('');
   const [category, setCategory] = useState('');
-  const [page, setPage] = useState(1);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
-  const { data, isError } = useQuery<ProductsResponse>({
-    queryKey: ['products', search, brand, category, page],
-    queryFn: () => fetchCatalog({ search, brand, category, page }),
+  const {
+    data,
+    isError,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<ProductsResponse>({
+    queryKey: ['products', search, brand, category],
+    queryFn: ({ pageParam = 1 }) => fetchCatalog({ search, brand, category, page: pageParam as number }),
+    getNextPageParam: (lastPage) => {
+      const currentPage = lastPage.page || lastPage.currentPage || 1;
+      const totalPages = lastPage.totalPages || 1;
+      return currentPage < totalPages ? currentPage + 1 : undefined;
+    },
+    initialPageParam: 1,
     retry: false,
   });
 
-  // Fall back to sample data if API is unavailable
-  const useFallback = isError || !data;
-  const filtered = useFallback
-    ? filterSampleProducts(search, brand, category)
-    : [];
-  const products = useFallback ? filtered : data.products;
-  const totalPages = useFallback ? 1 : (data.totalPages || 1);
-  const currentPage = useFallback ? 1 : (data.currentPage || data.page || 1);
-  const totalProducts = useFallback ? filtered.length : (data.totalProducts || data.total || 0);
+  // Infinite scroll observer
+  const handleObserver = useCallback((entries: IntersectionObserverEntry[]) => {
+    const [entry] = entries;
+    if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(handleObserver, { threshold: 0.1 });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [handleObserver]);
+
+  // Flatten all pages into one product list
+  const allProducts = data?.pages.flatMap(p => p.products) ?? [];
+  const useFallback = isError || allProducts.length === 0;
+  const filtered = useFallback ? filterSampleProducts(search, brand, category) : [];
+  const products = useFallback ? filtered : allProducts;
+  const totalProducts = data?.pages[0]?.total || data?.pages[0]?.totalProducts || products.length;
 
   return (
     <Layout>
@@ -255,7 +281,7 @@ export default function ShopPage() {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
-                  setPage(1);
+                  // filters reset handled by queryKey change
                 }}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
               />
@@ -384,30 +410,19 @@ export default function ShopPage() {
             </div>
           )}
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-4 mt-12">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage <= 1}
-                className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Previous
-              </button>
-              <span className="text-sm text-gray-500">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Next
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
+          {/* Infinite scroll sentinel */}
+          <div ref={loadMoreRef} className="flex items-center justify-center py-12">
+            {isFetchingNextPage ? (
+              <div className="flex items-center gap-2 text-gray-400">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">Loading more products...</span>
+              </div>
+            ) : hasNextPage ? (
+              <span className="text-sm text-gray-400">Scroll for more</span>
+            ) : products.length > 0 ? (
+              <span className="text-sm text-gray-400">Showing all {totalProducts} products</span>
+            ) : null}
+          </div>
         </div>
       </section>
     </Layout>
