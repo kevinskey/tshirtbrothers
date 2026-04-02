@@ -450,7 +450,8 @@ export default function AdminPage() {
   function handleInvoiceItemChange(idx: number, field: keyof InvoiceItem, value: string | number) {
     setInvoiceForm(prev => {
       const items = [...prev.items];
-      items[idx] = { ...items[idx], [field]: field === 'description' ? value : Number(value) };
+      const existing = items[idx] ?? { description: '', quantity: 1, unit_price: 0 };
+      items[idx] = { ...existing, [field]: field === 'description' ? String(value) : Number(value) };
       return { ...prev, items };
     });
   }
