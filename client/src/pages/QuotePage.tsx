@@ -201,7 +201,7 @@ export default function QuotePage() {
         Object.entries(formData.sizes).filter(([, v]) => v > 0),
       );
       await submitQuote({
-        product_id: formData.product?.ss_id || formData.product?.id,
+        product_id: null,
         product_name: formData.product?.name,
         color: formData.color?.name,
         sizes: sizeEntries,
