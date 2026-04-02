@@ -95,7 +95,7 @@ const STEPS = [
 
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 
-const PRINT_AREAS: { id: string; label: string; price: string; cost: number }[] = [
+const PRINT_AREAS: { id: string; label: string }[] = [
   { id: 'Full Front', label: 'Full Front' },
   { id: 'Full Back', label: 'Full Back' },
   { id: 'Left Chest', label: 'Left Chest' },
