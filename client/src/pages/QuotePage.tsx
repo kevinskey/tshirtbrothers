@@ -512,7 +512,7 @@ export default function QuotePage() {
           <rect x="55" y="70" width="90" height="100" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
         )}
         {side === 'front' && formData.printAreas.includes('Left Chest') && (
-          <rect x="58" y="55" width="35" height="30" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
+          <rect x="107" y="55" width="35" height="30" rx="4" fill="#ea580c" fillOpacity="0.2" stroke="#ea580c" strokeWidth="1.5" />
         )}
         {side === 'back' && formData.printAreas.includes('Full Back') && (
           <rect x="55" y="60" width="90" height="110" rx="6" fill="#ea580c" fillOpacity="0.15" stroke="#ea580c" strokeWidth="1.5" strokeDasharray="5 3" />
@@ -529,7 +529,7 @@ export default function QuotePage() {
           <text x="100" y="125" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL FRONT</text>
         )}
         {side === 'front' && formData.printAreas.includes('Left Chest') && (
-          <text x="75" y="73" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ea580c">CHEST</text>
+          <text x="125" y="73" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ea580c">CHEST</text>
         )}
         {side === 'back' && formData.printAreas.includes('Full Back') && (
           <text x="100" y="120" textAnchor="middle" fontSize="10" fontWeight="700" fill="#ea580c">FULL BACK</text>
