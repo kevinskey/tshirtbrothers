@@ -292,6 +292,94 @@ export async function fetchOrders(status?: string) {
   return authRequest<Order[]>(`/admin/orders${query}`);
 }
 
+// Invoices
+export interface InvoiceItem {
+  description: string;
+  quantity: number;
+  unit_price: number;
+}
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+  customer_address: string | null;
+  items: InvoiceItem[];
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  discount: number;
+  total: number;
+  amount_paid: number;
+  amount_due: number;
+  notes: string | null;
+  due_date: string | null;
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  quote_id: string | null;
+  payments: { amount: number; method: string; date: string }[];
+  sent_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateInvoiceData {
+  customer_name: string;
+  customer_email: string;
+  customer_phone?: string;
+  customer_address?: string;
+  items: InvoiceItem[];
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  discount: number;
+  total: number;
+  notes?: string;
+  due_date?: string;
+  quote_id?: string;
+}
+
+export async function fetchInvoices(status?: string): Promise<Invoice[]> {
+  const query = status && status !== 'all' ? `?status=${status}` : '';
+  return authRequest<Invoice[]>(`/invoices${query}`);
+}
+
+export async function fetchInvoice(id: string): Promise<Invoice> {
+  return authRequest<Invoice>(`/invoices/${id}`);
+}
+
+export async function createInvoice(data: CreateInvoiceData): Promise<Invoice> {
+  return authRequest<Invoice>('/invoices', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateInvoice(id: string, data: Partial<CreateInvoiceData & { status: string }>): Promise<Invoice> {
+  return authRequest<Invoice>(`/invoices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function sendInvoice(id: string): Promise<Invoice> {
+  return authRequest<Invoice>(`/invoices/${id}/send`, {
+    method: 'POST',
+  });
+}
+
+export async function recordPayment(id: string, data: { amount: number; method: string }): Promise<Invoice> {
+  return authRequest<Invoice>(`/invoices/${id}/record-payment`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteInvoice(id: string): Promise<{ deleted: boolean }> {
+  return authRequest<{ deleted: boolean }>(`/invoices/${id}`, { method: 'DELETE' });
+}
+
 // Settings
 export async function fetchSettings(): Promise<Record<string, string>> {
   return authRequest<Record<string, string>>('/admin/settings');

@@ -28,6 +28,7 @@ import {
   X,
   DollarSign,
   Send,
+  Receipt,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -55,9 +56,17 @@ import {
   type CustomerDesign,
   type Order,
   type SendQuotePricePayload,
+  type Invoice,
+  type InvoiceItem,
+  type CreateInvoiceData,
+  fetchInvoices,
+  createInvoice,
+  sendInvoice,
+  deleteInvoice,
+  recordPayment,
 } from '@/lib/api';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
 
@@ -65,6 +74,7 @@ const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[]
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'quotes', label: 'Quotes', icon: FileText },
   { key: 'orders', label: 'Orders', icon: ShoppingBag },
+  { key: 'invoices', label: 'Invoices', icon: Receipt },
   { key: 'designs', label: 'Designs', icon: Palette },
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'products', label: 'Products', icon: Package },
@@ -80,7 +90,15 @@ const STATUS_COLORS: Record<string, string> = {
   accepted: 'bg-emerald-100 text-emerald-800',
   completed: 'bg-blue-100 text-blue-800',
   rejected: 'bg-red-100 text-red-800',
+  draft: 'bg-gray-100 text-gray-800',
+  sent: 'bg-blue-100 text-blue-800',
+  paid: 'bg-green-100 text-green-800',
+  overdue: 'bg-red-100 text-red-800',
+  cancelled: 'bg-gray-100 text-gray-500',
 };
+
+type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
+type InvoiceView = 'list' | 'create' | 'preview';
 
 // S&S Pricing helper for the Send Price modal
 function SSPricingInfo({ productName, quantity, printAreas }: { productName: string; quantity: number; printAreas?: unknown }) {
@@ -159,6 +177,31 @@ export default function AdminPage() {
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
   const [settingsSaving, setSettingsSaving] = useState(false);
 
+  // Invoice state
+  const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all');
+  const [invoiceView, setInvoiceView] = useState<InvoiceView>('list');
+  const [invoiceForm, setInvoiceForm] = useState<{
+    customer_name: string;
+    customer_email: string;
+    customer_phone: string;
+    customer_address: string;
+    items: InvoiceItem[];
+    tax: string;
+    shipping: string;
+    discount: string;
+    notes: string;
+    due_date: string;
+  }>({
+    customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
+    items: [{ description: '', quantity: 1, unit_price: 0 }],
+    tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+  });
+  const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
+  const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
+  const [recordPaymentInvoice, setRecordPaymentInvoice] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('card');
+
   // Send Price modal state
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
   const [, setPriceBase] = useState('');
@@ -235,6 +278,18 @@ export default function AdminPage() {
     queryKey: ['admin', 'orders', orderFilter],
     queryFn: () => fetchOrders(orderFilter),
     enabled: activeSection === 'orders',
+  });
+
+  const invoicesQuery = useQuery({
+    queryKey: ['admin', 'invoices', invoiceFilter],
+    queryFn: () => fetchInvoices(invoiceFilter),
+    enabled: activeSection === 'invoices',
+  });
+
+  const invoiceProductsQuery = useQuery({
+    queryKey: ['admin', 'invoice-products', invoiceProductSearch],
+    queryFn: () => fetchAdminProducts(invoiceProductSearch),
+    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceProductSearch.length >= 2,
   });
 
   const { data: settingsData } = useQuery({
@@ -320,6 +375,41 @@ export default function AdminPage() {
     },
   });
 
+  const createInvoiceMutation = useMutation({
+    mutationFn: (data: CreateInvoiceData) => createInvoice(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      setInvoiceView('list');
+      resetInvoiceForm();
+    },
+    onError: (err) => alert(`Failed to create invoice: ${err instanceof Error ? err.message : 'Unknown error'}`),
+  });
+
+  const sendInvoiceMutation = useMutation({
+    mutationFn: (id: string) => sendInvoice(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      alert('Invoice sent!');
+    },
+    onError: (err) => alert(`Failed to send: ${err instanceof Error ? err.message : 'Unknown error'}`),
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: deleteInvoice,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] }),
+  });
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: ({ id, amount, method }: { id: string; amount: number; method: string }) => recordPayment(id, { amount, method }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      setRecordPaymentInvoice(null);
+      setPaymentAmount('');
+      setPaymentMethod('card');
+    },
+    onError: (err) => alert(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`),
+  });
+
   const sendPriceMutation = useMutation({
     mutationFn: (data: SendQuotePricePayload) => sendQuotePrice(data),
     onSuccess: () => {
@@ -337,6 +427,98 @@ export default function AdminPage() {
       alert(`Failed to send quote: ${err instanceof Error ? err.message : 'Unknown error'}`);
     },
   });
+
+  function resetInvoiceForm() {
+    setInvoiceForm({
+      customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
+      items: [{ description: '', quantity: 1, unit_price: 0 }],
+      tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+    });
+    setPreviewInvoice(null);
+    setInvoiceProductSearch('');
+  }
+
+  function calcInvoiceSubtotal() {
+    return invoiceForm.items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0);
+  }
+
+  function calcInvoiceTotal() {
+    const sub = calcInvoiceSubtotal();
+    return sub + (parseFloat(invoiceForm.tax) || 0) + (parseFloat(invoiceForm.shipping) || 0) - (parseFloat(invoiceForm.discount) || 0);
+  }
+
+  function handleInvoiceItemChange(idx: number, field: keyof InvoiceItem, value: string | number) {
+    setInvoiceForm(prev => {
+      const items = [...prev.items];
+      items[idx] = { ...items[idx], [field]: field === 'description' ? value : Number(value) };
+      return { ...prev, items };
+    });
+  }
+
+  function addInvoiceItem(desc = '', qty = 1, price = 0) {
+    setInvoiceForm(prev => ({
+      ...prev,
+      items: [...prev.items, { description: desc, quantity: qty, unit_price: price }],
+    }));
+  }
+
+  function removeInvoiceItem(idx: number) {
+    setInvoiceForm(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== idx),
+    }));
+  }
+
+  function handleSaveInvoiceDraft() {
+    const subtotal = calcInvoiceSubtotal();
+    const total = calcInvoiceTotal();
+    const data: CreateInvoiceData = {
+      customer_name: invoiceForm.customer_name,
+      customer_email: invoiceForm.customer_email,
+      customer_phone: invoiceForm.customer_phone || undefined,
+      customer_address: invoiceForm.customer_address || undefined,
+      items: invoiceForm.items,
+      subtotal,
+      tax: parseFloat(invoiceForm.tax) || 0,
+      shipping: parseFloat(invoiceForm.shipping) || 0,
+      discount: parseFloat(invoiceForm.discount) || 0,
+      total,
+      notes: invoiceForm.notes || undefined,
+      due_date: invoiceForm.due_date || undefined,
+    };
+    createInvoiceMutation.mutate(data);
+  }
+
+  function handlePreviewInvoice() {
+    const subtotal = calcInvoiceSubtotal();
+    const total = calcInvoiceTotal();
+    const data: CreateInvoiceData = {
+      customer_name: invoiceForm.customer_name,
+      customer_email: invoiceForm.customer_email,
+      customer_phone: invoiceForm.customer_phone || undefined,
+      customer_address: invoiceForm.customer_address || undefined,
+      items: invoiceForm.items,
+      subtotal,
+      tax: parseFloat(invoiceForm.tax) || 0,
+      shipping: parseFloat(invoiceForm.shipping) || 0,
+      discount: parseFloat(invoiceForm.discount) || 0,
+      total,
+      notes: invoiceForm.notes || undefined,
+      due_date: invoiceForm.due_date || undefined,
+    };
+    setPreviewInvoice(data);
+    setInvoiceView('preview');
+  }
+
+  function handleSendPreviewedInvoice() {
+    if (!previewInvoice) return;
+    createInvoiceMutation.mutate(previewInvoice, {
+      onSuccess: (created) => {
+        sendInvoiceMutation.mutate(created.id);
+        setPreviewInvoice(null);
+      },
+    });
+  }
 
   function handleSendPrice(e: FormEvent) {
     e.preventDefault();
@@ -399,6 +581,8 @@ export default function AdminPage() {
   const designs = designsQuery.data ?? [];
   const customers = customersQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
+  const invoices = invoicesQuery.data ?? [];
+  const invoiceSearchProducts = invoiceProductsQuery.data ?? [];
   const customerDetail = customerDetailQuery.data ?? null;
 
   return (
@@ -1259,6 +1443,435 @@ export default function AdminPage() {
                 </table>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Invoices Section */}
+        {activeSection === 'invoices' && (
+          <div>
+            {invoiceView === 'list' && (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-display font-bold text-gray-900">Invoices</h2>
+                  <button
+                    onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Invoice
+                  </button>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex gap-2 mb-6">
+                  {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setInvoiceFilter(f)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
+                        invoiceFilter === f ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Invoice Table */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 text-left text-gray-500">
+                          <th className="px-6 py-3 font-medium">Invoice #</th>
+                          <th className="px-6 py-3 font-medium">Date</th>
+                          <th className="px-6 py-3 font-medium">Customer</th>
+                          <th className="px-6 py-3 font-medium">Email</th>
+                          <th className="px-6 py-3 font-medium text-right">Total</th>
+                          <th className="px-6 py-3 font-medium text-right">Paid</th>
+                          <th className="px-6 py-3 font-medium text-right">Due</th>
+                          <th className="px-6 py-3 font-medium">Status</th>
+                          <th className="px-6 py-3 font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {invoicesQuery.isLoading ? (
+                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+                        ) : invoices.length === 0 ? (
+                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-400">No invoices found</td></tr>
+                        ) : invoices.map((inv: Invoice) => (
+                          <tr key={inv.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 font-medium text-gray-900">{inv.invoice_number}</td>
+                            <td className="px-6 py-4 text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</td>
+                            <td className="px-6 py-4 text-gray-900">{inv.customer_name}</td>
+                            <td className="px-6 py-4 text-gray-500">{inv.customer_email}</td>
+                            <td className="px-6 py-4 text-right font-medium text-gray-900">${Number(inv.total).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right text-green-600">${Number(inv.amount_paid).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-medium text-red-600">${Number(inv.amount_due).toFixed(2)}</td>
+                            <td className="px-6 py-4"><StatusBadge status={inv.status} /></td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2">
+                                {inv.status === 'draft' && (
+                                  <button
+                                    onClick={() => sendInvoiceMutation.mutate(inv.id)}
+                                    disabled={sendInvoiceMutation.isPending}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Send className="w-3 h-3 inline mr-1" />Send
+                                  </button>
+                                )}
+                                {inv.status === 'sent' && (
+                                  <button
+                                    onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }}
+                                    className="text-xs font-medium text-green-600 hover:text-green-700 bg-green-50 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <DollarSign className="w-3 h-3 inline mr-1" />Payment
+                                  </button>
+                                )}
+                                {inv.status === 'draft' && (
+                                  <button
+                                    onClick={() => { if (confirm('Delete this draft invoice?')) deleteInvoiceMutation.mutate(inv.id); }}
+                                    className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3 inline mr-1" />Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Create Invoice Form */}
+            {invoiceView === 'create' && (
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
+                  <h2 className="text-2xl font-display font-bold text-gray-900">New Invoice</h2>
+                </div>
+
+                <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+                  {/* Customer Info */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Customer Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Name *</label>
+                        <input type="text" value={invoiceForm.customer_name} onChange={e => setInvoiceForm(p => ({ ...p, customer_name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Customer name" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Email *</label>
+                        <input type="email" value={invoiceForm.customer_email} onChange={e => setInvoiceForm(p => ({ ...p, customer_email: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="email@example.com" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Phone</label>
+                        <input type="tel" value={invoiceForm.customer_phone} onChange={e => setInvoiceForm(p => ({ ...p, customer_phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="(555) 000-0000" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Product Search */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Add Products from Catalog</h3>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={invoiceProductSearch}
+                        onChange={e => setInvoiceProductSearch(e.target.value)}
+                        className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                        placeholder="Search products to add as line items..."
+                      />
+                    </div>
+                    {invoiceProductSearch.length >= 2 && invoiceSearchProducts.length > 0 && (
+                      <div className="mt-2 border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
+                        {invoiceSearchProducts.slice(0, 10).map((p: Product) => (
+                          <button
+                            key={p.id}
+                            onClick={() => { addInvoiceItem(p.name, 1, p.price || 0); setInvoiceProductSearch(''); }}
+                            className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm flex justify-between items-center"
+                          >
+                            <span className="text-gray-900">{p.name}</span>
+                            <span className="text-gray-500">${(p.price || 0).toFixed(2)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Line Items */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900 mb-3">Line Items</h3>
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50 text-left text-gray-500">
+                            <th className="px-4 py-2 font-medium">Description</th>
+                            <th className="px-4 py-2 font-medium w-24">Qty</th>
+                            <th className="px-4 py-2 font-medium w-32">Unit Price</th>
+                            <th className="px-4 py-2 font-medium w-28 text-right">Total</th>
+                            <th className="px-4 py-2 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {invoiceForm.items.map((item, idx) => (
+                            <tr key={idx}>
+                              <td className="px-4 py-2">
+                                <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Item description" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <div className="relative">
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                </div>
+                              </td>
+                              <td className="px-4 py-2 text-right font-medium text-gray-900">
+                                ${(item.quantity * item.unit_price).toFixed(2)}
+                              </td>
+                              <td className="px-4 py-2">
+                                {invoiceForm.items.length > 1 && (
+                                  <button onClick={() => removeInvoiceItem(idx)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+                      <Plus className="w-4 h-4" /> Add Item
+                    </button>
+                  </div>
+
+                  {/* Totals */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Due Date</label>
+                        <input type="date" value={invoiceForm.due_date} onChange={e => setInvoiceForm(p => ({ ...p, due_date: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                        <textarea value={invoiceForm.notes} onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" placeholder="Additional notes..." />
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Subtotal</span>
+                        <span className="font-medium text-gray-900">${calcInvoiceSubtotal().toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500">Tax</span>
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={invoiceForm.tax} onChange={e => setInvoiceForm(p => ({ ...p, tax: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500">Shipping</span>
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={invoiceForm.shipping} onChange={e => setInvoiceForm(p => ({ ...p, shipping: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500">Discount</span>
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                          <input type="number" step="0.01" min="0" value={invoiceForm.discount} onChange={e => setInvoiceForm(p => ({ ...p, discount: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                        </div>
+                      </div>
+                      <div className="border-t border-gray-200 pt-2 flex justify-between">
+                        <span className="text-base font-bold text-gray-900">Total</span>
+                        <span className="text-xl font-bold text-gray-900">${calcInvoiceTotal().toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 pt-4 border-t border-gray-100">
+                    <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button
+                      onClick={handleSaveInvoiceDraft}
+                      disabled={!invoiceForm.customer_name || !invoiceForm.customer_email || createInvoiceMutation.isPending}
+                      className="px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition disabled:opacity-50"
+                    >
+                      {createInvoiceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+                      Save as Draft
+                    </button>
+                    <button
+                      onClick={handlePreviewInvoice}
+                      disabled={!invoiceForm.customer_name || !invoiceForm.customer_email || invoiceForm.items.every(i => !i.description)}
+                      className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                    >
+                      <Eye className="w-4 h-4" /> Preview & Send
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Invoice Preview */}
+            {invoiceView === 'preview' && previewInvoice && (
+              <div>
+                <div className="flex items-center gap-4 mb-6">
+                  <button onClick={() => setInvoiceView('create')} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
+                  <h2 className="text-2xl font-display font-bold text-gray-900">Invoice Preview</h2>
+                </div>
+
+                <div className="max-w-2xl mx-auto bg-white rounded-xl border border-gray-200 overflow-hidden shadow-lg">
+                  {/* Preview Header */}
+                  <div className="bg-gray-900 px-8 py-6 flex items-center justify-between">
+                    <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" alt="T-Shirt Brothers" className="h-10" />
+                    <span className="text-white text-2xl font-bold">INVOICE</span>
+                  </div>
+
+                  <div className="p-8">
+                    {/* Customer & Invoice Info */}
+                    <div className="flex justify-between mb-8">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Bill To:</p>
+                        <p className="font-semibold text-gray-900">{previewInvoice.customer_name}</p>
+                        <p className="text-sm text-gray-500">{previewInvoice.customer_email}</p>
+                        {previewInvoice.customer_phone && <p className="text-sm text-gray-500">{previewInvoice.customer_phone}</p>}
+                      </div>
+                      <div className="text-right text-sm">
+                        <p className="text-gray-500">Invoice #: <span className="font-medium text-gray-900">INV-DRAFT</span></p>
+                        <p className="text-gray-500">Date: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        {previewInvoice.due_date && <p className="text-gray-500">Due: {new Date(previewInvoice.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                      </div>
+                    </div>
+
+                    {/* Line Items */}
+                    <table className="w-full text-sm mb-6">
+                      <thead>
+                        <tr className="border-b-2 border-gray-200">
+                          <th className="text-left py-2 font-semibold text-gray-600">Description</th>
+                          <th className="text-center py-2 font-semibold text-gray-600">Qty</th>
+                          <th className="text-right py-2 font-semibold text-gray-600">Unit Price</th>
+                          <th className="text-right py-2 font-semibold text-gray-600">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewInvoice.items.filter(i => i.description).map((item, idx) => (
+                          <tr key={idx} className="border-b border-gray-100">
+                            <td className="py-3 text-gray-900">{item.description}</td>
+                            <td className="py-3 text-center text-gray-600">{item.quantity}</td>
+                            <td className="py-3 text-right text-gray-600">${item.unit_price.toFixed(2)}</td>
+                            <td className="py-3 text-right font-medium text-gray-900">${(item.quantity * item.unit_price).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+
+                    {/* Totals */}
+                    <div className="ml-auto w-64 space-y-1">
+                      <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span className="text-gray-900">${previewInvoice.subtotal.toFixed(2)}</span></div>
+                      {previewInvoice.tax > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Tax</span><span className="text-gray-900">${previewInvoice.tax.toFixed(2)}</span></div>}
+                      {previewInvoice.shipping > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Shipping</span><span className="text-gray-900">${previewInvoice.shipping.toFixed(2)}</span></div>}
+                      {previewInvoice.discount > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Discount</span><span className="text-green-600">-${previewInvoice.discount.toFixed(2)}</span></div>}
+                      <div className="border-t-2 border-gray-900 pt-2 flex justify-between">
+                        <span className="font-bold text-gray-900">Total</span>
+                        <span className="text-xl font-bold text-gray-900">${previewInvoice.total.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm"><span className="text-red-600 font-semibold">Amount Due</span><span className="text-red-600 font-bold text-lg">${previewInvoice.total.toFixed(2)}</span></div>
+                    </div>
+
+                    {previewInvoice.notes && (
+                      <div className="mt-6 bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
+                        <p className="text-xs font-semibold text-green-800">Notes</p>
+                        <p className="text-sm text-green-700 mt-1">{previewInvoice.notes}</p>
+                      </div>
+                    )}
+
+                    {/* Pay Now placeholder */}
+                    <div className="mt-8 text-center">
+                      <div className="inline-block bg-red-600 text-white px-12 py-3 rounded-lg font-bold text-base">Pay Now</div>
+                      <p className="text-xs text-gray-400 mt-2">Customer will receive this button linked to Stripe Checkout</p>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 text-center">
+                    <p className="text-xs text-gray-500">T-Shirt Brothers -- Custom Apparel & Screen Printing</p>
+                    <p className="text-xs text-gray-500">Phone: (555) 123-4567 | Email: info@tshirtbrothers.com</p>
+                    <p className="text-xs text-gray-400">123 Print Ave, Dallas TX 75001</p>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-center gap-3 mt-6">
+                  <button onClick={() => setInvoiceView('create')} className="px-6 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                    Edit
+                  </button>
+                  <button
+                    onClick={handleSendPreviewedInvoice}
+                    disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending}
+                    className="flex items-center gap-2 px-8 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                  >
+                    {(createInvoiceMutation.isPending || sendInvoiceMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Send to Customer
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Record Payment Modal */}
+            {recordPaymentInvoice && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full">
+                  <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+                    <h3 className="font-display font-semibold text-gray-900">Record Payment</h3>
+                    <button onClick={() => setRecordPaymentInvoice(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                      <p className="font-medium text-gray-900">{recordPaymentInvoice.invoice_number}</p>
+                      <p className="text-gray-500">{recordPaymentInvoice.customer_name} - Amount due: ${Number(recordPaymentInvoice.amount_due).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Amount</label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
+                        <input type="number" step="0.01" min="0" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
+                      <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                        <option value="card">Credit Card</option>
+                        <option value="cash">Cash</option>
+                        <option value="check">Check</option>
+                        <option value="transfer">Bank Transfer</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button onClick={() => setRecordPaymentInvoice(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                      <button
+                        onClick={() => {
+                          if (!paymentAmount || Number(paymentAmount) <= 0) return;
+                          recordPaymentMutation.mutate({ id: recordPaymentInvoice.id, amount: Number(paymentAmount), method: paymentMethod });
+                        }}
+                        disabled={recordPaymentMutation.isPending || !paymentAmount || Number(paymentAmount) <= 0}
+                        className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
+                      >
+                        {recordPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+                        Record Payment
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
