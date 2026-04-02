@@ -512,20 +512,20 @@ export default function DesignStudioPage() {
               draggable={false}
             />
           ) : (
-            <div className="text-center text-gray-400">
-              <p className="text-lg font-semibold mb-2">No product selected</p>
+            <div className="absolute inset-0 flex items-center justify-center">
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setShowProductPicker(true); }}
-                className="text-sm text-red-600 font-medium hover:underline"
+                className="text-center text-gray-400 hover:text-red-600 transition"
               >
-                Choose a product to start designing
+                <p className="text-lg font-semibold mb-1">Select a product</p>
+                <p className="text-sm">Click to choose a product to customize</p>
               </button>
             </div>
           )}
 
-          {/* Draggable + Resizable design overlay */}
-          {displayImage && hasDesign && (
+          {/* Draggable + Resizable design overlay — show when there's any design content */}
+          {hasDesign && (
             <div
               onMouseDown={handleOverlayMouseDown}
               onClick={(e) => e.stopPropagation()}
@@ -567,7 +567,7 @@ export default function DesignStudioPage() {
           )}
 
           {/* Placeholder when no design */}
-          {displayImage && !hasDesign && (
+          {!hasDesign && displayImage && (
             <div
               className="absolute flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg"
               style={{
