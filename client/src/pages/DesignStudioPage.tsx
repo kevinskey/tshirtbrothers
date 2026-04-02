@@ -307,6 +307,8 @@ export default function DesignStudioPage() {
   // --- Upload panel state ---
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [pendingUpload, setPendingUpload] = useState<string | null>(null); // base64 of just-uploaded image
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
 
   // --- Text panel state ---
   const [textInput, setTextInput] = useState('');
@@ -436,9 +438,45 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const handleFile = useCallback((file: File) => {
-    const url = URL.createObjectURL(file);
-    setUploadedImages(prev => [...prev, url]);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setPendingUpload(base64); // Show the "Remove background?" prompt
+    };
+    reader.readAsDataURL(file);
   }, []);
+
+  const finishUpload = useCallback((imageUrl: string) => {
+    setUploadedImages(prev => [...prev, imageUrl]);
+    setPendingUpload(null);
+  }, []);
+
+  const handleRemoveBg = useCallback(async () => {
+    if (!pendingUpload) return;
+    setIsRemovingBg(true);
+    try {
+      const res = await fetch('/api/design/remove-bg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: pendingUpload }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to remove background');
+      }
+      const data = await res.json();
+      finishUpload(data.imageBase64);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Background removal failed. Using original image.');
+      finishUpload(pendingUpload);
+    } finally {
+      setIsRemovingBg(false);
+    }
+  }, [pendingUpload, finishUpload]);
+
+  const handleKeepOriginal = useCallback(() => {
+    if (pendingUpload) finishUpload(pendingUpload);
+  }, [pendingUpload, finishUpload]);
 
   const placeImageOnCanvas = useCallback((url: string) => {
     addDesignElement({ type: 'image', x: 25, y: 20, width: 30, content: url });
@@ -1714,6 +1752,46 @@ export default function DesignStudioPage() {
       {canvas}
       {bottomBar}
       {loginPromptModal}
+
+      {/* Remove Background Prompt */}
+      {pendingUpload && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">Remove Background?</h3>
+            <div className="flex justify-center mb-4">
+              <img
+                src={pendingUpload}
+                alt="Uploaded"
+                className="max-h-48 rounded-lg border border-gray-200 object-contain"
+              />
+            </div>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              Would you like to remove the background from this image?
+            </p>
+            {isRemovingBg ? (
+              <div className="flex items-center justify-center gap-2 py-3">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                <span className="text-sm font-medium text-gray-700">Removing background...</span>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  onClick={handleKeepOriginal}
+                  className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+                >
+                  No, Keep Original
+                </button>
+                <button
+                  onClick={handleRemoveBg}
+                  className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
+                >
+                  Yes, Remove Background
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
