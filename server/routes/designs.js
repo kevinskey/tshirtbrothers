@@ -16,7 +16,7 @@ async function uploadToSpaces(base64Data, folder, filename) {
 
   const s3 = new S3Client({
     endpoint: process.env.SPACES_ENDPOINT,
-    region: process.env.SPACES_REGION || 'nyc3',
+    region: process.env.SPACES_REGION || 'atl1',
     credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
   });
 
@@ -31,7 +31,9 @@ async function uploadToSpaces(base64Data, folder, filename) {
     ACL: 'public-read',
   }));
 
-  return `${process.env.SPACES_ENDPOINT}/${process.env.SPACES_BUCKET}/${key}`;
+  const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
+  const region = process.env.SPACES_REGION || 'atl1';
+  return `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
 }
 
 // GET / - List user's saved designs
