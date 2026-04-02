@@ -393,10 +393,10 @@ export default function AdminPage() {
                     {quotes.slice(0, 10).map((q: Quote) => (
                       <tr key={q.id} className="hover:bg-gray-50">
                         <td className="px-6 py-3 text-gray-600">
-                          {new Date(q.createdAt).toLocaleDateString()}
+                          {new Date(q.created_at || q.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-6 py-3 text-gray-900">{q.customerName}</td>
-                        <td className="px-6 py-3 text-gray-600">{q.productName}</td>
+                        <td className="px-6 py-3 text-gray-900">{q.customer_name || q.customerName}</td>
+                        <td className="px-6 py-3 text-gray-600">{q.product_name || q.productName}</td>
                         <td className="px-6 py-3">
                           <StatusBadge status={q.status} />
                         </td>
@@ -456,11 +456,11 @@ export default function AdminPage() {
                     {quotes.map((q: Quote) => (
                       <tr key={q.id} className="hover:bg-gray-50">
                         <td className="px-6 py-3 text-gray-600">
-                          {new Date(q.createdAt).toLocaleDateString()}
+                          {new Date(q.created_at || q.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-6 py-3 text-gray-900">{q.customerName}</td>
-                        <td className="px-6 py-3 text-gray-600">{q.customerEmail}</td>
-                        <td className="px-6 py-3 text-gray-600">{q.productName}</td>
+                        <td className="px-6 py-3 text-gray-900">{q.customer_name || q.customerName}</td>
+                        <td className="px-6 py-3 text-gray-600">{q.customer_email || q.customerEmail}</td>
+                        <td className="px-6 py-3 text-gray-600">{q.product_name || q.productName}</td>
                         <td className="px-6 py-3 text-gray-600">{q.quantity}</td>
                         <td className="px-6 py-3">
                           <StatusBadge status={q.status} />
