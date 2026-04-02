@@ -495,7 +495,8 @@ export default function QuotePage() {
       });
     };
 
-    const productImg = formData.color?.image || formData.product?.image_url;
+    const frontImg = formData.color?.image || formData.product?.image_url;
+    const backImg = formData.color?.backImage || null;
 
     return (
       <div>
@@ -529,49 +530,57 @@ export default function QuotePage() {
             <p className="text-xs text-gray-400 mt-2">Pricing will be included in your quote.</p>
           </div>
 
-          {/* Product image with print area overlays */}
-          <div className="flex flex-1 items-start justify-center">
-            <div className="relative w-72">
-              <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Print Placement</span>
-              <div className="relative bg-gray-50 rounded-2xl overflow-hidden">
-                {productImg ? (
-                  <img src={productImg} alt="Product" className="w-full object-contain p-4" />
+          {/* Front + Back product images with overlays */}
+          <div className="flex flex-1 items-start justify-center gap-4">
+            {/* Front */}
+            <div className="w-44">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Front</span>
+              <div className="relative bg-gray-50 rounded-xl overflow-hidden">
+                {frontImg ? (
+                  <img src={frontImg} alt="Front" className="w-full object-contain p-3" />
                 ) : (
-                  <div className="aspect-square flex items-center justify-center text-gray-300">
-                    <Shirt className="h-32 w-32" />
-                  </div>
+                  <div className="aspect-square flex items-center justify-center text-gray-300"><Shirt className="h-20 w-20" /></div>
                 )}
-
-                {/* Overlay zones */}
                 {formData.printAreas.includes('Full Front') && (
-                  <div className="absolute top-[25%] left-[20%] right-[20%] bottom-[30%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-orange-600 bg-white/80 px-2 py-0.5 rounded">FULL FRONT</span>
-                  </div>
-                )}
-                {formData.printAreas.includes('Full Back') && !formData.printAreas.includes('Full Front') && (
-                  <div className="absolute top-[20%] left-[20%] right-[20%] bottom-[25%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-orange-600 bg-white/80 px-2 py-0.5 rounded">FULL BACK</span>
+                  <div className="absolute top-[25%] left-[18%] right-[18%] bottom-[30%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-orange-600 bg-white/80 px-1.5 py-0.5 rounded">FULL FRONT</span>
                   </div>
                 )}
                 {formData.printAreas.includes('Left Chest') && (
-                  <div className="absolute top-[22%] right-[18%] w-[22%] h-[15%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
-                    <span className="text-[7px] font-bold text-orange-600 bg-white/80 px-1 rounded">CHEST</span>
+                  <div className="absolute top-[22%] right-[16%] w-[24%] h-[16%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[6px] font-bold text-orange-600">CHEST</span>
                   </div>
                 )}
                 {formData.printAreas.includes('Left Arm') && (
-                  <div className="absolute top-[20%] left-[2%] w-[14%] h-[18%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
-                    <span className="text-[7px] font-bold text-orange-600">L</span>
+                  <div className="absolute top-[18%] left-[1%] w-[15%] h-[20%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[6px] font-bold text-orange-600">L</span>
                   </div>
                 )}
                 {formData.printAreas.includes('Right Arm') && (
-                  <div className="absolute top-[20%] right-[2%] w-[14%] h-[18%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
-                    <span className="text-[7px] font-bold text-orange-600">R</span>
+                  <div className="absolute top-[18%] right-[1%] w-[15%] h-[20%] border-2 border-orange-500 bg-orange-500/15 rounded flex items-center justify-center">
+                    <span className="text-[6px] font-bold text-orange-600">R</span>
                   </div>
                 )}
               </div>
-              {formData.printAreas.includes('Full Back') && formData.printAreas.includes('Full Front') && (
-                <p className="text-xs text-orange-600 font-medium text-center mt-2">+ Full Back selected</p>
-              )}
+            </div>
+
+            {/* Back */}
+            <div className="w-44">
+              <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Back</span>
+              <div className="relative bg-gray-50 rounded-xl overflow-hidden">
+                {backImg ? (
+                  <img src={backImg} alt="Back" className="w-full object-contain p-3" />
+                ) : frontImg ? (
+                  <img src={frontImg} alt="Back" className="w-full object-contain p-3 opacity-60" />
+                ) : (
+                  <div className="aspect-square flex items-center justify-center text-gray-300"><Shirt className="h-20 w-20" /></div>
+                )}
+                {formData.printAreas.includes('Full Back') && (
+                  <div className="absolute top-[20%] left-[18%] right-[18%] bottom-[25%] border-2 border-dashed border-orange-500 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-orange-600 bg-white/80 px-1.5 py-0.5 rounded">FULL BACK</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
