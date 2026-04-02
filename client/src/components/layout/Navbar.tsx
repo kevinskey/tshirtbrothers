@@ -72,7 +72,7 @@ export default function Navbar() {
                 (470) 622-4845
               </a>
               <Link
-                to="/login"
+                to="/auth"
                 className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors"
               >
                 <User className="h-4 w-4" />
