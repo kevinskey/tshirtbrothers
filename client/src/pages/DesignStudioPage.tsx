@@ -29,7 +29,24 @@ interface DesignElement {
   content: string; // text string or image data URL
   fontSize?: number;
   color?: string;
+  fontFamily?: string;
+  rotation?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  outline?: boolean;
 }
+
+const FONT_OPTIONS = [
+  'Inter',
+  'Arial',
+  'Georgia',
+  'Times New Roman',
+  'Courier New',
+  'Impact',
+  'Comic Sans MS',
+  'Trebuchet MS',
+  'Verdana',
+  'Palatino',
+];
 
 interface ProductColor {
   name: string;
@@ -156,6 +173,19 @@ export default function DesignStudioPage() {
     setSelectedElementId(prev => (prev === id ? null : prev));
   }, []);
 
+  const updateElement = useCallback((id: string, updates: Partial<DesignElement>) => {
+    setDesignElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+  }, []);
+
+  const duplicateElement = useCallback((id: string) => {
+    setDesignElements(prev => {
+      const el = prev.find(e => e.id === id);
+      if (!el) return prev;
+      const newEl = { ...el, id: Date.now().toString() + Math.random().toString(36).slice(2), x: el.x + 5, y: el.y + 5 };
+      return [...prev, newEl];
+    });
+  }, []);
+
   /* ---------------------------------------------------------------- */
   /*  File upload handler                                              */
   /* ---------------------------------------------------------------- */
@@ -183,6 +213,10 @@ export default function DesignStudioPage() {
       content: textInput.trim(),
       fontSize: textFontSize,
       color: textColor,
+      fontFamily: 'Inter',
+      rotation: 0,
+      textAlign: 'center',
+      outline: false,
     });
     setTextInput('');
   }, [textInput, textFontSize, textColor, addDesignElement]);
@@ -655,7 +689,7 @@ export default function DesignStudioPage() {
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
-  const canvasLeftOffset = (activeTool || showWelcome) ? 'md:ml-80' : '';
+  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
 
   const canvas = (
     <main
@@ -705,6 +739,7 @@ export default function DesignStudioPage() {
                   left: `${el.x}%`,
                   top: `${el.y}%`,
                   width: `${el.width}%`,
+                  transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
                 }}
               >
                 {el.type === 'image' ? (
@@ -716,8 +751,18 @@ export default function DesignStudioPage() {
                   />
                 ) : (
                   <span
-                    className="block whitespace-pre-wrap font-bold leading-tight drop-shadow-md pointer-events-none"
-                    style={{ fontSize: `${(el.fontSize ?? 24) * 0.5}px`, color: el.color ?? '#fff' }}
+                    className="block whitespace-pre-wrap leading-tight pointer-events-none"
+                    style={{
+                      fontSize: `${(el.fontSize ?? 24) * 0.5}px`,
+                      color: el.color ?? '#fff',
+                      fontFamily: el.fontFamily ?? 'Inter',
+                      fontWeight: 700,
+                      textAlign: el.textAlign ?? 'center',
+                      textShadow: el.outline ? `
+                        -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5),
+                        -1px 1px 0 rgba(0,0,0,0.5), 1px 1px 0 rgba(0,0,0,0.5)
+                      ` : '0 1px 3px rgba(0,0,0,0.3)',
+                    }}
                   >
                     {el.content}
                   </span>
@@ -901,6 +946,162 @@ export default function DesignStudioPage() {
   );
 
   /* ---------------------------------------------------------------- */
+  /*  Render: Edit Text Panel (shows when text element is selected)    */
+  /* ---------------------------------------------------------------- */
+
+  const selectedEl = designElements.find(e => e.id === selectedElementId);
+  const showTextEditor = selectedEl?.type === 'text';
+
+  const textEditorPanel = showTextEditor && selectedEl ? (
+    <div className="fixed top-14 left-16 bottom-16 w-80 bg-white border-r border-gray-200 z-30 hidden md:flex flex-col overflow-y-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+        <span className="font-semibold text-gray-900">Edit Text</span>
+        <button type="button" onClick={() => setSelectedElementId(null)} className="text-gray-400 hover:text-gray-700">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Text content */}
+        <input
+          type="text"
+          value={selectedEl.content}
+          onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
+          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+
+        {/* Change Font */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Change Font</span>
+          <select
+            value={selectedEl.fontFamily ?? 'Inter'}
+            onChange={e => updateElement(selectedEl.id, { fontFamily: e.target.value })}
+            className="text-sm font-semibold border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}
+          >
+            {FONT_OPTIONS.map(f => (
+              <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Edit Color */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Edit Color</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">{selectedEl.color ?? '#000000'}</span>
+            <input
+              type="color"
+              value={selectedEl.color ?? '#000000'}
+              onChange={e => updateElement(selectedEl.id, { color: e.target.value })}
+              className="h-8 w-8 cursor-pointer rounded border border-gray-200"
+            />
+          </div>
+        </div>
+
+        {/* Rotation */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Rotation</span>
+          <div className="flex items-center gap-2 flex-1 ml-4">
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              value={selectedEl.rotation ?? 0}
+              onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })}
+              className="flex-1 accent-blue-600"
+            />
+            <span className="text-sm text-gray-700 w-10 text-right">{selectedEl.rotation ?? 0}&deg;</span>
+          </div>
+        </div>
+
+        {/* Outline */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Outline</span>
+          <button
+            type="button"
+            onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })}
+            className={`px-4 py-1.5 text-xs font-medium rounded-lg border transition ${
+              selectedEl.outline ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {selectedEl.outline ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        {/* Text Size */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Text Size</span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })}
+              className="w-8 h-8 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
+            >
+              -
+            </button>
+            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
+            <button
+              type="button"
+              onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })}
+              className="w-8 h-8 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="border-t border-gray-200 pt-4 grid grid-cols-4 gap-2">
+          {/* Center */}
+          <button
+            type="button"
+            onClick={() => updateElement(selectedEl.id, { x: 50 - (selectedEl.width) / 2 })}
+            className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 p-2 hover:bg-gray-50 transition text-gray-600"
+          >
+            <Move className="h-4 w-4" />
+            <span className="text-[9px] font-medium">Center</span>
+          </button>
+
+          {/* Text Alignment */}
+          {(['left', 'center', 'right'] as const).map(align => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => updateElement(selectedEl.id, { textAlign: align })}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition ${
+                selectedEl.textAlign === align ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              <Type className="h-4 w-4" />
+              <span className="text-[9px] font-medium capitalize">{align}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Duplicate & Delete */}
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => duplicateElement(selectedEl.id)}
+            className="rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
+          >
+            Duplicate
+          </button>
+          <button
+            type="button"
+            onClick={() => removeElement(selectedEl.id)}
+            className="rounded-lg border border-red-200 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  /* ---------------------------------------------------------------- */
   /*  Render: Welcome Panel                                            */
   /* ---------------------------------------------------------------- */
 
@@ -946,8 +1147,9 @@ export default function DesignStudioPage() {
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
-      {!showWelcome && toolPanel}
-      {welcomePanel}
+      {!showWelcome && !showTextEditor && toolPanel}
+      {!showTextEditor && welcomePanel}
+      {textEditorPanel}
       {canvas}
       {bottomBar}
     </div>
