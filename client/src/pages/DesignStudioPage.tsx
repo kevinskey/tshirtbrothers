@@ -42,6 +42,7 @@ interface Product {
   name: string;
   brand: string;
   image_url: string;
+  back_image_url?: string;
   colors: ProductColor[];
   category: string;
 }
@@ -128,7 +129,9 @@ export default function DesignStudioPage() {
 
   const productColors = selectedProduct?.colors ?? [];
   const selectedColorImage = productColors[selectedColorIdx]?.image;
-  const displayImage = selectedColorImage || selectedProduct?.image_url || null;
+  const frontImage = selectedColorImage || selectedProduct?.image_url || null;
+  const backImage = selectedProduct?.back_image_url || frontImage;
+  const displayImage = currentView === 'back' ? backImage : frontImage;
 
   /* ---------------------------------------------------------------- */
   /*  Toolbar toggle                                                   */
@@ -772,7 +775,7 @@ export default function DesignStudioPage() {
       </div>
 
       {/* View Switcher */}
-      {displayImage && (
+      {selectedProduct && frontImage && (
         <div className="flex items-center gap-2 mt-4">
           {(['front', 'back', 'sleeve'] as const).map(view => (
             <button
@@ -789,11 +792,15 @@ export default function DesignStudioPage() {
               }`}
             >
               <div className="h-10 w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
-                {displayImage && (
-                  <img src={displayImage} alt={view} className="h-full w-full object-contain p-0.5" />
+                {frontImage && (
+                  <img
+                    src={view === 'back' ? (backImage ?? frontImage) : frontImage}
+                    alt={view}
+                    className="h-full w-full object-contain p-0.5"
+                  />
                 )}
               </div>
-              <span className="text-[10px] font-semibold capitalize">{view}</span>
+              <span className="text-[10px] font-semibold capitalize">{view === 'sleeve' ? 'Sleeve' : view === 'back' ? 'Back' : 'Front'}</span>
             </button>
           ))}
         </div>
