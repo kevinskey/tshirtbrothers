@@ -200,7 +200,7 @@ function filterSampleProducts(
       !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.brand.toLowerCase().includes(search.toLowerCase()) ||
-      p.styleNumber.toLowerCase().includes(search.toLowerCase());
+      (p.styleNumber || p.style_number || '').toLowerCase().includes(search.toLowerCase());
     const matchBrand = !brand || p.brand === brand;
     const matchCategory = !category || p.category === category;
     return matchSearch && matchBrand && matchCategory;
