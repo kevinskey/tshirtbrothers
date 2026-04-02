@@ -837,19 +837,32 @@ export default function AdminPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {designs.map((d: CustomerDesign) => (
                   <div key={d.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="aspect-video bg-gray-100 relative">
-                      {d.mockup_url ? (
+                    <div className="aspect-square bg-gray-50 relative overflow-hidden">
+                      {(d.product_image || d.thumbnail || d.mockup_url) ? (
                         <img
-                          src={d.mockup_url}
+                          src={d.product_image || d.thumbnail || d.mockup_url || ''}
                           alt={d.name}
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
+                          className="w-full h-full object-contain p-2"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <Palette className="w-10 h-10 text-gray-300" />
+                        </div>
+                      )}
+                      {/* Render design elements on top */}
+                      {Array.isArray(d.elements) && d.elements.length > 0 && (
+                        <div className="absolute inset-0">
+                          {(d.elements as { id: string; type: string; x: number; y: number; width: number; content: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number }[]).map(el => (
+                            <div key={el.id} className="absolute" style={{ left: `${el.x}%`, top: `${el.y}%`, width: `${el.width}%`, transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined }}>
+                              {el.type === 'image' ? (
+                                <img src={el.content} alt="" className="w-full object-contain drop-shadow-md" />
+                              ) : (
+                                <span className="block font-bold leading-tight drop-shadow-md" style={{ fontSize: `${(el.fontSize ?? 24) * 0.25}px`, color: el.color ?? '#fff', fontFamily: el.fontFamily ?? 'Inter' }}>{el.content}</span>
+                              )}
+                            </div>
+                          ))}
+                          <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
                         </div>
                       )}
                     </div>
@@ -886,6 +899,13 @@ export default function AdminPage() {
                             Download Print File
                           </a>
                         )}
+                        <Link
+                          to={`/design?product=${d.product_ss_id || ''}`}
+                          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          Open in Studio
+                        </Link>
                         <button
                           onClick={() => {
                             if (confirm('Delete this design? This cannot be undone.')) {

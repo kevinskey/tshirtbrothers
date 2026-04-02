@@ -232,6 +232,11 @@ export interface CustomerDesign {
   id: string;
   name: string;
   product_name: string;
+  product_ss_id?: string;
+  product_image?: string;
+  color_index?: number;
+  elements?: unknown[];
+  thumbnail?: string;
   mockup_url: string | null;
   print_url: string | null;
   created_at: string;

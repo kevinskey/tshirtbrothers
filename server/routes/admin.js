@@ -179,7 +179,8 @@ router.get('/customer-designs', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT
-         sd.id, sd.name, sd.product_name, sd.mockup_url, sd.print_url, sd.created_at,
+         sd.id, sd.name, sd.product_name, sd.product_ss_id, sd.product_image, sd.color_index,
+         sd.elements, sd.mockup_url, sd.print_url, sd.thumbnail, sd.created_at,
          u.name AS user_name, u.email AS user_email
        FROM saved_designs sd
        JOIN users u ON u.id = sd.user_id
