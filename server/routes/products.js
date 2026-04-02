@@ -50,23 +50,16 @@ router.get('/', async (req, res, next) => {
       let paramIndex = 1;
 
       if (search) {
-        const terms = search.trim().split(/\s+/).filter(Boolean);
+        // Normalize common terms: "tshirt" → "t-shirt", "hoodie" → "hood"
+        let normalized = search.trim()
+          .replace(/\btshirts?\b/gi, 't-shirt')
+          .replace(/\bhoodies?\b/gi, 'hood')
+          .replace(/\bpolos?\b/gi, 'polo');
+        const terms = normalized.split(/\s+/).filter(Boolean);
         for (const term of terms) {
-          // Normalize: "tshirt" → also match "t-shirt", "tshirts" → "t-shirts"
-          const normalized = term.replace(/^t(shirt)/i, 't-$1');
-          // Also create a stripped version without hyphens
-          const stripped = term.replace(/-/g, '');
-          const pattern = normalized !== term ? `%(${normalized}|${stripped})%` : `%${term}%`;
-          // Use ILIKE with both the original and hyphenated form
-          if (normalized !== term) {
-            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex} OR name ILIKE $${paramIndex + 1} OR category ILIKE $${paramIndex + 1})`);
-            params.push(`%${stripped}%`, `%${normalized}%`);
-            paramIndex += 2;
-          } else {
-            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
-            params.push(`%${term}%`);
-            paramIndex++;
-          }
+          conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
+          params.push(`%${term}%`);
+          paramIndex++;
         }
       }
       if (category) {
@@ -99,15 +92,14 @@ router.get('/', async (req, res, next) => {
 
     // Apply filters
     if (search) {
-      const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      let normalized = search.toLowerCase().trim()
+        .replace(/\btshirts?\b/g, 't-shirt')
+        .replace(/\bhoodies?\b/g, 'hood')
+        .replace(/\bpolos?\b/g, 'polo');
+      const terms = normalized.split(/\s+/).filter(Boolean);
       styles = styles.filter(s => {
-        // Normalize haystack: remove hyphens for fuzzy matching
-        const raw = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
-        const haystack = raw + ' ' + raw.replace(/-/g, '');
-        return terms.every(term => {
-          const stripped = term.replace(/-/g, '');
-          return haystack.includes(term) || haystack.includes(stripped);
-        });
+        const haystack = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
+        return terms.every(term => haystack.includes(term));
       });
     }
     if (brand) {
