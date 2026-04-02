@@ -80,7 +80,7 @@ router.get('/', async (req, res, next) => {
       const countResult = await pool.query(`SELECT COUNT(*) FROM products ${whereClause}`, params);
       const total = parseInt(countResult.rows[0].count, 10);
       const dataResult = await pool.query(
-        `SELECT * FROM products ${whereClause} ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        `SELECT * FROM products ${whereClause} ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limitNum, offset]
       );
 
