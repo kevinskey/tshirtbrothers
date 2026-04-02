@@ -274,6 +274,10 @@ export async function fetchCustomerDesigns(search?: string) {
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
 }
 
+export async function deleteDesign(id: string) {
+  return authRequest<{ deleted: boolean }>(`/admin/designs/${id}`, { method: 'DELETE' });
+}
+
 export async function fetchOrders(status?: string) {
   const query = status && status !== 'all' ? `?status=${status}` : '';
   return authRequest<Order[]>(`/admin/orders${query}`);

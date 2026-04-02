@@ -223,6 +223,17 @@ router.get('/orders', async (req, res, next) => {
   }
 });
 
+// DELETE /designs/:id - Delete a saved design
+router.delete('/designs/:id', async (req, res, next) => {
+  try {
+    const result = await pool.query('DELETE FROM saved_designs WHERE id = $1 RETURNING id', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Design not found' });
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /settings - Get all settings as key-value object
 router.get('/settings', async (req, res, next) => {
   try {

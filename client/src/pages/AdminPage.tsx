@@ -42,6 +42,7 @@ import {
   fetchCustomer,
   fetchCustomerDesigns,
   fetchOrders,
+  deleteDesign,
   sendQuotePrice,
   fetchSettings,
   updateSettings,
@@ -299,6 +300,13 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'categories'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
+    },
+  });
+
+  const deleteDesignMutation = useMutation({
+    mutationFn: deleteDesign,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'designs'] });
     },
   });
 
@@ -855,6 +863,17 @@ export default function AdminPage() {
                             Download Print File
                           </a>
                         )}
+                        <button
+                          onClick={() => {
+                            if (confirm('Delete this design? This cannot be undone.')) {
+                              deleteDesignMutation.mutate(String(d.id));
+                            }
+                          }}
+                          className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Delete
+                        </button>
                       </div>
                     </div>
                   </div>
