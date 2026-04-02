@@ -52,9 +52,21 @@ router.get('/', async (req, res, next) => {
       if (search) {
         const terms = search.trim().split(/\s+/).filter(Boolean);
         for (const term of terms) {
-          conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
-          params.push(`%${term}%`);
-          paramIndex++;
+          // Normalize: "tshirt" → also match "t-shirt", "tshirts" → "t-shirts"
+          const normalized = term.replace(/^t(shirt)/i, 't-$1');
+          // Also create a stripped version without hyphens
+          const stripped = term.replace(/-/g, '');
+          const pattern = normalized !== term ? `%(${normalized}|${stripped})%` : `%${term}%`;
+          // Use ILIKE with both the original and hyphenated form
+          if (normalized !== term) {
+            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex} OR name ILIKE $${paramIndex + 1} OR category ILIKE $${paramIndex + 1})`);
+            params.push(`%${stripped}%`, `%${normalized}%`);
+            paramIndex += 2;
+          } else {
+            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
+            params.push(`%${term}%`);
+            paramIndex++;
+          }
         }
       }
       if (category) {
@@ -89,8 +101,13 @@ router.get('/', async (req, res, next) => {
     if (search) {
       const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
       styles = styles.filter(s => {
-        const haystack = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
-        return terms.every(term => haystack.includes(term));
+        // Normalize haystack: remove hyphens for fuzzy matching
+        const raw = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
+        const haystack = raw + ' ' + raw.replace(/-/g, '');
+        return terms.every(term => {
+          const stripped = term.replace(/-/g, '');
+          return haystack.includes(term) || haystack.includes(stripped);
+        });
       });
     }
     if (brand) {
