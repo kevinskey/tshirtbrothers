@@ -8,6 +8,12 @@ import {
   sendQuoteAcceptedNotification,
   sendQuoteStatusUpdate,
 } from '../services/email.js';
+import {
+  smsNewQuoteToAdmin,
+  smsQuotePriceToCustomer,
+  smsQuoteAcceptedToAdmin,
+  smsStatusUpdateToCustomer,
+} from '../services/sms.js';
 
 const router = Router();
 
@@ -79,6 +85,7 @@ router.post('/', async (req, res, next) => {
 
     // Fire-and-forget: notify admin of new quote
     sendQuoteRequestNotification(quote).catch(() => {});
+    smsNewQuoteToAdmin(quote).catch(() => {});
 
     res.status(201).json(quote);
   } catch (err) {
@@ -161,6 +168,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       total,
       message,
     });
+    smsQuotePriceToCustomer(quote, total).catch(() => {});
 
     res.json({ success: true, quote });
   } catch (err) {
@@ -216,6 +224,7 @@ router.post('/accept/:id', async (req, res, next) => {
 
     // Notify admin
     sendQuoteAcceptedNotification(acceptedQuote).catch(() => {});
+    smsQuoteAcceptedToAdmin(acceptedQuote).catch(() => {});
 
     res.json({
       success: true,
@@ -262,6 +271,7 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     // Fire-and-forget: send status update email to customer
     if (['approved', 'completed', 'rejected'].includes(status)) {
       sendQuoteStatusUpdate(quote, status).catch(() => {});
+      smsStatusUpdateToCustomer(quote, status).catch(() => {});
     }
 
     res.json(quote);
