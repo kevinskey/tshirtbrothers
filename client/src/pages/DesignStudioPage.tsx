@@ -663,7 +663,7 @@ export default function DesignStudioPage() {
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
-      <div className="relative w-full max-w-xl px-4" ref={canvasRef}>
+      <div className="relative w-full max-w-3xl px-4" ref={canvasRef}>
         <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none">
           {displayImage ? (
             <img
