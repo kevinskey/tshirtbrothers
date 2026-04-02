@@ -64,6 +64,12 @@ interface FormData {
   customerEmail: string;
   customerPhone: string;
   notes: string;
+  shippingMethod: 'pickup' | 'ship';
+  shippingStreet: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingZip: string;
+  dateNeeded: string;
 }
 
 const INITIAL_FORM: FormData = {
@@ -79,6 +85,12 @@ const INITIAL_FORM: FormData = {
   customerEmail: '',
   customerPhone: '',
   notes: '',
+  shippingMethod: 'pickup',
+  shippingStreet: '',
+  shippingCity: '',
+  shippingState: '',
+  shippingZip: '',
+  dateNeeded: '',
 };
 
 /* ------------------------------------------------------------------ */
@@ -237,6 +249,14 @@ export default function QuotePage() {
         customer_email: formData.customerEmail,
         customer_phone: formData.customerPhone,
         notes: [formData.designNotes, formData.designIdea, formData.notes].filter(Boolean).join('\n'),
+        shipping_method: formData.shippingMethod,
+        shipping_address: formData.shippingMethod === 'ship' ? {
+          street1: formData.shippingStreet,
+          city: formData.shippingCity,
+          state: formData.shippingState,
+          zip: formData.shippingZip,
+        } : null,
+        date_needed: formData.dateNeeded || null,
       });
       setSubmitted(true);
     } catch (e) {
@@ -874,6 +894,91 @@ export default function QuotePage() {
               className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
             />
           </div>
+        </div>
+
+        {/* Date needed */}
+        <div className="mt-8 space-y-4">
+          <h3 className="font-display text-lg font-bold">When do you need it?</h3>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-600">Date needed</label>
+            <input
+              type="date"
+              value={formData.dateNeeded}
+              onChange={(e) => update({ dateNeeded: e.target.value })}
+              min={new Date().toISOString().split('T')[0]}
+              className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+        </div>
+
+        {/* Shipping */}
+        <div className="mt-8 space-y-4">
+          <h3 className="font-display text-lg font-bold">Delivery method</h3>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => update({ shippingMethod: 'pickup' })}
+              className={`flex-1 rounded-xl border p-4 text-center transition ${
+                formData.shippingMethod === 'pickup' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <p className="font-semibold text-gray-900">Local Pickup</p>
+              <p className="text-xs text-gray-500 mt-1">Fairburn, GA • Free</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => update({ shippingMethod: 'ship' })}
+              className={`flex-1 rounded-xl border p-4 text-center transition ${
+                formData.shippingMethod === 'ship' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              <p className="font-semibold text-gray-900">Ship to Me</p>
+              <p className="text-xs text-gray-500 mt-1">USPS / UPS / FedEx</p>
+            </button>
+          </div>
+
+          {formData.shippingMethod === 'ship' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-600">Street address</label>
+                <input
+                  placeholder="123 Main St"
+                  value={formData.shippingStreet}
+                  onChange={(e) => update({ shippingStreet: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-600">City</label>
+                <input
+                  placeholder="Atlanta"
+                  value={formData.shippingCity}
+                  onChange={(e) => update({ shippingCity: e.target.value })}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-600">State</label>
+                  <input
+                    placeholder="GA"
+                    value={formData.shippingState}
+                    onChange={(e) => update({ shippingState: e.target.value })}
+                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-600">ZIP</label>
+                  <input
+                    placeholder="30213"
+                    value={formData.shippingZip}
+                    onChange={(e) => update({ shippingZip: e.target.value })}
+                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Submit */}

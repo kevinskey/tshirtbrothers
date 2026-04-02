@@ -78,6 +78,9 @@ router.post('/', async (req, res, next) => {
       quantity,
       estimated_price,
       notes,
+      shipping_address,
+      date_needed,
+      shipping_method,
     } = req.body;
 
     if (!customer_name || !customer_email || !quantity) {
@@ -104,8 +107,8 @@ router.post('/', async (req, res, next) => {
 
     const result = await pool.query(
       `INSERT INTO quotes
-        (customer_name, customer_email, customer_phone, product_id, product_name, color, sizes, print_areas, design_type, design_url, quantity, estimated_price, notes, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        (customer_name, customer_email, customer_phone, product_id, product_name, color, sizes, print_areas, design_type, design_url, quantity, estimated_price, notes, user_id, shipping_address, date_needed, shipping_method)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         customer_name,
@@ -122,6 +125,9 @@ router.post('/', async (req, res, next) => {
         estimated_price || null,
         notes || null,
         userId,
+        shipping_address ? JSON.stringify(shipping_address) : null,
+        date_needed || null,
+        shipping_method || 'pickup',
       ]
     );
 
