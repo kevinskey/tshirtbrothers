@@ -196,7 +196,7 @@ interface Product {
 type ToolName = 'upload' | 'text' | 'art' | 'products' | 'details' | 'names' | null;
 type ViewName = 'front' | 'back' | 'sleeve';
 
-const DEFAULT_PRODUCT_ID = '32'; // Gildan Softstyle T-Shirt
+const DEFAULT_PRODUCT_ID = '39'; // Gildan Unisex Ultra Cotton T-Shirt
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
