@@ -438,10 +438,11 @@ export default function QuotePage() {
   const { data: productDetails, isLoading: colorsLoading } = useQuery({
     queryKey: ['product-details', productStyleId],
     queryFn: () => fetchProductDetails(productStyleId),
-    enabled: !!productStyleId && (currentStep === 2 || currentStep === 3),
+    enabled: !!productStyleId,
+    staleTime: 1000 * 60 * 30,
   });
   const colors = productDetails?.colors ?? [];
-  const productSizes = productDetails?.sizes ?? SIZES;
+  const productSizes = productDetails?.sizes && productDetails.sizes.length > 0 ? productDetails.sizes : (colorsLoading ? [] : SIZES);
 
   const renderStep2 = () => (
     <div>
