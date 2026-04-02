@@ -138,13 +138,30 @@ const FONT_OPTIONS = [
 const loadedFonts = new Set<string>();
 const SYSTEM_FONTS = ['Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Verdana', 'Comic Sans MS', 'Inter'];
 
-function loadGoogleFont(fontName: string) {
-  if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return;
+function loadGoogleFont(fontName: string): Promise<void> {
+  if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return Promise.resolve();
   loadedFonts.add(fontName);
   const link = document.createElement('link');
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
   document.head.appendChild(link);
+  // Wait for the font to actually load
+  return document.fonts.ready.then(() => {});
+}
+
+// Preload a batch of fonts (for the font list preview)
+let fontsPreloaded = false;
+function preloadAllFonts() {
+  if (fontsPreloaded) return;
+  fontsPreloaded = true;
+  // Load all fonts in one request using Google Fonts API
+  const googleFonts = FONT_OPTIONS.filter(f => !SYSTEM_FONTS.includes(f));
+  const families = googleFonts.map(f => `family=${f.replace(/ /g, '+')}:wght@700`).join('&');
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
+  document.head.appendChild(link);
+  googleFonts.forEach(f => loadedFonts.add(f));
 }
 
 interface ProductColor {
@@ -200,6 +217,7 @@ export default function DesignStudioPage() {
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [, setFontsReady] = useState(0); // force re-render when fonts load
 
   // --- Drag / resize state ---
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -805,6 +823,15 @@ export default function DesignStudioPage() {
   const selectedEl = designElements.find(e => e.id === selectedElementId);
   const showTextEditor = selectedEl?.type === 'text';
 
+  // Preload all Google Fonts when text editor opens
+  useEffect(() => {
+    if (showTextEditor) {
+      preloadAllFonts();
+      // Force re-render once fonts finish loading
+      document.fonts.ready.then(() => setFontsReady(n => n + 1));
+    }
+  }, [showTextEditor]);
+
   /* ---------------------------------------------------------------- */
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
@@ -1137,7 +1164,7 @@ export default function DesignStudioPage() {
                 data-font={f}
                 onMouseEnter={() => loadGoogleFont(f)}
                 onClick={() => {
-                  loadGoogleFont(f);
+                  loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
                   updateElement(selectedEl.id, { fontFamily: f });
                 }}
                 className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${
