@@ -413,16 +413,16 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Load default product once on mount
+  // Load product from URL param only (not a default)
   const hasLoadedProduct = useRef(false);
   useEffect(() => {
     if (hasLoadedProduct.current || selectedProduct) return;
+    if (!initialProductId) return; // No default — show welcome panel instead
     hasLoadedProduct.current = true;
-    const targetId = initialProductId || DEFAULT_PRODUCT_ID;
-    fetch(`/api/products/by-ssid/${targetId}`)
+    fetch(`/api/products/by-ssid/${initialProductId}`)
       .then(r => r.ok ? r.json() : null)
       .then(p => {
-        if (p && !selectedProduct) setSelectedProduct(p as Product);
+        if (p) setSelectedProduct(p as Product);
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
