@@ -138,6 +138,34 @@ router.get('/brands', async (req, res, next) => {
   }
 });
 
+// GET /weight/:styleId - Get estimated per-item weight from S&S
+router.get('/weight/:styleId', async (req, res, next) => {
+  try {
+    const { styleId } = req.params;
+    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
+    const apiKey = process.env.SS_API_KEY;
+    if (!accountNumber || !apiKey) return res.json({ weight_oz: null });
+
+    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
+    const response = await fetch(
+      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=caseWeight,caseQty&limit=1`,
+      { headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) }
+    );
+    if (!response.ok) return res.json({ weight_oz: null });
+
+    const data = await response.json();
+    if (data.length > 0 && data[0].caseWeight && data[0].caseQty) {
+      const perItemLbs = data[0].caseWeight / data[0].caseQty;
+      const perItemOz = Math.round(perItemLbs * 16 * 10) / 10;
+      res.json({ weight_oz: perItemOz, caseWeight: data[0].caseWeight, caseQty: data[0].caseQty });
+    } else {
+      res.json({ weight_oz: null });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /pricing/:styleId - Get S&S wholesale pricing for a style
 router.get('/pricing/:styleId', async (req, res, next) => {
   try {

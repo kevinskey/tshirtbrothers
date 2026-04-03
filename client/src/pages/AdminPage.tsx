@@ -1701,7 +1701,18 @@ export default function AdminPage() {
                           return (
                             <button
                               key={p.id}
-                              onClick={() => { addInvoiceItem(`${p.name} (${p.brand})`, 1, customP || wholesale || 0); setInvoiceProductSearch(''); }}
+                              onClick={async () => {
+                                const ssId = (p as unknown as Record<string, unknown>).ss_id;
+                                let weightOz = 0;
+                                if (ssId) {
+                                  try {
+                                    const wr = await fetch(`/api/products/weight/${ssId}`);
+                                    if (wr.ok) { const wd = await wr.json(); weightOz = wd.weight_oz || 0; }
+                                  } catch {}
+                                }
+                                addInvoiceItem(`${p.name} (${p.brand})`, 1, customP || wholesale || 0, weightOz);
+                                setInvoiceProductSearch('');
+                              }}
                               className="w-full text-left px-3 py-2.5 hover:bg-gray-50 text-sm flex items-center gap-3"
                             >
                               {p.image_url ? (
