@@ -394,7 +394,7 @@ export default function AdminPage() {
       slug: blogForm.slug,
       excerpt: blogForm.excerpt || undefined,
       cover_image: blogForm.cover_image || undefined,
-      tags: blogForm.tags,
+      tags: typeof blogForm.tags === 'string' ? (blogForm.tags as string).split(',').map((t: string) => t.trim()).filter(Boolean) : blogForm.tags,
       content: blogForm.content,
       meta_title: blogForm.meta_title || undefined,
       meta_description: blogForm.meta_description || undefined,
