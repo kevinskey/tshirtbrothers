@@ -1250,7 +1250,28 @@ export default function AdminPage() {
         {/* Customers Section */}
         {activeSection === 'customers' && (
           <div>
-            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Customers</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-display font-bold text-gray-900">Customers</h2>
+              <button
+                onClick={() => {
+                  const name = prompt('Customer name:');
+                  if (!name) return;
+                  const email = prompt('Customer email:');
+                  if (!email) return;
+                  fetch('/api/admin/customers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                    body: JSON.stringify({ name, email }),
+                  }).then(r => {
+                    if (r.ok) { queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] }); alert('Customer added!'); }
+                    else r.json().then(d => alert(d.error || 'Failed'));
+                  });
+                }}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+              >
+                <Plus className="w-4 h-4" /> Add Customer
+              </button>
+            </div>
 
             {/* Search */}
             <div className="relative mb-6">

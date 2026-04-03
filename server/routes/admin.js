@@ -93,6 +93,41 @@ router.post('/upload-url', async (req, res, next) => {
 });
 
 // GET /customers - List all registered customers with design/quote counts
+// POST /customers - Create a new customer
+router.post('/customers', async (req, res, next) => {
+  try {
+    const { name, email, phone } = req.body;
+    if (!name || !email) return res.status(400).json({ error: 'name and email required' });
+
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already exists' });
+
+    const bcrypt = (await import('bcryptjs')).default;
+    const hash = await bcrypt.hash(Math.random().toString(36).slice(2) + Date.now(), 10);
+
+    const result = await pool.query(
+      'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, created_at',
+      [name, email, hash, 'customer']
+    );
+
+    // Store phone in a simple way — add to notes or a separate field if needed
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /customers/:id - Delete a customer
+router.delete('/customers/:id', async (req, res, next) => {
+  try {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 AND role = $2 RETURNING id', [req.params.id, 'customer']);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/customers', async (req, res, next) => {
   try {
     const { search } = req.query;
