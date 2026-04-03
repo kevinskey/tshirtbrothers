@@ -212,7 +212,8 @@ export default function ShopPage() {
   const [searchParams] = useSearchParams();
   const urlCategory = searchParams.get('category') || '';
   const urlBrand = searchParams.get('brand') || '';
-  const [search, setSearch] = useState('');
+  const urlSearch = searchParams.get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
   const [brand, setBrand] = useState(urlBrand);
   const [category, setCategory] = useState(urlCategory);
 
@@ -220,7 +221,8 @@ export default function ShopPage() {
   useEffect(() => {
     setCategory(urlCategory);
     setBrand(urlBrand);
-  }, [urlCategory, urlBrand]);
+    setSearch(urlSearch);
+  }, [urlCategory, urlBrand, urlSearch]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Fetch filter options from API

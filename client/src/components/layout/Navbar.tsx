@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Phone, Search, User, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +17,16 @@ const subNavLinks = [
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      navigate(`/shop?search=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchQuery('');
+      setMobileOpen(false);
+    }
+  };
 
   return (
     <nav className="sticky top-0 z-50">
@@ -52,11 +61,13 @@ export default function Navbar() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Search for t-shirts, hoodies, hats, and more"
                   className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 />
                 <button
                   type="button"
+                  onClick={handleSearch}
                   className="absolute right-1 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
                   aria-label="Search"
                 >
@@ -127,11 +138,13 @@ export default function Navbar() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search for t-shirts, hoodies, hats, and more"
               className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
             />
             <button
               type="button"
+              onClick={handleSearch}
               className="absolute right-1 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
               aria-label="Search"
             >
