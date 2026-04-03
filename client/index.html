@@ -2,9 +2,80 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
+    <link rel="apple-touch-icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>T-Shirt Brothers</title>
+
+    <!-- SEO Meta Tags -->
+    <title>TShirt Brothers | Custom T-Shirt Printing in Tyrone & Fairburn, GA | Screen Printing, DTF, Embroidery</title>
+    <meta name="description" content="Custom t-shirt printing in Tyrone & Fairburn, Georgia. Screen printing, DTF transfers, embroidery, and vinyl. No minimums. Same-day pickup. Free shipping over $150. Design online or get a free quote." />
+    <meta name="keywords" content="custom t-shirts, screen printing, DTF printing, embroidery, custom apparel, Tyrone GA, Fairburn GA, Peachtree City, Atlanta, custom printing, no minimums, bulk orders, team shirts, corporate apparel" />
+    <meta name="author" content="TShirt Brothers" />
+    <link rel="canonical" href="https://tshirtbrothers.com" />
+
+    <!-- Open Graph (Facebook/LinkedIn) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="TShirt Brothers | Custom T-Shirt Printing - No Minimums" />
+    <meta property="og:description" content="Custom t-shirts, hoodies, hats & more. Screen printing, DTF, embroidery. Same-day pickup in Tyrone, GA. Free shipping over $150." />
+    <meta property="og:image" content="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
+    <meta property="og:url" content="https://tshirtbrothers.com" />
+    <meta property="og:site_name" content="TShirt Brothers" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="TShirt Brothers | Custom T-Shirt Printing - No Minimums" />
+    <meta name="twitter:description" content="Custom t-shirts, hoodies, hats & more. Screen printing, DTF, embroidery. Tyrone, GA." />
+    <meta name="twitter:image" content="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
+
+    <!-- Local Business Schema -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      "name": "TShirt Brothers",
+      "image": "https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png",
+      "url": "https://tshirtbrothers.com",
+      "telephone": "+14706224845",
+      "email": "kevin@tshirtbrothers.com",
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "6010 Renaissance Parkway",
+        "addressLocality": "Fairburn",
+        "addressRegion": "GA",
+        "postalCode": "30213",
+        "addressCountry": "US"
+      },
+      "geo": {
+        "@type": "GeoCoordinates",
+        "latitude": 33.5668,
+        "longitude": -84.5808
+      },
+      "openingHoursSpecification": [
+        {
+          "@type": "OpeningHoursSpecification",
+          "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"],
+          "opens": "08:00",
+          "closes": "20:00"
+        }
+      ],
+      "priceRange": "$",
+      "description": "Custom t-shirt printing in Tyrone & Fairburn, Georgia. Screen printing, DTF transfers, embroidery, and vinyl. No minimums required.",
+      "areaServed": ["Tyrone", "Fairburn", "Peachtree City", "Fayetteville", "Union City", "Newnan", "Atlanta"],
+      "hasOfferCatalog": {
+        "@type": "OfferCatalog",
+        "name": "Custom Printing Services",
+        "itemListElement": [
+          {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Screen Printing"}},
+          {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "DTF Transfers"}},
+          {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Embroidery"}},
+          {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Custom Vinyl"}}
+        ]
+      }
+    }
+    </script>
+
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -13,6 +84,14 @@
     />
   </head>
   <body>
+    <!-- SEO: Static content for crawlers that can't run JavaScript -->
+    <noscript>
+      <h1>TShirt Brothers - Custom T-Shirt Printing in Tyrone & Fairburn, GA</h1>
+      <p>Custom t-shirts, hoodies, polos, and more. Screen printing, DTF transfers, embroidery, and vinyl. No minimums. Same-day pickup available. Free shipping on orders over $150.</p>
+      <p>Services: Screen Printing, DTF Transfers, Embroidery, Custom Vinyl, Stickers</p>
+      <p>Serving: Tyrone, Fairburn, Peachtree City, Fayetteville, Union City, Newnan, Atlanta Metro</p>
+      <p>Contact: (470) 622-4845 | kevin@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
