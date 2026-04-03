@@ -1692,17 +1692,38 @@ export default function AdminPage() {
                       />
                     </div>
                     {invoiceProductSearch.length >= 2 && invoiceSearchProducts.length > 0 && (
-                      <div className="mt-2 border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100">
-                        {invoiceSearchProducts.slice(0, 10).map((p: Product) => (
-                          <button
-                            key={p.id}
-                            onClick={() => { addInvoiceItem(p.name, 1, p.price || 0); setInvoiceProductSearch(''); }}
-                            className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-sm flex justify-between items-center"
-                          >
-                            <span className="text-gray-900">{p.name}</span>
-                            <span className="text-gray-500">${(p.price || 0).toFixed(2)}</span>
-                          </button>
-                        ))}
+                      <div className="mt-2 border border-gray-200 rounded-lg max-h-64 overflow-y-auto divide-y divide-gray-100">
+                        {invoiceSearchProducts.slice(0, 10).map((p: Product) => {
+                          const wholesale = p.base_price && Number(p.base_price) > 0 ? Number(p.base_price) : null;
+                          const customP = p.custom_price ? Number(p.custom_price) : null;
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={() => { addInvoiceItem(`${p.name} (${p.brand})`, 1, customP || wholesale || 0); setInvoiceProductSearch(''); }}
+                              className="w-full text-left px-3 py-2.5 hover:bg-gray-50 text-sm flex items-center gap-3"
+                            >
+                              {p.image_url ? (
+                                <img src={String(p.image_url)} alt="" className="h-10 w-10 rounded bg-gray-100 object-contain flex-shrink-0" />
+                              ) : (
+                                <div className="h-10 w-10 rounded bg-gray-100 flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-gray-900 font-medium truncate">{p.name}</p>
+                                <p className="text-xs text-gray-500">{p.brand} &middot; {p.category}</p>
+                              </div>
+                              <div className="text-right flex-shrink-0">
+                                {wholesale && <p className="text-[10px] text-gray-400">Wholesale: ${wholesale.toFixed(2)}</p>}
+                                {customP ? (
+                                  <p className="text-sm font-semibold text-green-700">${customP.toFixed(2)}</p>
+                                ) : wholesale ? (
+                                  <p className="text-sm text-gray-600">${wholesale.toFixed(2)}</p>
+                                ) : (
+                                  <p className="text-xs text-gray-400">No price</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
