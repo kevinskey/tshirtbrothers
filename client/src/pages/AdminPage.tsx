@@ -1596,7 +1596,6 @@ export default function AdminPage() {
                                   >
                                     <Trash2 className="w-3 h-3 inline mr-1" />Delete
                                   </button>
-                                )}
                               </div>
                             </td>
                           </tr>
