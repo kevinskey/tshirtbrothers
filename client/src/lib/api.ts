@@ -387,6 +387,59 @@ export async function deleteInvoice(id: string): Promise<{ deleted: boolean }> {
   return authRequest<{ deleted: boolean }>(`/invoices/${id}`, { method: 'DELETE' });
 }
 
+// Blog
+export interface BlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  excerpt: string | null;
+  cover_image: string | null;
+  author: string;
+  tags: string[];
+  status: 'draft' | 'published';
+  meta_title: string | null;
+  meta_description: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchBlogPosts(tag?: string): Promise<BlogPost[]> {
+  const query = tag ? `?tag=${encodeURIComponent(tag)}` : '';
+  return request<BlogPost[]>(`/blog${query}`);
+}
+
+export async function fetchBlogPost(slug: string): Promise<BlogPost> {
+  return request<BlogPost>(`/blog/${slug}`);
+}
+
+export async function fetchAdminBlogPosts(): Promise<BlogPost[]> {
+  return authRequest<BlogPost[]>('/blog/admin/all');
+}
+
+export async function createBlogPost(data: Partial<BlogPost>): Promise<BlogPost> {
+  return authRequest<BlogPost>('/blog', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateBlogPost(id: string, data: Partial<BlogPost>): Promise<BlogPost> {
+  return authRequest<BlogPost>(`/blog/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteBlogPost(id: string): Promise<{ deleted: boolean }> {
+  return authRequest<{ deleted: boolean }>(`/blog/${id}`, { method: 'DELETE' });
+}
+
+export async function publishBlogPost(id: string): Promise<BlogPost> {
+  return authRequest<BlogPost>(`/blog/${id}/publish`, { method: 'POST' });
+}
+
 // Settings
 export async function fetchSettings(): Promise<Record<string, string>> {
   return authRequest<Record<string, string>>('/admin/settings');

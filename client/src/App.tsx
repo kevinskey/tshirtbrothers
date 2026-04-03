@@ -22,6 +22,8 @@ import AdminPage from '@/pages/AdminPage';
 import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
+import BlogPage from '@/pages/BlogPage';
+import BlogPostPage from '@/pages/BlogPostPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
@@ -44,6 +46,8 @@ function App() {
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/quote" element={<QuotePage />} />
+          <Route path="/blog" element={<BlogPage />} />
+          <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/auth" element={<AuthPage />} />

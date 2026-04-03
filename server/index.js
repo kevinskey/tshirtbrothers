@@ -14,6 +14,7 @@ import designsRouter from './routes/designs.js';
 import paymentsRouter from './routes/payments.js';
 import shippingRouter from './routes/shipping.js';
 import invoicesRouter from './routes/invoices.js';
+import blogRouter from './routes/blog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,6 +45,7 @@ app.use('/api/designs', designsRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/shipping', shippingRouter);
 app.use('/api/invoices', invoicesRouter);
+app.use('/api/blog', blogRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

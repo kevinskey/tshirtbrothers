@@ -29,6 +29,8 @@ import {
   DollarSign,
   Send,
   Receipt,
+  PenSquare,
+  Edit3,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -65,9 +67,15 @@ import {
   sendInvoice,
   deleteInvoice,
   recordPayment,
+  type BlogPost,
+  fetchAdminBlogPosts,
+  createBlogPost,
+  updateBlogPost,
+  deleteBlogPost,
+  publishBlogPost,
 } from '@/lib/api';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
 
@@ -80,6 +88,7 @@ const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[]
   { key: 'customers', label: 'Customers', icon: Users },
   { key: 'products', label: 'Products', icon: Package },
   { key: 'categories', label: 'Categories', icon: FolderTree },
+  { key: 'blog', label: 'Blog', icon: PenSquare },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -96,6 +105,7 @@ const STATUS_COLORS: Record<string, string> = {
   paid: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
   cancelled: 'bg-gray-100 text-gray-500',
+  published: 'bg-green-100 text-green-800',
 };
 
 type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
@@ -215,6 +225,20 @@ export default function AdminPage() {
   const [priceMessage, setPriceMessage] = useState('');
   const [sizeMarkups, setSizeMarkups] = useState<Record<string, string>>({});
 
+  // Blog state
+  const [blogView, setBlogView] = useState<'list' | 'editor'>('list');
+  const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
+  const [blogForm, setBlogForm] = useState({
+    title: '',
+    slug: '',
+    excerpt: '',
+    cover_image: '',
+    tags: '',
+    content: '',
+    meta_title: '',
+    meta_description: '',
+  });
+
   // Category form state
   const [catName, setCatName] = useState('');
   const [catParent, setCatParent] = useState('');
@@ -295,6 +319,12 @@ export default function AdminPage() {
     enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceProductSearch.length >= 2,
   });
 
+  const blogPostsQuery = useQuery({
+    queryKey: ['admin', 'blog-posts'],
+    queryFn: fetchAdminBlogPosts,
+    enabled: activeSection === 'blog',
+  });
+
   const { data: settingsData } = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: fetchSettings,
@@ -324,6 +354,58 @@ export default function AdminPage() {
       setSettingsSaving(false);
     }
   };
+
+  // Blog helpers
+  function resetBlogForm() {
+    setBlogForm({ title: '', slug: '', excerpt: '', cover_image: '', tags: '', content: '', meta_title: '', meta_description: '' });
+    setEditingPost(null);
+  }
+
+  function blogSlugify(text: string) {
+    return text.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/--+/g, '-');
+  }
+
+  function handleBlogTitleChange(title: string) {
+    setBlogForm(prev => ({
+      ...prev,
+      title,
+      slug: editingPost ? prev.slug : blogSlugify(title),
+    }));
+  }
+
+  function handleEditPost(post: BlogPost) {
+    setEditingPost(post);
+    setBlogForm({
+      title: post.title,
+      slug: post.slug,
+      excerpt: post.excerpt || '',
+      cover_image: post.cover_image || '',
+      tags: post.tags?.join(', ') || '',
+      content: post.content || '',
+      meta_title: post.meta_title || '',
+      meta_description: post.meta_description || '',
+    });
+    setBlogView('editor');
+  }
+
+  function handleSaveBlogPost(status: 'draft' | 'published') {
+    const payload = {
+      title: blogForm.title,
+      slug: blogForm.slug,
+      excerpt: blogForm.excerpt || undefined,
+      cover_image: blogForm.cover_image || undefined,
+      tags: blogForm.tags,
+      content: blogForm.content,
+      meta_title: blogForm.meta_title || undefined,
+      meta_description: blogForm.meta_description || undefined,
+      status,
+    };
+    if (editingPost) {
+      updateBlogMutation.mutate({ id: editingPost.id, data: payload });
+    } else {
+      createBlogMutation.mutate(payload);
+    }
+  }
 
   // Mutations
   const statusMutation = useMutation({
@@ -375,6 +457,38 @@ export default function AdminPage() {
     mutationFn: deleteDesign,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
+    },
+  });
+
+  const createBlogMutation = useMutation({
+    mutationFn: (data: Partial<BlogPost>) => createBlogPost(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blog-posts'] });
+      setBlogView('list');
+      resetBlogForm();
+    },
+  });
+
+  const updateBlogMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<BlogPost> }) => updateBlogPost(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blog-posts'] });
+      setBlogView('list');
+      resetBlogForm();
+    },
+  });
+
+  const deleteBlogMutation = useMutation({
+    mutationFn: deleteBlogPost,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blog-posts'] });
+    },
+  });
+
+  const publishBlogMutation = useMutation({
+    mutationFn: publishBlogPost,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'blog-posts'] });
     },
   });
 
@@ -2078,6 +2192,230 @@ export default function AdminPage() {
         )}
 
         {/* Settings Section */}
+        {activeSection === 'blog' && (
+          <div>
+            {blogView === 'list' ? (
+              <>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-display font-bold text-gray-900">Blog Posts</h2>
+                  <button
+                    onClick={() => { resetBlogForm(); setBlogView('editor'); }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Post
+                  </button>
+                </div>
+
+                {blogPostsQuery.isLoading && (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                  </div>
+                )}
+
+                {blogPostsQuery.data && blogPostsQuery.data.length === 0 && (
+                  <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+                    <PenSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No blog posts yet. Create your first one!</p>
+                  </div>
+                )}
+
+                {blogPostsQuery.data && blogPostsQuery.data.length > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 text-left text-gray-500">
+                          <th className="px-4 py-3 font-medium">Title</th>
+                          <th className="px-4 py-3 font-medium">Status</th>
+                          <th className="px-4 py-3 font-medium">Date</th>
+                          <th className="px-4 py-3 font-medium text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {blogPostsQuery.data.map((post: BlogPost) => (
+                          <tr key={post.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">{post.title}</td>
+                            <td className="px-4 py-3">
+                              <StatusBadge status={post.status} />
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {post.published_at
+                                ? new Date(post.published_at).toLocaleDateString()
+                                : new Date(post.created_at).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleEditPost(post)}
+                                  className="p-1.5 text-gray-400 hover:text-blue-600 transition"
+                                  title="Edit"
+                                >
+                                  <Edit3 className="w-4 h-4" />
+                                </button>
+                                {post.status === 'draft' && (
+                                  <button
+                                    onClick={() => publishBlogMutation.mutate(post.id)}
+                                    className="px-2.5 py-1 text-xs font-medium bg-green-50 text-green-700 rounded-md hover:bg-green-100 transition"
+                                  >
+                                    Publish
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    if (confirm('Delete this post?')) deleteBlogMutation.mutate(post.id);
+                                  }}
+                                  className="p-1.5 text-gray-400 hover:text-red-600 transition"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>
+                <button
+                  onClick={() => { setBlogView('list'); resetBlogForm(); }}
+                  className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition mb-6"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Posts
+                </button>
+
+                <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">
+                  {editingPost ? 'Edit Post' : 'New Post'}
+                </h2>
+
+                <div className="space-y-5">
+                  {/* Title */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                    <input
+                      value={blogForm.title}
+                      onChange={(e) => handleBlogTitleChange(e.target.value)}
+                      placeholder="Post title..."
+                      className="w-full border border-gray-200 rounded-lg px-4 py-3 text-lg font-display font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+
+                  {/* Slug */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                    <input
+                      value={blogForm.slug}
+                      onChange={(e) => setBlogForm(prev => ({ ...prev, slug: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+
+                  {/* Excerpt */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Excerpt</label>
+                    <textarea
+                      value={blogForm.excerpt}
+                      onChange={(e) => setBlogForm(prev => ({ ...prev, excerpt: e.target.value }))}
+                      rows={3}
+                      placeholder="Brief summary of the post..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+
+                  {/* Cover Image */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cover Image URL</label>
+                    <input
+                      value={blogForm.cover_image}
+                      onChange={(e) => setBlogForm(prev => ({ ...prev, cover_image: e.target.value }))}
+                      placeholder="https://..."
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                    {blogForm.cover_image && (
+                      <img src={blogForm.cover_image} alt="Cover preview" className="mt-2 h-32 object-cover rounded-lg" />
+                    )}
+                  </div>
+
+                  {/* Tags */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tags (comma separated)</label>
+                    <input
+                      value={blogForm.tags}
+                      onChange={(e) => setBlogForm(prev => ({ ...prev, tags: e.target.value }))}
+                      placeholder="screen printing, tips, guides"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                  </div>
+
+                  {/* Content */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Content (HTML)</label>
+                    <textarea
+                      value={blogForm.content}
+                      onChange={(e) => setBlogForm(prev => ({ ...prev, content: e.target.value }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono min-h-[400px] focus:outline-none focus:ring-2 focus:ring-red-500"
+                      placeholder="<h2>Your post content here...</h2><p>Write HTML content...</p>"
+                    />
+                  </div>
+
+                  {/* Meta fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Meta Title</label>
+                      <input
+                        value={blogForm.meta_title}
+                        onChange={(e) => setBlogForm(prev => ({ ...prev, meta_title: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Meta Description</label>
+                      <input
+                        value={blogForm.meta_description}
+                        onChange={(e) => setBlogForm(prev => ({ ...prev, meta_description: e.target.value }))}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+                    <button
+                      onClick={() => handleSaveBlogPost('draft')}
+                      disabled={!blogForm.title || createBlogMutation.isPending || updateBlogMutation.isPending}
+                      className="px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
+                    >
+                      {(createBlogMutation.isPending || updateBlogMutation.isPending) ? 'Saving...' : 'Save Draft'}
+                    </button>
+                    <button
+                      onClick={() => handleSaveBlogPost('published')}
+                      disabled={!blogForm.title || createBlogMutation.isPending || updateBlogMutation.isPending}
+                      className="px-5 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                    >
+                      Publish
+                    </button>
+                    {blogForm.slug && (
+                      <a
+                        href={`/blog/${blogForm.slug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-medium text-blue-600 hover:text-blue-700 transition"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        Preview
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeSection === 'settings' && (
           <div>
             <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Settings</h2>
