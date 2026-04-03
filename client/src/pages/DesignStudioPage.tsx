@@ -214,6 +214,7 @@ export default function DesignStudioPage() {
   const [activeTool, setActiveTool] = useState<ToolName>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
+  const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
   const [designElements, setDesignElements] = useState<DesignElement[]>(loadState?.elements || []);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -442,7 +443,7 @@ export default function DesignStudioPage() {
   });
 
   const productColors = colorsData?.colors ?? selectedProduct?.colors ?? [];
-  const selectedColorImage = productColors[selectedColorIdx]?.image;
+  const selectedColorImage = userPickedColor ? productColors[selectedColorIdx]?.image : null;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   const displayImage = currentView === 'back' ? backImage : frontImage;
@@ -1147,7 +1148,7 @@ export default function DesignStudioPage() {
                     key={i}
                     type="button"
                     title={c.name}
-                    onClick={() => setSelectedColorIdx(i)}
+                    onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); }}
                     className={`h-8 w-8 rounded-full border-2 transition ${
                       selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
                     }`}
@@ -1456,7 +1457,7 @@ export default function DesignStudioPage() {
                           key={i}
                           type="button"
                           title={c.name}
-                          onClick={() => { setSelectedColorIdx(i); setShowColorPicker(false); }}
+                          onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); setShowColorPicker(false); }}
                           className={`h-7 w-7 rounded-full border-2 transition ${
                             selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
                           }`}
