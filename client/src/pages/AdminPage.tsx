@@ -1590,9 +1590,8 @@ export default function AdminPage() {
                                     <DollarSign className="w-3 h-3 inline mr-1" />Payment
                                   </button>
                                 )}
-                                {inv.status === 'draft' && (
-                                  <button
-                                    onClick={() => { if (confirm('Delete this draft invoice?')) deleteInvoiceMutation.mutate(inv.id); }}
+                                <button
+                                    onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
                                     className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3 inline mr-1" />Delete

@@ -412,17 +412,12 @@ router.post('/:id/record-payment', async (req, res, next) => {
   }
 });
 
-// DELETE /:id - Delete draft invoice only
+// DELETE /:id - Delete any invoice
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { rows } = await pool.query('SELECT status FROM invoices WHERE id = $1', [id]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
-    if (rows[0].status !== 'draft') {
-      return res.status(400).json({ error: 'Only draft invoices can be deleted' });
-    }
-
-    await pool.query('DELETE FROM invoices WHERE id = $1', [id]);
+    const result = await pool.query('DELETE FROM invoices WHERE id = $1 RETURNING id', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     res.json({ deleted: true });
   } catch (err) {
     next(err);
