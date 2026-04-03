@@ -413,29 +413,35 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Fetch the specific product by ss_id
+  // Fetch the specific product by ss_id — only one query, no race condition
   const targetId = initialProductId || DEFAULT_PRODUCT_ID;
   const { data: defaultProductData } = useQuery({
     queryKey: ['default-product', targetId],
     queryFn: async () => {
-      // Try to find by ss_id first
       const res = await fetch(`/api/products/by-ssid/${targetId}`);
       if (res.ok) {
         const p = await res.json();
         if (p) return p as Product;
       }
-      // Fallback: search for Gildan Ultra Cotton
-      const fallback = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
-      if (!fallback.ok) return null;
-      const data = await fallback.json() as { products: Product[] };
-      return data.products.find(p => String(p.ss_id) === String(targetId)) || data.products[0] || null;
+      // Only fall back to Gildan if no specific product was requested
+      if (!initialProductId) {
+        const fallback = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
+        if (fallback.ok) {
+          const data = await fallback.json() as { products: Product[] };
+          return data.products[0] || null;
+        }
+      }
+      return null;
     },
     enabled: !selectedProduct,
+    staleTime: Infinity, // Don't refetch once we have a result
   });
 
-  // Auto-select default product
+  // Auto-select default product — only once
+  const hasAutoSelected = useRef(false);
   useEffect(() => {
-    if (!selectedProduct && defaultProductData) {
+    if (!hasAutoSelected.current && !selectedProduct && defaultProductData) {
+      hasAutoSelected.current = true;
       setSelectedProduct(defaultProductData);
     }
   }, [defaultProductData, selectedProduct]);
