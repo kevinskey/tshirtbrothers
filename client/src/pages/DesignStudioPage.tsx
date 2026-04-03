@@ -413,16 +413,16 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Load product from URL param only (not a default)
+  // Load product once on mount — from URL param or default Gildan
   const hasLoadedProduct = useRef(false);
   useEffect(() => {
-    if (hasLoadedProduct.current || selectedProduct) return;
-    if (!initialProductId) return; // No default — show welcome panel instead
+    if (hasLoadedProduct.current) return;
     hasLoadedProduct.current = true;
-    fetch(`/api/products/by-ssid/${initialProductId}`)
+    const targetId = initialProductId || '39';
+    fetch(`/api/products/by-ssid/${targetId}`)
       .then(r => r.ok ? r.json() : null)
       .then(p => {
-        if (p) setSelectedProduct(p as Product);
+        if (p) setSelectedProduct(prev => prev || (p as Product));
       })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
