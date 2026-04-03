@@ -61,6 +61,7 @@ import {
   type CreateInvoiceData,
   fetchInvoices,
   createInvoice,
+  updateInvoice,
   sendInvoice,
   deleteInvoice,
   recordPayment,
