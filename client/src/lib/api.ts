@@ -176,14 +176,14 @@ export async function fetchCategories() {
 }
 
 export async function createCategory(data: { name: string; parentId?: string; description: string }) {
-  return authRequest<Category>('/admin/categories', {
+  return authRequest<Category>('/categories', {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ name: data.name, parent_id: data.parentId, description: data.description }),
   });
 }
 
 export async function deleteCategory(id: string) {
-  return authRequest<void>(`/admin/categories/${id}`, {
+  return authRequest<void>(`/categories/${id}`, {
     method: 'DELETE',
   });
 }
