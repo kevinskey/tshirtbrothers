@@ -461,9 +461,7 @@ export default function AdminPage() {
     return invoiceForm.items.reduce((sum, it) => sum + (it.quantity * it.unit_price) + ((it.shipping_cost || 0) * it.quantity), 0);
   }
 
-  function calcTotalWeight() {
-    return invoiceForm.items.reduce((sum, it) => sum + ((it.weight_oz || 0) * it.quantity), 0);
-  }
+  const totalWeight = invoiceForm.items.reduce((sum, it) => sum + ((it.weight_oz || 0) * it.quantity), 0);
 
   function calcInvoiceTotal() {
     const sub = calcInvoiceSubtotal();
@@ -1811,6 +1809,12 @@ export default function AdminPage() {
                         <span className="text-gray-500">Subtotal</span>
                         <span className="font-medium text-gray-900">${calcInvoiceSubtotal().toFixed(2)}</span>
                       </div>
+                      {totalWeight > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">Total Weight</span>
+                          <span className="text-gray-600">{totalWeight.toFixed(1)} oz ({(totalWeight / 16).toFixed(1)} lbs)</span>
+                        </div>
+                      )}
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-500">Tax</span>
                         <div className="relative w-28">
