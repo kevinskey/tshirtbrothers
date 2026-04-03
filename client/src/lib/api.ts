@@ -164,10 +164,11 @@ export async function updateQuoteStatus(id: string, status: string) {
   });
 }
 
-export async function fetchAdminProducts(search?: string) {
-  const query = search ? `?search=${encodeURIComponent(search)}&limit=100` : '?limit=100';
-  const data = await request<{ products: Product[] }>(`/products${query}`);
-  return data.products || [];
+export async function fetchAdminProducts(search?: string, page = 1) {
+  const params = new URLSearchParams({ limit: '50', page: String(page) });
+  if (search) params.set('search', search);
+  const data = await request<{ products: Product[]; total: number; totalPages: number; page: number }>(`/products?${params}`);
+  return data;
 }
 
 export async function fetchCategories() {

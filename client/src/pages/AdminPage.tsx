@@ -166,6 +166,7 @@ export default function AdminPage() {
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [productSearch, setProductSearch] = useState('');
+  const [productPage, setProductPage] = useState(1);
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
 
   // New section state
@@ -245,8 +246,8 @@ export default function AdminPage() {
   });
 
   const productsQuery = useQuery({
-    queryKey: ['admin', 'products', productSearch],
-    queryFn: () => fetchAdminProducts(productSearch),
+    queryKey: ['admin', 'products', productSearch, productPage],
+    queryFn: () => fetchAdminProducts(productSearch, productPage),
     enabled: activeSection === 'products',
   });
 
@@ -577,7 +578,9 @@ export default function AdminPage() {
 
   const stats = statsQuery.data;
   const quotes = quotesQuery.data ?? [];
-  const products = productsQuery.data ?? [];
+  const products = productsQuery.data?.products ?? [];
+  const productTotal = productsQuery.data?.total ?? 0;
+  const productTotalPages = productsQuery.data?.totalPages ?? 1;
   const categories = categoriesQuery.data ?? [];
   const designs = designsQuery.data ?? [];
   const customers = customersQuery.data ?? [];
@@ -847,7 +850,7 @@ export default function AdminPage() {
                 type="text"
                 placeholder="Search products..."
                 value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
+                onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }}
                 className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
               />
             </div>
@@ -920,6 +923,29 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-gray-500">
+                Showing {products.length} of {productTotal} products (Page {productPage} of {productTotalPages})
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setProductPage(p => Math.max(1, p - 1))}
+                  disabled={productPage <= 1}
+                  className="px-3 py-1.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setProductPage(p => Math.min(productTotalPages, p + 1))}
+                  disabled={productPage >= productTotalPages}
+                  className="px-3 py-1.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>
