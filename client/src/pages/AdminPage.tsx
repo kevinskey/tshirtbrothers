@@ -181,6 +181,7 @@ export default function AdminPage() {
   // Invoice state
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all');
   const [invoiceView, setInvoiceView] = useState<InvoiceView>('list');
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<{
     customer_name: string;
     customer_email: string;
@@ -386,6 +387,21 @@ export default function AdminPage() {
     onError: (err) => alert(`Failed to create invoice: ${err instanceof Error ? err.message : 'Unknown error'}`),
   });
 
+  const updateInvoiceMutation = useMutation({
+    mutationFn: (data: CreateInvoiceData & { id: string }) => {
+      const { id, ...rest } = data;
+      return updateInvoice(id, rest);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      setInvoiceView('list');
+      resetInvoiceForm();
+      setEditingInvoiceId(null);
+      alert('Invoice updated!');
+    },
+    onError: (err) => alert(`Failed to update: ${err instanceof Error ? err.message : 'Unknown error'}`),
+  });
+
   const sendInvoiceMutation = useMutation({
     mutationFn: (id: string) => sendInvoice(id),
     onSuccess: () => {
@@ -437,6 +453,7 @@ export default function AdminPage() {
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
+    setEditingInvoiceId(null);
   }
 
   function calcInvoiceSubtotal() {
@@ -488,7 +505,11 @@ export default function AdminPage() {
       notes: invoiceForm.notes || undefined,
       due_date: invoiceForm.due_date || undefined,
     };
-    createInvoiceMutation.mutate(data);
+    if (editingInvoiceId) {
+      updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
+    } else {
+      createInvoiceMutation.mutate(data);
+    }
   }
 
   function handlePreviewInvoice() {
@@ -1572,7 +1593,28 @@ export default function AdminPage() {
                             <td className="px-6 py-4 text-right font-medium text-red-600">${Number(inv.amount_due).toFixed(2)}</td>
                             <td className="px-6 py-4"><StatusBadge status={inv.status} /></td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingInvoiceId(inv.id);
+                                    setInvoiceForm({
+                                      customer_name: inv.customer_name || '',
+                                      customer_email: inv.customer_email || '',
+                                      customer_phone: inv.customer_phone || '',
+                                      customer_address: '',
+                                      items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
+                                      tax: String(inv.tax || 0),
+                                      shipping: String(inv.shipping || 0),
+                                      discount: String(inv.discount || 0),
+                                      notes: inv.notes || '',
+                                      due_date: inv.due_date || '',
+                                    });
+                                    setInvoiceView('create');
+                                  }}
+                                  className="text-xs font-medium text-gray-600 hover:text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
+                                >
+                                  <Eye className="w-3 h-3 inline mr-1" />Edit
+                                </button>
                                 {inv.status === 'draft' && (
                                   <button
                                     onClick={() => sendInvoiceMutation.mutate(inv.id)}
@@ -1612,7 +1654,7 @@ export default function AdminPage() {
               <div>
                 <div className="flex items-center gap-4 mb-6">
                   <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
-                  <h2 className="text-2xl font-display font-bold text-gray-900">New Invoice</h2>
+                  <h2 className="text-2xl font-display font-bold text-gray-900">{editingInvoiceId ? 'Edit Invoice' : 'New Invoice'}</h2>
                 </div>
 
                 <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
@@ -1761,11 +1803,11 @@ export default function AdminPage() {
                     <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
                     <button
                       onClick={handleSaveInvoiceDraft}
-                      disabled={!invoiceForm.customer_name || !invoiceForm.customer_email || createInvoiceMutation.isPending}
+                      disabled={!invoiceForm.customer_name || !invoiceForm.customer_email || createInvoiceMutation.isPending || updateInvoiceMutation.isPending}
                       className="px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition disabled:opacity-50"
                     >
-                      {createInvoiceMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
-                      Save as Draft
+                      {(createInvoiceMutation.isPending || updateInvoiceMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> : null}
+                      {editingInvoiceId ? 'Update Invoice' : 'Save as Draft'}
                     </button>
                     <button
                       onClick={handlePreviewInvoice}
