@@ -853,6 +853,28 @@ export default function AdminPage() {
           <div>
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-display font-bold text-gray-900">Products</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const name = prompt('Product name:');
+                    if (!name) return;
+                    const category = prompt('Category (e.g. Stickers, Transfers, Custom):') || 'Custom';
+                    const price = prompt('Price per item:') || '0';
+                    const description = prompt('Description (optional):') || '';
+                    const imageUrl = prompt('Image URL (optional, or leave blank):') || '';
+                    fetch('/api/admin/custom-products', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                      body: JSON.stringify({ name, category, price: parseFloat(price), description, image_url: imageUrl || null }),
+                    }).then(r => {
+                      if (r.ok) { alert('Custom product added!'); queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }); }
+                      else r.json().then(d => alert(d.error || 'Failed'));
+                    });
+                  }}
+                  className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add Product
+                </button>
               <button
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending}
@@ -865,6 +887,7 @@ export default function AdminPage() {
                 )}
                 Sync Products
               </button>
+              </div>
             </div>
 
             {/* Search */}
