@@ -413,38 +413,20 @@ export default function DesignStudioPage() {
 
   const products = productsData?.products ?? [];
 
-  // Fetch the specific product by ss_id — only one query, no race condition
-  const targetId = initialProductId || DEFAULT_PRODUCT_ID;
-  const { data: defaultProductData } = useQuery({
-    queryKey: ['default-product', targetId],
-    queryFn: async () => {
-      const res = await fetch(`/api/products/by-ssid/${targetId}`);
-      if (res.ok) {
-        const p = await res.json();
-        if (p) return p as Product;
-      }
-      // Only fall back to Gildan if no specific product was requested
-      if (!initialProductId) {
-        const fallback = await fetch(`/api/products?search=ultra+cotton+t-shirt&brand=Gildan&limit=5`);
-        if (fallback.ok) {
-          const data = await fallback.json() as { products: Product[] };
-          return data.products[0] || null;
-        }
-      }
-      return null;
-    },
-    enabled: !selectedProduct,
-    staleTime: Infinity, // Don't refetch once we have a result
-  });
-
-  // Auto-select default product — only once
-  const hasAutoSelected = useRef(false);
+  // Load default product once on mount
+  const hasLoadedProduct = useRef(false);
   useEffect(() => {
-    if (!hasAutoSelected.current && !selectedProduct && defaultProductData) {
-      hasAutoSelected.current = true;
-      setSelectedProduct(defaultProductData);
-    }
-  }, [defaultProductData, selectedProduct]);
+    if (hasLoadedProduct.current || selectedProduct) return;
+    hasLoadedProduct.current = true;
+    const targetId = initialProductId || DEFAULT_PRODUCT_ID;
+    fetch(`/api/products/by-ssid/${targetId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(p => {
+        if (p && !selectedProduct) setSelectedProduct(p as Product);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch colors for selected product from S&S API
   const { data: colorsData } = useQuery({
