@@ -449,7 +449,7 @@ export default function AdminPage() {
   function resetInvoiceForm() {
     setInvoiceForm({
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
-      items: [{ description: '', quantity: 1, unit_price: 0 }],
+      items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
       tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
     });
     setPreviewInvoice(null);
@@ -458,7 +458,11 @@ export default function AdminPage() {
   }
 
   function calcInvoiceSubtotal() {
-    return invoiceForm.items.reduce((sum, it) => sum + it.quantity * it.unit_price, 0);
+    return invoiceForm.items.reduce((sum, it) => sum + (it.quantity * it.unit_price) + ((it.shipping_cost || 0) * it.quantity), 0);
+  }
+
+  function calcTotalWeight() {
+    return invoiceForm.items.reduce((sum, it) => sum + ((it.weight_oz || 0) * it.quantity), 0);
   }
 
   function calcInvoiceTotal() {
@@ -475,10 +479,10 @@ export default function AdminPage() {
     });
   }
 
-  function addInvoiceItem(desc = '', qty = 1, price = 0) {
+  function addInvoiceItem(desc = '', qty = 1, price = 0, weightOz = 0, shipCost = 0) {
     setInvoiceForm(prev => ({
       ...prev,
-      items: [...prev.items, { description: desc, quantity: qty, unit_price: price }],
+      items: [...prev.items, { description: desc, quantity: qty, unit_price: price, weight_oz: weightOz, shipping_cost: shipCost }],
     }));
   }
 
@@ -1735,38 +1739,53 @@ export default function AdminPage() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="bg-gray-50 text-left text-gray-500">
-                            <th className="px-4 py-2 font-medium">Description</th>
-                            <th className="px-4 py-2 font-medium w-24">Qty</th>
-                            <th className="px-4 py-2 font-medium w-32">Unit Price</th>
-                            <th className="px-4 py-2 font-medium w-28 text-right">Total</th>
-                            <th className="px-4 py-2 w-10"></th>
+                            <th className="px-3 py-2 font-medium">Description</th>
+                            <th className="px-2 py-2 font-medium w-16">Qty</th>
+                            <th className="px-2 py-2 font-medium w-24">Price</th>
+                            <th className="px-2 py-2 font-medium w-20">Wt (oz)</th>
+                            <th className="px-2 py-2 font-medium w-24">Ship $</th>
+                            <th className="px-2 py-2 font-medium w-24 text-right">Total</th>
+                            <th className="px-2 py-2 w-8"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {invoiceForm.items.map((item, idx) => (
+                          {invoiceForm.items.map((item, idx) => {
+                            const itemShip = (item.shipping_cost || 0) * item.quantity;
+                            const itemTotal = (item.quantity * item.unit_price) + itemShip;
+                            return (
                             <tr key={idx}>
-                              <td className="px-4 py-2">
+                              <td className="px-3 py-2">
                                 <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Item description" />
                               </td>
-                              <td className="px-4 py-2">
+                              <td className="px-2 py-2">
                                 <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                               </td>
-                              <td className="px-4 py-2">
+                              <td className="px-2 py-2">
                                 <div className="relative">
-                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
+                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                                 </div>
                               </td>
-                              <td className="px-4 py-2 text-right font-medium text-gray-900">
-                                ${(item.quantity * item.unit_price).toFixed(2)}
+                              <td className="px-2 py-2">
+                                <input type="number" step="0.1" min="0" value={item.weight_oz || ''} onChange={e => handleInvoiceItemChange(idx, 'weight_oz' as keyof InvoiceItem, e.target.value)} placeholder="oz" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                               </td>
-                              <td className="px-4 py-2">
+                              <td className="px-2 py-2">
+                                <div className="relative">
+                                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
+                                  <input type="number" step="0.01" min="0" value={item.shipping_cost || ''} onChange={e => handleInvoiceItemChange(idx, 'shipping_cost' as keyof InvoiceItem, e.target.value)} placeholder="0" className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                </div>
+                              </td>
+                              <td className="px-2 py-2 text-right font-medium text-gray-900 text-xs">
+                                ${itemTotal.toFixed(2)}
+                              </td>
+                              <td className="px-2 py-2">
                                 {invoiceForm.items.length > 1 && (
                                   <button onClick={() => removeInvoiceItem(idx)} className="text-gray-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                                 )}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

@@ -302,6 +302,8 @@ export interface InvoiceItem {
   description: string;
   quantity: number;
   unit_price: number;
+  weight_oz?: number;
+  shipping_cost?: number;
 }
 
 export interface Invoice {
