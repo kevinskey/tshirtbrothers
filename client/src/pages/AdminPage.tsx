@@ -586,7 +586,7 @@ export default function AdminPage() {
   const customers = customersQuery.data ?? [];
   const orders = ordersQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
-  const invoiceSearchProducts = invoiceProductsQuery.data ?? [];
+  const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
   const customerDetail = customerDetailQuery.data ?? null;
 
   return (
