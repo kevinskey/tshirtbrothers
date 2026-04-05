@@ -71,7 +71,7 @@ export default function AuthPage() {
               onClick={() => { setActiveTab('login'); setError(''); }}
               className={`flex-1 py-3.5 text-sm font-medium text-center transition-colors ${
                 activeTab === 'login'
-                  ? 'text-red-600 border-b-2 border-red-600 bg-red-50/50'
+                  ? 'text-orange-600 border-b-2 border-orange-600 bg-orange-50/50'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -83,7 +83,7 @@ export default function AuthPage() {
               onClick={() => { setActiveTab('register'); setError(''); }}
               className={`flex-1 py-3.5 text-sm font-medium text-center transition-colors ${
                 activeTab === 'register'
-                  ? 'text-red-600 border-b-2 border-red-600 bg-red-50/50'
+                  ? 'text-orange-600 border-b-2 border-orange-600 bg-orange-50/50'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
@@ -114,7 +114,7 @@ export default function AuthPage() {
                     required
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -128,14 +128,14 @@ export default function AuthPage() {
                     required
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="Enter your password"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Signing in...' : 'Log In'}
                 </button>
@@ -144,7 +144,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     onClick={() => { setActiveTab('register'); setError(''); }}
-                    className="text-red-600 hover:text-red-700 font-medium"
+                    className="text-orange-600 hover:text-orange-700 font-medium"
                   >
                     Sign up
                   </button>
@@ -165,7 +165,7 @@ export default function AuthPage() {
                     required
                     value={regName}
                     onChange={(e) => setRegName(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="Your full name"
                   />
                 </div>
@@ -179,7 +179,7 @@ export default function AuthPage() {
                     required
                     value={regEmail}
                     onChange={(e) => setRegEmail(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -193,7 +193,7 @@ export default function AuthPage() {
                     required
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="Create a password"
                   />
                 </div>
@@ -207,14 +207,14 @@ export default function AuthPage() {
                     required
                     value={regConfirm}
                     onChange={(e) => setRegConfirm(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="Confirm your password"
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2.5 rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Creating account...' : 'Create Account'}
                 </button>
@@ -223,7 +223,7 @@ export default function AuthPage() {
                   <button
                     type="button"
                     onClick={() => { setActiveTab('login'); setError(''); }}
-                    className="text-red-600 hover:text-red-700 font-medium"
+                    className="text-orange-600 hover:text-orange-700 font-medium"
                   >
                     Log in
                   </button>

@@ -78,7 +78,7 @@ export default function BlogPostPage() {
         <div className="max-w-3xl mx-auto px-4 py-20 text-center">
           <h1 className="font-display text-3xl font-bold text-gray-900 mb-4">Post Not Found</h1>
           <p className="text-gray-500 mb-6">The blog post you are looking for does not exist.</p>
-          <Link to="/blog" className="text-red-600 hover:text-red-700 font-medium">
+          <Link to="/blog" className="text-orange-600 hover:text-orange-700 font-medium">
             Back to Blog
           </Link>
         </div>
@@ -92,7 +92,7 @@ export default function BlogPostPage() {
         {/* Back link */}
         <Link
           to="/blog"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-600 transition mb-8"
+          className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-orange-600 transition mb-8"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Blog
@@ -144,7 +144,7 @@ export default function BlogPostPage() {
 
         {/* Content */}
         <div
-          className="prose prose-gray max-w-none prose-headings:font-display prose-a:text-red-600 prose-img:rounded-lg"
+          className="prose prose-gray max-w-none prose-headings:font-display prose-a:text-orange-600 prose-img:rounded-lg"
           dangerouslySetInnerHTML={{ __html: post.content }}
         />
 
@@ -184,14 +184,14 @@ export default function BlogPostPage() {
         </div>
 
         {/* CTA */}
-        <div className="mt-12 bg-gradient-to-br from-red-600 to-red-700 rounded-2xl p-8 text-center text-white">
+        <div className="mt-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-8 text-center text-white">
           <h3 className="font-display text-2xl font-bold mb-2">Ready to Get Started?</h3>
-          <p className="text-red-100 mb-6">
+          <p className="text-orange-100 mb-6">
             Get a free quote on your custom printing project today.
           </p>
           <Link
             to="/quote"
-            className="inline-block bg-white text-red-600 font-semibold px-8 py-3 rounded-lg hover:bg-gray-50 transition"
+            className="inline-block bg-white text-orange-600 font-semibold px-8 py-3 rounded-lg hover:bg-gray-50 transition"
           >
             Get a Quote
           </Link>

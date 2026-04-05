@@ -743,7 +743,7 @@ export default function AdminPage() {
               onClick={() => setActiveSection(key)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                 activeSection === key
-                  ? 'bg-red-600 text-white'
+                  ? 'bg-orange-500 text-white'
                   : 'text-gray-400 hover:text-white hover:bg-gray-800'
               }`}
             >
@@ -992,7 +992,7 @@ export default function AdminPage() {
               <button
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               >
                 {syncMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -1012,7 +1012,7 @@ export default function AdminPage() {
                 placeholder="Search products..."
                 value={productSearch}
                 onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
               />
             </div>
 
@@ -1069,7 +1069,7 @@ export default function AdminPage() {
                                 }).then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }));
                               }
                             }}
-                            className="w-24 pl-2 pr-1 py-1 rounded border border-gray-200 text-xs focus:border-red-500 focus:outline-none"
+                            className="w-24 pl-2 pr-1 py-1 rounded border border-gray-200 text-xs focus:border-orange-500 focus:outline-none"
                           />
                         </td>
                       </tr>
@@ -1131,7 +1131,7 @@ export default function AdminPage() {
                     required
                     value={catName}
                     onChange={(e) => setCatName(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
                     placeholder="Category name"
                   />
                 </div>
@@ -1140,7 +1140,7 @@ export default function AdminPage() {
                   <select
                     value={catParent}
                     onChange={(e) => setCatParent(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition bg-white"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition bg-white"
                   >
                     <option value="">None (top-level)</option>
                     {categories.map((c: Category) => (
@@ -1155,7 +1155,7 @@ export default function AdminPage() {
                   <textarea
                     value={catDesc}
                     onChange={(e) => setCatDesc(e.target.value)}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition resize-none"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition resize-none"
                     rows={1}
                     placeholder="Optional description"
                   />
@@ -1164,7 +1164,7 @@ export default function AdminPage() {
               <button
                 type="submit"
                 disabled={createCatMutation.isPending}
-                className="mt-4 flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                className="mt-4 flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
                 {createCatMutation.isPending ? 'Adding...' : 'Add'}
@@ -1193,7 +1193,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => deleteCatMutation.mutate(c.id)}
                             disabled={deleteCatMutation.isPending}
-                            className="text-red-600 hover:text-red-700 transition-colors"
+                            className="text-orange-600 hover:text-orange-700 transition-colors"
                             title="Delete category"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -1228,7 +1228,7 @@ export default function AdminPage() {
                 placeholder="Search by customer name or design name..."
                 value={designSearch}
                 onChange={(e) => setDesignSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
               />
             </div>
 
@@ -1289,7 +1289,7 @@ export default function AdminPage() {
                             href={d.mockup_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                            className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
                           >
                             <ExternalLink className="w-3 h-3" />
                             View Mockup
@@ -1370,7 +1370,7 @@ export default function AdminPage() {
                               deleteDesignMutation.mutate(String(d.id));
                             }
                           }}
-                          className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-3 h-3" />
                           Delete
@@ -1404,7 +1404,7 @@ export default function AdminPage() {
                     else r.json().then(d => alert(d.error || 'Failed'));
                   });
                 }}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
               >
                 <Plus className="w-4 h-4" /> Add Customer
               </button>
@@ -1418,7 +1418,7 @@ export default function AdminPage() {
                 placeholder="Search by name or email..."
                 value={customerSearch}
                 onChange={(e) => setCustomerSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition"
+                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition"
               />
             </div>
 
@@ -1448,7 +1448,7 @@ export default function AdminPage() {
                         <td className="px-6 py-3">
                           <button
                             onClick={() => setSelectedCustomerId(c.id)}
-                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                            className="flex items-center gap-1.5 text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
                           >
                             <Eye className="w-3 h-3" />
                             View
@@ -1699,7 +1699,7 @@ export default function AdminPage() {
                   <h2 className="text-2xl font-display font-bold text-gray-900">Invoices</h2>
                   <button
                     onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                    className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     New Invoice
@@ -1713,7 +1713,7 @@ export default function AdminPage() {
                       key={f}
                       onClick={() => setInvoiceFilter(f)}
                       className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
-                        invoiceFilter === f ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        invoiceFilter === f ? 'bg-orange-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
                       }`}
                     >
                       {f}
@@ -1751,7 +1751,7 @@ export default function AdminPage() {
                             <td className="px-6 py-4 text-gray-500">{inv.customer_email}</td>
                             <td className="px-6 py-4 text-right font-medium text-gray-900">${Number(inv.total).toFixed(2)}</td>
                             <td className="px-6 py-4 text-right text-green-600">${Number(inv.amount_paid).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right font-medium text-red-600">${Number(inv.amount_due).toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right font-medium text-orange-600">${Number(inv.amount_due).toFixed(2)}</td>
                             <td className="px-6 py-4"><StatusBadge status={inv.status} /></td>
                             <td className="px-6 py-4">
                               <div className="flex flex-wrap items-center gap-2">
@@ -1795,7 +1795,7 @@ export default function AdminPage() {
                                 )}
                                 <button
                                     onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
-                                    className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                                    className="text-xs font-medium text-orange-600 hover:text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
                                   >
                                     <Trash2 className="w-3 h-3 inline mr-1" />Delete
                                   </button>
@@ -1825,15 +1825,15 @@ export default function AdminPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Name *</label>
-                        <input type="text" value={invoiceForm.customer_name} onChange={e => setInvoiceForm(p => ({ ...p, customer_name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Customer name" />
+                        <input type="text" value={invoiceForm.customer_name} onChange={e => setInvoiceForm(p => ({ ...p, customer_name: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Customer name" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Email *</label>
-                        <input type="email" value={invoiceForm.customer_email} onChange={e => setInvoiceForm(p => ({ ...p, customer_email: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="email@example.com" />
+                        <input type="email" value={invoiceForm.customer_email} onChange={e => setInvoiceForm(p => ({ ...p, customer_email: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="email@example.com" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Phone</label>
-                        <input type="tel" value={invoiceForm.customer_phone} onChange={e => setInvoiceForm(p => ({ ...p, customer_phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="(555) 000-0000" />
+                        <input type="tel" value={invoiceForm.customer_phone} onChange={e => setInvoiceForm(p => ({ ...p, customer_phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="(555) 000-0000" />
                       </div>
                     </div>
                   </div>
@@ -1847,7 +1847,7 @@ export default function AdminPage() {
                         type="text"
                         value={invoiceProductSearch}
                         onChange={e => setInvoiceProductSearch(e.target.value)}
-                        className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                         placeholder="Search products to add as line items..."
                       />
                     </div>
@@ -1922,24 +1922,24 @@ export default function AdminPage() {
                             return (
                             <tr key={idx}>
                               <td className="px-3 py-2">
-                                <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Item description" />
+                                <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500" placeholder="Item description" />
                               </td>
                               <td className="px-2 py-2">
-                                <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500" />
                               </td>
                               <td className="px-2 py-2">
                                 <div className="relative">
                                   <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
-                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500" />
                                 </div>
                               </td>
                               <td className="px-2 py-2">
-                                <input type="number" step="0.1" min="0" value={item.weight_oz || ''} onChange={e => handleInvoiceItemChange(idx, 'weight_oz' as keyof InvoiceItem, e.target.value)} placeholder="oz" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                <input type="number" step="0.1" min="0" value={item.weight_oz || ''} onChange={e => handleInvoiceItemChange(idx, 'weight_oz' as keyof InvoiceItem, e.target.value)} placeholder="oz" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500" />
                               </td>
                               <td className="px-2 py-2">
                                 <div className="relative">
                                   <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
-                                  <input type="number" step="0.01" min="0" value={item.shipping_cost || ''} onChange={e => handleInvoiceItemChange(idx, 'shipping_cost' as keyof InvoiceItem, e.target.value)} placeholder="0" className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                  <input type="number" step="0.01" min="0" value={item.shipping_cost || ''} onChange={e => handleInvoiceItemChange(idx, 'shipping_cost' as keyof InvoiceItem, e.target.value)} placeholder="0" className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500" />
                                 </div>
                               </td>
                               <td className="px-2 py-2 text-right font-medium text-gray-900 text-xs">
@@ -1956,7 +1956,7 @@ export default function AdminPage() {
                         </tbody>
                       </table>
                     </div>
-                    <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+                    <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-orange-600 hover:text-orange-700 font-medium">
                       <Plus className="w-4 h-4" /> Add Item
                     </button>
                   </div>
@@ -1966,11 +1966,11 @@ export default function AdminPage() {
                     <div className="space-y-4">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Due Date</label>
-                        <input type="date" value={invoiceForm.due_date} onChange={e => setInvoiceForm(p => ({ ...p, due_date: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+                        <input type="date" value={invoiceForm.due_date} onChange={e => setInvoiceForm(p => ({ ...p, due_date: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Notes</label>
-                        <textarea value={invoiceForm.notes} onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none" placeholder="Additional notes..." />
+                        <textarea value={invoiceForm.notes} onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))} rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none" placeholder="Additional notes..." />
                       </div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4 space-y-2">
@@ -1988,21 +1988,21 @@ export default function AdminPage() {
                         <span className="text-gray-500">Tax</span>
                         <div className="relative w-28">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={invoiceForm.tax} onChange={e => setInvoiceForm(p => ({ ...p, tax: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                          <input type="number" step="0.01" min="0" value={invoiceForm.tax} onChange={e => setInvoiceForm(p => ({ ...p, tax: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-orange-500" />
                         </div>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-500">Shipping</span>
                         <div className="relative w-28">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={invoiceForm.shipping} onChange={e => setInvoiceForm(p => ({ ...p, shipping: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                          <input type="number" step="0.01" min="0" value={invoiceForm.shipping} onChange={e => setInvoiceForm(p => ({ ...p, shipping: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-orange-500" />
                         </div>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-500">Discount</span>
                         <div className="relative w-28">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={invoiceForm.discount} onChange={e => setInvoiceForm(p => ({ ...p, discount: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                          <input type="number" step="0.01" min="0" value={invoiceForm.discount} onChange={e => setInvoiceForm(p => ({ ...p, discount: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-orange-500" />
                         </div>
                       </div>
                       <div className="border-t border-gray-200 pt-2 flex justify-between">
@@ -2026,7 +2026,7 @@ export default function AdminPage() {
                     <button
                       onClick={handlePreviewInvoice}
                       disabled={!invoiceForm.customer_name || !invoiceForm.customer_email || invoiceForm.items.every(i => !i.description)}
-                      className="flex items-center gap-2 px-6 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                      className="flex items-center gap-2 px-6 py-2.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition disabled:opacity-50"
                     >
                       <Eye className="w-4 h-4" /> Preview & Send
                     </button>
@@ -2098,7 +2098,7 @@ export default function AdminPage() {
                         <span className="font-bold text-gray-900">Total</span>
                         <span className="text-xl font-bold text-gray-900">${previewInvoice.total.toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-sm"><span className="text-red-600 font-semibold">Amount Due</span><span className="text-red-600 font-bold text-lg">${previewInvoice.total.toFixed(2)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-orange-600 font-semibold">Amount Due</span><span className="text-orange-600 font-bold text-lg">${previewInvoice.total.toFixed(2)}</span></div>
                     </div>
 
                     {previewInvoice.notes && (
@@ -2110,7 +2110,7 @@ export default function AdminPage() {
 
                     {/* Pay Now placeholder */}
                     <div className="mt-8 text-center">
-                      <div className="inline-block bg-red-600 text-white px-12 py-3 rounded-lg font-bold text-base">Pay Now</div>
+                      <div className="inline-block bg-orange-500 text-white px-12 py-3 rounded-lg font-bold text-base">Pay Now</div>
                       <p className="text-xs text-gray-400 mt-2">Customer will receive this button linked to Stripe Checkout</p>
                     </div>
                   </div>
@@ -2131,7 +2131,7 @@ export default function AdminPage() {
                   <button
                     onClick={handleSendPreviewedInvoice}
                     disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending}
-                    className="flex items-center gap-2 px-8 py-2.5 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                    className="flex items-center gap-2 px-8 py-2.5 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition disabled:opacity-50"
                   >
                     {(createInvoiceMutation.isPending || sendInvoiceMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                     Send to Customer
@@ -2157,12 +2157,12 @@ export default function AdminPage() {
                       <label className="block text-xs text-gray-500 mb-1">Amount</label>
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">$</span>
-                        <input type="number" step="0.01" min="0" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+                        <input type="number" step="0.01" min="0" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} className="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" />
                       </div>
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
-                      <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
+                      <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
                         <option value="card">Credit Card</option>
                         <option value="cash">Cash</option>
                         <option value="check">Check</option>
@@ -2200,7 +2200,7 @@ export default function AdminPage() {
                   <h2 className="text-2xl font-display font-bold text-gray-900">Blog Posts</h2>
                   <button
                     onClick={() => { resetBlogForm(); setBlogView('editor'); }}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
+                    className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
                   >
                     <Plus className="w-4 h-4" />
                     New Post
@@ -2264,7 +2264,7 @@ export default function AdminPage() {
                                   onClick={() => {
                                     if (confirm('Delete this post?')) deleteBlogMutation.mutate(post.id);
                                   }}
-                                  className="p-1.5 text-gray-400 hover:text-red-600 transition"
+                                  className="p-1.5 text-gray-400 hover:text-orange-600 transition"
                                   title="Delete"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -2300,7 +2300,7 @@ export default function AdminPage() {
                       value={blogForm.title}
                       onChange={(e) => handleBlogTitleChange(e.target.value)}
                       placeholder="Post title..."
-                      className="w-full border border-gray-200 rounded-lg px-4 py-3 text-lg font-display font-bold focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-4 py-3 text-lg font-display font-bold focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
 
@@ -2310,7 +2310,7 @@ export default function AdminPage() {
                     <input
                       value={blogForm.slug}
                       onChange={(e) => setBlogForm(prev => ({ ...prev, slug: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
 
@@ -2322,7 +2322,7 @@ export default function AdminPage() {
                       onChange={(e) => setBlogForm(prev => ({ ...prev, excerpt: e.target.value }))}
                       rows={3}
                       placeholder="Brief summary of the post..."
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
 
@@ -2333,7 +2333,7 @@ export default function AdminPage() {
                       value={blogForm.cover_image}
                       onChange={(e) => setBlogForm(prev => ({ ...prev, cover_image: e.target.value }))}
                       placeholder="https://..."
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                     {blogForm.cover_image && (
                       <img src={blogForm.cover_image} alt="Cover preview" className="mt-2 h-32 object-cover rounded-lg" />
@@ -2347,7 +2347,7 @@ export default function AdminPage() {
                       value={blogForm.tags}
                       onChange={(e) => setBlogForm(prev => ({ ...prev, tags: e.target.value }))}
                       placeholder="screen printing, tips, guides"
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
 
@@ -2357,7 +2357,7 @@ export default function AdminPage() {
                     <textarea
                       value={blogForm.content}
                       onChange={(e) => setBlogForm(prev => ({ ...prev, content: e.target.value }))}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono min-h-[400px] focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono min-h-[400px] focus:outline-none focus:ring-2 focus:ring-orange-500"
                       placeholder="<h2>Your post content here...</h2><p>Write HTML content...</p>"
                     />
                   </div>
@@ -2369,7 +2369,7 @@ export default function AdminPage() {
                       <input
                         value={blogForm.meta_title}
                         onChange={(e) => setBlogForm(prev => ({ ...prev, meta_title: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
                     <div>
@@ -2377,7 +2377,7 @@ export default function AdminPage() {
                       <input
                         value={blogForm.meta_description}
                         onChange={(e) => setBlogForm(prev => ({ ...prev, meta_description: e.target.value }))}
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
                       />
                     </div>
                   </div>
@@ -2631,7 +2631,7 @@ export default function AdminPage() {
                                       min="0"
                                       value={price}
                                       onChange={(e) => setSizeMarkups(prev => ({ ...prev, [size]: e.target.value }))}
-                                      className="w-full pl-5 pr-2 py-1.5 rounded border border-gray-300 text-sm focus:border-red-500 focus:outline-none"
+                                      className="w-full pl-5 pr-2 py-1.5 rounded border border-gray-300 text-sm focus:border-orange-500 focus:outline-none"
                                       placeholder="0.00"
                                     />
                                   </div>
@@ -2653,21 +2653,21 @@ export default function AdminPage() {
                         <label className="block text-xs text-gray-500 mb-1">Artwork Fee</label>
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={priceDesignFee} onChange={(e) => setPriceDesignFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                          <input type="number" step="0.01" min="0" value={priceDesignFee} onChange={(e) => setPriceDesignFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:outline-none" placeholder="0" />
                         </div>
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Rush Fee</label>
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={priceRushFee} onChange={(e) => setPriceRushFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                          <input type="number" step="0.01" min="0" value={priceRushFee} onChange={(e) => setPriceRushFee(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:outline-none" placeholder="0" />
                         </div>
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Shipping</label>
                         <div className="relative">
                           <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={priceShipping} onChange={(e) => setPriceShipping(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                          <input type="number" step="0.01" min="0" value={priceShipping} onChange={(e) => setPriceShipping(e.target.value)} className="w-full pl-5 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-orange-500 focus:outline-none" placeholder="0" />
                         </div>
                       </div>
                     </div>
@@ -2706,7 +2706,7 @@ export default function AdminPage() {
                     <textarea
                       value={priceMessage}
                       onChange={(e) => setPriceMessage(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none transition resize-none"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none transition resize-none"
                       rows={3}
                       placeholder="Add a personal note to the customer..."
                     />
@@ -2729,7 +2729,7 @@ export default function AdminPage() {
                     <button
                       type="submit"
                       disabled={sendPriceMutation.isPending || Object.values(sizeMarkups).every(v => !v || parseFloat(v) === 0)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                      className="flex-1 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                     >
                       {sendPriceMutation.isPending ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -2765,8 +2765,8 @@ function StatCard({
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-6">
       <div className="flex items-center gap-3 mb-3">
-        <div className="p-2 rounded-lg bg-red-50">
-          <Icon className="w-5 h-5 text-red-600" />
+        <div className="p-2 rounded-lg bg-orange-50">
+          <Icon className="w-5 h-5 text-orange-600" />
         </div>
       </div>
       <p className="text-3xl font-display font-bold text-gray-900">

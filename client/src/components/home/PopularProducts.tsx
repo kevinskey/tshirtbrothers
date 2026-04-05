@@ -62,7 +62,7 @@ export default function PopularProducts() {
       <div className="container mx-auto px-6">
         <div className="flex items-end justify-between mb-10">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-red-600 mb-3">
+            <p className="text-xs font-semibold uppercase tracking-widest text-orange-600 mb-3">
               POPULAR PRODUCTS
             </p>
             <h2 className="font-display text-3xl md:text-4xl font-bold tracking-tight">
@@ -90,7 +90,7 @@ export default function PopularProducts() {
                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-2 bg-gray-100 rounded-b-full" />
                 </div>
                 {product.badge && (
-                  <span className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded">
+                  <span className="absolute top-2 left-2 bg-orange-500 text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded">
                     {product.badge}
                   </span>
                 )}

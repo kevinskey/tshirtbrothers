@@ -39,7 +39,7 @@ export default function HowItWorks() {
               key={step.num}
               className="bg-white/5 border border-white/10 rounded-xl p-8"
             >
-              <div className="w-10 h-10 bg-red-600 rounded-lg flex items-center justify-center text-white font-bold text-sm mb-5">
+              <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold text-sm mb-5">
                 {step.num}
               </div>
               <h3 className="font-display font-semibold text-xl mb-3">{step.title}</h3>

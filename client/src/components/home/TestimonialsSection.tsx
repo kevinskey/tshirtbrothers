@@ -77,7 +77,7 @@ export default function TestimonialsSection() {
         <div className="text-center mt-8">
           <Link
             to="/services"
-            className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
+            className="text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors"
           >
             See All Reviews &rarr;
           </Link>

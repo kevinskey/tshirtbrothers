@@ -27,7 +27,7 @@ export default function LocalCTA() {
         <div className="flex flex-wrap justify-center gap-4 mb-10">
           <Link
             to="/quote"
-            className="inline-flex items-center justify-center h-12 px-6 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors shadow-sm"
+            className="inline-flex items-center justify-center h-12 px-6 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
           >
             Get a Free Quote &rarr;
           </Link>

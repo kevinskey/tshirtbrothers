@@ -22,8 +22,8 @@ const services = [
     description:
       'From single custom pieces to large team orders, we print vibrant, long-lasting designs on premium garments. Screen printing, DTG, and heat transfer options available for every budget and timeline.',
     icon: Shirt,
-    bgColor: 'bg-red-50',
-    iconColor: 'text-red-600',
+    bgColor: 'bg-orange-50',
+    iconColor: 'text-orange-600',
     items: [
       'T-Shirts & Tank Tops',
       'Hoodies & Sweatshirts',
@@ -187,7 +187,7 @@ export default function ServicesPage() {
                           key={reason}
                           className="flex items-center gap-2 text-sm text-gray-700"
                         >
-                          <ShieldCheck className="w-4 h-4 text-red-500 shrink-0" />
+                          <ShieldCheck className="w-4 h-4 text-orange-500 shrink-0" />
                           {reason}
                         </li>
                       ))}
@@ -196,7 +196,7 @@ export default function ServicesPage() {
 
                   <Link
                     to={service.cta.to}
-                    className="mt-6 inline-block bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
+                    className="mt-6 inline-block bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
                   >
                     {service.cta.label}
                   </Link>
@@ -223,7 +223,7 @@ export default function ServicesPage() {
               const StepIcon = step.icon;
               return (
                 <div key={step.number} className="text-center">
-                  <div className="mx-auto w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center font-display text-xl font-bold">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-orange-500 text-white flex items-center justify-center font-display text-xl font-bold">
                     {step.number}
                   </div>
                   <StepIcon className="mx-auto mt-4 w-8 h-8 text-gray-400" />
@@ -300,7 +300,7 @@ export default function ServicesPage() {
           <div className="mt-6 flex items-center justify-center gap-4 flex-wrap">
             <Link
               to="/design"
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
+              className="bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
             >
               Start Designing
             </Link>

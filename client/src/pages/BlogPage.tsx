@@ -53,7 +53,7 @@ export default function BlogPage() {
               onClick={() => setActiveTag(null)}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 activeTag === null
-                  ? 'bg-red-600 text-white'
+                  ? 'bg-orange-500 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -65,7 +65,7 @@ export default function BlogPage() {
                 onClick={() => setActiveTag(tag)}
                 className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                   activeTag === tag
-                    ? 'bg-red-600 text-white'
+                    ? 'bg-orange-500 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -106,13 +106,13 @@ export default function BlogPage() {
                     className="w-full h-52 object-cover"
                   />
                 ) : (
-                  <div className="w-full h-52 bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center">
+                  <div className="w-full h-52 bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center">
                     <span className="text-white/50 text-6xl font-display font-bold">TB</span>
                   </div>
                 )}
 
                 <div className="p-6">
-                  <h2 className="font-display font-bold text-xl text-gray-900 group-hover:text-red-600 transition-colors mb-2 line-clamp-2">
+                  <h2 className="font-display font-bold text-xl text-gray-900 group-hover:text-orange-600 transition-colors mb-2 line-clamp-2">
                     {post.title}
                   </h2>
 

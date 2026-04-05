@@ -13,7 +13,7 @@ export default function NotFoundPage() {
         </p>
         <Link
           to="/"
-          className="mt-8 inline-flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+          className="mt-8 inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
         >
           <Home className="w-4 h-4" />
           Go Home

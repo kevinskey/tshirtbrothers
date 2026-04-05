@@ -33,7 +33,7 @@ export default function DeliveryBanner() {
                 </p>
                 <Link
                   to="/services"
-                  className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
+                  className="text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors"
                 >
                   View Delivery Calendar &rarr;
                 </Link>

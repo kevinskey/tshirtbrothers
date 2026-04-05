@@ -63,12 +63,12 @@ export default function Navbar() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Search for t-shirts, hoodies, hats, and more"
-                  className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                 />
                 <button
                   type="button"
                   onClick={handleSearch}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 bg-orange-500 hover:bg-orange-600 text-white rounded-full p-2 transition-colors"
                   aria-label="Search"
                 >
                   <Search className="h-4 w-4" />
@@ -80,14 +80,14 @@ export default function Navbar() {
             <div className="flex items-center gap-4 flex-shrink-0 ml-auto md:ml-0">
               <a
                 href="tel:4706224845"
-                className="hidden lg:flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors"
+                className="hidden lg:flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-orange-600 transition-colors"
               >
                 <Phone className="h-4 w-4" />
                 (470) 622-4845
               </a>
               <Link
                 to="/auth"
-                className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors"
+                className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-orange-600 transition-colors"
               >
                 <User className="h-4 w-4" />
                 <span className="hidden sm:inline">Sign In</span>
@@ -115,7 +115,7 @@ export default function Navbar() {
               <Link
                 key={link.label}
                 to={link.href}
-                className="text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
+                className="text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap"
               >
                 {link.label}
               </Link>
@@ -140,12 +140,12 @@ export default function Navbar() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search for t-shirts, hoodies, hats, and more"
-              className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              className="w-full rounded-full border border-gray-300 bg-gray-50 pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
             <button
               type="button"
               onClick={handleSearch}
-              className="absolute right-1 top-1/2 -translate-y-1/2 bg-red-600 hover:bg-red-700 text-white rounded-full p-2 transition-colors"
+              className="absolute right-1 top-1/2 -translate-y-1/2 bg-orange-500 hover:bg-orange-600 text-white rounded-full p-2 transition-colors"
               aria-label="Search"
             >
               <Search className="h-4 w-4" />
@@ -159,7 +159,7 @@ export default function Navbar() {
             <Link
               key={link.label}
               to={link.href}
-              className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+              className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
               onClick={() => setMobileOpen(false)}
             >
               {link.label}
@@ -167,7 +167,7 @@ export default function Navbar() {
           ))}
           <a
             href="tel:4706224845"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors lg:hidden"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors lg:hidden"
           >
             <Phone className="h-4 w-4" />
             (470) 622-4845

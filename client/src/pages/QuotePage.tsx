@@ -331,7 +331,7 @@ export default function QuotePage() {
 
       {/* Selected product summary */}
       {formData.product && (
-        <div className="mt-4 flex items-center gap-4 rounded-xl border-2 border-red-600 bg-red-50 p-4">
+        <div className="mt-4 flex items-center gap-4 rounded-xl border-2 border-orange-500 bg-orange-50 p-4">
           {formData.product.image_url && (
             <img
               src={formData.product.image_url}
@@ -340,16 +340,16 @@ export default function QuotePage() {
             />
           )}
           <div className="flex-1">
-            <p className="text-xs font-semibold uppercase text-red-600">Selected</p>
+            <p className="text-xs font-semibold uppercase text-orange-600">Selected</p>
             <p className="font-display font-bold">{formData.product.name}</p>
             <p className="text-sm text-brand-gray-500">{formData.product.brand}</p>
           </div>
           <button
             type="button"
             onClick={() => update({ product: null, color: null })}
-            className="rounded-full p-1 hover:bg-red-100"
+            className="rounded-full p-1 hover:bg-orange-100"
           >
-            <X className="h-5 w-5 text-red-600" />
+            <X className="h-5 w-5 text-orange-600" />
           </button>
         </div>
       )}
@@ -371,7 +371,7 @@ export default function QuotePage() {
                   onClick={() => update({ product, color: null })}
                   className={`flex flex-col items-start overflow-hidden rounded-xl border text-left transition hover:shadow-md ${
                     isSelected
-                      ? 'ring-2 ring-red-600 border-transparent'
+                      ? 'ring-2 ring-orange-500 border-transparent'
                       : 'border-brand-gray-200'
                   }`}
                 >
@@ -397,7 +397,7 @@ export default function QuotePage() {
                     <p className="mt-1 text-xs text-brand-gray-500">{product.category}</p>
                   </div>
                   {isSelected && (
-                    <div className="flex w-full items-center justify-center bg-red-600 py-1.5 text-xs font-bold text-white">
+                    <div className="flex w-full items-center justify-center bg-orange-500 py-1.5 text-xs font-bold text-white">
                       <Check className="mr-1 h-3 w-3" /> Selected
                     </div>
                   )}
@@ -559,7 +559,7 @@ export default function QuotePage() {
                 onClick={() => update({ color: c })}
                 className={`h-10 w-10 rounded-full border-2 transition ${
                   formData.color?.name === c.name
-                    ? 'ring-2 ring-red-600 ring-offset-2 border-brand-gray-300'
+                    ? 'ring-2 ring-orange-500 ring-offset-2 border-brand-gray-300'
                     : 'border-brand-gray-200 hover:scale-110'
                 }`}
                 style={{ backgroundColor: c.hex }}
@@ -614,7 +614,7 @@ export default function QuotePage() {
       </div>
       {totalQty > 0 && (
         <p className="mt-3 text-sm font-semibold text-brand-gray-600">
-          Total quantity: <span className="text-red-600">{totalQty}</span>
+          Total quantity: <span className="text-orange-600">{totalQty}</span>
         </p>
       )}
     </div>
@@ -743,7 +743,7 @@ export default function QuotePage() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
           onClick={() => fileRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-12 text-center transition hover:border-red-600"
+          className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-12 text-center transition hover:border-orange-500"
         >
           <Upload className="h-10 w-10 text-brand-gray-400" />
           <p className="font-medium text-brand-gray-600">
@@ -776,7 +776,7 @@ export default function QuotePage() {
             <button
               type="button"
               onClick={() => update({ designFile: null, designPreview: null })}
-              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-brand-gray-800 text-white transition hover:bg-red-600"
+              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-brand-gray-800 text-white transition hover:bg-orange-500"
             >
               <X className="h-3 w-3" />
             </button>
@@ -816,7 +816,7 @@ export default function QuotePage() {
       <div className="mt-6 rounded-xl bg-brand-gray-50 p-4">
         <p className="text-sm text-brand-gray-600">
           Want to create your design?{' '}
-          <Link to="/design-studio" className="font-semibold text-red-600 underline hover:text-red-700">
+          <Link to="/design-studio" className="font-semibold text-orange-600 underline hover:text-orange-700">
             Use our Design Studio
           </Link>
         </p>
@@ -841,7 +841,7 @@ export default function QuotePage() {
           </p>
           <Link
             to="/"
-            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-red-600 px-6 py-3 font-semibold text-white transition hover:bg-red-700"
+            className="mt-8 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-3 font-semibold text-white transition hover:bg-orange-600"
           >
             Back to Home
           </Link>
@@ -927,7 +927,7 @@ export default function QuotePage() {
                     ))}
                     <tr className="font-bold">
                       <td className="pt-2">Total</td>
-                      <td className="pt-2 text-right text-red-600">{totalQty}</td>
+                      <td className="pt-2 text-right text-orange-600">{totalQty}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -942,7 +942,7 @@ export default function QuotePage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-brand-gray-600">
-                Full name <span className="text-red-600">*</span>
+                Full name <span className="text-orange-600">*</span>
               </label>
               <input
                 placeholder="John Doe"
@@ -953,7 +953,7 @@ export default function QuotePage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-brand-gray-600">
-                Email <span className="text-red-600">*</span>
+                Email <span className="text-orange-600">*</span>
               </label>
               <input
                 type="email"
@@ -965,7 +965,7 @@ export default function QuotePage() {
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-brand-gray-600">
-                Phone <span className="text-red-600">*</span>
+                Phone <span className="text-orange-600">*</span>
               </label>
               <input
                 type="tel"
@@ -994,13 +994,13 @@ export default function QuotePage() {
         <div className="mt-8 space-y-4">
           <h3 className="font-display text-lg font-bold">When do you need it?</h3>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-600">Date needed <span className="text-red-600">*</span></label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">Date needed <span className="text-orange-600">*</span></label>
             <input
               type="date"
               value={formData.dateNeeded}
               onChange={(e) => update({ dateNeeded: e.target.value })}
               min={new Date().toISOString().split('T')[0]}
-              className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
         </div>
@@ -1039,7 +1039,7 @@ export default function QuotePage() {
                   placeholder="123 Main St"
                   value={formData.shippingStreet}
                   onChange={(e) => update({ shippingStreet: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
               <div>
@@ -1048,7 +1048,7 @@ export default function QuotePage() {
                   placeholder="Atlanta"
                   value={formData.shippingCity}
                   onChange={(e) => update({ shippingCity: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1058,7 +1058,7 @@ export default function QuotePage() {
                     placeholder="GA"
                     value={formData.shippingState}
                     onChange={(e) => update({ shippingState: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
                 <div>
@@ -1067,7 +1067,7 @@ export default function QuotePage() {
                     placeholder="30213"
                     value={formData.shippingZip}
                     onChange={(e) => update({ shippingZip: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
               </div>
@@ -1080,7 +1080,7 @@ export default function QuotePage() {
           type="button"
           disabled={submitting || !canAdvance()}
           onClick={() => void handleSubmit()}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-red-600 px-8 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-orange-500 px-8 py-3 font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
         >
           {submitting ? (
             <>
@@ -1126,7 +1126,7 @@ export default function QuotePage() {
                   type="button"
                   onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
                   disabled={!canAdvance()}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-orange-500 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-600 transition disabled:opacity-50"
                 >
                   Next <ChevronRight className="h-4 w-4" />
                 </button>
@@ -1148,9 +1148,9 @@ export default function QuotePage() {
                   <div
                     className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition ${
                       done
-                        ? 'bg-red-600 text-white'
+                        ? 'bg-orange-500 text-white'
                         : active
-                          ? 'bg-red-600 text-white ring-4 ring-red-200'
+                          ? 'bg-orange-500 text-white ring-4 ring-orange-200'
                           : 'bg-brand-gray-200 text-brand-gray-500'
                     }`}
                   >
@@ -1161,7 +1161,7 @@ export default function QuotePage() {
                       active
                         ? 'font-semibold text-brand-gray-800'
                         : done
-                          ? 'font-medium text-red-600'
+                          ? 'font-medium text-orange-600'
                           : 'text-brand-gray-400'
                     }`}
                   >
@@ -1176,7 +1176,7 @@ export default function QuotePage() {
             {STEPS.slice(1).map((_, i) => (
               <div
                 key={i}
-                className={`h-0.5 flex-1 ${currentStep > i + 1 ? 'bg-red-600' : 'bg-brand-gray-200'}`}
+                className={`h-0.5 flex-1 ${currentStep > i + 1 ? 'bg-orange-500' : 'bg-brand-gray-200'}`}
               />
             ))}
           </div>
@@ -1207,7 +1207,7 @@ export default function QuotePage() {
                 type="button"
                 onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
                 disabled={!canAdvance()}
-                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-6 py-2.5 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-6 py-2.5 font-semibold text-white transition hover:bg-orange-600 disabled:opacity-50"
               >
                 Next <ChevronRight className="h-4 w-4" />
               </button>

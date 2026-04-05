@@ -12,10 +12,10 @@ const config: Config = {
     },
     extend: {
       colors: {
-        red: {
-          DEFAULT: '#dc2626',
-          dark: '#b91c1c',
-          light: '#fef2f2',
+        orange: {
+          DEFAULT: '#f97316',
+          dark: '#ea580c',
+          light: '#fff7ed',
         },
         brand: {
           black: '#0a0a0a',

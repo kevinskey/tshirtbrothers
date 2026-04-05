@@ -25,7 +25,7 @@ export default function FeaturedBrands() {
           </h2>
           <Link
             to="/brands"
-            className="text-sm font-medium text-red-600 hover:text-red-700 transition-colors whitespace-nowrap"
+            className="text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors whitespace-nowrap"
           >
             See All Brands &rarr;
           </Link>
@@ -36,7 +36,7 @@ export default function FeaturedBrands() {
             <Link
               key={brand.name}
               to={`/shop?brand=${encodeURIComponent(brand.search)}`}
-              className="w-36 h-24 flex-shrink-0 border border-gray-200 rounded-xl flex items-center justify-center hover:border-red-400 hover:shadow-md transition-all cursor-pointer bg-white p-3"
+              className="w-36 h-24 flex-shrink-0 border border-gray-200 rounded-xl flex items-center justify-center hover:border-orange-400 hover:shadow-md transition-all cursor-pointer bg-white p-3"
             >
               <img
                 src={brand.logo}

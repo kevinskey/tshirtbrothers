@@ -311,7 +311,7 @@ export default function ShopPage() {
                   setSearch(e.target.value);
                   // filters reset handled by queryKey change
                 }}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
 
@@ -321,7 +321,7 @@ export default function ShopPage() {
               onChange={(e) => {
                 setBrand(e.target.value);
               }}
-              className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
+              className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
             >
               <option value="">All Brands</option>
               {(apiBrands.length > 0 ? apiBrands : ALL_BRANDS).map((b) => (
@@ -337,7 +337,7 @@ export default function ShopPage() {
               onChange={(e) => {
                 setCategory(e.target.value);
               }}
-              className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
+              className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
             >
               <option value="">All Categories</option>
               {(apiCategories.length > 0 ? apiCategories : ALL_CATEGORIES).map((c) => (
