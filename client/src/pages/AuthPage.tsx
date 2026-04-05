@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, UserPlus, AlertCircle } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
@@ -7,6 +7,10 @@ import { login, register } from '@/lib/api';
 type Tab = 'login' | 'register';
 
 export default function AuthPage() {
+  useEffect(() => {
+    document.title = 'Sign In | TShirt Brothers';
+  }, []);
+
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<Tab>('login');
   const [error, setError] = useState('');

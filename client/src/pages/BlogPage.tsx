@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
@@ -6,6 +6,10 @@ import { fetchBlogPosts, type BlogPost } from '@/lib/api';
 import { Loader2, Calendar, User } from 'lucide-react';
 
 export default function BlogPage() {
+  useEffect(() => {
+    document.title = 'Blog | Custom Printing Tips & News | TShirt Brothers';
+  }, []);
+
   const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const { data: posts, isLoading } = useQuery({

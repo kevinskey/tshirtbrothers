@@ -154,6 +154,10 @@ export default function QuotePage() {
   const stepContentRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
 
+  useEffect(() => {
+    document.title = 'Get a Free Quote | TShirt Brothers';
+  }, []);
+
   // Scroll to top of page on step change (skip initial mount)
   useEffect(() => {
     if (isInitialMount.current) {

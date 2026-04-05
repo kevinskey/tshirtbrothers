@@ -208,6 +208,10 @@ export default function DesignStudioPage() {
   const location = useLocation();
   const loadState = location.state as { loadDesign?: boolean; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
 
+  useEffect(() => {
+    document.title = 'Design Studio | Create Custom Apparel | TShirt Brothers';
+  }, []);
+
   // --- Core state ---
   const navigate = useNavigate();
   const [showWelcome, setShowWelcome] = useState(!loadState?.loadDesign);

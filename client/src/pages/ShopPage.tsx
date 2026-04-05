@@ -217,6 +217,10 @@ export default function ShopPage() {
   const [brand, setBrand] = useState(urlBrand);
   const [category, setCategory] = useState(urlCategory);
 
+  useEffect(() => {
+    document.title = 'Shop Custom Products | TShirt Brothers';
+  }, []);
+
   // Sync filters from URL when links are clicked
   useEffect(() => {
     setCategory(urlCategory);

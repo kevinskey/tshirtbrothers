@@ -12,7 +12,7 @@ const quickLinks = [
   { label: 'Design Studio', href: '/design' },
   { label: 'Get a Quote', href: '/quote' },
   { label: 'Browse Catalog', href: '/shop' },
-  { label: 'My Account', href: '/account' },
+  { label: 'My Account', href: '/auth' },
 ];
 
 export default function Footer() {
@@ -125,11 +125,11 @@ export default function Footer() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
           <p>&copy; 2026 TShirt Brothers. All rights reserved.</p>
           <div className="flex items-center gap-6">
-            <Link to="/privacy" className="hover:text-white transition-colors">
-              Privacy Policy
+            <Link to="/services" className="hover:text-white transition-colors">
+              Our Services
             </Link>
-            <Link to="/terms" className="hover:text-white transition-colors">
-              Terms of Service
+            <Link to="/quote" className="hover:text-white transition-colors">
+              Get a Quote
             </Link>
           </div>
         </div>

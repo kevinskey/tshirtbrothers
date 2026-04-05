@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
@@ -11,6 +11,10 @@ interface BrandInfo {
 }
 
 export default function BrandsPage() {
+  useEffect(() => {
+    document.title = 'Shop by Brand | TShirt Brothers';
+  }, []);
+
   const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({

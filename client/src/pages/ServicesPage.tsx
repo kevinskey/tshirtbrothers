@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import {
@@ -97,6 +98,10 @@ const steps = [
 ];
 
 export default function ServicesPage() {
+  useEffect(() => {
+    document.title = 'Our Services | Screen Printing, DTF & Embroidery | TShirt Brothers';
+  }, []);
+
   return (
     <Layout>
       {/* Hero */}
@@ -252,7 +257,7 @@ export default function ServicesPage() {
               <p className="text-gray-600 text-sm leading-relaxed">
                 Free delivery within 5 miles of our shop. Same-day and next-day
                 options available for local customers. We proudly serve the
-                Greater Houston area with fast, reliable delivery.
+                south Atlanta metro area with fast, reliable delivery.
               </p>
               <p className="mt-3 text-green-600 font-semibold text-sm">
                 Free within 5 miles
