@@ -920,6 +920,14 @@ export default function AdminPage() {
         <div className="p-6 border-b border-gray-800 flex items-center gap-3">
           <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
           <h1 className="font-display text-xl font-bold tracking-tight">Admin</h1>
+          <Link
+            to="/"
+            className="ml-auto flex items-center gap-1 text-xs text-gray-300 hover:text-white bg-gray-800 hover:bg-gray-700 px-2 py-1 rounded"
+            title="Back to site"
+          >
+            <ArrowLeft className="w-3 h-3" />
+            Site
+          </Link>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
@@ -981,7 +989,7 @@ export default function AdminPage() {
           <span className="font-display font-bold text-gray-900">Admin</span>
           <Link
             to="/"
-            className="ml-auto flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
+            className="ml-auto flex items-center gap-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded-lg"
           >
             <ArrowLeft className="w-4 h-4" />
             View Site
