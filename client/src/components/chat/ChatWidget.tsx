@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MessageCircle, X, Send, RotateCcw, Mail, Loader2, Mic, MicOff, Minus, Volume2, VolumeX } from 'lucide-react';
-import { askFaq, enhancePrompt, generateDesignImage, type ChatMessage, type CatalogProduct } from '@/services/deepseek';
+import { X, Send, RotateCcw, Mail, Loader2, Mic, MicOff, Minus, Volume2, VolumeX } from 'lucide-react';
+import { askFaq, generateDesignImage, type ChatMessage, type CatalogProduct } from '@/services/deepseek';
 
 // Web Speech API types (browser-native, not in default TS lib)
 interface SpeechRecognitionResult {
@@ -312,7 +312,7 @@ export default function ChatWidget() {
     rec.onresult = (e: SpeechRecognitionEvent) => {
       let fullTranscript = '';
       for (let i = 0; i < e.results.length; i++) {
-        fullTranscript += e.results[i][0].transcript;
+        fullTranscript += e.results[i]?.[0]?.transcript ?? '';
       }
       const separator = baseInput && !baseInput.endsWith(' ') ? ' ' : '';
       setInput((baseInput + separator + fullTranscript).trimStart());
@@ -412,7 +412,7 @@ export default function ChatWidget() {
       setMessages((m) => [...m, { role: 'assistant', content: reply, products }]);
       speakText(reply);
       // If the AI returned fresh products, focus the first one
-      if (products && products.length > 0) {
+      if (products && products.length > 0 && products[0]) {
         setFocusedProduct(products[0]);
       }
     } catch (err) {
@@ -557,7 +557,7 @@ export default function ChatWidget() {
                         )}
                         <button
                           onClick={() => {
-                            window.location.href = `/design?product=${encodeURIComponent(m.products![0].ss_id)}`;
+                            window.location.href = `/design?product=${encodeURIComponent(m.products![0]!.ss_id)}`;
                           }}
                           className="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-xl text-sm transition"
                         >

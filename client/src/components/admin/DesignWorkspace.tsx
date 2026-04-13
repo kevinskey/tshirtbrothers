@@ -27,7 +27,7 @@ export default function DesignWorkspace() {
   const [upscaling, setUpscaling] = useState(false);
   const [preppingVinyl, setPreppingVinyl] = useState(false);
   const [vectorizing, setVectorizing] = useState(false);
-  const [vinylColors, setVinylColors] = useState(1);
+  const [vinylColors, _setVinylColors] = useState(1);
   const [qrText, setQrText] = useState('');
   const [qrColor, setQrColor] = useState('#000000');
   const [qrTransparent, setQrTransparent] = useState(true);
@@ -136,7 +136,7 @@ export default function DesignWorkspace() {
   }
 
 
-  async function handlePrepVinyl() {
+  async function _handlePrepVinyl() {
     if (!generatedImage || preppingVinyl) return;
     setPreppingVinyl(true);
     try {
@@ -173,7 +173,7 @@ export default function DesignWorkspace() {
     finally { setPreppingVinyl(false); }
   }
 
-  async function handleVectorize() {
+  async function _handleVectorize() {
     if (!generatedImage || vectorizing) return;
     setVectorizing(true);
     try {
@@ -235,7 +235,7 @@ export default function DesignWorkspace() {
     const newHistory = [...imageHistory];
     newHistory.pop();
     setImageHistory(newHistory);
-    setGeneratedImage(newHistory[newHistory.length - 1]);
+    setGeneratedImage(newHistory[newHistory.length - 1] ?? null);
   }
 
   async function handleSave() {

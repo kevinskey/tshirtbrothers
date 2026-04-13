@@ -593,7 +593,7 @@ export default function QuotePage() {
   };
 
   // Order summary sidebar component
-  const orderSummary = formData.product ? (
+  const _orderSummary = formData.product ? (
     <div className="sticky top-20 bg-white border border-gray-200 rounded-xl p-5 space-y-4">
       <h3 className="font-display font-bold text-gray-900">Order Summary</h3>
       {/* Design preview */}

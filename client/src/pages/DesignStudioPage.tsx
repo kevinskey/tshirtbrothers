@@ -406,7 +406,7 @@ export default function DesignStudioPage() {
   const [artLoading, setArtLoading] = useState(false);
   const [artColor, setArtColor] = useState('#000000');
   const [libraryArt, setLibraryArt] = useState<{ id: number; name: string; image_url: string; category: string }[]>([]);
-  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [_libraryLoading, setLibraryLoading] = useState(false);
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
@@ -518,14 +518,14 @@ export default function DesignStudioPage() {
     setDesignElements(prev => {
       const idx = prev.findIndex(e => e.id === id);
       if (idx < 0 || idx >= prev.length - 1) return prev;
-      const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n;
+      const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1]!, n[idx]!]; return n;
     });
   }, []);
   const sendBackward = useCallback((id: string) => {
     setDesignElements(prev => {
       const idx = prev.findIndex(e => e.id === id);
       if (idx <= 0) return prev;
-      const n = [...prev]; [n[idx], n[idx - 1]] = [n[idx - 1], n[idx]]; return n;
+      const n = [...prev]; [n[idx], n[idx - 1]] = [n[idx - 1]!, n[idx]!]; return n;
     });
   }, []);
   const bringToFront = useCallback((id: string) => {

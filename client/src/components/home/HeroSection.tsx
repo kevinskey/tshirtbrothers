@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { Star, MapPin, Phone, Clock, Shield, Truck, Users, Heart, Ship, Trophy, Briefcase, Sun, GraduationCap, Music, Church, Palette } from 'lucide-react';
+import { Star, MapPin, Clock, Shield, Truck, Users, Heart, Ship, Trophy, Briefcase, Sun, GraduationCap, Music, Church, Palette } from 'lucide-react';
 
 const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides';
 const HERO_SLIDES = [
