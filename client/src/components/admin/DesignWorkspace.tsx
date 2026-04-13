@@ -204,6 +204,9 @@ export default function DesignWorkspace() {
     finally { setVectorizing(false); }
   }
 
+  // Kept for future UI wiring
+  void _handlePrepVinyl;
+  void _handleVectorize;
 
   async function handleGenerateQR() {
     if (!qrText.trim() || generatingQr) return;

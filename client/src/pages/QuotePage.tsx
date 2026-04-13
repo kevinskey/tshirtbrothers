@@ -638,6 +638,7 @@ export default function QuotePage() {
       </div>
     </div>
   ) : null;
+  void _orderSummary;
 
   const renderStep2 = () => (
     <div>
