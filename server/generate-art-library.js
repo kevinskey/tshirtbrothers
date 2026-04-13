@@ -320,6 +320,17 @@ const CATEGORY_MAP = {
 
 async function generateAndSave(prompt, categoryName, index) {
   const tag = `[${categoryName} ${index + 1}/10]`;
+  const expectedName = prompt.charAt(0).toUpperCase() + prompt.slice(1);
+
+  // Skip if this (category, name) pair already exists — makes re-runs safe & free
+  const existing = await pool.query(
+    'SELECT 1 FROM admin_designs WHERE category = $1 AND name = $2 LIMIT 1',
+    [categoryName, expectedName]
+  );
+  if (existing.rowCount > 0) {
+    console.log(`${tag} SKIP (already exists): "${prompt}"`);
+    return 'skipped';
+  }
 
   try {
     console.log(`${tag} Generating: "${prompt}"...`);
@@ -384,11 +395,17 @@ async function main() {
   console.log('║  Cost: ~$0.003/image × 220 = ~$0.66 total                  ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
 
+  // Optional CLI arg: node generate-art-library.js <categoryKey>
+  const onlyCategory = process.argv[2];
+
   let total = 0;
   let success = 0;
+  let skipped = 0;
   let failed = 0;
 
   for (const [displayName, categoryKey] of Object.entries(CATEGORY_MAP)) {
+    if (onlyCategory && categoryKey !== onlyCategory) continue;
+
     const prompts = CATEGORY_PROMPTS[categoryKey];
     if (!prompts) {
       console.log(`\n⚠ No prompts for "${displayName}" (${categoryKey}), skipping`);
@@ -399,17 +416,20 @@ async function main() {
 
     for (let i = 0; i < prompts.length; i++) {
       total++;
-      const ok = await generateAndSave(prompts[i], categoryKey, i);
-      if (ok) success++;
+      const result = await generateAndSave(prompts[i], categoryKey, i);
+      if (result === true) success++;
+      else if (result === 'skipped') skipped++;
       else failed++;
 
-      // Small delay to avoid rate limits
-      await new Promise(r => setTimeout(r, 1000));
+      // Only delay between API calls, not skips
+      if (result !== 'skipped') {
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
   }
 
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log(`║  DONE! Total: ${total} | Success: ${success} | Failed: ${failed}        ║`);
+  console.log(`║  DONE! Total: ${total} | New: ${success} | Skipped: ${skipped} | Failed: ${failed}`);
   console.log(`║  Estimated cost: ~$${(success * 0.003).toFixed(2)}                              ║`);
   console.log('╚══════════════════════════════════════════════════════════════╝');
 
