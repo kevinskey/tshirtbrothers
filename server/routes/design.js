@@ -409,16 +409,26 @@ router.post('/qrcode', async (req, res, next) => {
 
 router.get('/art-library', async (req, res, next) => {
   try {
-    const { category } = req.query;
+    const { category, q, limit } = req.query;
     let query = 'SELECT id, name, image_url, category FROM admin_designs';
     const params = [];
+    const where = [];
 
-    if (category) {
-      query += ' WHERE category = $1';
+    if (category && category !== 'all') {
       params.push(category);
+      where.push(`category = $${params.length}`);
     }
+    if (q && String(q).trim()) {
+      params.push(`%${String(q).trim().toLowerCase()}%`);
+      where.push(`(LOWER(name) ILIKE $${params.length} OR LOWER(description) ILIKE $${params.length})`);
+    }
+    if (where.length) query += ' WHERE ' + where.join(' AND ');
 
     query += ' ORDER BY created_at DESC';
+    const n = Math.min(parseInt(String(limit ?? '200'), 10) || 200, 500);
+    params.push(n);
+    query += ` LIMIT $${params.length}`;
+
     const { rows } = await pool.query(query, params);
     res.json(rows);
   } catch (err) {
