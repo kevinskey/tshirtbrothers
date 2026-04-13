@@ -8,7 +8,7 @@ const router = Router();
 
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
-const BRAND_RED = '#dc2626';
+const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
 const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png';
 
@@ -146,8 +146,8 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
         <td style="padding:6px 0;font-size:14px;color:#16a34a;text-align:right;">-${formatCurrency(amountPaid)}</td>
       </tr>` : ''}
       <tr>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_RED};">Amount Due</td>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_RED};text-align:right;">${formatCurrency(amountDue)}</td>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Amount Due</td>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(amountDue)}</td>
       </tr>
     </table>
 
@@ -158,7 +158,7 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
 
     <!-- Pay Now button -->
     ${paymentUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto;">
-      <tr><td style="background:${BRAND_RED};border-radius:8px;">
+      <tr><td style="background:${BRAND_ORANGE};border-radius:8px;">
         <a href="${paymentUrl}" target="_blank" style="display:inline-block;padding:16px 48px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;">Pay Now</a>
       </td></tr>
     </table>` : ''}
@@ -237,7 +237,8 @@ router.post('/', async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft')
        RETURNING *`,
       [
-        invoice_number, customer_name, customer_email, customer_phone || null, customer_address || null,
+        invoice_number, customer_name, customer_email, customer_phone || null,
+        (customer_address && customer_address !== '') ? (typeof customer_address === 'string' ? JSON.stringify({ address: customer_address }) : JSON.stringify(customer_address)) : null,
         JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, Number(total) || 0,
         amount_due, notes || null, due_date || null, quote_id || null,
       ]
@@ -287,7 +288,8 @@ router.put('/:id', async (req, res, next) => {
        RETURNING *`,
       [
         id,
-        customer_name || null, customer_email || null, customer_phone, customer_address,
+        customer_name || null, customer_email || null, customer_phone,
+        (customer_address && customer_address !== '') ? (typeof customer_address === 'string' ? JSON.stringify({ address: customer_address }) : JSON.stringify(customer_address)) : null,
         items ? JSON.stringify(items) : null, subtotal !== undefined ? Number(subtotal) : null,
         tax !== undefined ? Number(tax) : null, shipping !== undefined ? Number(shipping) : null,
         discount !== undefined ? Number(discount) : null, total !== undefined ? Number(total) : null,

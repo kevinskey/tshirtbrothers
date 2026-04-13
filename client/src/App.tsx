@@ -24,7 +24,10 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
 import BlogPage from '@/pages/BlogPage';
 import BlogPostPage from '@/pages/BlogPostPage';
+import AccountPage from '@/pages/AccountPage';
+import GangSheetPage from '@/pages/GangSheetPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
+import ChatWidget from '@/components/chat/ChatWidget';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -49,13 +52,17 @@ function App() {
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/design" element={<DesignStudioPage />} />
+          <Route path="/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/gangsheet" element={<GangSheetPage />} />
+          <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/payment/checkout" element={<PaymentCheckout />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/cancel" element={<PaymentCancel />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        <ChatWidget />
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>

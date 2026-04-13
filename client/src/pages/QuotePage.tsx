@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
 import { submitQuote } from '@/lib/api';
@@ -21,6 +22,22 @@ import {
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
+
+// Load Google Fonts for design elements carried over from the Design Studio
+const loadedFonts = new Set<string>();
+const SYSTEM_FONTS = ['Arial', 'Helvetica', 'Georgia', 'Times New Roman', 'Courier New', 'Verdana', 'Impact', 'Comic Sans MS'];
+function loadGoogleFont(fontName: string): Promise<void> {
+  if (!fontName || SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return Promise.resolve();
+  loadedFonts.add(fontName);
+  return new Promise<void>((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
+    link.onload = () => { document.fonts.ready.then(() => resolve()); };
+    link.onerror = () => resolve();
+    document.head.appendChild(link);
+  });
+}
 
 interface SSProduct {
   id: string;
@@ -146,11 +163,46 @@ async function fetchProductDetails(ssId: string): Promise<{ colors: SSColor[]; s
 
 export default function QuotePage() {
   const location = useLocation();
-  interface DesignElement { id: string; type: string; x: number; y: number; width: number; content: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string; }
-  const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; designImage?: string; designElements?: DesignElement[] } | null);
-  const savedDesignElements = designState?.designElements || [];
+  // Auth gate — require login before quoting
+  const nav = useNavigate();
+  useEffect(() => {
+    const token = localStorage.getItem('tsb_token');
+    if (!token) {
+      nav('/auth?redirect=/quote&reason=quote');
+    }
+  }, [nav]);
 
-  const [currentStep, setCurrentStep] = useState(designState?.fromDesignStudio ? 2 : 1);
+
+  interface DesignElement { id: string; type: string; x: number; y: number; width: number; content: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string; letterSpacing?: number; outline?: boolean; }
+  const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; colorIndex?: number; designImage?: string; designElements?: DesignElement[]; designView?: string; designSnapshot?: string | null } | null);
+  const savedDesignElements = designState?.designElements || [];
+  const fromStudio = !!designState?.fromDesignStudio;
+  // Track the product image from the design studio (exact color the user designed on).
+  // Cleared if the user picks a different color in step 2.
+  const [studioProductImage, setStudioProductImage] = useState<string | null>(designState?.designImage || null);
+  // Pixel-perfect snapshot of the full design (product + all elements rendered)
+  const designSnapshot = designState?.designSnapshot || null;
+  const studioColorApplied = useRef(false);
+
+  // Load Google Fonts for any text elements from the Design Studio and force re-render when ready
+  // fontsReady triggers a re-render once custom fonts finish loading so text renders correctly
+  const [, setFontsReady] = useState(0);
+  useEffect(() => {
+    const fonts = savedDesignElements
+      .filter(el => el.type === 'text' && el.fontFamily)
+      .map(el => el.fontFamily!);
+    if (fonts.length === 0) return;
+    // Load all fonts and re-render when done
+    Promise.all(fonts.map(f => loadGoogleFont(f))).then(() => {
+      setFontsReady(n => n + 1);
+    });
+  }, [savedDesignElements]);
+
+  // When coming from Design Studio: skip product selection (1), print areas (3), and upload design (4)
+  // Only need: Color & Sizes (2) → Review & Submit (5)
+  const [currentStep, setCurrentStep] = useState(fromStudio ? 2 : 1);
+  // Step 2 sub-step: first pick color, then pick sizes
+  const [step2Sub, setStep2Sub] = useState<'color' | 'sizes'>(fromStudio ? 'sizes' : 'color');
   const stepContentRef = useRef<HTMLDivElement>(null);
   const isInitialMount = useRef(true);
 
@@ -164,10 +216,13 @@ export default function QuotePage() {
   }, [currentStep]);
   const [formData, setFormData] = useState<FormData>(() => {
     if (designState?.fromDesignStudio) {
+      // Auto-determine print area from the design view
+      const printArea = designState.designView === 'back' ? 'Full Back' : 'Full Front';
       return {
         ...INITIAL_FORM,
         product: designState.product || null,
         color: designState.color || null,
+        printAreas: [printArea],
         designPreview: designState.designImage || null,
       };
     }
@@ -201,7 +256,10 @@ export default function QuotePage() {
 
   const canAdvance = (): boolean => {
     if (currentStep === 1) return formData.product !== null;
-    if (currentStep === 2) return formData.color !== null && totalQty > 0;
+    if (currentStep === 2) {
+      if (step2Sub === 'color') return fromStudio || formData.color !== null;
+      return totalQty > 0;
+    }
     if (currentStep === 3) return formData.printAreas.length > 0;
     if (currentStep === 4) return true;
     if (currentStep === 5) {
@@ -229,9 +287,44 @@ export default function QuotePage() {
         Object.entries(formData.sizes).filter(([, v]) => v > 0),
       );
 
-      // Upload design file to server if one was selected
+      // Upload design file or design studio snapshot to server
       let designUrl: string | null = null;
-      if (formData.designPreview && formData.designFile) {
+      
+      // If from Design Studio with a product image, use that as the design preview
+      if (!designSnapshot && fromStudio && studioProductImage) {
+        try {
+          const uploadRes = await fetch('/api/quotes/upload-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: studioProductImage,
+              filename: 'design-studio-preview.png',
+              customerEmail: formData.customerEmail,
+            }),
+          });
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json();
+            designUrl = uploadData.url;
+          }
+        } catch {}
+      }
+      
+      if (designSnapshot) {
+        // Upload the Design Studio snapshot (data URL)
+        const uploadRes = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: designSnapshot,
+            filename: `design-studio-${Date.now()}.png`,
+            customerEmail: formData.customerEmail,
+          }),
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          designUrl = uploadData.url;
+        }
+      } else if (formData.designPreview && formData.designFile) {
         const reader = new FileReader();
         const base64 = await new Promise<string>((resolve) => {
           reader.onload = () => resolve(reader.result as string);
@@ -260,7 +353,7 @@ export default function QuotePage() {
         quantity: totalQty,
         print_areas: formData.printAreas,
         design_type: savedDesignElements.length > 0 ? 'design-studio' : designUrl ? 'upload' : formData.designIdea ? 'description' : null,
-        design_url: designUrl || (formData.color?.image || formData.product?.image_url) || null,
+        design_url: designUrl || null,
         customer_name: formData.customerName,
         customer_email: formData.customerEmail,
         customer_phone: formData.customerPhone,
@@ -310,7 +403,7 @@ export default function QuotePage() {
     <div>
       <h2 className="font-display text-2xl font-bold">Choose your product</h2>
       <p className="mt-1 text-brand-gray-500">
-        Search our catalog of real products from S&S Activewear
+        Search our products
       </p>
 
       {/* Search */}
@@ -325,16 +418,12 @@ export default function QuotePage() {
         />
       </div>
 
-      {/* Selected product summary */}
-      {formData.product && (
+      {/* Selected product summary — hidden when from studio (design hero shows it) */}
+      {!fromStudio && formData.product && (
         <div className="mt-4 flex items-center gap-4 rounded-xl border-2 border-red-600 bg-red-50 p-4">
-          {formData.product.image_url && (
-            <img
-              src={formData.product.image_url}
-              alt={formData.product.name}
-              className="h-16 w-16 rounded-lg bg-white object-contain"
-            />
-          )}
+          <div className="relative h-16 w-16 rounded-lg bg-white overflow-hidden flex-shrink-0 flex items-center justify-center">
+            <DesignPreview size="sm" padding="p-1" />
+          </div>
           <div className="flex-1">
             <p className="text-xs font-semibold uppercase text-red-600">Selected</p>
             <p className="font-display font-bold">{formData.product.name}</p>
@@ -357,21 +446,21 @@ export default function QuotePage() {
         </div>
       ) : (
         <>
-          <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="mt-4 md:mt-6 grid grid-cols-2 gap-3 md:gap-4 md:grid-cols-3">
             {allProducts.map((product) => {
               const isSelected = formData.product?.id === product.id;
               return (
                 <button
                   key={product.id}
                   type="button"
-                  onClick={() => update({ product, color: null })}
+                  onClick={() => { update({ product, color: null }); window.scrollTo({ top: 0, behavior: "smooth" }); }}
                   className={`flex flex-col items-start overflow-hidden rounded-xl border text-left transition hover:shadow-md ${
                     isSelected
                       ? 'ring-2 ring-red-600 border-transparent'
                       : 'border-brand-gray-200'
                   }`}
                 >
-                  <div className="flex h-40 w-full items-center justify-center bg-brand-gray-50 p-2">
+                  <div className="flex h-32 md:h-40 w-full items-center justify-center bg-brand-gray-50 p-2">
                     {product.image_url ? (
                       <img
                         src={product.image_url}
@@ -446,15 +535,32 @@ export default function QuotePage() {
   const colors = productDetails?.colors ?? [];
   const productSizes = productDetails?.sizes && productDetails.sizes.length > 0 ? productDetails.sizes : (colorsLoading ? [] : SIZES);
 
-  // Order summary sidebar component
-  const orderSummary = formData.product ? (
-    <div className="sticky top-20 bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-      <h3 className="font-display font-bold text-gray-900">Order Summary</h3>
-      {/* Product preview with design elements */}
-      <div className="relative bg-gray-50 rounded-xl overflow-hidden">
-        {(formData.color?.image || formData.product.image_url) && (
-          <img src={formData.color?.image || formData.product.image_url} alt="" className="w-full object-contain p-2" />
-        )}
+  // When colors load from API, auto-select the matching color from the design studio
+  useEffect(() => {
+    if (!designState?.fromDesignStudio || studioColorApplied.current || colors.length === 0) return;
+    studioColorApplied.current = true;
+    // Match by color name first, then fall back to colorIndex
+    if (designState.color?.name) {
+      const match = colors.find(c => c.name === designState.color?.name);
+      if (match) {
+        update({ color: match });
+        return;
+      }
+    }
+    if (typeof designState.colorIndex === 'number' && colors[designState.colorIndex]) {
+      update({ color: colors[designState.colorIndex] });
+    }
+  }, [colors, designState, update]);
+
+  // Reusable design preview: shows snapshot if available, otherwise product image + HTML element overlay
+  const DesignPreview = ({ size, padding }: { size?: string; padding?: string }) => {
+    const productImgUrl = studioProductImage || formData.color?.image || formData.product?.image_url;
+    if (designSnapshot) {
+      return <img src={designSnapshot} alt="Your design" className="w-full h-full object-contain" />;
+    }
+    return (
+      <>
+        {productImgUrl && <img src={productImgUrl} alt="" className={`w-full h-full object-contain ${padding || 'p-2'}`} />}
         {savedDesignElements.length > 0 && (
           <div className="absolute inset-0">
             {savedDesignElements.map(el => (
@@ -466,18 +572,34 @@ export default function QuotePage() {
                 {el.type === 'image' ? (
                   <img src={el.content} alt="" className="w-full object-contain drop-shadow-md" />
                 ) : (
-                  <span className="block font-bold leading-tight drop-shadow-md" style={{
-                    fontSize: `${(el.fontSize ?? 24) * 0.3}px`,
+                  <span className="block font-bold leading-tight" style={{
+                    fontSize: `${(el.fontSize ?? 24) * (size === 'lg' ? 0.5 : size === 'sm' ? 0.2 : 0.3)}px`,
                     color: el.color ?? '#fff',
                     fontFamily: el.fontFamily ?? 'Inter',
-                    textAlign: (el.textAlign as 'left' | 'center' | 'right') ?? 'center',
+                    fontWeight: 700,
+                    textAlign: (el.textAlign as CanvasTextDrawingStyles['textAlign']) ?? 'center',
+                    letterSpacing: el.letterSpacing ? `${el.letterSpacing}em` : undefined,
+                    textShadow: el.outline
+                      ? '-1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5), -1px 1px 0 rgba(0,0,0,0.5), 1px 1px 0 rgba(0,0,0,0.5)'
+                      : '0 1px 3px rgba(0,0,0,0.3)',
                   }}>{el.content}</span>
                 )}
               </div>
             ))}
           </div>
         )}
-        {savedDesignElements.length > 0 && (
+      </>
+    );
+  };
+
+  // Order summary sidebar component
+  const orderSummary = formData.product ? (
+    <div className="sticky top-20 bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+      <h3 className="font-display font-bold text-gray-900">Order Summary</h3>
+      {/* Design preview */}
+      <div className="relative bg-gray-50 rounded-xl overflow-hidden aspect-square flex items-center justify-center">
+        <DesignPreview size="md" />
+        {(designSnapshot || savedDesignElements.length > 0) && (
           <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
         )}
       </div>
@@ -519,16 +641,12 @@ export default function QuotePage() {
 
   const renderStep2 = () => (
     <div>
-      {/* Product summary */}
-      {formData.product && (
+      {/* Product summary — only show when NOT from design studio (design hero already visible) */}
+      {!fromStudio && formData.product && (
         <div className="mb-6 flex items-center gap-4 rounded-xl bg-brand-gray-50 p-4">
-          {formData.product.image_url && (
-            <img
-              src={formData.product.image_url}
-              alt={formData.product.name}
-              className="h-14 w-14 rounded-lg bg-white object-contain"
-            />
-          )}
+          <div className="relative h-14 w-14 rounded-lg bg-white overflow-hidden flex-shrink-0 flex items-center justify-center">
+            <DesignPreview size="sm" padding="p-1" />
+          </div>
           <div>
             <p className="font-display font-bold">{formData.product.name}</p>
             <p className="text-sm text-brand-gray-500">{formData.product.brand}</p>
@@ -536,82 +654,126 @@ export default function QuotePage() {
         </div>
       )}
 
-      <h2 className="font-display text-2xl font-bold">Select color and sizes</h2>
+      <h2 className="font-display text-lg md:text-2xl font-bold">
+        {fromStudio
+          ? 'Select sizes and quantities'
+          : step2Sub === 'color' ? 'Choose a color' : 'Select sizes and quantities'}
+      </h2>
 
-      {/* Color picker */}
-      <p className="mt-6 font-medium text-brand-gray-700">Color</p>
-      {colorsLoading ? (
-        <div className="mt-3 flex items-center gap-2 text-sm text-brand-gray-400">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading colors...
-        </div>
-      ) : colors.length > 0 ? (
+      {/* Color picker screen — hidden when coming from Design Studio */}
+      {!fromStudio && step2Sub === 'color' && (
         <>
-          <div className="mt-3 flex flex-wrap gap-3">
-            {colors.map((c) => (
-              <button
-                key={c.name}
-                type="button"
-                title={c.name}
-                onClick={() => update({ color: c })}
-                className={`h-10 w-10 rounded-full border-2 transition ${
-                  formData.color?.name === c.name
-                    ? 'ring-2 ring-red-600 ring-offset-2 border-brand-gray-300'
-                    : 'border-brand-gray-200 hover:scale-110'
-                }`}
-                style={{ backgroundColor: c.hex }}
+          <p className="mt-6 font-medium text-brand-gray-700">Color</p>
+          {colorsLoading ? (
+            <div className="mt-3 flex items-center gap-2 text-sm text-brand-gray-400">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading colors...
+            </div>
+          ) : colors.length > 0 ? (
+            <>
+              <div className="mt-3 flex flex-wrap gap-3">
+                {colors.map((c) => (
+                  <button
+                    key={c.name}
+                    type="button"
+                    title={c.name}
+                    onClick={() => {
+                      update({ color: c });
+                      if (studioProductImage && c.name !== designState?.color?.name) {
+                        setStudioProductImage(null);
+                      }
+                    }}
+                    className={`h-10 w-10 rounded-full border-2 transition ${
+                      formData.color?.name === c.name
+                        ? 'ring-2 ring-red-600 ring-offset-2 border-brand-gray-300'
+                        : 'border-brand-gray-200 hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
+              </div>
+              {formData.color && (
+                <p className="mt-2 text-sm text-brand-gray-500">
+                  Selected: <span className="font-semibold text-brand-gray-700">{formData.color.name}</span>
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="mt-3 text-sm text-brand-gray-400">
+              No color data available for this product. Please select any preferred color below.
+            </p>
+          )}
+
+          {/* Color image preview */}
+          {formData.color?.image && (
+            <div className="mt-4">
+              <img
+                src={formData.color.image}
+                alt={formData.color.name}
+                className="h-32 w-32 rounded-lg border border-brand-gray-200 object-contain"
               />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Sizes screen */}
+      {(step2Sub === 'sizes' || fromStudio) && (
+        <>
+          {!fromStudio && formData.color && (
+            <div className="mt-4 flex items-center gap-3 text-sm">
+              <span className="w-5 h-5 rounded-full border" style={{ backgroundColor: formData.color.hex }} />
+              <span className="text-brand-gray-600">Color: <span className="font-semibold text-brand-gray-800">{formData.color.name}</span></span>
+            </div>
+          )}
+          <p className="mt-4 md:mt-8 font-medium text-sm md:text-base text-brand-gray-700">Quantity per size</p>
+          <div
+            className="mt-2 grid grid-cols-5 gap-2 sm:grid-cols-5 lg:grid-cols-9"
+            onBlur={(e) => {
+              // When focus leaves the sizes group entirely, dismiss keyboard and scroll to top
+              const currentTarget = e.currentTarget;
+              setTimeout(() => {
+                if (!currentTarget.contains(document.activeElement)) {
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }, 100);
+            }}
+          >
+            {productSizes.map((size) => (
+              <div key={size} className="flex flex-col items-center gap-1">
+                <label className="text-xs md:text-sm font-semibold text-brand-gray-600">{size}</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="0"
+                  value={formData.sizes[size] ? String(formData.sizes[size]) : ''}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const parsed = raw === '' ? 0 : Math.max(0, parseInt(raw, 10) || 0);
+                    update({
+                      sizes: {
+                        ...formData.sizes,
+                        [size]: parsed,
+                      },
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="w-full rounded-lg border border-brand-gray-200 px-1 py-2 text-base text-center focus:outline-none focus:ring-2 focus:ring-red"
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
             ))}
           </div>
-          {formData.color && (
-            <p className="mt-2 text-sm text-brand-gray-500">
-              Selected: <span className="font-semibold text-brand-gray-700">{formData.color.name}</span>
+          {totalQty > 0 && (
+            <p className="mt-3 text-sm font-semibold text-brand-gray-600">
+              Total quantity: <span className="text-red-600">{totalQty}</span>
             </p>
           )}
         </>
-      ) : (
-        <p className="mt-3 text-sm text-brand-gray-400">
-          No color data available for this product. Please select any preferred color below.
-        </p>
-      )}
-
-      {/* Color image preview */}
-      {formData.color?.image && (
-        <div className="mt-4">
-          <img
-            src={formData.color.image}
-            alt={formData.color.name}
-            className="h-32 w-32 rounded-lg border border-brand-gray-200 object-contain"
-          />
-        </div>
-      )}
-
-      {/* Sizes */}
-      <p className="mt-8 font-medium text-brand-gray-700">Quantity per size</p>
-      <div className="mt-3 grid grid-cols-3 gap-4 sm:grid-cols-5 lg:grid-cols-9">
-        {productSizes.map((size) => (
-          <div key={size} className="flex flex-col items-center gap-1">
-            <label className="text-sm font-semibold text-brand-gray-600">{size}</label>
-            <input
-              type="number"
-              min={0}
-              value={formData.sizes[size] ?? 0}
-              onChange={(e) =>
-                update({
-                  sizes: {
-                    ...formData.sizes,
-                    [size]: Math.max(0, parseInt(e.target.value) || 0),
-                  },
-                })
-              }
-              className="w-full rounded-lg border border-brand-gray-200 px-2 py-2 text-center focus:outline-none focus:ring-2 focus:ring-red"
-            />
-          </div>
-        ))}
-      </div>
-      {totalQty > 0 && (
-        <p className="mt-3 text-sm font-semibold text-brand-gray-600">
-          Total quantity: <span className="text-red-600">{totalQty}</span>
-        </p>
       )}
     </div>
   );
@@ -629,15 +791,15 @@ export default function QuotePage() {
       });
     };
 
-    const frontImg = formData.color?.image || formData.product?.image_url;
+    const frontImg = studioProductImage || formData.color?.image || formData.product?.image_url;
     const backImg = formData.color?.backImage || null;
 
     return (
       <div>
-        <h2 className="font-display text-2xl font-bold">Choose Print Areas</h2>
-        <p className="mt-1 text-gray-500">Select where you want your design printed.</p>
+        <h2 className="font-display text-xl md:text-2xl font-bold">Choose Print Areas</h2>
+        <p className="mt-1 text-sm md:text-base text-gray-500">Select where you want your design printed.</p>
 
-        <div className="mt-6 flex flex-col gap-8 lg:flex-row lg:gap-12">
+        <div className="mt-6 flex flex-col gap-6 lg:flex-row lg:gap-12">
           {/* Checkboxes */}
           <div className="flex-1 space-y-3">
             {PRINT_AREAS.map((pa) => (
@@ -667,7 +829,7 @@ export default function QuotePage() {
           {/* Front + Back product images with overlays */}
           <div className="flex flex-1 items-start justify-center gap-4">
             {/* Front */}
-            <div className="w-44">
+            <div className="w-[45%] max-w-[176px]">
               <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Front</span>
               <div className="relative bg-gray-50 rounded-xl overflow-hidden">
                 {frontImg ? (
@@ -699,7 +861,7 @@ export default function QuotePage() {
             </div>
 
             {/* Back */}
-            <div className="w-44">
+            <div className="w-[45%] max-w-[176px]">
               <span className="block text-xs font-semibold uppercase tracking-wider text-gray-400 text-center mb-2">Back</span>
               <div className="relative bg-gray-50 rounded-xl overflow-hidden">
                 {backImg ? (
@@ -728,8 +890,8 @@ export default function QuotePage() {
 
   const renderStep4 = () => (
     <div>
-      <h2 className="font-display text-2xl font-bold">Upload your design</h2>
-      <p className="mt-1 text-brand-gray-500">
+      <h2 className="font-display text-xl md:text-2xl font-bold">Upload your design</h2>
+      <p className="mt-1 text-sm md:text-base text-brand-gray-500">
         Upload artwork or describe your design idea. This step is optional.
       </p>
 
@@ -739,7 +901,7 @@ export default function QuotePage() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
           onClick={() => fileRef.current?.click()}
-          className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-12 text-center transition hover:border-red-600"
+          className="flex cursor-pointer flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-brand-gray-300 bg-brand-gray-50 p-6 md:p-12 text-center transition hover:border-red-600"
         >
           <Upload className="h-10 w-10 text-brand-gray-400" />
           <p className="font-medium text-brand-gray-600">
@@ -767,7 +929,7 @@ export default function QuotePage() {
             <img
               src={formData.designPreview}
               alt="Design preview"
-              className="h-48 w-48 rounded-xl border border-brand-gray-200 object-contain"
+              className="h-36 w-36 md:h-48 md:w-48 rounded-xl border border-brand-gray-200 object-contain"
             />
             <button
               type="button"
@@ -849,35 +1011,39 @@ export default function QuotePage() {
 
     return (
       <div>
-        <h2 className="font-display text-2xl font-bold">Review your quote</h2>
+        <h2 className="font-display text-xl md:text-2xl font-bold">Review your quote</h2>
 
         {/* Summary card */}
-        <div className="mt-6 space-y-4 rounded-2xl border border-brand-gray-200 bg-brand-gray-50 p-6">
-          <div className="flex flex-wrap gap-6">
-            {/* Product image */}
-            {formData.product?.image_url && (
-              <img
-                src={formData.product.image_url}
-                alt={formData.product.name}
-                className="h-28 w-28 rounded-xl border border-brand-gray-200 bg-white object-contain"
-              />
+        <div className="mt-6 space-y-4 rounded-2xl border border-brand-gray-200 bg-brand-gray-50 p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Design / Product preview */}
+            {(formData.designPreview || designSnapshot || savedDesignElements.length > 0 || formData.product?.image_url || formData.color?.image) && (
+              <div className="relative w-full sm:w-40 flex-shrink-0">
+                <div className="relative bg-white border border-brand-gray-200 rounded-xl overflow-hidden aspect-square flex items-center justify-center">
+                  {formData.designPreview ? (
+                    <img src={formData.designPreview} alt="Your design" className="w-full h-full object-contain p-2" />
+                  ) : (
+                    <DesignPreview size="md" />
+                  )}
+                </div>
+              </div>
             )}
 
             <div className="flex-1 space-y-3 text-sm">
               {/* Product */}
               <div>
                 <span className="font-semibold text-brand-gray-500">Product</span>
-                <p className="font-bold">{formData.product?.name}</p>
+                <p className="font-bold break-words">{formData.product?.name}</p>
                 <p className="text-brand-gray-500">{formData.product?.brand}</p>
               </div>
 
               {/* Color */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-brand-gray-500">Color:</span>
                 {formData.color && (
                   <>
                     <span
-                      className="inline-block h-4 w-4 rounded-full border border-brand-gray-300"
+                      className="inline-block h-4 w-4 rounded-full border border-brand-gray-300 flex-shrink-0"
                       style={{ backgroundColor: formData.color.hex }}
                     />
                     <span className="font-medium">{formData.color.name}</span>
@@ -888,18 +1054,9 @@ export default function QuotePage() {
               {/* Print areas */}
               <div>
                 <span className="font-semibold text-brand-gray-500">Print Areas:</span>{' '}
-                <span className="font-medium">{formData.printAreas.join(', ')}</span>
+                <span className="font-medium">{formData.printAreas.join(', ') || '—'}</span>
               </div>
             </div>
-
-            {/* Design preview */}
-            {formData.designPreview && (
-              <img
-                src={formData.designPreview}
-                alt="Design"
-                className="h-28 w-28 rounded-xl border border-brand-gray-200 object-contain"
-              />
-            )}
           </div>
 
           {/* Sizes table */}
@@ -934,7 +1091,7 @@ export default function QuotePage() {
 
         {/* Customer info form */}
         <div className="mt-8 space-y-4">
-          <h3 className="font-display text-lg font-bold">Your information</h3>
+          <h3 className="font-display text-base md:text-lg font-bold">Your information</h3>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-brand-gray-600">
@@ -944,7 +1101,7 @@ export default function QuotePage() {
                 placeholder="John Doe"
                 value={formData.customerName}
                 onChange={(e) => update({ customerName: e.target.value })}
-                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+                className="w-full rounded-lg border border-brand-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red"
               />
             </div>
             <div>
@@ -956,7 +1113,7 @@ export default function QuotePage() {
                 placeholder="john@example.com"
                 value={formData.customerEmail}
                 onChange={(e) => update({ customerEmail: e.target.value })}
-                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+                className="w-full rounded-lg border border-brand-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red"
               />
             </div>
             <div>
@@ -968,7 +1125,7 @@ export default function QuotePage() {
                 placeholder="(555) 123-4567"
                 value={formData.customerPhone}
                 onChange={(e) => update({ customerPhone: e.target.value })}
-                className="w-full rounded-lg border border-brand-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red"
+                className="w-full rounded-lg border border-brand-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red"
               />
             </div>
           </div>
@@ -988,7 +1145,7 @@ export default function QuotePage() {
 
         {/* Date needed */}
         <div className="mt-8 space-y-4">
-          <h3 className="font-display text-lg font-bold">When do you need it?</h3>
+          <h3 className="font-display text-base md:text-lg font-bold">When do you need it?</h3>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-600">Date needed <span className="text-red-600">*</span></label>
             <input
@@ -996,14 +1153,14 @@ export default function QuotePage() {
               value={formData.dateNeeded}
               onChange={(e) => update({ dateNeeded: e.target.value })}
               min={new Date().toISOString().split('T')[0]}
-              className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
             />
           </div>
         </div>
 
         {/* Shipping */}
         <div className="mt-8 space-y-4">
-          <h3 className="font-display text-lg font-bold">Delivery method</h3>
+          <h3 className="font-display text-base md:text-lg font-bold">Delivery method</h3>
           <div className="flex gap-3">
             <button
               type="button"
@@ -1035,7 +1192,7 @@ export default function QuotePage() {
                   placeholder="123 Main St"
                   value={formData.shippingStreet}
                   onChange={(e) => update({ shippingStreet: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
               </div>
               <div>
@@ -1044,7 +1201,7 @@ export default function QuotePage() {
                   placeholder="Atlanta"
                   value={formData.shippingCity}
                   onChange={(e) => update({ shippingCity: e.target.value })}
-                  className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1054,7 +1211,7 @@ export default function QuotePage() {
                     placeholder="GA"
                     value={formData.shippingState}
                     onChange={(e) => update({ shippingState: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
                   />
                 </div>
                 <div>
@@ -1063,7 +1220,7 @@ export default function QuotePage() {
                     placeholder="30213"
                     value={formData.shippingZip}
                     onChange={(e) => update({ shippingZip: e.target.value })}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
                   />
                 </div>
               </div>
@@ -1076,7 +1233,7 @@ export default function QuotePage() {
           type="button"
           disabled={submitting || !canAdvance()}
           onClick={() => void handleSubmit()}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-red-600 px-8 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
+          className="mt-6 w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-8 py-3 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
         >
           {submitting ? (
             <>
@@ -1096,31 +1253,63 @@ export default function QuotePage() {
 
   const stepRenderers = [renderStep1, renderStep2, renderStep3, renderStep4, renderStep5];
 
+  // When from Design Studio, only show steps 2 (Color & Sizes) and 5 (Review & Submit)
+  const activeStepNums = fromStudio ? [2, 5] : [1, 2, 3, 4, 5];
+  const activeStepIdx = activeStepNums.indexOf(currentStep);
+  const goNext = () => {
+    // Step 2 has two sub-screens: color then sizes
+    if (currentStep === 2 && step2Sub === 'color') {
+      setStep2Sub('sizes');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const nextIdx = activeStepIdx + 1;
+    const next = activeStepNums[nextIdx];
+    if (nextIdx < activeStepNums.length && next !== undefined) {
+      // Reset sub-step when entering step 2 from step 1
+      if (next === 2) setStep2Sub(fromStudio ? 'sizes' : 'color');
+      setCurrentStep(next);
+    }
+  };
+  const goBack = () => {
+    // Step 2: if on sizes sub-screen, go back to color sub-screen
+    if (currentStep === 2 && step2Sub === 'sizes' && !fromStudio) {
+      setStep2Sub('color');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const prevIdx = activeStepIdx - 1;
+    const prev = activeStepNums[prevIdx];
+    if (prevIdx >= 0 && prev !== undefined) setCurrentStep(prev);
+  };
+  const isFirstStep = activeStepIdx === 0 && !(currentStep === 2 && step2Sub === 'sizes');
+  const isLastStep = activeStepIdx === activeStepNums.length - 1;
+
   /* ---------------------------------------------------------------- */
   /*  Render                                                           */
   /* ---------------------------------------------------------------- */
 
   return (
     <Layout>
-      <section className="container py-12 md:py-16">
+      <section className="container py-4 md:py-8">
         {/* Top bar: title + next button (sticky) */}
         {!submitted && (
-          <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm -mx-4 px-4 py-4 flex items-center justify-between mb-2 border-b border-gray-100">
-            <h1 className="font-display text-2xl md:text-3xl font-bold">Get Your Quote</h1>
+          <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm -mx-4 px-4 py-2 flex items-center justify-between mb-1">
+            <h1 className="font-display text-xl md:text-3xl font-bold">Get Your Quote</h1>
             <div className="flex items-center gap-3">
-              {currentStep > 1 && (
+              {!isFirstStep && (
                 <button
                   type="button"
-                  onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
+                  onClick={goBack}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
                 >
                   <ChevronLeft className="h-4 w-4" /> Back
                 </button>
               )}
-              {currentStep < 5 && (
+              {!isLastStep && (
                 <button
                   type="button"
-                  onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
+                  onClick={goNext}
                   disabled={!canAdvance()}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50"
                 >
@@ -1131,85 +1320,54 @@ export default function QuotePage() {
           </div>
         )}
 
-        {/* Progress bar */}
-        <div className="mb-10">
-          <div className="flex items-center justify-between">
-            {STEPS.map((step, i) => {
-              const stepNum = i + 1;
-              const done = currentStep > stepNum;
-              const active = currentStep === stepNum;
-              const Icon = step.icon;
-              return (
-                <div key={step.label} className="flex flex-1 flex-col items-center gap-1.5">
-                  <div
-                    className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold transition ${
-                      done
-                        ? 'bg-red-600 text-white'
-                        : active
-                          ? 'bg-red-600 text-white ring-4 ring-red-200'
-                          : 'bg-brand-gray-200 text-brand-gray-500'
-                    }`}
-                  >
-                    {done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
-                  </div>
-                  <span
-                    className={`hidden text-center text-xs sm:block ${
-                      active
-                        ? 'font-semibold text-brand-gray-800'
-                        : done
-                          ? 'font-medium text-red-600'
-                          : 'text-brand-gray-400'
-                    }`}
-                  >
-                    {step.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          {/* Connector lines */}
-          <div className="relative mt-[-34px] flex px-[20px]">
-            {STEPS.slice(1).map((_, i) => (
-              <div
-                key={i}
-                className={`h-0.5 flex-1 ${currentStep > i + 1 ? 'bg-red-600' : 'bg-brand-gray-200'}`}
-              />
-            ))}
-          </div>
+        {/* Progress bar — only show steps relevant to the flow */}
+        <div className="mb-2 md:mb-10 relative z-10">
+          {(() => {
+            const visibleSteps = activeStepNums.map(n => STEPS[n - 1]!);
+            return (
+              <div className="flex items-center gap-1">
+                {visibleSteps.map((step, i) => {
+                  const stepNum = activeStepNums[i]!;
+                  const done = activeStepIdx > i;
+                  const active = currentStep === stepNum;
+                  return (
+                    <React.Fragment key={step.label}>
+                      {i > 0 && <div className={`flex-1 h-0.5 ${done ? 'bg-red-600' : 'bg-gray-200'}`} />}
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <div className={`flex h-6 w-6 md:h-8 md:w-8 items-center justify-center rounded-full text-xs font-bold ${
+                          done ? 'bg-red-600 text-white' : active ? 'bg-red-600 text-white ring-2 ring-red-200' : 'bg-gray-200 text-gray-500'
+                        }`}>
+                          {done ? <Check className="h-3 w-3" /> : i + 1}
+                        </div>
+                        <span className={`text-[10px] md:text-xs whitespace-nowrap ${
+                          active ? 'font-bold text-gray-900' : done ? 'font-medium text-red-600' : 'text-gray-400 hidden sm:inline'
+                        }`}>{step.label}</span>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
 
-        {/* Step content + order summary sidebar */}
-        <div ref={stepContentRef} className="scroll-mt-4 flex flex-col lg:flex-row gap-8">
-          <div className="min-h-[400px] flex-1">{stepRenderers[currentStep - 1]?.()}</div>
-          {currentStep > 1 && currentStep < 5 && (
-            <div className="w-full lg:w-72 flex-shrink-0">{orderSummary}</div>
-          )}
-        </div>
+        {/* Design preview hero - shows designed product when coming from studio */}
+        {fromStudio && (designSnapshot || savedDesignElements.length > 0) && (
+          <div className="mb-2 md:mb-8 flex flex-col items-center">
+            <div className="relative w-full max-w-[60vw] md:w-full md:max-w-xs aspect-[4/5] bg-white rounded-xl shadow-sm overflow-hidden flex items-center justify-center border border-gray-100">
+              <DesignPreview size="lg" padding="p-4" />
+              <div className="absolute top-2 right-2 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Your Design</div>
+            </div>
 
-        {/* Navigation */}
-        {!submitted && (
-          <div className="mt-10 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setCurrentStep((s) => Math.max(1, s - 1))}
-              disabled={currentStep === 1}
-              className="inline-flex items-center gap-2 rounded-lg border border-brand-gray-200 px-5 py-2.5 font-semibold text-brand-gray-600 transition hover:bg-brand-gray-50 disabled:opacity-30"
-            >
-              <ChevronLeft className="h-4 w-4" /> Back
-            </button>
-
-            {currentStep < 5 && (
-              <button
-                type="button"
-                onClick={() => setCurrentStep((s) => Math.min(5, s + 1))}
-                disabled={!canAdvance()}
-                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-6 py-2.5 font-semibold text-white transition hover:bg-red-700 disabled:opacity-50"
-              >
-                Next <ChevronRight className="h-4 w-4" />
-              </button>
-            )}
           </div>
         )}
+
+        {/* Step content */}
+        <div ref={stepContentRef} className="scroll-mt-4">
+          <div className="min-h-[400px]">{stepRenderers[currentStep - 1]?.()}</div>
+        </div>
+
+
       </section>
     </Layout>
   );

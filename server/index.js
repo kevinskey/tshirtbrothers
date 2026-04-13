@@ -15,6 +15,8 @@ import paymentsRouter from './routes/payments.js';
 import shippingRouter from './routes/shipping.js';
 import invoicesRouter from './routes/invoices.js';
 import blogRouter from './routes/blog.js';
+import deepseekRouter from './routes/deepseek.js';
+import gangsheetRouter from './routes/gangsheet.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -23,6 +25,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
+app.set('trust proxy', 1);
 app.use(cors());
 
 // Stripe webhook needs raw body - must come before json parser
@@ -46,6 +49,8 @@ app.use('/api/payments', paymentsRouter);
 app.use('/api/shipping', shippingRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/blog', blogRouter);
+app.use('/api/deepseek', deepseekRouter);
+app.use('/api/admin/gangsheets', gangsheetRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

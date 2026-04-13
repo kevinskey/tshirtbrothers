@@ -7,7 +7,7 @@ const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
 // ── Shared styles ────────────────────────────────────────────────────────────
 
-const BRAND_RED = '#dc2626';
+const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
 
 function baseLayout(title, bodyHtml) {
@@ -20,11 +20,8 @@ function baseLayout(title, bodyHtml) {
 <tr><td align="center">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
   <!-- Header -->
-  <tr><td style="background:${BRAND_DARK};padding:28px 32px;text-align:center;">
-    <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-0.5px;">
-      <span style="color:${BRAND_RED};">T-Shirt</span>
-      <span style="color:#ffffff;"> Brothers</span>
-    </h1>
+  <tr><td style="background:${BRAND_DARK};padding:24px 32px;text-align:center;">
+    <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TShirt Brothers" style="height:48px;" />
   </td></tr>
   <!-- Body -->
   <tr><td style="padding:32px;">
@@ -61,7 +58,7 @@ function detailsTable(rows) {
 
 function primaryButton(text, href) {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto;">
-    <tr><td style="background:${BRAND_RED};border-radius:8px;">
+    <tr><td style="background:${BRAND_ORANGE};border-radius:8px;">
       <a href="${href}" target="_blank" style="display:inline-block;padding:14px 32px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;">${text}</a>
     </td></tr>
   </table>`;
@@ -151,7 +148,7 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
     (Number(rushFee) > 0 ? detailRow('Rush Fee', formatCurrency(rushFee)) : '') +
     `<tr>
       <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Total</td>
-      <td style="padding:10px 12px;font-size:15px;color:${BRAND_RED};font-weight:700;">${formatCurrency(total)}</td>
+      <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(total)}</td>
     </tr>`;
 
   const body = `
@@ -163,9 +160,17 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
       <p style="margin:0;font-size:14px;color:#166534;">${message}</p>
     </div>` : ''}
 
+    ${quote.design_url ? `
+    <div style="text-align:center;margin-bottom:20px;">
+      <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${BRAND_DARK};">Your Design</p>
+      <img src="${quote.design_url}" alt="Your custom design" style="max-width:280px;width:100%;border-radius:12px;border:1px solid #e5e7eb;" />
+    </div>
+    ` : ''}
+
     <h3 style="margin:0 0 8px;font-size:16px;color:${BRAND_DARK};">Order Details</h3>
     ${detailsTable(
       detailRow('Product', quote.product_name || 'Custom Apparel') +
+      (quote.color ? detailRow('Color', quote.color) : '') +
       detailRow('Quantity', quote.quantity) +
       detailRow('Sizes', sizesDisplay) +
       detailRow('Print Areas', printAreasDisplay) +
@@ -294,5 +299,45 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
     console.log(`[Email] Status update (${newStatus}) sent to ${quote.customer_email}`);
   } catch (err) {
     console.error('[Email] Failed to send status update:', err);
+  }
+}
+
+/**
+ * Sends balance payment request to customer.
+ */
+export async function sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue }) {
+  const payUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token}&type=balance`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Remaining Balance Due</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Thank you for your deposit! Your order is in progress. Please pay the remaining balance to complete your order.</p>
+
+    ${detailsTable(
+      detailRow('Product', quote.product_name || 'Custom Apparel') +
+      detailRow('Quantity', String(quote.quantity)) +
+      detailRow('Order Total', formatCurrency(total)) +
+      detailRow('Deposit Paid', '<span style="color:#16a34a;font-weight:700;">' + formatCurrency(depositPaid) + '</span>') +
+      `<tr>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Balance Due</td>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(balanceDue)}</td>
+      </tr>`
+    )}
+
+    ${primaryButton('Pay Remaining Balance', payUrl)}
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">If you have questions, reply to this email or call us at (470) 622-4845.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: 'Balance Due - TShirt Brothers Order #' + quote.id,
+      html: baseLayout('Balance Due', body),
+    });
+    console.log('[Email] Balance due sent to ' + quote.customer_email);
+  } catch (err) {
+    console.error('[Email] Failed to send balance due:', err);
   }
 }

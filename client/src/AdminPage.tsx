@@ -30,7 +30,6 @@ import {
   Send,
   Receipt,
   PenSquare,
-  Sparkles,
   Edit3,
 } from 'lucide-react';
 import {
@@ -76,17 +75,11 @@ import {
   updateBlogPost,
   deleteBlogPost,
   publishBlogPost,
-  sendBalanceRequest,
-  updateAdminNotes,
-  fetchAdminCounts,
 } from '@/lib/api';
-import PromoManager from '@/components/admin/PromoManager';
-import DesignWorkspace from '@/components/admin/DesignWorkspace';
-import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
-type OrderFilter = 'all' | 'accepted' | 'completed';
+type OrderFilter = 'all' | 'pending' | 'approved' | 'completed' | 'rejected';
 
 const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -98,10 +91,6 @@ const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[]
   { key: 'products', label: 'Products', icon: Package },
   { key: 'categories', label: 'Categories', icon: FolderTree },
   { key: 'blog', label: 'Blog', icon: PenSquare },
-  { key: 'pricing', label: 'AI Pricing', icon: DollarSign },
-  { key: 'workspace', label: 'Design Lab', icon: Palette },
-  { key: 'promotions', label: 'Promotions', icon: Sparkles },
-  { key: 'gangsheet', label: 'Gang Sheets', icon: Layers },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -184,108 +173,14 @@ function SSPricingInfo({ productName, quantity, printAreas }: { productName: str
   );
 }
 
-// ─── Gang Sheet List ─────────────────────────────────────────────────────────
-
-function GangSheetList() {
-  const [sheets, setSheets] = useState<{ id: number; name: string; sheet_length_ft: number; pricing_tier: string; total_cost: number; status: string; design_count: number; created_at: string; updated_at: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const token = localStorage.getItem('tsb_token');
-    fetch('/api/admin/gangsheets', { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : [])
-      .then(setSheets)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Delete this gang sheet?')) return;
-    const token = localStorage.getItem('tsb_token');
-    await fetch(`/api/admin/gangsheets/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
-    setSheets(prev => prev.filter(s => s.id !== id));
-  };
-
-  if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>;
-
-  if (sheets.length === 0) {
-    return (
-      <div className="text-center py-16 bg-white rounded-xl border border-gray-200">
-        <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-        <p className="text-gray-500 font-medium">No gang sheets yet</p>
-        <p className="text-sm text-gray-400 mt-1">Create your first gang sheet to start laying out DTF transfers</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {sheets.map(s => (
-        <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 hover:border-orange-300 transition">
-          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Layers className="w-5 h-5 text-orange-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 truncate">{s.name}</p>
-            <p className="text-xs text-gray-500">{s.design_count || 0} designs · {s.sheet_length_ft || 1}ft · {s.pricing_tier || 'standard'}</p>
-          </div>
-          <div className="text-right flex-shrink-0">
-            <p className="font-bold text-green-700">${(s.total_cost || 0).toFixed(2)}</p>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.status === 'exported' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-              {s.status || 'draft'}
-            </span>
-          </div>
-          <div className="flex gap-1 flex-shrink-0">
-            <Link to={`/admin/gangsheet/${s.id}`} className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg">
-              <Edit3 className="w-4 h-4" />
-            </Link>
-            <button onClick={() => handleDelete(s.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function AdminPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
-  const [quoteSearch, setQuoteSearch] = useState('');
-  const [quoteSort, setQuoteSort] = useState<'newest' | 'date_needed'>('newest');
-  const [orderSearch, setOrderSearch] = useState('');
-  const [orderSort, setOrderSort] = useState<'newest' | 'date_needed'>('newest');
   const [productSearch, setProductSearch] = useState('');
   const [productPage, setProductPage] = useState(1);
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
-
-  // Pricing Assistant state
-  const [pricingForm, setPricingForm] = useState({
-    brand: 'gildan',
-    product_type: 't-shirt',
-    quantity: 24,
-    print_method: 'screen-print',
-    print_areas: 1,
-    colors_in_design: 1,
-    design_size: 'standard',
-    is_rush: false,
-    deadline_days: 14,
-  });
-  const [pricingResult, setPricingResult] = useState<{
-    suggested_price?: number;
-    garment_cost?: number;
-    print_cost?: number;
-    gang_sheet_details?: { design_width_inches?: number; design_height_inches?: number; designs_per_foot?: number; sheet_length_feet?: number; sheet_cost?: number; cost_per_unit?: number };
-    bulk_tier_prices?: Record<string, number>;
-    profit_margin_percentage?: number;
-    confidence_level?: number;
-    reasoning?: string;
-  } | null>(null);
-  const [pricingLoading, setPricingLoading] = useState(false);
 
   // New section state
   const [designSearch, setDesignSearch] = useState('');
@@ -330,36 +225,6 @@ export default function AdminPage() {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('card');
 
-  // Quote/Order detail drawer state
-  const [detailQuote, setDetailQuote] = useState<Quote | Order | null>(null);
-  const [adminNotesDraft, setAdminNotesDraft] = useState('');
-  const [adminNotesSaving, setAdminNotesSaving] = useState(false);
-
-  // AI helpers (DeepSeek)
-  const [aiTriage, setAiTriage] = useState<QuoteTriage | null>(null);
-  const [aiTriageLoading, setAiTriageLoading] = useState(false);
-  const [aiDraft, setAiDraft] = useState<DraftReply | null>(null);
-  const [aiDraftLoading, setAiDraftLoading] = useState(false);
-  const [aiDraftQuestion, setAiDraftQuestion] = useState('');
-  const [aiPriceResult, setAiPriceResult] = useState<PriceSuggestion | null>(null);
-  const [aiPriceLoading, setAiPriceLoading] = useState(false);
-
-  // Reset AI state when drawer opens a different quote
-  useEffect(() => {
-    setAiTriage(null);
-    setAiDraft(null);
-    setAiDraftQuestion('');
-    setAiPriceResult(null);
-  }, [detailQuote?.id]);
-
-  // Reset admin notes draft when a new quote is opened
-  useEffect(() => {
-    if (detailQuote) {
-      const notes = (detailQuote as { admin_notes?: string | null }).admin_notes || '';
-      setAdminNotesDraft(notes);
-    }
-  }, [detailQuote]);
-
   // Send Price modal state
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
   const [, setPriceBase] = useState('');
@@ -371,12 +236,7 @@ export default function AdminPage() {
   const [sizeMarkups, setSizeMarkups] = useState<Record<string, string>>({});
 
   // Blog state
-  const [blogView, setBlogView] = useState<'list' | 'editor' | 'ai'>('list');
-  const [aiBlogForm, setAiBlogForm] = useState({ topic: '', keywords: '', tone: 'educational', length: 'medium' });
-  const [aiBlogLoading, setAiBlogLoading] = useState(false);
-  const [igPost, setIgPost] = useState<{ caption?: string; hashtags?: string; full_post?: string; image_url?: string } | null>(null);
-  const [igLoading, setIgLoading] = useState(false);
-  const [aiBlogResult, setAiBlogResult] = useState<{ title?: string; meta_description?: string; slug_suggestion?: string; outline?: string[]; full_html_content?: string; saved?: { id: number; slug: string; title: string } } | null>(null);
+  const [blogView, setBlogView] = useState<'list' | 'editor'>('list');
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
   const [blogForm, setBlogForm] = useState({
     title: '',
@@ -394,22 +254,12 @@ export default function AdminPage() {
   const [catParent, setCatParent] = useState('');
   const [catDesc, setCatDesc] = useState('');
 
-  // Auth check — verify token is valid, redirect if expired
+  // Auth check
   useEffect(() => {
     const token = localStorage.getItem('tsb_token');
     if (!token) {
       navigate('/auth');
-      return;
     }
-    // Verify token is still valid with a lightweight API call
-    fetch('/api/quotes', { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => {
-        if (res.status === 401) {
-          localStorage.removeItem('tsb_token');
-          navigate('/auth');
-        }
-      })
-      .catch(() => {});
   }, [navigate]);
 
   function handleSignOut() {
@@ -423,15 +273,9 @@ export default function AdminPage() {
     queryFn: fetchDashboardStats,
   });
 
-  const countsQuery = useQuery({
-    queryKey: ['admin', 'counts'],
-    queryFn: fetchAdminCounts,
-    refetchInterval: 30000, // refresh every 30s
-  });
-
   const quotesQuery = useQuery({
-    queryKey: ['admin', 'quotes', quoteFilter, quoteSearch, quoteSort],
-    queryFn: () => fetchQuotes(quoteFilter, quoteSearch, quoteSort),
+    queryKey: ['admin', 'quotes', quoteFilter],
+    queryFn: () => fetchQuotes(quoteFilter),
     enabled: activeSection === 'dashboard' || activeSection === 'quotes',
     staleTime: 10000, // 10 seconds for admin
     refetchOnWindowFocus: true,
@@ -468,8 +312,8 @@ export default function AdminPage() {
   });
 
   const ordersQuery = useQuery({
-    queryKey: ['admin', 'orders', orderFilter, orderSearch, orderSort],
-    queryFn: () => fetchOrders(orderFilter, orderSearch, orderSort),
+    queryKey: ['admin', 'orders', orderFilter],
+    queryFn: () => fetchOrders(orderFilter),
     enabled: activeSection === 'orders',
   });
 
@@ -623,9 +467,6 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       setOpenActionMenu(null);
-    },
-    onError: (err: Error) => {
-      alert('Failed to delete quote: ' + err.message);
     },
   });
 
@@ -826,17 +667,14 @@ export default function AdminPage() {
     setInvoiceView('preview');
   }
 
-  async function handleSendPreviewedInvoice() {
+  function handleSendPreviewedInvoice() {
     if (!previewInvoice) return;
-    try {
-      const created = await createInvoiceMutation.mutateAsync(previewInvoice);
-      if (created?.id) {
-        await sendInvoiceMutation.mutateAsync(String(created.id));
-      }
-      setPreviewInvoice(null);
-    } catch (err) {
-      // errors are handled by the mutation's onError
-    }
+    createInvoiceMutation.mutate(previewInvoice, {
+      onSuccess: (created) => {
+        sendInvoiceMutation.mutate(created.id);
+        setPreviewInvoice(null);
+      },
+    });
   }
 
   function handleSendPrice(e: FormEvent) {
@@ -911,46 +749,29 @@ export default function AdminPage() {
   const customerDetail = customerDetailQuery.data ?? null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Mobile overlay */}
-      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-
+    <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+      <aside className="fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30">
         <div className="p-6 border-b border-gray-800 flex items-center gap-3">
           <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
           <h1 className="font-display text-xl font-bold tracking-tight">Admin</h1>
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-            const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
-            const activeOrdersCount = key === 'orders' ? Number(countsQuery.data?.active_orders || 0) : 0;
-            const badgeCount = pendingCount || activeOrdersCount;
-            return (
-              <button
-                key={key}
-                onClick={() => { setActiveSection(key); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeSection === key
-                    ? 'bg-red-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="flex-1 text-left">{label}</span>
-                {badgeCount > 0 && (
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    activeSection === key
-                      ? 'bg-white text-red-600'
-                      : key === 'quotes' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
-                  }`}>
-                    {badgeCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveSection(key)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                activeSection === key
+                  ? 'bg-red-600 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
         </nav>
 
         <div className="p-4 border-t border-gray-800 space-y-2">
@@ -972,21 +793,14 @@ export default function AdminPage() {
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-64 p-4 pt-16 lg:pt-8 lg:p-8">
-        {/* Mobile header */}
-        <div className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 bg-white border-b border-gray-200 px-4 py-3 lg:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-          </button>
-          <span className="font-display font-bold text-gray-900">Admin</span>
-        </div>
+      <main className="ml-64 flex-1 p-8">
         {/* Dashboard */}
         {activeSection === 'dashboard' && (
           <div>
-            <h2 className="text-xl sm:text-2xl font-display font-bold text-gray-900 mb-4 sm:mb-6">Dashboard</h2>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Dashboard</h2>
 
             {/* Stat Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <StatCard
                 icon={ClipboardList}
                 value={stats?.totalQuotes ?? 0}
@@ -1014,30 +828,42 @@ export default function AdminPage() {
             </div>
 
             {/* Recent Quotes */}
-            <div>
-              <h3 className="font-display font-semibold text-gray-900 mb-3">Recent Quotes</h3>
-              <div className="space-y-2">
-                {quotes.slice(0, 10).map((q: Quote) => (
-                  <div key={q.id} onClick={() => setDetailQuote(q)}
-                    className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 cursor-pointer active:bg-gray-50">
-                    {q.design_url && (
-                      <div className="w-12 h-12 flex-shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
-                        <img src={q.design_url} alt="" className="w-full h-full object-contain" />
-                      </div>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="font-display font-semibold text-gray-900">Recent Quotes</h3>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left text-gray-500">
+                      <th className="px-6 py-3 font-medium">Date</th>
+                      <th className="px-6 py-3 font-medium">Customer</th>
+                      <th className="px-6 py-3 font-medium">Product</th>
+                      <th className="px-6 py-3 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {quotes.slice(0, 10).map((q: Quote) => (
+                      <tr key={q.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-gray-600">
+                          {new Date(q.created_at || q.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-3 text-gray-900">{q.customer_name || q.customerName}</td>
+                        <td className="px-6 py-3 text-gray-600">{q.product_name || q.productName}</td>
+                        <td className="px-6 py-3">
+                          <StatusBadge status={q.status} />
+                        </td>
+                      </tr>
+                    ))}
+                    {quotes.length === 0 && !quotesQuery.isLoading && (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-8 text-center text-gray-400">
+                          No quotes yet
+                        </td>
+                      </tr>
                     )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{q.customer_name || q.customerName}</p>
-                      <p className="text-xs text-gray-500 truncate">{q.product_name || q.productName} · {q.quantity} pcs</p>
-                      <p className="text-[10px] text-gray-400">{new Date(q.created_at || q.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <StatusBadge status={q.status} />
-                  </div>
-                ))}
-                {quotes.length === 0 && !quotesQuery.isLoading && (
-                  <div className="text-center py-8 bg-white rounded-xl border border-gray-200 text-gray-400 text-sm">
-                    No quotes yet
-                  </div>
-                )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -1046,39 +872,15 @@ export default function AdminPage() {
         {/* Quotes Section */}
         {activeSection === 'quotes' && (
           <div>
-            <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-4 md:mb-6">Quotes</h2>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Quotes</h2>
 
-            {/* Search + Sort */}
-            <div className="flex flex-col sm:flex-row gap-2 mb-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="search"
-                  placeholder="Search customer, email, product..."
-                  value={quoteSearch}
-                  onChange={(e) => setQuoteSearch(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  style={{ fontSize: '16px' }}
-                />
-              </div>
-              <select
-                value={quoteSort}
-                onChange={(e) => setQuoteSort(e.target.value as 'newest' | 'date_needed')}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                style={{ fontSize: '16px' }}
-              >
-                <option value="newest">Newest first</option>
-                <option value="date_needed">Date needed (urgent first)</option>
-              </select>
-            </div>
-
-            {/* Filter Tabs - scrollable on mobile */}
-            <div className="flex gap-1 mb-4 md:mb-6 bg-gray-100 rounded-lg p-1 w-full md:w-fit overflow-x-auto">
-              {(['all', 'pending', 'quoted', 'accepted', 'completed'] as QuoteFilter[]).map((f) => (
+            {/* Filter Tabs */}
+            <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+              {(['all', 'pending', 'quoted', 'accepted', 'approved', 'completed'] as QuoteFilter[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setQuoteFilter(f)}
-                  className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors whitespace-nowrap flex-shrink-0 ${
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
                     quoteFilter === f
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
@@ -1089,119 +891,8 @@ export default function AdminPage() {
               ))}
             </div>
 
-            {/* Mobile card view */}
-            <div className="lg:hidden space-y-3">
-              {quotesQuery.isLoading ? (
-                <div className="text-center py-12 text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-              ) : quotes.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No quotes found</div>
-              ) : quotes.map((q: Quote) => {
-                const needed = q.date_needed ? new Date(q.date_needed) : null;
-                const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
-                const isRush = daysUntil !== null && daysUntil <= 7;
-                return (
-                <div
-                  key={q.id}
-                  onClick={() => setDetailQuote(q)}
-                  className={`bg-white rounded-xl border p-4 space-y-3 cursor-pointer active:bg-gray-50 ${isRush ? 'border-orange-300 ring-1 ring-orange-200' : 'border-gray-200'}`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 truncate">{q.customer_name || q.customerName}</p>
-                      <a href={`mailto:${q.customer_email || q.customerEmail}`} className="text-xs text-blue-600 truncate block">{q.customer_email || q.customerEmail}</a>
-                      {(q.customer_phone || q.customerPhone) && (
-                        <a href={`tel:${q.customer_phone || q.customerPhone}`} className="text-xs text-blue-600 block">{q.customer_phone || q.customerPhone}</a>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <StatusBadge status={q.status} />
-                      {isRush && (
-                        <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">
-                          {daysUntil !== null && daysUntil < 0 ? 'OVERDUE' : daysUntil === 0 ? 'TODAY' : `${daysUntil}d`}
-                        </span>
-                      )}
-                      {(q as Quote & { triage?: { urgency?: string; complexity?: string; summary?: string } }).triage?.urgency && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'rush' ? 'bg-red-600 text-white' :
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'high' ? 'bg-red-100 text-red-700' :
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency?.toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-700">
-                    <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
-                  </div>
-                  {q.design_url && (
-                    <div className="mt-1">
-                      <img src={q.design_url} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                    </div>
-                  )}
-                  {needed && (
-                    <div className="text-xs text-gray-600">
-                      <span className="font-medium">Needed:</span> {needed.toLocaleDateString()}
-                    </div>
-                  )}
-                  {q.notes && (
-                    <div className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 line-clamp-2">
-                      <span className="font-medium">Note:</span> {q.notes}
-                    </div>
-                  )}
-                  {q.admin_notes && (
-                    <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 line-clamp-2">
-                      <span className="font-medium">Internal:</span> {q.admin_notes}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>Created {new Date(q.created_at || q.createdAt).toLocaleDateString()}</span>
-                    {q.estimated_price != null && (
-                      <span className="font-semibold text-gray-900">${Number(q.estimated_price).toFixed(2)}</span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                    {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); openPriceModal(q); }}
-                        className="text-xs font-medium text-purple-700 bg-purple-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                      >
-                        <DollarSign className="w-3 h-3" />
-                        {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
-                      </button>
-                    )}
-                    {q.status !== 'rejected' && q.status !== 'completed' && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: q.id, status: 'rejected' }); }}
-                        className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg"
-                      >
-                        Reject
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const quoteId = String(q.id);
-                        setTimeout(() => {
-                          if (confirm('Delete this quote?')) {
-                            deleteQuoteMutation.mutate(quoteId);
-                          }
-                        }, 50);
-                      }}
-                      className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-
-            {/* Desktop table view */}
-            <div className="hidden lg:block bg-white rounded-xl border border-gray-200">
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
@@ -1216,7 +907,7 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {quotes.map((q: Quote) => (
-                      <tr key={q.id} onClick={() => setDetailQuote(q)} className="hover:bg-gray-50 cursor-pointer">
+                      <tr key={q.id} className="hover:bg-gray-50">
                         <td className="px-6 py-3 text-gray-600">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
                         </td>
@@ -1227,7 +918,7 @@ export default function AdminPage() {
                         <td className="px-6 py-3">
                           <StatusBadge status={q.status} />
                         </td>
-                        <td className="px-6 py-3 relative" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-6 py-3 relative">
                           <button
                             onClick={() =>
                               setOpenActionMenu(openActionMenu === q.id ? null : q.id)
@@ -1247,7 +938,7 @@ export default function AdminPage() {
                                   {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                                 </button>
                               )}
-                              {['completed', 'rejected']
+                              {['approved', 'completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
                                   <button
@@ -1257,19 +948,15 @@ export default function AdminPage() {
                                     }
                                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 capitalize"
                                   >
-                                    {s === 'completed' ? 'Complete' : 'Reject'}
+                                    {s === 'approved' ? 'Approve' : s === 'completed' ? 'Complete' : 'Reject'}
                                   </button>
                                 ))}
                               <div className="border-t border-gray-100 mt-1 pt-1">
                                 <button
                                   onClick={() => {
-                                    const quoteId = String(q.id);
-                                    setOpenActionMenu(null);
-                                    setTimeout(() => {
-                                      if (confirm('Delete this quote? This cannot be undone.')) {
-                                        deleteQuoteMutation.mutate(quoteId);
-                                      }
-                                    }, 50);
+                                    if (confirm('Delete this quote? This cannot be undone.')) {
+                                      deleteQuoteMutation.mutate(String(q.id));
+                                    }
                                   }}
                                   className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-medium"
                                 >
@@ -1291,6 +978,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
           </div>
         )}
@@ -1350,6 +1038,7 @@ export default function AdminPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
@@ -1416,6 +1105,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
 
             {/* Pagination */}
@@ -1504,6 +1194,7 @@ export default function AdminPage() {
 
             {/* Category List */}
             <div className="bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
@@ -1540,6 +1231,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
           </div>
         )}
@@ -1728,6 +1420,7 @@ export default function AdminPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
@@ -1791,6 +1484,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
 
             {/* Customer Detail Modal */}
@@ -2018,39 +1712,15 @@ export default function AdminPage() {
         {/* Orders Section */}
         {activeSection === 'orders' && (
           <div>
-            <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-4 md:mb-6">Orders</h2>
-
-            {/* Search + Sort */}
-            <div className="flex flex-col sm:flex-row gap-2 mb-3">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="search"
-                  placeholder="Search customer, email, product..."
-                  value={orderSearch}
-                  onChange={(e) => setOrderSearch(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                  style={{ fontSize: '16px' }}
-                />
-              </div>
-              <select
-                value={orderSort}
-                onChange={(e) => setOrderSort(e.target.value as 'newest' | 'date_needed')}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                style={{ fontSize: '16px' }}
-              >
-                <option value="newest">Newest first</option>
-                <option value="date_needed">Date needed (urgent first)</option>
-              </select>
-            </div>
+            <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Orders</h2>
 
             {/* Filter Tabs */}
-            <div className="flex gap-1 mb-4 md:mb-6 bg-gray-100 rounded-lg p-1 w-full md:w-fit overflow-x-auto">
-              {(['all', 'accepted', 'completed'] as OrderFilter[]).map((f) => (
+            <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
+              {(['all', 'pending', 'approved', 'completed', 'rejected'] as OrderFilter[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setOrderFilter(f)}
-                  className={`px-3 md:px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors whitespace-nowrap flex-shrink-0 ${
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium capitalize transition-colors ${
                     orderFilter === f
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
@@ -2061,172 +1731,44 @@ export default function AdminPage() {
               ))}
             </div>
 
-            {/* Mobile card view */}
-            <div className="lg:hidden space-y-3">
-              {ordersQuery.isLoading ? (
-                <div className="text-center py-12 text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-              ) : orders.length === 0 ? (
-                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No orders found</div>
-              ) : orders.map((o: Order) => {
-                const total = o.estimated_price != null ? Number(o.estimated_price) : 0;
-                const paid = o.deposit_amount != null ? Number(o.deposit_amount) : 0;
-                const balance = total - paid;
-                const needed = o.date_needed ? new Date(o.date_needed) : null;
-                const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
-                const isRush = daysUntil !== null && daysUntil <= 7;
-                return (
-                  <div
-                    key={o.id}
-                    onClick={() => setDetailQuote(o)}
-                    className={`bg-white rounded-xl border p-4 space-y-3 cursor-pointer active:bg-gray-50 ${isRush ? 'border-orange-300 ring-1 ring-orange-200' : 'border-gray-200'}`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-gray-900">#{String(o.id)}</span>
-                          <span className="text-xs text-gray-400">{new Date(o.created_at).toLocaleDateString()}</span>
-                        </div>
-                        <p className="font-semibold text-gray-900 truncate">{o.customer_name}</p>
-                        <a href={`mailto:${o.customer_email}`} className="text-xs text-blue-600 truncate block">{o.customer_email}</a>
-                        {o.customer_phone && (
-                          <a href={`tel:${o.customer_phone}`} className="text-xs text-blue-600 block">{o.customer_phone}</a>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                        <StatusBadge status={o.status} />
-                        {isRush && (
-                          <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">
-                            {daysUntil !== null && daysUntil < 0 ? 'OVERDUE' : daysUntil === 0 ? 'TODAY' : `${daysUntil}d`}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-700">
-                      <span className="font-medium">{o.quantity}×</span> {o.product_name}
-                    </div>
-                    {needed && (
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">Needed:</span> {needed.toLocaleDateString()}
-                      </div>
-                    )}
-                    {o.notes && (
-                      <div className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 line-clamp-2">
-                        <span className="font-medium">Note:</span> {o.notes}
-                      </div>
-                    )}
-                    {o.admin_notes && (
-                      <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 line-clamp-2">
-                        <span className="font-medium">Internal:</span> {o.admin_notes}
-                      </div>
-                    )}
-                    <div className="grid grid-cols-3 gap-2 text-xs pt-2 border-t border-gray-100">
-                      <div>
-                        <p className="text-gray-400">Total</p>
-                        <p className="font-semibold text-gray-900">${total.toFixed(2)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Paid</p>
-                        <p className="font-semibold text-green-600">${paid.toFixed(2)}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-400">Balance</p>
-                        <p className={`font-semibold ${balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>${balance.toFixed(2)}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                      {balance > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            sendBalanceRequest(String(o.id))
-                              .then(() => alert('Balance request sent to ' + o.customer_email))
-                              .catch((err: Error) => alert('Failed: ' + err.message));
-                          }}
-                          className="text-xs font-medium text-green-700 bg-green-50 px-3 py-1.5 rounded-lg"
-                        >
-                          Request Balance
-                        </button>
-                      )}
-                      {o.status !== 'completed' && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: o.id, status: 'completed' }); }}
-                          className="text-xs font-medium text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg"
-                        >
-                          Mark Complete
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const orderId = String(o.id);
-                          setTimeout(() => {
-                            if (confirm('Delete this order?')) {
-                              deleteQuoteMutation.mutate(orderId);
-                            }
-                          }, 50);
-                        }}
-                        className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Desktop table view */}
-            <div className="hidden lg:block bg-white rounded-xl border border-gray-200">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
-                      <th className="px-4 py-3 font-medium">Order #</th>
-                      <th className="px-4 py-3 font-medium">Date</th>
-                      <th className="px-4 py-3 font-medium">Customer</th>
-                      <th className="px-4 py-3 font-medium">Product</th>
-                      <th className="px-4 py-3 font-medium">Qty</th>
-                      <th className="px-4 py-3 font-medium text-right">Total</th>
-                      <th className="px-4 py-3 font-medium text-right">Deposit Paid</th>
-                      <th className="px-4 py-3 font-medium text-right">Balance Due</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Actions</th>
+                      <th className="px-6 py-3 font-medium">Order #</th>
+                      <th className="px-6 py-3 font-medium">Date</th>
+                      <th className="px-6 py-3 font-medium">Customer</th>
+                      <th className="px-6 py-3 font-medium">Email</th>
+                      <th className="px-6 py-3 font-medium">Phone</th>
+                      <th className="px-6 py-3 font-medium">Product</th>
+                      <th className="px-6 py-3 font-medium">Qty</th>
+                      <th className="px-6 py-3 font-medium">Price</th>
+                      <th className="px-6 py-3 font-medium">Status</th>
+                      <th className="px-6 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {orders.map((o: Order) => (
-                      <tr key={o.id} onClick={() => setDetailQuote(o)} className="hover:bg-gray-50 cursor-pointer">
-                        <td className="px-4 py-3 text-gray-900 font-medium">#{String(o.id)}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      <tr key={o.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-gray-900 font-medium">#{String(o.id)}</td>
+                        <td className="px-6 py-3 text-gray-600">
                           {new Date(o.created_at).toLocaleDateString()}
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="text-gray-900">{o.customer_name}</div>
-                          <div className="text-xs text-gray-400">{o.customer_email}</div>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate" title={o.product_name}>{o.product_name}</td>
-                        <td className="px-4 py-3 text-gray-600">{o.quantity}</td>
-                        <td className="px-4 py-3 text-gray-600 text-right whitespace-nowrap">
+                        <td className="px-6 py-3 text-gray-900">{o.customer_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.customer_email}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.customer_phone || '--'}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.product_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{o.quantity}</td>
+                        <td className="px-6 py-3 text-gray-600">
                           {o.estimated_price != null
                             ? `$${Number(o.estimated_price).toFixed(2)}`
                             : '--'}
                         </td>
-                        <td className="px-4 py-3 text-green-600 font-medium text-right whitespace-nowrap">
-                          {o.deposit_amount != null && Number(o.deposit_amount) > 0
-                            ? `$${Number(o.deposit_amount).toFixed(2)}`
-                            : '--'}
-                        </td>
-                        <td className="px-4 py-3 text-red-600 font-medium text-right whitespace-nowrap">
-                          {o.estimated_price != null && o.deposit_amount != null && Number(o.deposit_amount) > 0
-                            ? `$${(Number(o.estimated_price) - Number(o.deposit_amount)).toFixed(2)}`
-                            : o.estimated_price != null
-                              ? `$${Number(o.estimated_price).toFixed(2)}`
-                              : '--'}
-                        </td>
                         <td className="px-6 py-3">
                           <StatusBadge status={o.status} />
                         </td>
-                        <td className="px-6 py-3 relative" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-6 py-3 relative">
                           <button
                             onClick={() =>
                               setOpenActionMenu(openActionMenu === o.id ? null : o.id)
@@ -2236,22 +1778,8 @@ export default function AdminPage() {
                             Actions <ChevronDown className="w-3 h-3" />
                           </button>
                           {openActionMenu === o.id && (
-                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48">
-                              {o.estimated_price != null && o.deposit_amount != null && Number(o.estimated_price) - Number(o.deposit_amount) > 0 && (
-                                <button
-                                  onClick={() => {
-                                    const orderId = String(o.id);
-                                    setOpenActionMenu(null);
-                                    sendBalanceRequest(orderId)
-                                      .then(() => alert('Balance payment request sent to ' + o.customer_email))
-                                      .catch((err: Error) => alert('Failed: ' + err.message));
-                                  }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-medium"
-                                >
-                                  Request Balance Payment
-                                </button>
-                              )}
-                              {['completed']
+                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-36">
+                              {['approved', 'completed', 'rejected']
                                 .filter((s) => s !== o.status)
                                 .map((s) => (
                                   <button
@@ -2261,19 +1789,15 @@ export default function AdminPage() {
                                     }
                                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 capitalize"
                                   >
-                                    Mark Complete
+                                    {s === 'approved' ? 'Approve' : s === 'completed' ? 'Complete' : 'Reject'}
                                   </button>
                                 ))}
                               <div className="border-t border-gray-100 mt-1 pt-1">
                                 <button
                                   onClick={() => {
-                                    const orderId = String(o.id);
-                                    setOpenActionMenu(null);
-                                    setTimeout(() => {
-                                      if (confirm('Delete this order? This cannot be undone.')) {
-                                        deleteQuoteMutation.mutate(orderId);
-                                      }
-                                    }, 50);
+                                    if (confirm('Delete this order? This cannot be undone.')) {
+                                      deleteQuoteMutation.mutate(String(o.id));
+                                    }
                                   }}
                                   className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
                                 >
@@ -2294,6 +1818,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
           </div>
         )}
@@ -2303,8 +1828,8 @@ export default function AdminPage() {
           <div>
             {invoiceView === 'list' && (
               <>
-                <div className="flex items-center justify-between mb-4 gap-3">
-                  <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Invoices</h2>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-display font-bold text-gray-900">Invoices</h2>
                   <button
                     onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
                     className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
@@ -2315,7 +1840,7 @@ export default function AdminPage() {
                 </div>
 
                 {/* Filter Tabs */}
-                <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+                <div className="flex gap-2 mb-6">
                   {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
                     <button
                       key={f}
@@ -2331,35 +1856,7 @@ export default function AdminPage() {
 
                 {/* Invoice Table */}
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                  {/* Mobile card view */}
-                  <div className="divide-y divide-gray-100 lg:hidden">
-                    {invoicesQuery.isLoading ? (
-                      <div className="px-4 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-                    ) : invoices.length === 0 ? (
-                      <div className="px-4 py-12 text-center text-gray-400">No invoices found</div>
-                    ) : invoices.map((inv: Invoice) => (
-                      <div key={inv.id} className="p-4 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-gray-900 text-sm">{inv.invoice_number}</span>
-                          <StatusBadge status={inv.status} />
-                        </div>
-                        <div className="text-sm text-gray-700">{inv.customer_name}</div>
-                        <div className="text-xs text-gray-500">{inv.customer_email}</div>
-                        <div className="flex items-center gap-4 text-xs">
-                          <span className="text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</span>
-                          <span className="font-semibold text-gray-900">Total: ${Number(inv.total).toFixed(2)}</span>
-                          <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
-                          {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
-                          {inv.status === 'sent' && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
-                          <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Desktop table */}
+                  <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 text-left text-gray-500">
@@ -2441,6 +1938,7 @@ export default function AdminPage() {
                         ))}
                       </tbody>
                     </table>
+                  </div>
                 </div>
               </>
             )}
@@ -2515,10 +2013,12 @@ export default function AdminPage() {
                         <input type="tel" value={invoiceForm.customer_phone} onChange={e => setInvoiceForm(p => ({ ...p, customer_phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="(555) 000-0000" />
                       </div>
                     </div>
-                    <div className="mt-3">
-                      <label className="block text-xs text-gray-500 mb-1">Shipping Address</label>
-                      <input type="text" value={invoiceForm.customer_address} onChange={e => setInvoiceForm(p => ({ ...p, customer_address: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Street address, City, State, ZIP" />
-                    </div>
+                    {invoiceForm.customer_address && (
+                      <div className="mt-3">
+                        <label className="block text-xs text-gray-500 mb-1">Address</label>
+                        <input type="text" value={invoiceForm.customer_address} onChange={e => setInvoiceForm(p => ({ ...p, customer_address: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" />
+                      </div>
+                    )}
                   </div>
 
                   {/* Product Search */}
@@ -2621,11 +2121,11 @@ export default function AdminPage() {
                         <thead>
                           <tr className="bg-gray-50 text-left text-gray-500">
                             <th className="px-3 py-2 font-medium">Description</th>
-                            <th className="px-2 py-2 font-medium w-14">Qty</th>
-                            <th className="px-2 py-2 font-medium w-20">Price</th>
-                            <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Wt (oz)</th>
-                            <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Ship $</th>
-                            <th className="px-2 py-2 font-medium w-20 text-right">Total</th>
+                            <th className="px-2 py-2 font-medium w-16">Qty</th>
+                            <th className="px-2 py-2 font-medium w-24">Price</th>
+                            <th className="px-2 py-2 font-medium w-20">Wt (oz)</th>
+                            <th className="px-2 py-2 font-medium w-24">Ship $</th>
+                            <th className="px-2 py-2 font-medium w-24 text-right">Total</th>
                             <th className="px-2 py-2 w-8"></th>
                           </tr>
                         </thead>
@@ -2647,10 +2147,10 @@ export default function AdminPage() {
                                   <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                                 </div>
                               </td>
-                              <td className="px-2 py-2 hidden md:table-cell">
+                              <td className="px-2 py-2">
                                 <input type="number" step="0.1" min="0" value={item.weight_oz || ''} onChange={e => handleInvoiceItemChange(idx, 'weight_oz' as keyof InvoiceItem, e.target.value)} placeholder="oz" className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                               </td>
-                              <td className="px-2 py-2 hidden md:table-cell">
+                              <td className="px-2 py-2">
                                 <div className="relative">
                                   <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
                                   <input type="number" step="0.01" min="0" value={item.shipping_cost || ''} onChange={e => handleInvoiceItemChange(idx, 'shipping_cost' as keyof InvoiceItem, e.target.value)} placeholder="0" className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
@@ -2966,146 +2466,17 @@ export default function AdminPage() {
         {/* Settings Section */}
         {activeSection === 'blog' && (
           <div>
-            {blogView === 'ai' ? (
-              <div>
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Write with AI</h2>
-                  <button onClick={() => { setBlogView('list'); setAiBlogResult(null); }} className="text-sm text-gray-500 hover:text-gray-700">← Back to Posts</button>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Input form */}
-                  <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 block mb-1">Topic</label>
-                      <input type="text" value={aiBlogForm.topic} onChange={e => setAiBlogForm(p => ({ ...p, topic: e.target.value }))} placeholder="e.g. How to choose the right t-shirt for screen printing" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" style={{ fontSize: '16px' }} />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-700 block mb-1">Target Keywords (comma-separated)</label>
-                      <input type="text" value={aiBlogForm.keywords} onChange={e => setAiBlogForm(p => ({ ...p, keywords: e.target.value }))} placeholder="e.g. custom t-shirts, screen printing, DTF" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" style={{ fontSize: '16px' }} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">Tone</label>
-                        <select value={aiBlogForm.tone} onChange={e => setAiBlogForm(p => ({ ...p, tone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" style={{ fontSize: '16px' }}>
-                          <option value="educational">Educational</option>
-                          <option value="promotional">Promotional</option>
-                          <option value="how-to">How-To Guide</option>
-                          <option value="casual">Casual / Conversational</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">Length</label>
-                        <select value={aiBlogForm.length} onChange={e => setAiBlogForm(p => ({ ...p, length: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" style={{ fontSize: '16px' }}>
-                          <option value="short">Short (~400 words)</option>
-                          <option value="medium">Medium (~800 words)</option>
-                          <option value="long">Long (~1500 words)</option>
-                        </select>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={aiBlogLoading || !aiBlogForm.topic.trim()}
-                      onClick={async () => {
-                        setAiBlogLoading(true);
-                        setAiBlogResult(null);
-                        try {
-                          const token = localStorage.getItem('tsb_token');
-                          const res = await fetch('/api/deepseek/generate-blog-post', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                            body: JSON.stringify(aiBlogForm),
-                          });
-                          if (!res.ok) throw new Error('Failed');
-                          const data = await res.json();
-                          setAiBlogResult(data);
-                          blogPostsQuery.refetch();
-                        } catch {
-                          alert('Blog generation failed. Please try again.');
-                        } finally {
-                          setAiBlogLoading(false);
-                        }
-                      }}
-                      className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition disabled:bg-gray-300"
-                    >
-                      {aiBlogLoading ? 'Writing...' : '✨ Generate Blog Post'}
-                    </button>
-                  </div>
-
-                  {/* Results */}
-                  <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    {!aiBlogResult && !aiBlogLoading && (
-                      <div className="flex items-center justify-center h-64 text-gray-400 text-sm text-center">
-                        Enter a topic and click "Generate Blog Post".<br />The AI will write a full SEO-optimized article and save it as a draft.
-                      </div>
-                    )}
-                    {aiBlogLoading && (
-                      <div className="flex items-center justify-center h-64 text-gray-500">
-                        <Loader2 className="w-6 h-6 animate-spin mr-2" /> Writing your blog post...
-                      </div>
-                    )}
-                    {aiBlogResult && (
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-xs font-semibold text-gray-400 uppercase">Title</p>
-                          <p className="text-lg font-bold text-gray-900">{aiBlogResult.title}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-400 uppercase">Meta Description</p>
-                          <p className="text-sm text-gray-600">{aiBlogResult.meta_description}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-400 uppercase">Slug</p>
-                          <p className="text-sm text-gray-500 font-mono">/blog/{aiBlogResult.slug_suggestion}</p>
-                        </div>
-                        {aiBlogResult.outline && (
-                          <div>
-                            <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Outline</p>
-                            <ul className="text-sm text-gray-600 space-y-1">
-                              {aiBlogResult.outline.map((s, i) => <li key={i} className="flex gap-2"><span className="text-orange-500 font-bold">{i + 1}.</span> {s}</li>)}
-                            </ul>
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-xs font-semibold text-gray-400 uppercase mb-1">Preview</p>
-                          <div className="border border-gray-200 rounded-lg p-4 max-h-80 overflow-y-auto prose prose-sm" dangerouslySetInnerHTML={{ __html: aiBlogResult.full_html_content || '' }} />
-                        </div>
-                        {aiBlogResult.saved && (
-                          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                            <p className="text-sm text-green-700 font-medium">✅ Saved as draft!</p>
-                            <p className="text-xs text-green-600 mt-1">Go to Blog → find "{aiBlogResult.saved.title}" → edit and publish when ready.</p>
-                          </div>
-                        )}
-                        <button
-                          onClick={() => { setBlogView('list'); setAiBlogResult(null); }}
-                          className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 rounded-lg text-sm"
-                        >
-                          ← Back to Blog Posts
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : blogView === 'list' ? (
+            {blogView === 'list' ? (
               <>
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-display font-bold text-gray-900">Blog Posts</h2>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setBlogView('ai')}
-                      className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      Write with AI
-                    </button>
-                    <button
-                      onClick={() => { resetBlogForm(); setBlogView('editor'); }}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
-                    >
-                      <Plus className="w-4 h-4" />
-                      New Post
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => { resetBlogForm(); setBlogView('editor'); }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    New Post
+                  </button>
                 </div>
 
                 {blogPostsQuery.isLoading && (
@@ -3161,26 +2532,6 @@ export default function AdminPage() {
                                     Publish
                                   </button>
                                 )}
-                                <button
-                                  disabled={igLoading}
-                                  onClick={async () => {
-                                    setIgLoading(true);
-                                    try {
-                                      const token = localStorage.getItem('tsb_token');
-                                      const res = await fetch('/api/deepseek/generate-instagram', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-                                        body: JSON.stringify({ title: post.title, content: post.content || '', topic: post.title }),
-                                      });
-                                      if (res.ok) setIgPost(await res.json());
-                                      else alert('Failed to generate Instagram post');
-                                    } catch { alert('Failed'); } finally { setIgLoading(false); }
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-medium bg-pink-50 text-pink-700 rounded-md hover:bg-pink-100 transition disabled:opacity-50"
-                                  title="Generate Instagram Post"
-                                >
-                                  {igLoading ? '...' : '📸 IG'}
-                                </button>
                                 <button
                                   onClick={() => {
                                     if (confirm('Delete this post?')) deleteBlogMutation.mutate(post.id);
@@ -3337,302 +2688,6 @@ export default function AdminPage() {
           </div>
         )}
 
-        
-        
-        {/* Instagram Post Preview Modal */}
-        {igPost && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIgPost(null)}>
-            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b">
-                <h3 className="font-semibold text-gray-900">📸 Instagram Post Ready</h3>
-                <button onClick={() => setIgPost(null)} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
-              </div>
-              <div className="p-5 space-y-4">
-                {igPost.image_url && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Generated Image</p>
-                    <img src={igPost.image_url} alt="IG Post" className="w-full rounded-xl border" />
-                    <a href={igPost.image_url} download="instagram-post.png" target="_blank" rel="noreferrer"
-                      className="mt-2 block text-center text-xs font-medium text-blue-600 hover:underline">
-                      ⬇️ Download Image
-                    </a>
-                  </div>
-                )}
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Caption</p>
-                  <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-800 whitespace-pre-wrap">{igPost.caption}</div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Hashtags</p>
-                  <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700 break-words">{igPost.hashtags}</div>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Full Post (copy this)</p>
-                  <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-800 whitespace-pre-wrap border-2 border-dashed border-gray-200">{igPost.full_post}</div>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(igPost.full_post || ''); alert('Copied to clipboard!'); }}
-                    className="mt-2 w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-xl text-sm transition"
-                  >
-                    📋 Copy Full Post to Clipboard
-                  </button>
-                </div>
-                <p className="text-[10px] text-gray-400 text-center">
-                  Open Instagram on your phone → New Post → paste the caption → upload the image → post!
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeSection === 'workspace' && (
-          <DesignWorkspace />
-        )}
-
-        {activeSection === 'promotions' && (
-          <div>
-            <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-6">Promotions</h2>
-            <PromoManager />
-          </div>
-        )}
-
-
-        {activeSection === 'gangsheet' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Gang Sheets</h2>
-              <Link to="/admin/gangsheet" className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition">
-                <Plus className="w-4 h-4" /> New Gang Sheet
-              </Link>
-            </div>
-            <GangSheetList />
-          </div>
-        )}
-
-        {activeSection === 'pricing' && (
-          <div>
-            <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-6">AI Pricing Assistant</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Input form */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
-                <h3 className="font-semibold text-gray-900">Quote Parameters</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Brand</label>
-                    <select value={pricingForm.brand} onChange={e => setPricingForm(p => ({ ...p, brand: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                      <option value="gildan">Gildan</option>
-                      <option value="bella-canvas">Bella+Canvas</option>
-                      <option value="next-level">Next Level</option>
-                      <option value="comfort-colors">Comfort Colors</option>
-                      <option value="champion">Champion</option>
-                      <option value="hanes">Hanes</option>
-                      <option value="nike">Nike</option>
-                      <option value="adidas">Adidas</option>
-                      <option value="under-armour">Under Armour</option>
-                      <option value="carhartt">Carhartt</option>
-                      <option value="port-authority">Port Authority</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Product Type</label>
-                    <select value={pricingForm.product_type} onChange={e => setPricingForm(p => ({ ...p, product_type: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                      <option value="t-shirt">T-Shirt</option>
-                      <option value="premium-tee">Premium Tee</option>
-                      <option value="hoodie">Hoodie</option>
-                      <option value="crewneck-sweatshirt">Crewneck Sweatshirt</option>
-                      <option value="tank-top">Tank Top</option>
-                      <option value="polo">Polo</option>
-                      <option value="long-sleeve">Long Sleeve</option>
-                      <option value="jersey">Jersey</option>
-                      <option value="jacket">Jacket</option>
-                      <option value="hat">Hat</option>
-                      <option value="towel">Towel</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Quantity</label>
-                    <input type="number" min={1} value={pricingForm.quantity} onChange={e => setPricingForm(p => ({ ...p, quantity: Number(e.target.value) || 1 }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }} />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Print Method</label>
-                    <select value={pricingForm.print_method} onChange={e => setPricingForm(p => ({ ...p, print_method: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                      <option value="screen-print">Screen Print</option>
-                      <option value="dtf">DTF Transfer</option>
-                      <option value="sublimation">Sublimation</option>
-                      <option value="vinyl">Vinyl</option>
-                      <option value="embroidery">Embroidery</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Print Areas</label>
-                    <select value={pricingForm.print_areas} onChange={e => setPricingForm(p => ({ ...p, print_areas: Number(e.target.value) }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                      <option value={1}>1 (Front only)</option>
-                      <option value={2}>2 (Front + Back)</option>
-                      <option value={3}>3 (+ Sleeve)</option>
-                      <option value={4}>4 (All areas)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Colors in Design</label>
-                    <select value={pricingForm.colors_in_design} onChange={e => setPricingForm(p => ({ ...p, colors_in_design: Number(e.target.value) }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                      {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n} color{n > 1 ? 's' : ''}</option>)}
-                      <option value={99}>Full color (DTF/sublimation)</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-700 block mb-1">Design/Image Size</label>
-                  <select value={pricingForm.design_size} onChange={e => setPricingForm(p => ({ ...p, design_size: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }}>
-                    <option value="left-chest">Left Chest (4" x 4")</option>
-                    <option value="standard">Standard (10" x 12")</option>
-                    <option value="oversized">Oversized (14" x 16")</option>
-                    <option value="full-front">Full Front (edge to edge)</option>
-                    <option value="full-back">Full Back (edge to edge)</option>
-                    <option value="sleeve">Sleeve (3" x 10")</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Deadline (days)</label>
-                    <input type="number" min={1} value={pricingForm.deadline_days} onChange={e => setPricingForm(p => ({ ...p, deadline_days: Number(e.target.value) || 14 }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }} />
-                  </div>
-                  <div className="flex items-end pb-1">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={pricingForm.is_rush} onChange={e => setPricingForm(p => ({ ...p, is_rush: e.target.checked }))} className="w-4 h-4 accent-red-600" />
-                      <span className="text-sm font-medium text-gray-700">Rush Order (+50%)</span>
-                    </label>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={pricingLoading}
-                  onClick={async () => {
-                    setPricingLoading(true);
-                    setPricingResult(null);
-                    try {
-                      const token = localStorage.getItem('tsb_token');
-                      const res = await fetch('/api/deepseek/suggest-price', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                        body: JSON.stringify(pricingForm),
-                      });
-                      if (!res.ok) throw new Error('Failed');
-                      const data = await res.json();
-                      setPricingResult(data);
-                    } catch {
-                      alert('Pricing suggestion failed. Please try again.');
-                    } finally {
-                      setPricingLoading(false);
-                    }
-                  }}
-                  className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded-lg transition disabled:bg-gray-300"
-                >
-                  {pricingLoading ? 'Calculating...' : 'Get AI Price Suggestion'}
-                </button>
-              </div>
-
-              {/* Results */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                {!pricingResult && !pricingLoading && (
-                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                    Fill in the form and click "Get AI Price Suggestion" to see results
-                  </div>
-                )}
-                {pricingLoading && (
-                  <div className="flex items-center justify-center h-full text-gray-500">
-                    <Loader2 className="w-6 h-6 animate-spin mr-2" /> Analyzing pricing...
-                  </div>
-                )}
-                {pricingResult && (
-                  <div className="space-y-5">
-                    {/* Suggested price */}
-                    <div className="text-center py-4 bg-green-50 rounded-xl">
-                      <p className="text-sm text-green-700 font-medium">Suggested Price Per Unit</p>
-                      <p className="text-4xl font-bold text-green-700 mt-1">${pricingResult.suggested_price?.toFixed(2)}</p>
-                      <p className="text-xs text-green-600 mt-1">
-                        Total: ${((pricingResult.suggested_price || 0) * pricingForm.quantity).toFixed(2)} for {pricingForm.quantity} units
-                      </p>
-                    </div>
-
-                    {/* Cost breakdown */}
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-gray-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-gray-500 font-medium">Garment Cost</p>
-                        <p className="text-lg font-bold text-gray-700">${(pricingResult.garment_cost || 0).toFixed(2)}</p>
-                      </div>
-                      <div className="bg-gray-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-gray-500 font-medium">Print Cost</p>
-                        <p className="text-lg font-bold text-gray-700">${(pricingResult.print_cost || 0).toFixed(2)}</p>
-                      </div>
-                      <div className="bg-purple-50 rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-purple-600 font-medium">Margin</p>
-                        <p className="text-lg font-bold text-purple-700">{pricingResult.profit_margin_percentage?.toFixed(0)}%</p>
-                      </div>
-                    </div>
-
-                    {/* Gang sheet breakdown (DTF) */}
-                    {pricingResult.gang_sheet_details && pricingResult.gang_sheet_details.designs_per_foot ? (
-                      <div className="bg-orange-50 rounded-lg p-3">
-                        <p className="text-xs font-semibold text-orange-700 mb-2">KolorMatrix Gang Sheet Breakdown</p>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div className="text-center">
-                            <p className="text-gray-500">Design Size</p>
-                            <p className="font-bold text-gray-900">{pricingResult.gang_sheet_details.design_width_inches}&quot;x{pricingResult.gang_sheet_details.design_height_inches}&quot;</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-gray-500">Per Foot</p>
-                            <p className="font-bold text-gray-900">{pricingResult.gang_sheet_details.designs_per_foot} designs</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-gray-500">Sheet Needed</p>
-                            <p className="font-bold text-gray-900">{pricingResult.gang_sheet_details.sheet_length_feet}ft</p>
-                          </div>
-                        </div>
-                        <div className="flex justify-between mt-2 pt-2 border-t border-orange-200 text-xs">
-                          <span className="text-orange-700">Sheet Cost: <strong>${pricingResult.gang_sheet_details.sheet_cost?.toFixed(2)}</strong></span>
-                          <span className="text-orange-700">Per Unit: <strong>${pricingResult.gang_sheet_details.cost_per_unit?.toFixed(2)}</strong></span>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {/* Confidence */}
-                    <div className="bg-blue-50 rounded-lg p-2 text-center">
-                      <p className="text-xs text-blue-600">AI Confidence: <span className="font-bold">{Math.round((pricingResult.confidence_level || 0) * 100)}%</span></p>
-                    </div>
-
-                    {/* Bulk tiers */}
-                    {pricingResult.bulk_tier_prices && (
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700 mb-2">Bulk Pricing Tiers</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {Object.entries(pricingResult.bulk_tier_prices).map(([qty, price]) => (
-                            <div key={qty} className="bg-gray-50 rounded-lg p-2 text-center">
-                              <p className="text-xs text-gray-500">{qty} units</p>
-                              <p className="font-bold text-gray-900">${Number(price).toFixed(2)}/ea</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Reasoning */}
-                    {pricingResult.reasoning && (
-                      <div>
-                        <p className="text-sm font-semibold text-gray-700 mb-1">AI Reasoning</p>
-                        <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">{pricingResult.reasoning}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeSection === 'settings' && (
           <div>
             <h2 className="text-2xl font-display font-bold text-gray-900 mb-6">Settings</h2>
@@ -3786,425 +2841,6 @@ export default function AdminPage() {
             </div>
           </div>
         )}
-
-        {/* Quote / Order Detail Drawer */}
-        {detailQuote && (() => {
-          const q = detailQuote as Quote & { deposit_amount?: number | null; balance_paid_at?: string | null };
-          const customerName = (q as Quote).customer_name || (q as Quote).customerName || '';
-          const customerEmail = (q as Quote).customer_email || (q as Quote).customerEmail || '';
-          const customerPhone = (q as Quote).customer_phone || (q as Quote).customerPhone || '';
-          const productName = (q as Quote).product_name || (q as Quote).productName || '';
-          const createdAt = (q as Quote).created_at || (q as Quote).createdAt || '';
-          const sizes = (q as Quote).sizes;
-          const printAreas = (q as Quote).print_areas;
-          const shippingAddress = (q as Quote).shipping_address as { street?: string; city?: string; state?: string; zip?: string } | undefined;
-          const total = q.estimated_price != null ? Number(q.estimated_price) : 0;
-          const paid = q.deposit_amount != null ? Number(q.deposit_amount) : 0;
-          const balance = total - paid;
-
-          const sizeEntries: [string, number][] = (() => {
-            if (!sizes) return [];
-            try {
-              const parsed = typeof sizes === 'string' ? JSON.parse(sizes) : sizes;
-              if (Array.isArray(parsed)) {
-                return parsed.map((s) =>
-                  typeof s === 'object' && s !== null
-                    ? [String((s as { size?: string }).size), Number((s as { quantity?: number }).quantity) || 0]
-                    : [String(s), 0]
-                );
-              }
-              if (typeof parsed === 'object' && parsed !== null) {
-                return Object.entries(parsed as Record<string, number>).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)]);
-              }
-            } catch {
-              // ignore
-            }
-            return [];
-          })();
-
-          const printAreasList: string[] = (() => {
-            if (!printAreas) return [];
-            try {
-              const parsed = typeof printAreas === 'string' ? JSON.parse(printAreas) : printAreas;
-              if (Array.isArray(parsed)) return parsed.map(String);
-            } catch {
-              // ignore
-            }
-            return [];
-          })();
-
-          return (
-            <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailQuote(null)}>
-              <div className="absolute inset-0 bg-black/50" />
-              <div
-                className="relative bg-white w-full md:max-w-lg h-full overflow-y-auto shadow-2xl animate-slide-in-right"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between z-10">
-                  <div>
-                    <h3 className="font-display font-semibold text-gray-900 text-lg">Quote #{q.id}</h3>
-                    <p className="text-xs text-gray-500">{createdAt ? new Date(createdAt).toLocaleString() : ''}</p>
-                  </div>
-                  <button onClick={() => setDetailQuote(null)} className="p-2 hover:bg-gray-100 rounded-lg">
-                    <X className="w-5 h-5 text-gray-500" />
-                  </button>
-                </div>
-
-                <div className="p-5 space-y-5">
-                  {/* Status */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status={q.status} />
-                    {q.date_needed && (
-                      <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                        Needed by {new Date(q.date_needed).toLocaleDateString()}
-                      </span>
-                    )}
-                    {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'rush' ? 'bg-red-600 text-white' :
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'high' ? 'bg-red-100 text-red-700' :
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency?.toUpperCase()}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* AI Triage summary */}
-                  {(q as Quote & { triage?: { summary?: string; complexity?: string; estimated_hours?: number } }).triage?.summary && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-xs font-semibold text-blue-600 uppercase mb-1">AI Triage</p>
-                      <p className="text-sm text-blue-800">{(q as Quote & { triage?: { summary?: string } }).triage?.summary}</p>
-                      <div className="flex gap-3 mt-1 text-[10px] text-blue-600">
-                        {(q as Quote & { triage?: { complexity?: string } }).triage?.complexity && (
-                          <span>Complexity: <strong>{(q as Quote & { triage?: { complexity?: string } }).triage?.complexity}</strong></span>
-                        )}
-                        {(q as Quote & { triage?: { estimated_hours?: number } }).triage?.estimated_hours && (
-                          <span>Est: <strong>{(q as Quote & { triage?: { estimated_hours?: number } }).triage?.estimated_hours}h</strong></span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Design preview */}
-                  {q.design_url && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
-                      <a href={q.design_url} target="_blank" rel="noreferrer" className="block">
-                        <img src={q.design_url} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                      </a>
-                    </div>
-                  )}
-
-                  {/* Customer */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer</p>
-                    <p className="font-semibold text-gray-900">{customerName}</p>
-                    <a href={`mailto:${customerEmail}`} className="text-sm text-blue-600 block">{customerEmail}</a>
-                    {customerPhone && <a href={`tel:${customerPhone}`} className="text-sm text-blue-600 block">{customerPhone}</a>}
-                  </div>
-
-                  {/* Product */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Product</p>
-                    <p className="font-semibold text-gray-900">{productName}</p>
-                    {q.color && (
-                      <p className="text-sm text-gray-600">Color: <span className="font-medium">{q.color}</span></p>
-                    )}
-                    <p className="text-sm text-gray-600">Quantity: <span className="font-medium">{q.quantity}</span></p>
-                  </div>
-
-                  {/* Sizes breakdown */}
-                  {sizeEntries.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Sizes</p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {sizeEntries.map(([size, qty]) => (
-                          <div key={size} className="bg-gray-50 rounded-lg p-2 text-center">
-                            <p className="text-xs text-gray-500">{size}</p>
-                            <p className="font-semibold text-gray-900">{qty}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Print Areas */}
-                  {printAreasList.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Print Areas</p>
-                      <div className="flex flex-wrap gap-2">
-                        {printAreasList.map((area) => (
-                          <span key={area} className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{area}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Shipping */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Fulfillment</p>
-                    <p className="text-sm text-gray-700 capitalize">{q.shipping_method || 'pickup'}</p>
-                    {shippingAddress && (shippingAddress.street || shippingAddress.city) && (
-                      <p className="text-sm text-gray-600 mt-1">
-                        {shippingAddress.street}<br />
-                        {shippingAddress.city}{shippingAddress.city && shippingAddress.state && ', '}{shippingAddress.state} {shippingAddress.zip}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Customer Notes */}
-                  {q.notes && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer Notes</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap bg-yellow-50 border border-yellow-200 rounded-lg p-3">{q.notes}</p>
-                    </div>
-                  )}
-
-                  {/* Admin Private Notes */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Internal Notes (admin only)</p>
-                    <textarea
-                      value={adminNotesDraft}
-                      onChange={(e) => setAdminNotesDraft(e.target.value)}
-                      placeholder="Private notes for your team — customers never see this..."
-                      className="w-full text-sm text-gray-700 bg-blue-50 border border-blue-200 rounded-lg p-3 min-h-[80px] focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      style={{ fontSize: '16px' }}
-                    />
-                    <button
-                      disabled={adminNotesSaving || adminNotesDraft === (q.admin_notes || '')}
-                      onClick={async () => {
-                        setAdminNotesSaving(true);
-                        try {
-                          await updateAdminNotes(String(q.id), adminNotesDraft);
-                          queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
-                          queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
-                          setDetailQuote({ ...(q as Quote), admin_notes: adminNotesDraft } as Quote);
-                        } catch (err) {
-                          alert('Failed to save notes: ' + (err as Error).message);
-                        } finally {
-                          setAdminNotesSaving(false);
-                        }
-                      }}
-                      className="mt-2 px-4 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                    >
-                      {adminNotesSaving ? 'Saving...' : 'Save Notes'}
-                    </button>
-                  </div>
-
-                  {/* AI Assistant (DeepSeek) */}
-                  <div className="border-t border-gray-200 pt-5">
-                    <p className="text-xs font-semibold text-purple-600 uppercase mb-3 flex items-center gap-1">
-                      ✨ AI Assistant
-                    </p>
-
-                    {/* Triage */}
-                    <div className="mb-4">
-                      <button
-                        disabled={aiTriageLoading}
-                        onClick={async () => {
-                          setAiTriageLoading(true);
-                          try {
-                            const quoteText = [
-                              `Product: ${productName}`,
-                              `Quantity: ${q.quantity}`,
-                              q.color ? `Color: ${q.color}` : '',
-                              q.date_needed ? `Deadline: ${q.date_needed}` : '',
-                              q.notes ? `Notes: ${q.notes}` : '',
-                            ].filter(Boolean).join('\n');
-                            const result = await classifyQuote(quoteText, q.id);
-                            setAiTriage(result);
-                            queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
-                          } catch (err) {
-                            alert('Triage failed: ' + (err as Error).message);
-                          } finally {
-                            setAiTriageLoading(false);
-                          }
-                        }}
-                        className="w-full px-3 py-2 text-xs font-semibold bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 disabled:opacity-50"
-                      >
-                        {aiTriageLoading ? 'Analyzing...' : '🔍 Classify & Triage'}
-                      </button>
-                      {aiTriage && (
-                        <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs space-y-1">
-                          <p><span className="font-semibold">Urgency:</span> <span className={`capitalize ${aiTriage.urgency === 'rush' || aiTriage.urgency === 'high' ? 'text-red-600 font-bold' : 'text-gray-700'}`}>{aiTriage.urgency}</span></p>
-                          <p><span className="font-semibold">Complexity:</span> <span className="capitalize">{aiTriage.complexity}</span></p>
-                          <p><span className="font-semibold">Est. hours:</span> {aiTriage.estimated_hours}</p>
-                          <p><span className="font-semibold">Dept:</span> <span className="capitalize">{aiTriage.recommended_department}</span></p>
-                          <p><span className="font-semibold">Follow up:</span> {aiTriage.suggested_followup_time}</p>
-                          <p className="text-gray-700 pt-1 border-t border-purple-200">{aiTriage.summary}</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Pricing Suggestion */}
-                    {total === 0 && (
-                      <div className="mb-4">
-                        <button
-                          disabled={aiPriceLoading}
-                          onClick={async () => {
-                            setAiPriceLoading(true);
-                            try {
-                              const days = q.date_needed ? Math.ceil((new Date(q.date_needed).getTime() - Date.now()) / 86400000) : undefined;
-                              const result = await suggestPrice({
-                                product_type: productName.toLowerCase().includes('hood') ? 'hoodie' : productName.toLowerCase().includes('polo') ? 'polo' : 't-shirt',
-                                quantity: q.quantity,
-                                print_areas: Array.isArray((q as Quote).print_areas) ? ((q as Quote).print_areas as unknown[]).length : 1,
-                                is_rush: days !== undefined && days < 7,
-                                deadline_days: days,
-                              });
-                              setAiPriceResult(result);
-                            } catch (err) {
-                              alert('Pricing failed: ' + (err as Error).message);
-                            } finally {
-                              setAiPriceLoading(false);
-                            }
-                          }}
-                          className="w-full px-3 py-2 text-xs font-semibold bg-green-100 text-green-700 rounded-lg hover:bg-green-200 disabled:opacity-50"
-                        >
-                          {aiPriceLoading ? 'Calculating...' : '💰 Suggest Price'}
-                        </button>
-                        {aiPriceResult && (
-                          <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3 text-xs space-y-1">
-                            <p className="text-base font-bold text-green-700">${Number(aiPriceResult.suggested_price).toFixed(2)}/unit</p>
-                            <p className="text-gray-600">Margin: {aiPriceResult.profit_margin_percentage}% · Confidence: {Math.round(aiPriceResult.confidence_level * 100)}%</p>
-                            {aiPriceResult.bulk_tier_prices && (
-                              <div className="grid grid-cols-4 gap-1 pt-1">
-                                {Object.entries(aiPriceResult.bulk_tier_prices).map(([qty, price]) => (
-                                  <div key={qty} className="text-center">
-                                    <p className="text-[10px] text-gray-500">{qty}+</p>
-                                    <p className="font-semibold">${Number(price).toFixed(2)}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            <p className="text-gray-600 italic pt-1 border-t border-green-200">{aiPriceResult.reasoning}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Draft Reply */}
-                    <div>
-                      <p className="text-[10px] text-gray-500 mb-1">Draft an email reply — what's the customer asking?</p>
-                      <textarea
-                        value={aiDraftQuestion}
-                        onChange={(e) => setAiDraftQuestion(e.target.value)}
-                        placeholder="e.g. Can you do 50 shirts by next Friday?"
-                        rows={2}
-                        className="w-full text-xs border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-purple-400"
-                        style={{ fontSize: '16px' }}
-                      />
-                      <button
-                        disabled={aiDraftLoading || !aiDraftQuestion.trim()}
-                        onClick={async () => {
-                          setAiDraftLoading(true);
-                          try {
-                            const ctx = `Quote #${q.id}, ${q.quantity}× ${productName}${q.date_needed ? ', needed by ' + q.date_needed : ''}${total > 0 ? ', total $' + total.toFixed(2) : ''}`;
-                            const result = await draftReply(aiDraftQuestion, customerEmail, ctx);
-                            setAiDraft(result);
-                          } catch (err) {
-                            alert('Draft failed: ' + (err as Error).message);
-                          } finally {
-                            setAiDraftLoading(false);
-                          }
-                        }}
-                        className="mt-1 w-full px-3 py-2 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
-                      >
-                        {aiDraftLoading ? 'Drafting...' : '✍️ Draft Reply'}
-                      </button>
-                      {aiDraft && (
-                        <div className="mt-2 space-y-2">
-                          {(['professional', 'friendly', 'urgent'] as const).map((tone) => (
-                            <div key={tone} className="bg-purple-50 border border-purple-200 rounded-lg p-2">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-[10px] font-bold uppercase text-purple-700">{tone}</span>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(aiDraft[tone]);
-                                    alert('Copied!');
-                                  }}
-                                  className="text-[10px] text-purple-600 hover:underline"
-                                >
-                                  Copy
-                                </button>
-                              </div>
-                              <p className="text-xs text-gray-800 whitespace-pre-wrap">{aiDraft[tone]}</p>
-                            </div>
-                          ))}
-                          <a
-                            href={`mailto:${customerEmail}?subject=Re:%20Quote%20%23${q.id}&body=${encodeURIComponent(aiDraft.friendly)}`}
-                            className="block w-full text-center px-3 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                          >
-                            📧 Send via Email
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Pricing */}
-                  {total > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Pricing</p>
-                      <div className="space-y-1 text-sm bg-gray-50 rounded-lg p-3">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Total</span>
-                          <span className="font-semibold text-gray-900">${total.toFixed(2)}</span>
-                        </div>
-                        {paid > 0 && (
-                          <>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Deposit Paid</span>
-                              <span className="font-semibold text-green-600">${paid.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between pt-1 border-t border-gray-200">
-                              <span className="text-gray-600">Balance Due</span>
-                              <span className={`font-semibold ${balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>${balance.toFixed(2)}</span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="pt-2 space-y-2">
-                    {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
-                      <button
-                        onClick={() => { openPriceModal(q as Quote); setDetailQuote(null); }}
-                        className="w-full py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700"
-                      >
-                        {q.status === 'quoted' ? 'Re-Quote Price' : 'Send Price Quote'}
-                      </button>
-                    )}
-                    {q.status === 'accepted' && balance > 0 && (
-                      <button
-                        onClick={() => {
-                          sendBalanceRequest(String(q.id))
-                            .then(() => alert('Balance request sent to ' + customerEmail))
-                            .catch((err: Error) => alert('Failed: ' + err.message));
-                        }}
-                        className="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700"
-                      >
-                        Request Balance Payment (${balance.toFixed(2)})
-                      </button>
-                    )}
-                    {q.status === 'accepted' && (
-                      <button
-                        onClick={() => { statusMutation.mutate({ id: q.id, status: 'completed' }); setDetailQuote(null); }}
-                        className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
-                      >
-                        Mark as Complete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Send Price Modal */}
         {priceModalQuote && (
@@ -4427,18 +3063,16 @@ function StatCard({
   loading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-3 sm:p-5">
-      <div className="flex items-center gap-2 sm:gap-3">
-        <div className="p-1.5 sm:p-2 rounded-lg bg-red-50 flex-shrink-0">
-          <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-red-600" />
-        </div>
-        <div className="min-w-0">
-          <p className="text-xl sm:text-2xl font-display font-bold text-gray-900 leading-tight">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin text-gray-300" /> : value}
-          </p>
-          <p className="text-xs sm:text-sm text-gray-500 truncate">{label}</p>
+    <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="p-2 rounded-lg bg-red-50">
+          <Icon className="w-5 h-5 text-red-600" />
         </div>
       </div>
+      <p className="text-3xl font-display font-bold text-gray-900">
+        {loading ? <Loader2 className="w-6 h-6 animate-spin text-gray-300" /> : value}
+      </p>
+      <p className="text-sm text-gray-500 mt-1">{label}</p>
     </div>
   );
 }

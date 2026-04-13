@@ -1,61 +1,439 @@
 import { Router } from 'express';
+import pool from '../db.js';
 import { generateDesign } from '../services/openai.js';
+import Replicate from 'replicate';
+import QRCode from 'qrcode';
+import { execFile } from 'child_process';
+import { writeFile, readFile, unlink, mkdtemp } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { promisify } from 'util';
 
+const execFileAsync = promisify(execFile);
 const router = Router();
+const replicate = new Replicate({ auth: process.env.REPLICATE_API_KEY });
 
-// POST /generate - Generate a design with AI
+// Helper: fetch a remote image and return a base64 data URL
+async function fetchImageAsBase64(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  const contentType = res.headers.get('content-type') || 'image/png';
+  const buffer = await res.arrayBuffer();
+  return `data:${contentType};base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+// ── Background Removal via Replicate rembg ($0.004/run) ─────────────────────
+
+async function removeBackgroundReplicate(imageInput) {
+  try {
+    console.log('[bg-removal] Using Replicate rembg ($0.004)...');
+    const output = await replicate.run(
+      "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
+      { input: { image: imageInput } }
+    );
+
+    if (!output) {
+      console.error('[bg-removal] Replicate returned no output');
+      return null;
+    }
+
+    const resultUrl = typeof output === 'string' ? output : output.toString();
+    console.log('[bg-removal] Success, fetching result...');
+
+    const res = await fetch(resultUrl);
+    if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+  } catch (err) {
+    console.error('[bg-removal] Replicate rembg error:', err.message);
+    return null;
+  }
+}
+
+// ── Image Upscaling via Replicate Real-ESRGAN ($0.0017/run) ─────────────────
+
+async function upscaleReplicate(imageInput, scaleFactor = 4) {
+  try {
+    console.log(`[upscale] Using Real-ESRGAN ${scaleFactor}x ($0.0017)...`);
+    const output = await replicate.run(
+      "nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa",
+      {
+        input: {
+          image: imageInput,
+          scale: scaleFactor,
+          face_enhance: false,
+        },
+      }
+    );
+
+    if (!output) {
+      console.error('[upscale] Replicate returned no output');
+      return null;
+    }
+
+    const resultUrl = typeof output === 'string' ? output : output.toString();
+    console.log('[upscale] Success, fetching result...');
+
+    const res = await fetch(resultUrl);
+    if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+  } catch (err) {
+    console.error('[upscale] Real-ESRGAN error:', err.message);
+    return null;
+  }
+}
+
+// ── Vectorize: PNG → SVG via ImageMagick + Potrace (free, local) ────────────
+
+async function vectorizePNG(pngBase64, colors = 1) {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'vectorize-'));
+  const pngPath = join(tmpDir, 'input.png');
+  const bmpPath = join(tmpDir, 'input.bmp');
+  const svgPath = join(tmpDir, 'output.svg');
+
+  try {
+    // Write PNG to disk
+    const base64Data = pngBase64.replace(/^data:image\/\w+;base64,/, '');
+    await writeFile(pngPath, Buffer.from(base64Data, 'base64'));
+
+    if (colors <= 1) {
+      // Single-color: convert to monochrome BMP, then trace
+      console.log('[vectorize] Single-color trace via potrace...');
+      await execFileAsync('convert', [
+        pngPath,
+        '-alpha', 'extract',       // use alpha channel as the shape
+        '-negate',                  // potrace expects black = foreground
+        '-threshold', '50%',
+        'BMP3:' + bmpPath,
+      ]);
+
+      await execFileAsync('potrace', [
+        bmpPath,
+        '-s',                      // SVG output
+        '-o', svgPath,
+        '--flat',                   // no grouping, cleaner paths
+        '--turdsize', '10',         // ignore specks < 10px
+        '--opttolerance', '0.2',    // smooth curves
+      ]);
+    } else {
+      // Multi-color: posterize to N colors, trace each layer, combine
+      console.log(`[vectorize] Multi-color trace (${colors} colors) via potrace...`);
+
+      // Posterize to reduce colors
+      const posterizedPath = join(tmpDir, 'posterized.png');
+      await execFileAsync('convert', [
+        pngPath,
+        '-colors', String(Math.min(colors, 12)),
+        '-posterize', String(Math.min(colors, 12)),
+        posterizedPath,
+      ]);
+
+      // Get unique colors from posterized image
+      const { stdout: colorList } = await execFileAsync('convert', [
+        posterizedPath,
+        '-format', '%c',
+        '-depth', '8',
+        'histogram:info:-',
+      ]);
+
+      // Parse hex colors from histogram output
+      const hexColors = [];
+      const colorRegex = /#([0-9A-Fa-f]{6})/g;
+      let match;
+      while ((match = colorRegex.exec(colorList)) !== null) {
+        const hex = '#' + match[1];
+        if (!hexColors.includes(hex) && hex !== '#000000' && hex !== '#FFFFFF' && hex !== '#ffffff') {
+          hexColors.push(hex);
+        }
+      }
+
+      if (hexColors.length === 0) {
+        // Fallback to single-color trace
+        return vectorizePNG(pngBase64, 1);
+      }
+
+      // Trace each color layer
+      const svgLayers = [];
+      for (let i = 0; i < hexColors.length && i < colors; i++) {
+        const hex = hexColors[i];
+        const layerBmp = join(tmpDir, `layer-${i}.bmp`);
+        const layerSvg = join(tmpDir, `layer-${i}.svg`);
+
+        // Isolate this color
+        await execFileAsync('convert', [
+          posterizedPath,
+          '-fill', 'white', '+opaque', hex,  // make everything except this color white
+          '-fill', 'black', '-opaque', hex,   // make this color black
+          '-colorspace', 'Gray',
+          '-threshold', '50%',
+          'BMP3:' + layerBmp,
+        ]);
+
+        await execFileAsync('potrace', [
+          layerBmp,
+          '-s', '-o', layerSvg,
+          '--flat',
+          '--turdsize', '10',
+          '--opttolerance', '0.2',
+          '--color', hex,
+        ]);
+
+        // Read SVG content and extract paths
+        const layerContent = await readFile(layerSvg, 'utf8');
+        const pathMatch = layerContent.match(/<path[^>]*\/>/g) || layerContent.match(/<path[^>]*>[\s\S]*?<\/path>/g);
+        if (pathMatch) {
+          svgLayers.push(...pathMatch);
+        }
+
+        // Cleanup layer files
+        await unlink(layerBmp).catch(() => {});
+        await unlink(layerSvg).catch(() => {});
+      }
+
+      // Get dimensions from first layer
+      const { stdout: dims } = await execFileAsync('identify', [
+        '-format', '%w %h',
+        pngPath,
+      ]);
+      const [w, h] = dims.trim().split(' ');
+
+      // Combine into single SVG
+      const combinedSvg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+${svgLayers.join('\n')}
+</svg>`;
+
+      await writeFile(svgPath, combinedSvg);
+    }
+
+    // Read the SVG result
+    const svgContent = await readFile(svgPath, 'utf8');
+    console.log(`[vectorize] Success! SVG size: ${Math.round(svgContent.length / 1024)}KB`);
+    return svgContent;
+  } finally {
+    // Cleanup temp files
+    await unlink(pngPath).catch(() => {});
+    await unlink(bmpPath).catch(() => {});
+    await unlink(svgPath).catch(() => {});
+    // Remove temp dir
+    const { rmdir } = await import('fs/promises');
+    await rmdir(tmpDir).catch(() => {});
+  }
+}
+
+// ── POST /generate — AI image generation with smart cost routing ────────────
+
 router.post('/generate', async (req, res, next) => {
   try {
-    const { prompt, color, garmentType } = req.body;
+    const { prompt, color, garmentType, removeBackground = false, style = 'dtf' } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
     }
 
-    const imageUrl = await generateDesign(prompt, color, garmentType);
+    const imageUrl = await generateDesign(prompt, color, garmentType, style);
 
-    res.json({ imageUrl });
+    if (!removeBackground) {
+      return res.json({ imageUrl });
+    }
+
+    // Remove background
+    const transparent = await removeBackgroundReplicate(imageUrl);
+    if (transparent) {
+      return res.json({ imageUrl: transparent, backgroundRemoved: true });
+    }
+
+    res.json({ imageUrl, backgroundRemoved: false });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /remove-bg - Remove background from an uploaded image using remove.bg
+// ── POST /remove-bg — Remove background ($0.004/image) ─────────────────────
+
 router.post('/remove-bg', async (req, res, next) => {
   try {
-    const { imageBase64 } = req.body;
+    let { imageBase64, imageUrl } = req.body;
+
+    let replicateInput;
+    if (imageUrl) {
+      replicateInput = imageUrl;
+    } else if (imageBase64) {
+      replicateInput = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+    } else {
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
+    }
+
+    const result = await removeBackgroundReplicate(replicateInput);
+    if (!result) {
+      return res.status(500).json({ error: 'Background removal failed' });
+    }
+
+    res.json({ imageBase64: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /upscale — Upscale low-res images ($0.0017/image) ──────────────────
+
+router.post('/upscale', async (req, res, next) => {
+  try {
+    let { imageBase64, imageUrl, scale = 4 } = req.body;
+
+    let replicateInput;
+    if (imageUrl) {
+      replicateInput = imageUrl;
+    } else if (imageBase64) {
+      replicateInput = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+    } else {
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
+    }
+
+    const scaleFactor = scale >= 4 ? 4 : 2;
+
+    const result = await upscaleReplicate(replicateInput, scaleFactor);
+    if (!result) {
+      return res.status(500).json({ error: 'Upscaling failed' });
+    }
+
+    res.json({ imageBase64: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /vectorize — Convert PNG to cut-ready SVG (free, local potrace) ────
+
+router.post('/vectorize', async (req, res, next) => {
+  try {
+    let { imageBase64, imageUrl, colors = 1 } = req.body;
+
+    // Get image as base64
+    if (!imageBase64 && imageUrl) {
+      imageBase64 = await fetchImageAsBase64(imageUrl);
+    }
     if (!imageBase64) {
-      return res.status(400).json({ error: 'imageBase64 is required' });
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
     }
 
-    const apiKey = process.env.REMOVEBG_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'Background removal not configured' });
+    const svg = await vectorizePNG(imageBase64, colors);
+    if (!svg) {
+      return res.status(500).json({ error: 'Vectorization failed' });
     }
 
-    // Strip data URL prefix if present
-    const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    res.json({ svg });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    const formData = new FormData();
-    formData.append('image_file_b64', base64Data);
-    formData.append('size', 'auto');
+// ── POST /prep-vinyl — Full pipeline: remove shadow → vectorize to SVG ──────
 
-    const response = await fetch('https://api.remove.bg/v1.0/removebg', {
-      method: 'POST',
-      headers: {
-        'X-Api-Key': apiKey,
-      },
-      body: formData,
+router.post('/prep-vinyl', async (req, res, next) => {
+  try {
+    let { imageBase64, imageUrl, colors = 1 } = req.body;
+
+    console.log('[prep-vinyl] Starting full pipeline...');
+
+    // Step 1: Determine input for bg removal
+    let replicateInput;
+    if (imageUrl) {
+      replicateInput = imageUrl;
+    } else if (imageBase64) {
+      replicateInput = imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`;
+    } else {
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
+    }
+
+    // Step 2: Remove background + drop shadows via rembg
+    console.log('[prep-vinyl] Step 1/2: Removing background & shadows...');
+    const cleanPng = await removeBackgroundReplicate(replicateInput);
+    if (!cleanPng) {
+      return res.status(500).json({ error: 'Background/shadow removal failed' });
+    }
+
+    // Step 3: Vectorize the clean PNG to SVG
+    console.log('[prep-vinyl] Step 2/2: Vectorizing to SVG...');
+    const svg = await vectorizePNG(cleanPng, colors);
+    if (!svg) {
+      return res.status(500).json({ error: 'Vectorization failed' });
+    }
+
+    console.log('[prep-vinyl] Pipeline complete!');
+    res.json({
+      cleanPng,  // the shadow-free PNG (for preview)
+      svg,       // the cut-ready SVG
     });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      return res.status(response.status).json({ error: `remove.bg error: ${errText}` });
+
+// ── POST /qrcode — Generate high-res QR code for print (free, local) ────────
+
+router.post('/qrcode', async (req, res, next) => {
+  try {
+    const { text, size = 1024, darkColor = '#000000', lightColor = '#ffffff', transparent = false, margin = 2, errorCorrection = 'H' } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'text is required (URL, address, phone, etc.)' });
     }
 
-    const buffer = await response.arrayBuffer();
-    const resultBase64 = Buffer.from(buffer).toString('base64');
-    res.json({ imageBase64: `data:image/png;base64,${resultBase64}` });
+    console.log(`[qrcode] Generating for: "${text.slice(0, 60)}..." at ${size}px`);
+
+    const options = {
+      type: 'image/png',
+      width: size,
+      margin: margin,
+      errorCorrectionLevel: errorCorrection,
+      color: {
+        dark: darkColor,
+        light: transparent ? '#00000000' : lightColor,
+      },
+    };
+
+    const dataUrl = await QRCode.toDataURL(text.trim(), options);
+    console.log(`[qrcode] Generated ${size}x${size}px QR code`);
+
+    res.json({ imageBase64: dataUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+// ── GET /art-library — Public endpoint for Design Studio "Add Art" panel ────
+
+router.get('/art-library', async (req, res, next) => {
+  try {
+    const { category } = req.query;
+    let query = 'SELECT id, name, image_url, category FROM admin_designs';
+    const params = [];
+
+    if (category) {
+      query += ' WHERE category = $1';
+      params.push(category);
+    }
+
+    query += ' ORDER BY created_at DESC';
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /art-categories — List categories with counts ───────────────────────
+
+router.get('/art-categories', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT category, COUNT(*) as count FROM admin_designs GROUP BY category ORDER BY category`
+    );
+    res.json(rows);
   } catch (err) {
     next(err);
   }

@@ -71,7 +71,7 @@ export async function login(credentials: { email: string; password: string }) {
   });
 }
 
-export async function register(data: { name: string; email: string; password: string; phone?: string }) {
+export async function register(data: { name: string; email: string; password: string }) {
   return request<{ token: string }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(data),
@@ -111,13 +111,6 @@ export interface Quote {
   shipping_address?: unknown;
   date_needed?: string;
   shipping_method?: string;
-  admin_notes?: string | null;
-  triage?: {
-    urgency?: 'low' | 'medium' | 'high' | 'rush';
-    complexity?: 'simple' | 'moderate' | 'complex';
-    estimated_hours?: number;
-    summary?: string;
-  } | null;
 }
 
 export interface Product {
@@ -164,24 +157,9 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
   };
 }
 
-export async function fetchQuotes(status?: string, search?: string, sort?: string) {
-  const params = new URLSearchParams();
-  if (status && status !== 'all') params.set('status', status);
-  if (search) params.set('search', search);
-  if (sort) params.set('sort', sort);
-  const query = params.toString() ? `?${params.toString()}` : '';
+export async function fetchQuotes(status?: string) {
+  const query = status && status !== 'all' ? `?status=${status}` : '';
   return authRequest<Quote[]>(`/quotes${query}`);
-}
-
-export async function updateAdminNotes(id: string, admin_notes: string) {
-  return authRequest<{ id: string; admin_notes: string }>(`/quotes/${id}/admin-notes`, {
-    method: 'PATCH',
-    body: JSON.stringify({ admin_notes }),
-  });
-}
-
-export async function fetchAdminCounts() {
-  return authRequest<{ pending_quotes: string; active_quotes: string; active_orders: string }>('/admin/stats/counts');
 }
 
 export async function updateQuoteStatus(id: string, status: string) {
@@ -196,22 +174,6 @@ export async function fetchAdminProducts(search?: string, page = 1) {
   if (search) params.set('search', search);
   const data = await request<{ products: Product[]; total: number; totalPages: number; page: number }>(`/products?${params}`);
   return data;
-}
-
-export interface CustomProduct {
-  id: number;
-  name: string;
-  description?: string;
-  category?: string;
-  image_url?: string;
-  price?: number;
-  price_unit?: string;
-  sizes?: unknown;
-  options?: unknown;
-}
-
-export async function fetchCustomProducts() {
-  return authRequest<CustomProduct[]>('/admin/custom-products');
 }
 
 export async function fetchCategories() {
@@ -266,11 +228,6 @@ export interface Customer {
   id: string;
   email: string;
   name: string;
-  phone?: string;
-  address_street?: string;
-  address_city?: string;
-  address_state?: string;
-  address_zip?: string;
   created_at: string;
   design_count: number;
   quote_count: number;
@@ -312,24 +269,10 @@ export interface Order {
   quantity: number;
   status: string;
   estimated_price: number | null;
-  deposit_amount: number | null;
-  accepted_at: string | null;
-  balance_paid_at: string | null;
   created_at: string;
-  date_needed: string | null;
-  notes: string | null;
-  admin_notes: string | null;
-  shipping_method: string | null;
   customer_name: string;
   customer_email: string;
   customer_phone: string | null;
-}
-
-export async function sendBalanceRequest(quoteId: string) {
-  return authRequest<{ success: boolean; balanceDue: number }>('/quotes/admin/send-balance', {
-    method: 'POST',
-    body: JSON.stringify({ quoteId }),
-  });
 }
 
 export async function fetchCustomers(search?: string) {
@@ -354,12 +297,8 @@ export async function deleteDesign(id: string) {
   return authRequest<{ deleted: boolean }>(`/admin/designs/${id}`, { method: 'DELETE' });
 }
 
-export async function fetchOrders(status?: string, search?: string, sort?: string) {
-  const params = new URLSearchParams();
-  if (status && status !== 'all') params.set('status', status);
-  if (search) params.set('search', search);
-  if (sort) params.set('sort', sort);
-  const query = params.toString() ? `?${params.toString()}` : '';
+export async function fetchOrders(status?: string) {
+  const query = status && status !== 'all' ? `?status=${status}` : '';
   return authRequest<Order[]>(`/admin/orders${query}`);
 }
 

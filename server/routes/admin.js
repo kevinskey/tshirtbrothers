@@ -230,30 +230,58 @@ router.get('/customer-designs', async (req, res, next) => {
   }
 });
 
-// GET /orders - List all orders (using quotes table)
+// GET /orders - Only quotes with deposit paid (accepted/completed)
 router.get('/orders', async (req, res, next) => {
   try {
-    const { status } = req.query;
-    let whereClause = '';
+    const { status, search, sort } = req.query;
     const params = [];
+    let whereClause = "WHERE q.status IN ('accepted', 'completed')";
 
     if (status && status !== 'all') {
       params.push(status);
-      whereClause = `WHERE q.status = $${params.length}`;
+      whereClause += ` AND q.status = $${params.length}`;
+    }
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClause += ` AND (q.customer_name ILIKE $${params.length} OR q.customer_email ILIKE $${params.length} OR q.product_name ILIKE $${params.length})`;
+    }
+
+    let orderClause = 'ORDER BY q.accepted_at DESC NULLS LAST';
+    if (sort === 'date_needed') {
+      orderClause = 'ORDER BY q.date_needed ASC NULLS LAST, q.accepted_at DESC';
+    } else if (sort === 'newest') {
+      orderClause = 'ORDER BY q.created_at DESC';
     }
 
     const { rows } = await pool.query(
       `SELECT
-         q.id, q.product_name, q.quantity, q.status, q.estimated_price,
-         q.created_at,
+         q.id, q.product_name, q.quantity, q.status, q.estimated_price, q.deposit_amount, q.accepted_at,
+         q.created_at, q.date_needed, q.notes, q.admin_notes, q.shipping_method,
          q.customer_name, q.customer_email, q.customer_phone
        FROM quotes q
        ${whereClause}
-       ORDER BY q.created_at DESC`,
+       ${orderClause}`,
       params
     );
 
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /stats - Dashboard stats including pending quote count
+router.get('/stats/counts', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+        COUNT(*) FILTER (WHERE status = 'pending') AS pending_quotes,
+        COUNT(*) FILTER (WHERE status IN ('pending','reviewed','quoted')) AS active_quotes,
+        COUNT(*) FILTER (WHERE status = 'accepted') AS active_orders
+       FROM quotes`
+    );
+    res.json(rows[0]);
   } catch (err) {
     next(err);
   }
@@ -385,6 +413,59 @@ router.put('/settings', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── Admin Design Library ─────────────────────────────────────────────────────
+
+router.get('/designs-library', async (req, res, next) => {
+  try {
+    const { category, search } = req.query;
+    const conditions = [];
+    const params = [];
+    if (category && category !== 'all') {
+      params.push(category);
+      conditions.push('category = $' + params.length);
+    }
+    if (search) {
+      params.push('%' + search + '%');
+      conditions.push('(name ILIKE $' + params.length + ' OR description ILIKE $' + params.length + ')');
+    }
+    const where = conditions.length ? ' WHERE ' + conditions.join(' AND ') : '';
+    const { rows } = await pool.query('SELECT * FROM admin_designs' + where + ' ORDER BY created_at DESC', params);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/designs-library', async (req, res, next) => {
+  try {
+    const { name, description, image_url, thumbnail_url, tags, width, height, file_size, category } = req.body;
+    if (!name || !image_url) return res.status(400).json({ error: 'name and image_url required' });
+    const { rows } = await pool.query(
+      'INSERT INTO admin_designs (name, description, image_url, thumbnail_url, tags, width, height, file_size, category, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *',
+      [name, description || null, image_url, thumbnail_url || image_url, tags || [], width || null, height || null, file_size || null, category || 'general', req.user?.id || null]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.put('/designs-library/:id', async (req, res, next) => {
+  try {
+    const { name, description, tags, category } = req.body;
+    const { rows } = await pool.query(
+      'UPDATE admin_designs SET name=COALESCE($1,name), description=COALESCE($2,description), tags=COALESCE($3,tags), category=COALESCE($4,category), updated_at=NOW() WHERE id=$5 RETURNING *',
+      [name, description, tags, category, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/designs-library/:id', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('DELETE FROM admin_designs WHERE id=$1 RETURNING id', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
 });
 
 export default router;

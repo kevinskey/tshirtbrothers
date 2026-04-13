@@ -3,11 +3,12 @@ import { useSearchParams, Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
-// Checkout page - redirects to Stripe
+// Checkout page - redirects to Stripe (handles both deposit and balance)
 export function PaymentCheckout() {
   const [searchParams] = useSearchParams();
   const quoteId = searchParams.get('quote');
   const token = searchParams.get('token');
+  const type = searchParams.get('type'); // 'balance' or null (deposit)
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -15,8 +16,12 @@ export function PaymentCheckout() {
       setError('Missing quote ID');
       return;
     }
-    // Create Stripe checkout session and redirect
-    fetch('/api/payments/create-checkout', {
+
+    const endpoint = type === 'balance'
+      ? '/api/payments/create-balance-checkout'
+      : '/api/payments/create-checkout';
+
+    fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quoteId, token }),
@@ -30,7 +35,7 @@ export function PaymentCheckout() {
         }
       })
       .catch(() => setError('Failed to connect to payment server'));
-  }, [quoteId, token]);
+  }, [quoteId, token, type]);
 
   return (
     <Layout>
@@ -58,16 +63,24 @@ export function PaymentCheckout() {
 export function PaymentSuccess() {
   const [searchParams] = useSearchParams();
   const quoteId = searchParams.get('quote');
-  const [quote, setQuote] = useState<{ customer_name: string; product_name: string; deposit_amount: number } | null>(null);
+  const sessionId = searchParams.get('session_id');
+  const type = searchParams.get('type');
+  const [quote, setQuote] = useState<{ customer_name: string; product_name: string; deposit_amount: number; estimated_price: number; payment_type?: string } | null>(null);
+
+  const isBalance = type === 'balance' || quote?.payment_type === 'balance';
 
   useEffect(() => {
     if (quoteId) {
-      fetch(`/api/payments/success?quote=${quoteId}`)
+      const params = new URLSearchParams();
+      params.set('quote', quoteId);
+      if (sessionId) params.set('session_id', sessionId);
+      if (type) params.set('type', type);
+      fetch(`/api/payments/success?${params.toString()}`)
         .then(res => res.json())
         .then(data => setQuote(data))
         .catch(() => {});
     }
-  }, [quoteId]);
+  }, [quoteId, sessionId, type]);
 
   return (
     <Layout>
@@ -76,16 +89,29 @@ export function PaymentSuccess() {
           <CheckCircle2 className="h-20 w-20 text-green-500 mx-auto mb-6" />
           <h1 className="text-3xl font-display font-bold text-gray-900 mb-3">Payment Successful!</h1>
           <p className="text-gray-500 mb-6">
-            Thank you{quote?.customer_name ? `, ${quote.customer_name}` : ''}! Your deposit
-            {quote?.deposit_amount ? ` of $${Number(quote.deposit_amount).toFixed(2)}` : ''} has been received.
+            {isBalance ? (
+              <>
+                Thank you{quote?.customer_name ? `, ${quote.customer_name}` : ''}! Your remaining balance has been paid.
+                Your order is now paid in full.
+              </>
+            ) : (
+              <>
+                Thank you{quote?.customer_name ? `, ${quote.customer_name}` : ''}! Your deposit
+                {quote?.deposit_amount ? ` of $${Number(quote.deposit_amount).toFixed(2)}` : ''} has been received.
+              </>
+            )}
           </p>
           {quote?.product_name && (
             <p className="text-sm text-gray-400 mb-6">Order: {quote.product_name}</p>
           )}
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-            <p className="text-sm text-green-800 font-medium">What happens next?</p>
+            <p className="text-sm text-green-800 font-medium">
+              {isBalance ? 'Order Paid in Full!' : 'What happens next?'}
+            </p>
             <p className="text-sm text-green-700 mt-1">
-              Our team will begin working on your order. We'll send you updates via email and SMS.
+              {isBalance
+                ? 'Your order is fully paid. We\'ll notify you when it\'s ready for pickup or shipping.'
+                : 'Our team will begin working on your order. We\'ll send you updates via email and SMS.'}
             </p>
           </div>
           <div className="flex gap-3 justify-center">
@@ -112,7 +138,7 @@ export function PaymentCancel() {
           <XCircle className="h-16 w-16 text-gray-400 mx-auto mb-6" />
           <h1 className="text-2xl font-display font-bold text-gray-900 mb-3">Payment Cancelled</h1>
           <p className="text-gray-500 mb-6">
-            No worries! Your quote is still available. You can pay the deposit anytime by clicking the link in your email.
+            No worries! Your quote is still available. You can pay anytime by clicking the link in your email.
           </p>
           <div className="flex gap-3 justify-center">
             <Link to="/" className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition">

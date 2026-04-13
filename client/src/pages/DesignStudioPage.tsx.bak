@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { toPng } from 'html-to-image';
 import {
   ArrowLeft,
   Upload,
@@ -14,7 +15,6 @@ import {
   X,
   Loader2,
   Move,
-  Sparkles,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -36,12 +36,7 @@ interface DesignElement {
   outline?: boolean;
   textShape?: TextShapeName;
   shapeIntensity?: number; // 0-100
-  letterSpacing?: number; // em units
-  lineHeight?: number; // multiplier, e.g. 1.2
-  wordSpacing?: number; // em units
-  borderRadius?: number; // 0-50 percent
-  opacity?: number; // 0-1
-  filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  letterSpacing?: number; // em units, e.g. 0.1 = 0.1em
 }
 
 type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone' | 'circle' | 'circle-bottom';
@@ -91,9 +86,9 @@ function getShapePath(shape: TextShapeName, intensity: number): string {
   }
 }
 
-function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outline }: {
+function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outline, letterSpacing }: {
   text: string; shape: TextShapeName; intensity: number;
-  fontSize: number; color: string; fontFamily: string; outline?: boolean;
+  fontSize: number; color: string; fontFamily: string; outline?: boolean; letterSpacing?: number;
 }) {
   if (shape === 'normal') return null; // handled by regular span
   const pathId = `shape-${shape}-${intensity}-${text.length}`;
@@ -112,6 +107,7 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
         fontSize={scaledSize}
         fontWeight="700"
         textAnchor="middle"
+        letterSpacing={letterSpacing ? `${letterSpacing}em` : undefined}
         style={outline ? {
           stroke: 'rgba(0,0,0,0.5)',
           strokeWidth: 1,
@@ -160,12 +156,17 @@ const SYSTEM_FONTS = ['Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Imp
 function loadGoogleFont(fontName: string): Promise<void> {
   if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return Promise.resolve();
   loadedFonts.add(fontName);
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
-  document.head.appendChild(link);
-  // Wait for the font to actually load
-  return document.fonts.ready.then(() => {});
+  return new Promise<void>((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
+    link.onload = () => {
+      // CSS loaded, now wait for the font file to actually be usable
+      document.fonts.ready.then(() => resolve());
+    };
+    link.onerror = () => resolve(); // don't block on failure
+    document.head.appendChild(link);
+  });
 }
 
 // Preload a batch of fonts (for the font list preview)
@@ -212,16 +213,6 @@ type ViewName = 'front' | 'back' | 'sleeve';
 export default function DesignStudioPage() {
   const [searchParams] = useSearchParams();
   const initialProductId = searchParams.get('product') || '';
-  // Auth gate — require login before designing
-  const authNav = useNavigate();
-  useEffect(() => {
-    const token = localStorage.getItem('tsb_token');
-    if (!token) {
-      authNav('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search) + '&reason=design');
-    }
-  }, [authNav]);
-
-
   const location = useLocation();
   const loadState = location.state as { loadDesign?: boolean; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
 
@@ -229,15 +220,6 @@ export default function DesignStudioPage() {
   const navigate = useNavigate();
   const [showWelcome, setShowWelcome] = useState(!loadState?.loadDesign);
   const [activeTool, setActiveTool] = useState<ToolName>(null);
-  const [aiChatOpen, setAiChatOpen] = useState(false);
-
-  // When AI Design button is clicked, tell the ChatWidget to open
-  useEffect(() => {
-    if (aiChatOpen) {
-      window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-      setAiChatOpen(false);
-    }
-  }, [aiChatOpen]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
@@ -255,45 +237,35 @@ export default function DesignStudioPage() {
   const getAuthToken = () => localStorage.getItem('tsb_token');
   const isLoggedIn = () => !!getAuthToken();
 
-  // Save design handler
-  // Generate a canvas image from the design area
-  // Build a simple JSON representation of the design for server-side rendering
-  const getDesignData = () => ({
-    product: selectedProduct ? { name: selectedProduct.name, ss_id: selectedProduct.ss_id, image: displayImage } : null,
-    colorName: productColors[selectedColorIdx]?.name || 'Default',
-    elements: designElements.map(el => ({
-      type: el.type,
-      content: el.content,
-      x: el.x,
-      y: el.y,
-      width: el.width,
-      fontSize: el.fontSize,
-      color: el.color,
-      fontFamily: el.fontFamily,
-      rotation: el.rotation,
-      textAlign: el.textAlign,
-    })),
-  });
-
   const handleSave = async () => {
     if (!isLoggedIn()) {
       setShowLoginPrompt(true);
       return;
     }
     setIsSaving(true);
+    // Deselect so selection handles don't appear in the snapshot
+    setSelectedElementId(null);
+    await new Promise(r => setTimeout(r, 150));
     try {
       const token = getAuthToken();
 
-      const designData = getDesignData();
+      // Capture a pixel-perfect snapshot of the design canvas
+      let snapshot: string | null = null;
+      const container = canvasRef.current?.querySelector('.relative.aspect-square') as HTMLElement | null;
+      if (container && designElements.length > 0) {
+        try {
+          snapshot = await toPng(container, { cacheBust: true, pixelRatio: 2 });
+        } catch { /* snapshot optional */ }
+      }
 
       const body = {
         name: designName,
         product_ss_id: selectedProduct?.ss_id,
         product_name: selectedProduct?.name,
-        product_image: displayImage,
+        product_image: originalDisplayImage,
         color_index: selectedColorIdx,
         elements: designElements,
-        design_data: designData,
+        thumbnail: snapshot || originalDisplayImage,
       };
       const url = savedDesignId ? `/api/designs/${savedDesignId}` : '/api/designs';
       const method = savedDesignId ? 'PUT' : 'POST';
@@ -308,7 +280,7 @@ export default function DesignStudioPage() {
       }
       const data = await res.json();
       if (!savedDesignId && data.id) setSavedDesignId(data.id);
-      alert('Design saved! Mockup and print-ready file generated.');
+      alert('Design saved!');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to save design');
     } finally {
@@ -316,16 +288,34 @@ export default function DesignStudioPage() {
     }
   };
 
-  // Download design as image
   // Navigate to quote with design data pre-filled
-  const handleGetPrice = () => {
+  const handleGetPrice = async () => {
+    // Deselect elements so selection handles don't appear in snapshot
+    setSelectedElementId(null);
+    // Small delay to let the UI update
+    await new Promise(r => setTimeout(r, 150));
+
+    // Capture the actual design canvas DOM as a pixel-perfect PNG
+    let snapshot: string | null = null;
+    const container = canvasRef.current?.querySelector('.relative.aspect-square') as HTMLElement | null;
+    if (container) {
+      try {
+        snapshot = await toPng(container, { cacheBust: true, pixelRatio: 2 });
+      } catch {
+        snapshot = null;
+      }
+    }
+
     navigate('/quote', {
       state: {
         fromDesignStudio: true,
         product: selectedProduct,
-        color: productColors[selectedColorIdx] || null,
+        color: userPickedColor ? (productColors[selectedColorIdx] || null) : null,
+        colorIndex: selectedColorIdx,
         designElements,
-        designImage: displayImage,
+        designImage: originalDisplayImage,
+        designView: currentView,
+        designSnapshot: snapshot,
       },
     });
   };
@@ -405,8 +395,6 @@ export default function DesignStudioPage() {
   const [artIcons, setArtIcons] = useState<{ prefix: string; name: string }[]>([]);
   const [artLoading, setArtLoading] = useState(false);
   const [artColor, setArtColor] = useState('#000000');
-  const [libraryArt, setLibraryArt] = useState<{ id: number; name: string; image_url: string; category: string }[]>([]);
-  const [libraryLoading, setLibraryLoading] = useState(false);
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
@@ -472,9 +460,22 @@ export default function DesignStudioPage() {
 
   const productColors = colorsData?.colors ?? selectedProduct?.colors ?? [];
   const selectedColorImage = userPickedColor ? productColors[selectedColorIdx]?.image : null;
-  const frontImage = selectedColorImage || selectedProduct?.image_url || null;
-  const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
+  // Proxy external images through our API so html-to-image can capture them (avoids CORS)
+  const proxyImg = (url: string | null | undefined) => {
+    if (!url) return null;
+    if (url.startsWith('/') || url.startsWith('data:')) return url; // already local or data URL
+    if (url.includes('ssactivewear.com') || url.includes('digitaloceanspaces.com') || url.includes('api.iconify.design')) {
+      return `/api/products/image-proxy?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+  const frontImage = proxyImg(selectedColorImage) || proxyImg(selectedProduct?.image_url) || null;
+  const backImage = proxyImg(productColors[selectedColorIdx]?.backImage) || proxyImg(selectedProduct?.back_image_url) || frontImage;
   const displayImage = currentView === 'back' ? backImage : frontImage;
+  // Keep the original S&S URL for passing to the Quote page (so it works outside the studio)
+  const originalDisplayImage = currentView === 'back'
+    ? (productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || selectedColorImage || selectedProduct?.image_url || null)
+    : (selectedColorImage || selectedProduct?.image_url || null);
 
   /* ---------------------------------------------------------------- */
   /*  Toolbar toggle                                                   */
@@ -482,6 +483,9 @@ export default function DesignStudioPage() {
 
   const toggleTool = useCallback((tool: ToolName) => {
     setShowWelcome(false);
+    // If a text element is selected and user clicks a toolbar button, deselect it
+    // so the text editor panel closes
+    setSelectedElementId(null);
     setActiveTool(prev => (prev === tool ? null : tool));
   }, []);
 
@@ -510,36 +514,6 @@ export default function DesignStudioPage() {
       if (!el) return prev;
       const newEl = { ...el, id: Date.now().toString() + Math.random().toString(36).slice(2), x: el.x + 5, y: el.y + 5 };
       return [...prev, newEl];
-    });
-  }, []);
-
-  // Layer z-order (array order = paint order; last item = top)
-  const bringForward = useCallback((id: string) => {
-    setDesignElements(prev => {
-      const idx = prev.findIndex(e => e.id === id);
-      if (idx < 0 || idx >= prev.length - 1) return prev;
-      const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n;
-    });
-  }, []);
-  const sendBackward = useCallback((id: string) => {
-    setDesignElements(prev => {
-      const idx = prev.findIndex(e => e.id === id);
-      if (idx <= 0) return prev;
-      const n = [...prev]; [n[idx], n[idx - 1]] = [n[idx - 1], n[idx]]; return n;
-    });
-  }, []);
-  const bringToFront = useCallback((id: string) => {
-    setDesignElements(prev => {
-      const el = prev.find(e => e.id === id);
-      if (!el) return prev;
-      return [...prev.filter(e => e.id !== id), el];
-    });
-  }, []);
-  const sendToBack = useCallback((id: string) => {
-    setDesignElements(prev => {
-      const el = prev.find(e => e.id === id);
-      if (!el) return prev;
-      return [el, ...prev.filter(e => e.id !== id)];
     });
   }, []);
 
@@ -607,47 +581,6 @@ export default function DesignStudioPage() {
   const placeImageOnCanvas = useCallback((url: string) => {
     addDesignElement({ type: 'image', x: 25, y: 20, width: 30, content: url });
   }, [addDesignElement]);
-
-  // Listen for chat-widget "Add to Canvas" events
-  useEffect(() => {
-    function handleAddToCanvas(e: Event) {
-      const detail = (e as CustomEvent<{ imageUrl?: string }>).detail;
-      if (detail?.imageUrl) {
-        placeImageOnCanvas(detail.imageUrl);
-      }
-    }
-    window.addEventListener('tsb:add-to-canvas', handleAddToCanvas);
-    return () => window.removeEventListener('tsb:add-to-canvas', handleAddToCanvas);
-  }, [placeImageOnCanvas]);
-
-  // Remove background from an image already on the canvas
-  const [canvasRemovingBg, setCanvasRemovingBg] = useState(false);
-  const removeBgOnCanvas = async (elementId: string) => {
-    const el = designElements.find(e => e.id === elementId);
-    if (!el || el.type !== 'image') return;
-    setCanvasRemovingBg(true);
-    try {
-      // Send either base64 or URL to the server — server handles the fetch for remote URLs
-      const body = el.content.startsWith('data:')
-        ? { imageBase64: el.content }
-        : { imageUrl: el.content };
-      const resp = await fetch('/api/design/remove-bg', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Failed' }));
-        throw new Error((err as { error?: string }).error || 'Failed');
-      }
-      const data = await resp.json() as { imageBase64: string };
-      updateElement(elementId, { content: data.imageBase64 });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Background removal failed');
-    } finally {
-      setCanvasRemovingBg(false);
-    }
-  };
 
   /* ---------------------------------------------------------------- */
   /*  Text handler                                                     */
@@ -754,11 +687,10 @@ export default function DesignStudioPage() {
   /*  Tool definitions for the left toolbar                            */
   /* ---------------------------------------------------------------- */
 
-  const tools: { name: ToolName | 'ai'; icon: typeof Upload; label: string }[] = [
+  const tools: { name: ToolName; icon: typeof Upload; label: string }[] = [
     { name: 'upload', icon: Upload, label: 'Upload' },
     { name: 'text', icon: Type, label: 'Add Text' },
     { name: 'art', icon: Image, label: 'Add Art' },
-    { name: 'ai', icon: Sparkles, label: 'AI\nDesign' },
     { name: 'details', icon: Shirt, label: 'Product\nDetails' },
     { name: 'products', icon: Move, label: 'Change\nProducts' },
   ];
@@ -829,23 +761,15 @@ export default function DesignStudioPage() {
   const leftToolbar = (
     <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-16 flex-col justify-center border-r border-gray-200 bg-white md:flex">
       {tools.map(tool => {
-        const isAi = tool.name === 'ai';
-        const isActive = !isAi && activeTool === tool.name;
+        const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
           <button
             key={tool.name}
             type="button"
-            onClick={() => {
-              if (isAi) {
-                window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-              } else {
-                toggleTool(tool.name as ToolName);
-              }
-            }}
+            onClick={() => toggleTool(tool.name)}
             className={`relative flex w-full flex-col items-center py-4 transition ${
-              isAi ? 'text-orange-500 hover:bg-orange-50 hover:text-orange-600'
-              : isActive ? 'text-red-600 bg-red-50' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              isActive ? 'text-red-600 bg-red-50' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
             }`}
           >
             {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
@@ -864,22 +788,15 @@ export default function DesignStudioPage() {
   const bottomToolbar = (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-gray-200 bg-white md:hidden">
       {tools.map(tool => {
-        const isAi = tool.name === 'ai';
-        const isActive = !isAi && activeTool === tool.name;
+        const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
           <button
             key={tool.name}
             type="button"
-            onClick={() => {
-              if (isAi) {
-                window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-              } else {
-                toggleTool(tool.name as ToolName);
-              }
-            }}
+            onClick={() => toggleTool(tool.name)}
             className={`flex flex-1 flex-col items-center py-2 transition ${
-              isAi ? 'text-orange-500' : isActive ? 'text-red-600' : 'text-gray-500'
+              isActive ? 'text-red-600' : 'text-gray-500'
             }`}
           >
             {isActive && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
@@ -1035,18 +952,6 @@ export default function DesignStudioPage() {
   // --- Art Panel ---
 
   // Iconify search only works well with single keywords
-
-  const ART_CATEGORY_MAP: Record<string, string> = {
-    'Most Popular': 'popular', 'Emojis': 'emojis', 'Shapes & Symbols': 'shapes',
-    'Sports & Games': 'sports', 'Letters & Numbers': 'letters', 'Animals': 'animals',
-    'Mascots': 'mascots', 'Nature': 'nature', 'America': 'america',
-    'Parties & Events': 'parties', 'Military': 'military', 'Occupations': 'occupations',
-    'Colleges': 'colleges', 'Music': 'music', 'Transportation': 'transportation',
-    'Greek Life': 'greek', 'School': 'school', 'Charity': 'charity',
-    'People': 'people', 'Religion': 'religion', 'Food & Drink': 'food',
-    'Seasons & Holidays': 'holidays',
-  };
-
   const ART_CATEGORIES = [
     { name: 'Most Popular', emoji: '\u2764\uFE0F', query: 'heart' },
     { name: 'Emojis', emoji: '\uD83D\uDE0A', query: 'emoji' },
@@ -1071,22 +976,6 @@ export default function DesignStudioPage() {
     { name: 'Food & Drink', emoji: '\uD83C\uDF55', query: 'food' },
     { name: 'Seasons & Holidays', emoji: '\u2744\uFE0F', query: 'christmas' },
   ];
-
-
-  const fetchLibraryArt = useCallback(async (category: string) => {
-    setLibraryLoading(true);
-    try {
-      const res = await fetch(`/api/design/art-library?category=${encodeURIComponent(category)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setLibraryArt(data);
-      }
-    } catch {
-      setLibraryArt([]);
-    } finally {
-      setLibraryLoading(false);
-    }
-  }, []);
 
   const fetchArtIcons = useCallback(async (query: string) => {
     setArtLoading(true);
@@ -1159,7 +1048,7 @@ export default function DesignStudioPage() {
         /* --- Icon results view --- */
         <div>
           <button
-            onClick={() => { setArtCategory(null); setArtIcons([]); setArtSearch(''); setLibraryArt([]); }}
+            onClick={() => { setArtCategory(null); setArtIcons([]); setArtSearch(''); }}
             className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 font-medium mb-3"
           >
             <ArrowLeft className="h-4 w-4" /> Back to Categories
@@ -1167,35 +1056,13 @@ export default function DesignStudioPage() {
           <p className="text-xs text-gray-500 mb-2">
             Results for &ldquo;{artCategory}&rdquo;
           </p>
-          {/* Library Art (AI-generated) */}
-          {libraryArt.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">T-Shirt Brothers Designs</p>
-              <div className="grid grid-cols-3 gap-2">
-                {libraryArt.map(art => (
-                  <button
-                    key={art.id}
-                    onClick={() => addDesignElement({ type: 'image', x: 20, y: 15, width: 25, content: art.image_url })}
-                    className="aspect-square rounded-lg border border-gray-200 bg-white p-1.5 hover:border-red-400 hover:shadow-md transition-all"
-                    title={art.name}
-                  >
-                    <img src={art.image_url} alt={art.name} className="w-full h-full object-contain rounded" loading="lazy" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Iconify Clipart */}
           {artLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
             </div>
-          ) : artIcons.length === 0 && libraryArt.length === 0 ? (
+          ) : artIcons.length === 0 ? (
             <p className="text-center text-gray-500 py-12 text-sm">No results found</p>
-          ) : artIcons.length > 0 ? (
-            <div>
-            {artIcons.length > 0 && <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Clipart Icons</p>}
+          ) : (
             <div className="grid grid-cols-4 gap-2">
               {artIcons.map((ic) => (
                 <button
@@ -1214,8 +1081,7 @@ export default function DesignStudioPage() {
                 </button>
               ))}
             </div>
-            </div>
-          ) : null}
+          )}
         </div>
       ) : (
         /* --- Category grid --- */
@@ -1223,7 +1089,7 @@ export default function DesignStudioPage() {
           {ART_CATEGORIES.map(cat => (
             <button
               key={cat.name}
-              onClick={() => { setArtCategory(cat.name); fetchArtIcons(cat.query); fetchLibraryArt(ART_CATEGORY_MAP[cat.name] || cat.query); }}
+              onClick={() => { setArtCategory(cat.name); fetchArtIcons(cat.query); }}
               className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-red-400 hover:shadow-sm transition-all"
             >
               <span className="text-lg">{cat.emoji}</span>
@@ -1380,75 +1246,6 @@ export default function DesignStudioPage() {
   }, [showTextEditor]);
 
   /* ---------------------------------------------------------------- */
-  /*  Render: Image Edit Toolbar (floating, compact)                   */
-  /* ---------------------------------------------------------------- */
-
-  const [imgPop, setImgPop] = useState<string | null>(null);
-  useEffect(() => { setImgPop(null); }, [selectedElementId]);
-
-  const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 hidden md:flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1">
-
-      {/* Size */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
-        {imgPop === 'sz' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
-      </div>
-
-      {/* Rotate */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
-        {imgPop === 'rt' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div></div>}
-      </div>
-
-      {/* Corners */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'cr' ? null : 'cr')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'cr' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⬜<span>Corners</span></button>
-        {imgPop === 'cr' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={50} value={selectedEl.borderRadius ?? 0} onChange={e => updateElement(selectedEl.id, { borderRadius: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.borderRadius ?? 0}%</span></div></div>}
-      </div>
-
-      {/* Opacity */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'op' ? null : 'op')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'op' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>◐<span>Opacity</span></button>
-        {imgPop === 'op' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={e => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div></div>}
-      </div>
-
-      {/* Filter */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'fl' ? null : 'fl')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'fl' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>🎨<span>Filter</span></button>
-        {imgPop === 'fl' && <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
-      </div>
-
-      {/* Layer */}
-      <div className="relative">
-        <button type="button" onClick={() => setImgPop(imgPop === 'ly' ? null : 'ly')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'ly' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>☰<span>Layer</span></button>
-        {imgPop === 'ly' && <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
-          <button type="button" onClick={() => { bringToFront(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬆ Front</button>
-          <button type="button" onClick={() => { bringForward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↑ Forward</button>
-          <button type="button" onClick={() => { sendBackward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↓ Backward</button>
-          <button type="button" onClick={() => { sendToBack(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬇ Back</button>
-        </div>}
-      </div>
-
-      <div className="w-px h-7 bg-gray-200 mx-0.5" />
-
-      {/* Remove BG */}
-      <button type="button" disabled={canvasRemovingBg} onClick={() => removeBgOnCanvas(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-14 text-purple-600 hover:bg-purple-50 disabled:opacity-50">✂️<span>{canvasRemovingBg ? '...' : 'Rm BG'}</span></button>
-
-      {/* Duplicate */}
-      <button type="button" onClick={() => duplicateElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100">⧉<span>Copy</span></button>
-
-      {/* Delete */}
-      <button type="button" onClick={() => removeElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-red-600 hover:bg-red-50">🗑<span>Delete</span></button>
-
-      <div className="w-px h-7 bg-gray-200 mx-0.5" />
-
-      {/* Done */}
-      <button type="button" onClick={() => setSelectedElementId(null)} className="px-2 py-1.5 rounded-md text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
-    </div>
-  ) : null;
-
-  /* ---------------------------------------------------------------- */
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
@@ -1467,6 +1264,7 @@ export default function DesignStudioPage() {
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
               className="w-full h-full object-contain p-4 pointer-events-none"
+              crossOrigin="anonymous"
               draggable={false}
             />
           ) : (
@@ -1509,19 +1307,11 @@ export default function DesignStudioPage() {
               >
                 {el.type === 'image' ? (
                   <img
-                    src={el.content}
+                    src={proxyImg(el.content) || el.content}
                     alt="Design element"
                     className="w-full object-contain pointer-events-none drop-shadow-lg"
+                    crossOrigin="anonymous"
                     draggable={false}
-                    style={{
-                      borderRadius: el.borderRadius ? `${el.borderRadius}%` : undefined,
-                      opacity: el.opacity != null ? el.opacity : undefined,
-                      filter: el.filter === 'grayscale' ? 'grayscale(100%)'
-                        : el.filter === 'invert' ? 'invert(100%)'
-                        : el.filter === 'sepia' ? 'sepia(100%)'
-                        : el.filter === 'bw' ? 'grayscale(100%) contrast(1000%)'
-                        : undefined,
-                    }}
                   />
                 ) : el.textShape && el.textShape !== 'normal' ? (
                   <div className="pointer-events-none w-full">
@@ -1533,11 +1323,12 @@ export default function DesignStudioPage() {
                       color={el.color ?? '#fff'}
                       fontFamily={el.fontFamily ?? 'Inter'}
                       outline={el.outline}
+                      letterSpacing={el.letterSpacing}
                     />
                   </div>
                 ) : (
                   <span
-                    className="block whitespace-pre-wrap pointer-events-none"
+                    className="block whitespace-pre-wrap leading-tight pointer-events-none"
                     style={{
                       fontSize: `${(el.fontSize ?? 24) * 0.5}px`,
                       color: el.color ?? '#fff',
@@ -1545,8 +1336,6 @@ export default function DesignStudioPage() {
                       fontWeight: 700,
                       textAlign: el.textAlign ?? 'center',
                       letterSpacing: el.letterSpacing ? `${el.letterSpacing}em` : undefined,
-                      wordSpacing: el.wordSpacing ? `${el.wordSpacing}em` : undefined,
-                      lineHeight: el.lineHeight ?? 1.2,
                       textShadow: el.outline ? `
                         -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5),
                         -1px 1px 0 rgba(0,0,0,0.5), 1px 1px 0 rgba(0,0,0,0.5)
@@ -1880,52 +1669,18 @@ export default function DesignStudioPage() {
 
         {/* Letter Spacing */}
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Letters</span>
+          <span className="text-sm text-gray-600">Letter Spacing</span>
           <div className="flex items-center gap-2 flex-1 ml-4">
             <input
               type="range"
-              min={-10}
-              max={30}
-              step={1}
-              value={Math.round((selectedEl.letterSpacing ?? 0) * 100)}
-              onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) / 100 })}
+              min={-0.2}
+              max={1}
+              step={0.02}
+              value={selectedEl.letterSpacing ?? 0}
+              onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) })}
               className="flex-1 accent-blue-600"
             />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* Word Spacing */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Words</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={-10}
-              max={30}
-              step={1}
-              value={Math.round((selectedEl.wordSpacing ?? 0) * 100)}
-              onChange={e => updateElement(selectedEl.id, { wordSpacing: Number(e.target.value) / 100 })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.wordSpacing ?? 0).toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* Line Height */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Lines</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={50}
-              max={300}
-              step={5}
-              value={Math.round((selectedEl.lineHeight ?? 1.2) * 100)}
-              onChange={e => updateElement(selectedEl.id, { lineHeight: Number(e.target.value) / 100 })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.lineHeight ?? 1.2).toFixed(1)}</span>
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}em</span>
           </div>
         </div>
 
@@ -2076,7 +1831,6 @@ export default function DesignStudioPage() {
       <h2 className="text-xl font-bold text-gray-900 mb-6">How do you want to start?</h2>
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
-          { label: 'AI Design', icon: Sparkles, action: () => { setShowWelcome(false); setAiChatOpen(true); }, highlight: true },
           { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
           { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
           { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
@@ -2086,15 +1840,9 @@ export default function DesignStudioPage() {
             key={item.label}
             type="button"
             onClick={item.action}
-            className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-4 transition group ${
-              (item as { highlight?: boolean }).highlight
-                ? 'border-orange-400 bg-orange-50 hover:border-orange-500 hover:bg-orange-100'
-                : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
+            className="flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-gray-200 p-4 hover:border-blue-500 hover:bg-blue-50 transition group"
           >
-            <item.icon className={`h-8 w-8 group-hover:scale-110 transition-transform ${
-              (item as { highlight?: boolean }).highlight ? 'text-orange-500' : 'text-blue-600'
-            }`} />
+            <item.icon className="h-8 w-8 text-blue-600 group-hover:scale-110 transition-transform" />
             <span className="text-sm font-semibold text-gray-700 whitespace-pre-line text-center">{item.label}</span>
           </button>
         ))}
@@ -2147,7 +1895,6 @@ export default function DesignStudioPage() {
       {!showWelcome && !showTextEditor && toolPanel}
       {!showTextEditor && welcomePanel}
       {textEditorPanel}
-      {imageToolbar}
       {canvas}
       {bottomBar}
       {loginPromptModal}

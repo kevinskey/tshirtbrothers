@@ -4,6 +4,30 @@ import { fetchProducts as fetchSSProducts } from '../services/ssActivewear.js';
 
 const router = Router();
 
+// Image proxy — serves external images from our domain so canvas/toPng can access them (avoids CORS)
+router.get('/image-proxy', async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+  // Only allow S&S Activewear and our own DO Spaces images
+  const allowed = url.includes('ssactivewear.com') || url.includes('digitaloceanspaces.com') || url.includes('api.iconify.design') || url.includes('oaidalleapi') || url.includes('blob.core.windows.net');
+  if (!allowed) {
+    return res.status(400).json({ error: 'URL not allowed' });
+  }
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) return res.status(response.status).end();
+    res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.set('Access-Control-Allow-Origin', '*');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.send(buffer);
+  } catch {
+    res.status(502).end();
+  }
+});
+
 // In-memory cache for S&S styles (refreshed hourly)
 let stylesCache = null;
 let cacheTimestamp = 0;
@@ -79,8 +103,22 @@ router.get('/', async (req, res, next) => {
       const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       const countResult = await pool.query(`SELECT COUNT(*) FROM products ${whereClause}`, params);
       const total = parseInt(countResult.rows[0].count, 10);
+
+      // Pin top 3 featured products when no search is active
+      // 1. Gildan Softstyle T-Shirt (ss_id 32)
+      // 2. Next Level Cotton T-Shirt (ss_id 3214)
+      // 3. Gildan Softstyle Midweight Hooded Sweatshirt (ss_id 9352)
+      const orderClause = search
+        ? 'name ASC'
+        : `CASE ss_id
+            WHEN '32' THEN 1
+            WHEN '3214' THEN 2
+            WHEN '9352' THEN 3
+            ELSE 99
+          END, name ASC`;
+
       const dataResult = await pool.query(
-        `SELECT * FROM products ${whereClause} ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        `SELECT * FROM products ${whereClause} ORDER BY ${orderClause} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limitNum, offset]
       );
 
@@ -228,35 +266,72 @@ router.get('/featured', async (req, res, next) => {
   }
 });
 
-// Color name → hex fallback map for when S&S returns empty hex values
-const COLOR_HEX_MAP = {
+// Smart color resolver — parses keywords from color names to approximate hex
+const BASE_COLORS = {
   'white': '#FFFFFF', 'black': '#000000', 'navy': '#1B2A4A', 'red': '#CC0000',
-  'royal': '#1E3F8F', 'royal blue': '#1E3F8F', 'sport grey': '#90949A', 'gray': '#808080',
-  'grey': '#808080', 'charcoal': '#36454F', 'dark heather': '#3C3C3C', 'heather grey': '#B0B0B0',
-  'forest green': '#1A472A', 'green': '#228B22', 'kelly green': '#00A550',
-  'maroon': '#6B1C2A', 'cardinal red': '#8C1515', 'cherry red': '#CC0033',
-  'orange': '#FF6600', 'gold': '#FFD700', 'yellow': '#FFFF00', 'sand': '#C2B280',
-  'natural': '#F5F0E1', 'light blue': '#ADD8E6', 'carolina blue': '#57A0D3',
-  'sapphire': '#0B5394', 'purple': '#6A0DAD', 'violet': '#8B00FF',
-  'light pink': '#FFB6C1', 'pink': '#FF69B4', 'azalea': '#D73B7D', 'heliconia': '#E84A7F',
-  'brown': '#6F4E37', 'chocolate': '#3C1414', 'dark chocolate': '#2C1608',
-  'military green': '#4B5320', 'olive': '#6B6B3D', 'indigo blue': '#2E3A87',
-  'iris': '#5A4FCF', 'ice grey': '#C9D1D3', 'ash': '#B2BEB5', 'safety green': '#47FF33',
-  'safety orange': '#FF6600', 'safety pink': '#FF7098', 'lime': '#BFFF00',
-  'daisy': '#F7E75E', 'coral silk': '#FF7F7F', 'mint green': '#98FF98',
-  'sky': '#87CEEB', 'heather navy': '#2F4F6F', 'heather red': '#B24444',
-  'heather sapphire': '#4A7FB5', 'heather military green': '#5A6B3A',
-  'tropical blue': '#007BB8', 'turf green': '#3B7A3B', 'neon blue': '#4666FF',
-  'neon green': '#39FF14', 'sunset': '#FAD6A5', 'tangerine': '#FF9966',
-  'old gold': '#CFB53B', 'russet': '#80461B', 'kiwi': '#8EE53F',
-  'antique cherry red': '#9B1B30', 'antique sapphire': '#2F5496', 'antique heliconia': '#C04E81',
-  'antique irish green': '#3A7D4B', 'antique jade dome': '#467B6B', 'antique orange': '#C55B2C',
+  'royal': '#1E3F8F', 'blue': '#2563EB', 'grey': '#808080', 'gray': '#808080',
+  'charcoal': '#36454F', 'heather': '#A0A0A0', 'forest': '#1A472A', 'green': '#228B22',
+  'kelly': '#00A550', 'maroon': '#6B1C2A', 'cardinal': '#8C1515', 'cherry': '#CC0033',
+  'orange': '#FF6600', 'gold': '#CFB53B', 'yellow': '#FFD700', 'sand': '#C2B280',
+  'natural': '#F5F0E1', 'carolina': '#57A0D3', 'sapphire': '#0B5394',
+  'purple': '#6A0DAD', 'violet': '#8B00FF', 'pink': '#FF69B4', 'azalea': '#D73B7D',
+  'heliconia': '#E84A7F', 'brown': '#6F4E37', 'chocolate': '#3C1414', 'military': '#4B5320',
+  'olive': '#6B6B3D', 'indigo': '#2E3A87', 'iris': '#5A4FCF', 'ash': '#B2BEB5',
+  'safety': '#47FF33', 'lime': '#BFFF00', 'daisy': '#F7E75E', 'coral': '#FF7F7F',
+  'mint': '#98FF98', 'sky': '#87CEEB', 'tropical': '#007BB8', 'turf': '#3B7A3B',
+  'neon': '#39FF14', 'sunset': '#FAD6A5', 'tangerine': '#FF9966', 'russet': '#80461B',
+  'kiwi': '#8EE53F', 'jade': '#467B6B', 'teal': '#008080', 'cyan': '#00CED1',
+  'cream': '#FFFDD0', 'ivory': '#FFFFF0', 'khaki': '#C3B091', 'tan': '#D2B48C',
+  'beige': '#F5F5DC', 'wine': '#722F37', 'burgundy': '#800020', 'cranberry': '#9B1B30',
+  'berry': '#8E4585', 'plum': '#6B3A6B', 'lavender': '#B57EDC', 'lilac': '#C8A2C8',
+  'magenta': '#FF00FF', 'fuchsia': '#FF00FF', 'rose': '#FF007F',
+  'peach': '#FFCBA4', 'salmon': '#FA8072', 'rust': '#B7410E', 'copper': '#B87333',
+  'terra': '#E2725B', 'pewter': '#8E8E8E', 'silver': '#C0C0C0',
+  'stone': '#8A8A7E', 'slate': '#708090', 'graphite': '#5C5C5C',
+  'iron': '#4A4A4A', 'smoke': '#6E6E6E', 'steel': '#71797E',
+  'midnight': '#191970', 'dark': '#2C2C2C', 'deep': '#1A1A3E',
+  'ice': '#D6ECF0', 'ocean': '#006994', 'marine': '#004953',
+  'aqua': '#00FFFF', 'seafoam': '#93E9BE', 'sage': '#9CAD7F', 'moss': '#6B6B3D',
+  'fern': '#4F7942', 'hunter': '#355E3B', 'emerald': '#50C878', 'shamrock': '#009E60',
+  'irish': '#009E60', 'spring': '#00FF7F', 'camo': '#5C5B3E', 'denim': '#1560BD',
+  'cornsilk': '#FFF8DC', 'galapagos': '#006D6F', 'garnet': '#733635',
+  'prairie': '#C4A55A', 'pepper': '#3B3B3B', 'lagoon': '#017A79', 'oatmeal': '#D4C5A9',
+  'citrus': '#9FA91F', 'mustard': '#FFDB58', 'paprika': '#8B2500',
+  'watermelon': '#FC6C85', 'orchid': '#DA70D6', 'periwinkle': '#CCCCFF',
+  'cobalt': '#0047AB', 'chambray': '#547186', 'eggplant': '#614051',
+  'sangria': '#92000A', 'merlot': '#73343A', 'espresso': '#3C1414',
+  'mocha': '#967969', 'caramel': '#D2691E', 'honey': '#EB9605',
+  'amber': '#FFBF00', 'marigold': '#EAA221', 'lemon': '#FFF44F',
+  'mango': '#FF8243', 'apricot': '#FBCEB1', 'pumpkin': '#FF7518',
+  'cinnamon': '#D2691E', 'mahogany': '#420D09', 'scarlet': '#FF2400',
+  'crimson': '#DC143C', 'ruby': '#9B111E', 'flame': '#E25822',
+  'blaze': '#FF6700', 'candy': '#FF69B4', 'cotton': '#FFBCD9',
+  'fan': '#4169E1', 'texas': '#BF5700', 'vegas': '#C5B358', 'columbia': '#9BDDFF',
+  'coyote': '#8B7355', 'harbor': '#3F6D7E', 'dusk': '#4E5481',
+  'fig': '#6C3461', 'boysenberry': '#873260', 'cabernet': '#4C1130',
+  'latte': '#C8AD7F', 'butterscotch': '#E29D3A', 'sunflower': '#FFDA03',
+  'banana': '#FFE135', 'ginger': '#B06500', 'nutmeg': '#7E4A35',
+  'cedar': '#6D3B25', 'brick': '#CB4154', 'barn': '#7C0A02',
 };
 
 function resolveHex(colorName, rawHex) {
   if (rawHex && rawHex !== '#cccccc' && rawHex !== '') return rawHex;
-  const lower = (colorName || '').toLowerCase().trim();
-  return COLOR_HEX_MAP[lower] || COLOR_HEX_MAP[lower.replace(/\s+/g, ' ')] || '#AAAAAA';
+  if (!colorName) return '#AAAAAA';
+  const lower = colorName.toLowerCase().trim();
+  // Direct match
+  if (BASE_COLORS[lower]) return BASE_COLORS[lower];
+  // Try each word (last meaningful color wins)
+  const words = lower.split(/[\s\/\-]+/);
+  for (let i = words.length - 1; i >= 0; i--) {
+    if (BASE_COLORS[words[i]]) return BASE_COLORS[words[i]];
+  }
+  // Partial/prefix match
+  for (const word of words) {
+    for (const [key, hex] of Object.entries(BASE_COLORS)) {
+      if (key.startsWith(word) || word.startsWith(key)) return hex;
+    }
+  }
+  return '#AAAAAA';
 }
 
 // GET /colors/:styleId - Fetch available colors for a style from S&S

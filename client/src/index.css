@@ -2,8 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @layer base {
   html {
+    overflow-x: hidden;
     scroll-behavior: smooth;
   }
 
@@ -28,4 +34,13 @@
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-brand-gray-500;
   }
+}
+
+@keyframes bounce-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-bounce-slow {
+  animation: bounce-slow 2.5s ease-in-out infinite;
 }

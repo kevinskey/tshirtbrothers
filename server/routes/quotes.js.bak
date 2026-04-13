@@ -7,7 +7,6 @@ import {
   sendQuotePriceToCustomer,
   sendQuoteAcceptedNotification,
   sendQuoteStatusUpdate,
-  sendBalanceDueToCustomer,
 } from '../services/email.js';
 import {
   smsNewQuoteToAdmin,
@@ -138,32 +137,6 @@ router.post('/', async (req, res, next) => {
     sendQuoteRequestNotification(quote).catch(() => {});
     smsNewQuoteToAdmin(quote).catch(() => {});
 
-    // Fire-and-forget: auto-triage the quote with AI
-    (async () => {
-      try {
-        const quoteText = `Product: ${quote.product_name || 'not specified'}. Quantity: ${quote.quantity}. Customer: ${quote.customer_name}. Notes: ${quote.notes || 'none'}. Date needed: ${quote.date_needed || 'not specified'}. Shipping: ${quote.shipping_method || 'pickup'}.`;
-        const { default: OpenAI } = await import('openai');
-        const client = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY });
-        const result = await client.chat.completions.create({
-          model: 'deepseek-chat',
-          temperature: 0.2,
-          max_tokens: 400,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: 'Classify this quote request. Output JSON: {"urgency":"low"|"medium"|"high"|"rush","complexity":"simple"|"moderate"|"complex","estimated_hours":number,"summary":"one sentence"}. RUSH=under 7 days. HIGH=under 14 days or 100+ qty. COMPLEX=custom design, multi-location, special fabric.' },
-            { role: 'user', content: quoteText },
-          ],
-        });
-        const triage = result.choices?.[0]?.message?.content;
-        if (triage) {
-          await pool.query('UPDATE quotes SET triage = $1 WHERE id = $2', [triage, quote.id]);
-          console.log('[Triage] Quote #' + quote.id + ' classified:', triage.slice(0, 80));
-        }
-      } catch (err) {
-        console.error('[Triage] failed for quote #' + quote.id + ':', err.message);
-      }
-    })();
-
     res.status(201).json(quote);
   } catch (err) {
     next(err);
@@ -173,47 +146,20 @@ router.post('/', async (req, res, next) => {
 // GET / - List all quotes (admin only)
 router.get('/', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { status, search, sort } = req.query;
+    const { status } = req.query;
 
-    const conditions = [];
+    let query = 'SELECT * FROM quotes';
     const params = [];
 
     if (status) {
+      query += ' WHERE status = $1';
       params.push(status);
-      conditions.push(`status = $${params.length}`);
     }
 
-    if (search) {
-      params.push(`%${search}%`);
-      conditions.push(`(customer_name ILIKE $${params.length} OR customer_email ILIKE $${params.length} OR product_name ILIKE $${params.length})`);
-    }
-
-    let orderClause = 'ORDER BY created_at DESC';
-    if (sort === 'date_needed') {
-      orderClause = 'ORDER BY date_needed ASC NULLS LAST, created_at DESC';
-    }
-
-    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM quotes ${whereClause} ${orderClause}`;
+    query += ' ORDER BY created_at DESC';
 
     const result = await pool.query(query, params);
     res.json(result.rows);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// PATCH /:id/admin-notes - Update admin private notes
-router.patch('/:id/admin-notes', authenticate, adminOnly, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { admin_notes } = req.body;
-    const result = await pool.query(
-      'UPDATE quotes SET admin_notes = $1 WHERE id = $2 RETURNING id, admin_notes',
-      [admin_notes || null, id]
-    );
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
-    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -281,7 +227,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
   }
 });
 
-// POST /accept/:id - Redirect customer to payment checkout (deposit required to accept)
+// POST /accept/:id - Customer accepts a quote (public endpoint, validated by token)
 router.post('/accept/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -315,12 +261,26 @@ router.post('/accept/:id', async (req, res, next) => {
       });
     }
 
-    // Redirect to payment checkout — 50% deposit is required to accept
-    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    // Update status to accepted
+    const result = await pool.query(
+      `UPDATE quotes
+       SET status = 'accepted',
+           accepted_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    const acceptedQuote = result.rows[0];
+
+    // Notify admin
+    sendQuoteAcceptedNotification(acceptedQuote).catch(() => {});
+    smsQuoteAcceptedToAdmin(acceptedQuote).catch(() => {});
+
     res.json({
       success: true,
-      message: 'Please pay the 50% deposit to accept this quote',
-      redirectUrl: `${domain}/payment/checkout?quote=${id}&token=${token}`,
+      message: 'Quote accepted successfully',
+      redirectUrl: `${process.env.DOMAIN || 'https://tshirtbrothers.com'}/quote/accepted/${id}`,
     });
   } catch (err) {
     next(err);
@@ -337,7 +297,7 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    const validStatuses = ['pending', 'reviewed', 'quoted', 'rejected', 'completed'];
+    const validStatuses = ['pending', 'reviewed', 'quoted', 'approved', 'rejected', 'completed'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(', ')}` });
     }
@@ -366,37 +326,6 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     }
 
     res.json(quote);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /admin/send-balance - Admin sends balance payment request to customer
-router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, next) => {
-  try {
-    const { quoteId } = req.body;
-    if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
-
-    const result = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
-
-    const quote = result.rows[0];
-
-    if (quote.status !== 'accepted') {
-      return res.status(400).json({ error: 'Quote must be accepted first' });
-    }
-
-    const total = parseFloat(quote.estimated_price || 0);
-    const depositPaid = parseFloat(quote.deposit_amount || 0);
-    const balanceDue = total - depositPaid;
-
-    if (balanceDue <= 0) {
-      return res.status(400).json({ error: 'No balance due — already paid in full' });
-    }
-
-    await sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue });
-
-    res.json({ success: true, balanceDue });
   } catch (err) {
     next(err);
   }
