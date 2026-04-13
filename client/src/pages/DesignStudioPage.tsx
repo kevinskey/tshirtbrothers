@@ -1121,7 +1121,7 @@ export default function DesignStudioPage() {
   const designCategoryList = Array.from(new Set(libraryArt.map(a => a.category))).filter(Boolean).sort();
 
   const artPanelContent = (
-    <div className="flex flex-col h-full">
+    <div>
       {/* Source tabs */}
       <div className="px-4 pt-4">
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
@@ -1148,7 +1148,7 @@ export default function DesignStudioPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="p-4 space-y-3">
         {/* Search bar */}
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
