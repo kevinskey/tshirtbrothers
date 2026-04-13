@@ -1175,15 +1175,15 @@ export default function DesignStudioPage() {
 
         {/* Clipart color picker (only for clipart source) */}
         {artSource === 'clipart' && (
-          <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-            <span className="text-xs font-semibold text-gray-500">Icon Color</span>
-            <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-gray-50 px-3 py-2">
+            <span className="block text-xs font-semibold text-gray-500 mb-1.5">Icon Color</span>
+            <div className="flex flex-wrap items-center gap-1.5">
               {['#000000', '#FFFFFF', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#ec4899'].map(c => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setArtColor(c)}
-                  className={`h-6 w-6 rounded-full border-2 transition ${artColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'}`}
+                  className={`h-6 w-6 shrink-0 rounded-full border-2 transition ${artColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'}`}
                   style={{ backgroundColor: c }}
                 />
               ))}
@@ -1191,7 +1191,7 @@ export default function DesignStudioPage() {
                 type="color"
                 value={artColor}
                 onChange={e => setArtColor(e.target.value)}
-                className="h-6 w-6 cursor-pointer rounded border-none"
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border-none"
                 title="Custom color"
               />
             </div>
