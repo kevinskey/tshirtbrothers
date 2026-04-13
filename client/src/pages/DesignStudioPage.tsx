@@ -400,13 +400,15 @@ export default function DesignStudioPage() {
   const [textColor, setTextColor] = useState('#FFFFFF');
 
   // --- Art panel state ---
+  const [artSource, setArtSource] = useState<'designs' | 'clipart'>('designs');
   const [artCategory, setArtCategory] = useState<string | null>(null);
   const [artSearch, setArtSearch] = useState('');
   const [artIcons, setArtIcons] = useState<{ prefix: string; name: string }[]>([]);
   const [artLoading, setArtLoading] = useState(false);
   const [artColor, setArtColor] = useState('#000000');
   const [libraryArt, setLibraryArt] = useState<{ id: number; name: string; image_url: string; category: string }[]>([]);
-  const [_libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [designsCategory, setDesignsCategory] = useState<string>('all');
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
@@ -1036,17 +1038,6 @@ export default function DesignStudioPage() {
 
   // Iconify search only works well with single keywords
 
-  const ART_CATEGORY_MAP: Record<string, string> = {
-    'Most Popular': 'popular', 'Emojis': 'emojis', 'Shapes & Symbols': 'shapes',
-    'Sports & Games': 'sports', 'Letters & Numbers': 'letters', 'Animals': 'animals',
-    'Mascots': 'mascots', 'Nature': 'nature', 'America': 'america',
-    'Parties & Events': 'parties', 'Military': 'military', 'Occupations': 'occupations',
-    'Colleges': 'colleges', 'Music': 'music', 'Transportation': 'transportation',
-    'Greek Life': 'greek', 'School': 'school', 'Charity': 'charity',
-    'People': 'people', 'Religion': 'religion', 'Food & Drink': 'food',
-    'Seasons & Holidays': 'holidays',
-  };
-
   const ART_CATEGORIES = [
     { name: 'Most Popular', emoji: '\u2764\uFE0F', query: 'heart' },
     { name: 'Emojis', emoji: '\uD83D\uDE0A', query: 'emoji' },
@@ -1073,10 +1064,13 @@ export default function DesignStudioPage() {
   ];
 
 
-  const fetchLibraryArt = useCallback(async (category: string) => {
+  const fetchLibraryArt = useCallback(async (opts: { category?: string; q?: string } = {}) => {
     setLibraryLoading(true);
     try {
-      const res = await fetch(`/api/design/art-library?category=${encodeURIComponent(category)}`);
+      const params = new URLSearchParams();
+      if (opts.category) params.set('category', opts.category);
+      if (opts.q) params.set('q', opts.q);
+      const res = await fetch(`/api/design/art-library?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setLibraryArt(data);
@@ -1087,6 +1081,15 @@ export default function DesignStudioPage() {
       setLibraryLoading(false);
     }
   }, []);
+
+  // Load all library art once when Designs tab is opened
+  const hasLoadedDesigns = useRef(false);
+  useEffect(() => {
+    if (activeTool === 'art' && artSource === 'designs' && !hasLoadedDesigns.current) {
+      hasLoadedDesigns.current = true;
+      fetchLibraryArt({ category: 'all' });
+    }
+  }, [activeTool, artSource, fetchLibraryArt]);
 
   const fetchArtIcons = useCallback(async (query: string) => {
     setArtLoading(true);
@@ -1112,126 +1115,216 @@ export default function DesignStudioPage() {
     addDesignElement({ type: 'image', x: 25, y: 20, width: 20, content: svgUrl });
   }, [addDesignElement, artColor]);
 
-  const artPanelContent = (
-    <div className="p-4 space-y-3">
-      {/* Search bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-        <input
-          type="text"
-          placeholder="Search clipart..."
-          value={artSearch}
-          onChange={e => setArtSearch(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && artSearch.trim()) {
-              setArtCategory(artSearch.trim());
-              fetchArtIcons(artSearch.trim());
-            }
-          }}
-          className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-        />
-      </div>
+  const filteredDesigns = libraryArt.filter(a =>
+    designsCategory === 'all' ? true : a.category === designsCategory
+  );
+  const designCategoryList = Array.from(new Set(libraryArt.map(a => a.category))).filter(Boolean).sort();
 
-      {/* Art color picker */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500">Icon Color</span>
-        <div className="flex items-center gap-2">
-          {['#000000', '#FFFFFF', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#ec4899'].map(c => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setArtColor(c)}
-              className={`h-6 w-6 rounded-full border-2 transition ${artColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'}`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-          <input
-            type="color"
-            value={artColor}
-            onChange={e => setArtColor(e.target.value)}
-            className="h-6 w-6 cursor-pointer rounded border-none"
-            title="Custom color"
-          />
+  const artPanelContent = (
+    <div className="flex flex-col h-full">
+      {/* Source tabs */}
+      <div className="px-4 pt-4">
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-gray-100 p-1">
+          <button
+            type="button"
+            onClick={() => { setArtSource('designs'); setArtCategory(null); setArtSearch(''); }}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition ${
+              artSource === 'designs' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Designs
+          </button>
+          <button
+            type="button"
+            onClick={() => { setArtSource('clipart'); setArtCategory(null); setArtSearch(''); }}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-semibold transition ${
+              artSource === 'clipart' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Image className="h-3.5 w-3.5" />
+            Clipart
+          </button>
         </div>
       </div>
 
-      {artCategory ? (
-        /* --- Icon results view --- */
-        <div>
-          <button
-            onClick={() => { setArtCategory(null); setArtIcons([]); setArtSearch(''); setLibraryArt([]); }}
-            className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 font-medium mb-3"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back to Categories
-          </button>
-          <p className="text-xs text-gray-500 mb-2">
-            Results for &ldquo;{artCategory}&rdquo;
-          </p>
-          {/* Library Art (AI-generated) */}
-          {libraryArt.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">T-Shirt Brothers Designs</p>
-              <div className="grid grid-cols-3 gap-2">
-                {libraryArt.map(art => (
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={artSource === 'designs' ? 'Search designs...' : 'Search clipart...'}
+            value={artSearch}
+            onChange={e => {
+              const v = e.target.value;
+              setArtSearch(v);
+              if (artSource === 'designs') {
+                fetchLibraryArt({ q: v.trim() || undefined, category: designsCategory === 'all' ? undefined : designsCategory });
+              }
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && artSource === 'clipart' && artSearch.trim()) {
+                setArtCategory(artSearch.trim());
+                fetchArtIcons(artSearch.trim());
+              }
+            }}
+            className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+
+        {/* Clipart color picker (only for clipart source) */}
+        {artSource === 'clipart' && (
+          <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+            <span className="text-xs font-semibold text-gray-500">Icon Color</span>
+            <div className="flex items-center gap-2">
+              {['#000000', '#FFFFFF', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#7c3aed', '#ec4899'].map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setArtColor(c)}
+                  className={`h-6 w-6 rounded-full border-2 transition ${artColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-300'}`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+              <input
+                type="color"
+                value={artColor}
+                onChange={e => setArtColor(e.target.value)}
+                className="h-6 w-6 cursor-pointer rounded border-none"
+                title="Custom color"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ========= DESIGNS TAB ========= */}
+        {artSource === 'designs' && (
+          <div>
+            {/* Category chips */}
+            {designCategoryList.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto pb-2 mb-1 -mx-1 px-1 scrollbar-thin">
+                <button
+                  onClick={() => {
+                    setDesignsCategory('all');
+                    fetchLibraryArt({ q: artSearch.trim() || undefined });
+                  }}
+                  className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition ${
+                    designsCategory === 'all'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                {designCategoryList.map(cat => (
                   <button
-                    key={art.id}
-                    onClick={() => addDesignElement({ type: 'image', x: 20, y: 15, width: 25, content: art.image_url })}
-                    className="aspect-square rounded-lg border border-gray-200 bg-white p-1.5 hover:border-red-400 hover:shadow-md transition-all"
-                    title={art.name}
+                    key={cat}
+                    onClick={() => {
+                      setDesignsCategory(cat);
+                      fetchLibraryArt({ category: cat, q: artSearch.trim() || undefined });
+                    }}
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium capitalize transition ${
+                      designsCategory === cat
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
                   >
-                    <img src={art.image_url} alt={art.name} className="w-full h-full object-contain rounded" loading="lazy" />
+                    {cat}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Iconify Clipart */}
-          {artLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-            </div>
-          ) : artIcons.length === 0 && libraryArt.length === 0 ? (
-            <p className="text-center text-gray-500 py-12 text-sm">No results found</p>
-          ) : artIcons.length > 0 ? (
-            <div>
-            {artIcons.length > 0 && <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Clipart Icons</p>}
-            <div className="grid grid-cols-4 gap-2">
-              {artIcons.map((ic) => (
+            {libraryLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+              </div>
+            ) : filteredDesigns.length === 0 ? (
+              <div className="text-center py-12">
+                <Sparkles className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                <p className="text-sm text-gray-500">
+                  {artSearch ? 'No designs match your search' : 'No designs available yet'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {filteredDesigns.map(art => (
+                  <button
+                    key={art.id}
+                    onClick={() => addDesignElement({ type: 'image', x: 20, y: 15, width: 25, content: art.image_url })}
+                    className="group relative aspect-square rounded-lg border border-gray-200 bg-white p-2 hover:border-red-400 hover:shadow-md transition-all"
+                    title={art.name}
+                  >
+                    <img src={art.image_url} alt={art.name} className="w-full h-full object-contain rounded" loading="lazy" />
+                    <span className="absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/60 to-transparent px-2 py-1 text-[10px] font-medium text-white opacity-0 group-hover:opacity-100 transition truncate">
+                      {art.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========= CLIPART TAB ========= */}
+        {artSource === 'clipart' && (
+          <>
+            {artCategory ? (
+              <div>
                 <button
-                  key={`${ic.prefix}:${ic.name}`}
-                  onClick={() => handleArtIconClick(ic.prefix, ic.name)}
-                  className="aspect-square rounded-lg border border-gray-200 bg-white p-2 hover:border-red-400 hover:shadow-sm transition-all flex items-center justify-center"
-                  title={ic.name}
+                  onClick={() => { setArtCategory(null); setArtIcons([]); setArtSearch(''); }}
+                  className="flex items-center gap-1 text-sm text-red-600 hover:text-red-700 font-medium mb-3"
                 >
-                  <img
-                    src={`https://api.iconify.design/${ic.prefix}/${ic.name}.svg?height=48&color=${encodeURIComponent(artColor)}`}
-                    alt={ic.name}
-                    className="w-8 h-8 object-contain"
-                    loading="lazy"
-                    onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
-                  />
+                  <ArrowLeft className="h-4 w-4" /> Back to Categories
                 </button>
-              ))}
-            </div>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        /* --- Category grid --- */
-        <div className="grid grid-cols-2 gap-2">
-          {ART_CATEGORIES.map(cat => (
-            <button
-              key={cat.name}
-              onClick={() => { setArtCategory(cat.name); fetchArtIcons(cat.query); fetchLibraryArt(ART_CATEGORY_MAP[cat.name] || cat.query); }}
-              className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-red-400 hover:shadow-sm transition-all"
-            >
-              <span className="text-lg">{cat.emoji}</span>
-              <span className="text-xs font-medium text-gray-700 leading-tight">{cat.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
+                <p className="text-xs text-gray-500 mb-2">
+                  Results for &ldquo;{artCategory}&rdquo;
+                </p>
+                {artLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                  </div>
+                ) : artIcons.length === 0 ? (
+                  <p className="text-center text-gray-500 py-12 text-sm">No icons found</p>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {artIcons.map((ic) => (
+                      <button
+                        key={`${ic.prefix}:${ic.name}`}
+                        onClick={() => handleArtIconClick(ic.prefix, ic.name)}
+                        className="aspect-square rounded-lg border border-gray-200 bg-white p-2 hover:border-red-400 hover:shadow-sm transition-all flex items-center justify-center"
+                        title={ic.name}
+                      >
+                        <img
+                          src={`https://api.iconify.design/${ic.prefix}/${ic.name}.svg?height=48&color=${encodeURIComponent(artColor)}`}
+                          alt={ic.name}
+                          className="w-8 h-8 object-contain"
+                          loading="lazy"
+                          onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {ART_CATEGORIES.map(cat => (
+                  <button
+                    key={cat.name}
+                    onClick={() => { setArtCategory(cat.name); fetchArtIcons(cat.query); }}
+                    className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left hover:border-red-400 hover:shadow-sm transition-all"
+                  >
+                    <span className="text-lg">{cat.emoji}</span>
+                    <span className="text-xs font-medium text-gray-700 leading-tight">{cat.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 
