@@ -88,17 +88,41 @@ type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
-const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
+type NavItem = {
+  key: Section;
+  label: string;
+  icon: typeof LayoutDashboard;
+};
+
+type NavGroup = {
+  key: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  children: NavItem[];
+};
+
+type NavEntry = NavItem | NavGroup;
+
+const isGroup = (entry: NavEntry): entry is NavGroup => 'children' in entry;
+
+const NAV_ITEMS: NavEntry[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'quotes', label: 'Quotes', icon: FileText },
   { key: 'orders', label: 'Orders', icon: ShoppingBag },
   { key: 'invoices', label: 'Invoices', icon: Receipt },
   { key: 'designs', label: 'Designs', icon: Palette },
   { key: 'customers', label: 'Customers', icon: Users },
-  { key: 'products', label: 'Products', icon: Package },
-  { key: 'categories', label: 'Categories', icon: FolderTree },
+  {
+    key: 'catalogue',
+    label: 'Catalogue',
+    icon: Package,
+    children: [
+      { key: 'products', label: 'Products', icon: Package },
+      { key: 'categories', label: 'Categories', icon: FolderTree },
+      { key: 'pricing', label: 'AI Pricing', icon: DollarSign },
+    ],
+  },
   { key: 'blog', label: 'Blog', icon: PenSquare },
-  { key: 'pricing', label: 'AI Pricing', icon: DollarSign },
   { key: 'workspace', label: 'Design Lab', icon: Palette },
   { key: 'promotions', label: 'Promotions', icon: Sparkles },
   { key: 'gangsheet', label: 'Gang Sheets', icon: Layers },
@@ -254,6 +278,7 @@ export default function AdminPage() {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [quoteSearch, setQuoteSearch] = useState('');
   const [quoteSort, setQuoteSort] = useState<'newest' | 'date_needed'>('newest');
@@ -930,8 +955,56 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <nav className="flex-1 py-4 px-3 space-y-1">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {NAV_ITEMS.map((entry) => {
+            if (isGroup(entry)) {
+              const Icon = entry.icon;
+              const containsActive = entry.children.some((c) => c.key === activeSection);
+              const expanded = expandedGroups.has(entry.key) || containsActive;
+              return (
+                <div key={entry.key}>
+                  <button
+                    onClick={() => {
+                      setExpandedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(entry.key)) next.delete(entry.key);
+                        else next.add(entry.key);
+                        return next;
+                      });
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      containsActive
+                        ? 'text-white bg-gray-800'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="flex-1 text-left">{entry.label}</span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                  </button>
+                  {expanded && (
+                    <div className="mt-1 ml-3 pl-3 border-l border-gray-800 space-y-1">
+                      {entry.children.map(({ key, label, icon: ChildIcon }) => (
+                        <button
+                          key={key}
+                          onClick={() => { setActiveSection(key); setSidebarOpen(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                            activeSection === key
+                              ? 'bg-red-600 text-white'
+                              : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                          }`}
+                        >
+                          <ChildIcon className="w-4 h-4" />
+                          <span className="flex-1 text-left">{label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            const { key, label, icon: Icon } = entry;
             const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
             const activeOrdersCount = key === 'orders' ? Number(countsQuery.data?.active_orders || 0) : 0;
             const badgeCount = pendingCount || activeOrdersCount;
