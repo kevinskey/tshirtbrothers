@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Search, User, Menu, X, MessageCircle, LogOut } from 'lucide-react';
+import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-const subNavLinks = [
-  { label: 'Design Studio', href: '/design' },
+type NavLink = { label: string; href: string };
+type NavEntry = NavLink | { label: string; children: NavLink[] };
+const isGroup = (e: NavEntry): e is { label: string; children: NavLink[] } => 'children' in e;
+
+const catalogueLinks: NavLink[] = [
   { label: 'T-Shirts', href: '/shop?category=T-Shirts' },
   { label: 'Hoodies & Fleece', href: '/shop?category=Fleece' },
   { label: 'Hats', href: '/shop?category=Headwear' },
@@ -12,12 +15,19 @@ const subNavLinks = [
   { label: 'Outerwear', href: '/shop?category=Outerwear' },
   { label: 'Accessories', href: '/shop?category=Accessories' },
   { label: 'All Products', href: '/shop' },
+];
+
+const subNavEntries: NavEntry[] = [
+  { label: 'Design Studio', href: '/design' },
+  { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
   { label: 'Services', href: '/services' },
 ];
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
+  const [desktopCatalogueOpen, setDesktopCatalogueOpen] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [phoneMenu, setPhoneMenu] = useState(false);
@@ -131,16 +141,49 @@ export default function Navbar() {
       {/* Sub-nav row (desktop) */}
       <div className="bg-white border-b border-gray-200 hidden md:block">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2">
-          <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-x-auto scrollbar-none">
-            {subNavLinks.map((link) => (
-              <Link
-                key={link.label}
-                to={link.href}
-                className="text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
-              >
-                {link.label}
-              </Link>
-            ))}
+          <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-visible">
+            {subNavEntries.map((entry) => {
+              if (isGroup(entry)) {
+                return (
+                  <div key={entry.label} className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setDesktopCatalogueOpen((v) => !v)}
+                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
+                    >
+                      {entry.label}
+                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
+                    </button>
+                    {desktopCatalogueOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setDesktopCatalogueOpen(false)} />
+                        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56 z-50">
+                          {entry.children.map((c) => (
+                            <Link
+                              key={c.label}
+                              to={c.href}
+                              onClick={() => setDesktopCatalogueOpen(false)}
+                              className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+                            >
+                              {c.label}
+                            </Link>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <Link
+                  key={entry.label}
+                  to={entry.href}
+                  className="text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
+                >
+                  {entry.label}
+                </Link>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -176,16 +219,46 @@ export default function Navbar() {
 
         {/* Mobile nav links */}
         <div className="px-4 py-3 space-y-1">
-          {subNavLinks.map((link) => (
-            <Link
-              key={link.label}
-              to={link.href}
-              className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
-              onClick={() => setMobileOpen(false)}
-            >
-              {link.label}
-            </Link>
-          ))}
+          {subNavEntries.map((entry) => {
+            if (isGroup(entry)) {
+              return (
+                <div key={entry.label}>
+                  <button
+                    type="button"
+                    onClick={() => setMobileCatalogueOpen((v) => !v)}
+                    className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <span>{entry.label}</span>
+                    <ChevronDown className={cn('h-4 w-4 transition-transform', mobileCatalogueOpen && 'rotate-180')} />
+                  </button>
+                  {mobileCatalogueOpen && (
+                    <div className="ml-3 pl-3 border-l border-gray-200 space-y-1 mt-1">
+                      {entry.children.map((c) => (
+                        <Link
+                          key={c.label}
+                          to={c.href}
+                          className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                          onClick={() => setMobileOpen(false)}
+                        >
+                          {c.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <Link
+                key={entry.label}
+                to={entry.href}
+                className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                {entry.label}
+              </Link>
+            );
+          })}
 
           <a
             href="sms:+14706224845"
