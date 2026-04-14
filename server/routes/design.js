@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import pool from '../db.js';
 import { generateDesign } from '../services/openai.js';
 import Replicate from 'replicate';
@@ -22,30 +22,40 @@ async function fetchImageAsBase64(url) {
   return `data:${contentType};base64,${Buffer.from(buffer).toString('base64')}`;
 }
 
-// ── Background Removal via Replicate rembg ($0.004/run) ─────────────────────
+// ── Background Removal via Replicate ────────────────────────────────────────
+// Default model is 851-labs/background-remover (BiRefNet) because it handles
+// logos with drop shadows, outlines, and fine text far better than u2net-based
+// rembg. Override with BGRM_MODEL env var if a different one works better for
+// your artwork.
+
+const DEFAULT_BGRM_MODEL = "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc";
+const FALLBACK_BGRM_MODEL = "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003";
+
+async function runBgRemoval(modelRef, imageInput) {
+  const output = await replicate.run(modelRef, { input: { image: imageInput } });
+  if (!output) return null;
+  const resultUrl = typeof output === 'string' ? output : output.toString();
+  const res = await fetch(resultUrl);
+  if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
+  const buffer = await res.arrayBuffer();
+  return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+}
 
 async function removeBackgroundReplicate(imageInput) {
+  const primary = process.env.BGRM_MODEL || DEFAULT_BGRM_MODEL;
   try {
-    console.log('[bg-removal] Using Replicate rembg ($0.004)...');
-    const output = await replicate.run(
-      "cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003",
-      { input: { image: imageInput } }
-    );
-
-    if (!output) {
-      console.error('[bg-removal] Replicate returned no output');
-      return null;
-    }
-
-    const resultUrl = typeof output === 'string' ? output : output.toString();
-    console.log('[bg-removal] Success, fetching result...');
-
-    const res = await fetch(resultUrl);
-    if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+    console.log(`[bg-removal] Using ${primary}...`);
+    const result = await runBgRemoval(primary, imageInput);
+    if (result) return result;
   } catch (err) {
-    console.error('[bg-removal] Replicate rembg error:', err.message);
+    console.error(`[bg-removal] ${primary} failed:`, err.message);
+  }
+  // Fallback to the old u2net rembg model if the primary isn't available
+  try {
+    console.log(`[bg-removal] Falling back to ${FALLBACK_BGRM_MODEL}...`);
+    return await runBgRemoval(FALLBACK_BGRM_MODEL, imageInput);
+  } catch (err) {
+    console.error('[bg-removal] Fallback rembg error:', err.message);
     return null;
   }
 }
@@ -274,6 +284,58 @@ router.post('/remove-bg', async (req, res, next) => {
     res.json({ imageBase64: result });
   } catch (err) {
     next(err);
+  }
+});
+
+// ── POST /remove-color — Magic-wand transparency for solid-color fills ──────
+// Uses ImageMagick's -fuzz to knock out every connected pixel within a
+// tolerance of the chosen hex colour. Perfect cleanup for logos where the
+// AI removed the outer bg but left drop shadows / interior blocks of the
+// same colour intact.
+//
+// Body: { imageBase64 or imageUrl, color: "#000000", fuzz: 25 }
+
+router.post('/remove-color', express.json({ limit: '25mb' }), async (req, res, next) => {
+  const tmpDir = await mkdtemp(join(tmpdir(), 'remove-color-'));
+  const inPath = join(tmpDir, 'in.png');
+  const outPath = join(tmpDir, 'out.png');
+  try {
+    let { imageBase64, imageUrl, color = '#000000', fuzz = 25 } = req.body;
+    if (!imageBase64 && !imageUrl) {
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
+    }
+
+    let srcBuffer;
+    if (imageUrl) {
+      const r = await fetch(imageUrl);
+      if (!r.ok) return res.status(400).json({ error: `Failed to fetch imageUrl (${r.status})` });
+      srcBuffer = Buffer.from(await r.arrayBuffer());
+    } else {
+      const base64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+      srcBuffer = Buffer.from(base64, 'base64');
+    }
+    await writeFile(inPath, srcBuffer);
+
+    // Normalise and clamp inputs
+    const hex = /^#?[0-9a-fA-F]{6}$/.test(color) ? (color.startsWith('#') ? color : `#${color}`) : '#000000';
+    const fuzzPct = Math.max(0, Math.min(80, Number(fuzz) || 0));
+
+    await execFileAsync('convert', [
+      inPath,
+      '-alpha', 'set',
+      '-fuzz', `${fuzzPct}%`,
+      '-transparent', hex,
+      outPath,
+    ]);
+
+    const outBuffer = await readFile(outPath);
+    res.json({ imageBase64: `data:image/png;base64,${outBuffer.toString('base64')}` });
+  } catch (err) {
+    console.error('[remove-color] error:', err);
+    res.status(500).json({ error: err.message || 'Color removal failed' });
+  } finally {
+    // best-effort cleanup
+    try { await execFileAsync('rm', ['-rf', tmpDir]); } catch { /* ignore */ }
   }
 });
 

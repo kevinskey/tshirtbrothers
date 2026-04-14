@@ -25,6 +25,9 @@ export default function DesignWorkspace() {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [removingBg, setRemovingBg] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
+  const [removingColor, setRemovingColor] = useState(false);
+  const [colorToRemove, setColorToRemove] = useState('#000000');
+  const [colorFuzz, setColorFuzz] = useState(25);
   const [preppingVinyl, setPreppingVinyl] = useState(false);
   const [vectorizing, setVectorizing] = useState(false);
   const [vinylColors, _setVinylColors] = useState(1);
@@ -152,6 +155,28 @@ export default function DesignWorkspace() {
     } catch (err: any) {
       alert(`Upscaling failed: ${err?.message || err}`);
     } finally { setUpscaling(false); }
+  }
+
+  async function handleRemoveColor() {
+    if (!generatedImage || removingColor) return;
+    setRemovingColor(true);
+    try {
+      const { body, newValue } = await uploadDataUrlIfNeeded(generatedImage, 'workspace-source.png');
+      if (newValue !== generatedImage) setGeneratedImage(newValue);
+      const res = await fetch('/api/design/remove-color', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ ...body, color: colorToRemove, fuzz: colorFuzz }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      if (data.imageBase64) {
+        setGeneratedImage(data.imageBase64);
+        setImageHistory(prev => [...prev, data.imageBase64]);
+      }
+    } catch (err: any) {
+      alert(`Color removal failed: ${err?.message || err}`);
+    } finally { setRemovingColor(false); }
   }
 
 
@@ -483,6 +508,23 @@ export default function DesignWorkspace() {
                     <Save className="w-3 h-3" /> Save to Library
                   </button>
                 </div>
+
+                {/* Color-based removal — for when AI leaves drop shadows / solid fills */}
+                <div className="border-t border-gray-200 pt-2 mt-2">
+                  <p className="text-[11px] text-gray-500 mb-1">Remove a specific color (for shadows or solid fills AI missed)</p>
+                  <div className="flex gap-2 items-center">
+                    <input type="color" value={colorToRemove} onChange={(e) => setColorToRemove(e.target.value)} className="w-10 h-8 rounded border border-gray-200 p-0.5 cursor-pointer" />
+                    <label className="text-[11px] text-gray-600 flex-1">
+                      Tolerance: {colorFuzz}%
+                      <input type="range" min={0} max={60} value={colorFuzz} onChange={(e) => setColorFuzz(Number(e.target.value))} className="w-full" />
+                    </label>
+                    <button onClick={handleRemoveColor} disabled={removingColor}
+                      className="px-3 py-1.5 bg-pink-50 text-pink-700 text-xs font-medium rounded-lg hover:bg-pink-100 disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap">
+                      {removingColor ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Remove
+                    </button>
+                  </div>
+                </div>
+
                 <button onClick={() => handleGenerate()}
                   disabled={generating}
                   className="w-full px-3 py-2 bg-orange-50 text-orange-700 text-xs font-medium rounded-lg hover:bg-orange-100 disabled:opacity-50 flex items-center justify-center gap-1">
