@@ -7,7 +7,7 @@ import {
   DollarSign, Info, X
 } from 'lucide-react';
 import {
-  SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE,
+  SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT,
   DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
   SIZE_PRESETS,
   pxToInches, pxToFeet, inchesToPx, feetToPx, calculateSheetCost,
@@ -392,6 +392,11 @@ export default function GangSheetBuilder() {
     if (maxY > declaredSheetPx + 1) {
       // Auto-bump the declared sheet length so pricing matches what fits.
       const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
+      if (neededFt > MAX_SHEET_LENGTH_FT) {
+        setSheetLengthFt(MAX_SHEET_LENGTH_FT);
+        setFitError(`Designs need ${neededFt} ft but the max sheet length is ${MAX_SHEET_LENGTH_FT} ft. Split into two sheets, or reduce size/quantity.`);
+        return false;
+      }
       setSheetLengthFt(neededFt);
     }
     setFitError(null);
@@ -434,7 +439,7 @@ export default function GangSheetBuilder() {
   function updateSheetLength(ft: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const newFt = Math.max(1, Math.min(60, Math.round(ft)));
+    const newFt = Math.max(1, Math.min(MAX_SHEET_LENGTH_FT, Math.round(ft)));
     const newHeight = feetToPx(newFt);
     // Resize both bitmap and CSS so the zoom factor alone governs display scale
     canvas.setDimensions({
@@ -840,7 +845,7 @@ export default function GangSheetBuilder() {
                       <input
                         type="number"
                         min={1}
-                        max={60}
+                        max={MAX_SHEET_LENGTH_FT}
                         value={sheetLengthFt}
                         onChange={(e) => updateSheetLength(parseInt(e.target.value) || 1)}
                         className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
