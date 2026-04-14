@@ -445,6 +445,21 @@ export default function GangSheetBuilder() {
     return true;
   }
 
+  async function uploadDataUrlToSpaces(dataUrl: string, filename: string): Promise<string> {
+    try {
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ imageBase64: dataUrl, filename, customerEmail: 'admin-gangsheet' }),
+      });
+      if (!res.ok) return dataUrl; // fall back to dataUrl if upload fails
+      const data = await res.json();
+      return data.url || dataUrl;
+    } catch {
+      return dataUrl;
+    }
+  }
+
   async function applyProcessedImage(designId: string, dataUrl: string) {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -456,9 +471,13 @@ export default function GangSheetBuilder() {
     const printH = printW * (dims.height / dims.width);
     const newDpi = calculateDPI(dims.width, printW);
 
+    // Upload the processed image to Spaces so future AI calls can pass a URL
+    // instead of a giant base64 body (which causes 413 Payload Too Large).
+    const uploadedUrl = await uploadDataUrlToSpaces(dataUrl, `${design.name || 'design'}-processed.png`);
+
     setDesigns((prev) => prev.map((d) => (d.id === designId ? {
       ...d,
-      imageUrl: dataUrl,
+      imageUrl: uploadedUrl,
       naturalWidth: dims.width,
       naturalHeight: dims.height,
       printHeightInches: printH,
