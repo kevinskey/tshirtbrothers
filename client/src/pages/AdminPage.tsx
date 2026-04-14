@@ -986,7 +986,7 @@ export default function AdminPage() {
         const dataUrl = await fileToBase64(mockupForm.graphicFile);
         const uploadRes = await fetch('/api/quotes/upload-design', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
           body: JSON.stringify({ imageBase64: dataUrl, filename: mockupForm.graphicFile.name, customerEmail: mockupForm.customer_email || 'admin-mockup' }),
         });
         if (uploadRes.ok) {
