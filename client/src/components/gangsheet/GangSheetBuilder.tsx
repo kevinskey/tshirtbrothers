@@ -298,6 +298,8 @@ export default function GangSheetBuilder() {
         renderedCanvasPx: natW * scale,
         sheetPx: SHEET_WIDTH_PX,
         pctOfSheet: `${((natW * scale) / SHEET_WIDTH_PX * 100).toFixed(1)}%`,
+        existingCount: existingObjs.length,
+        placedAt: { left: startLeft, top: startTop },
       });
 
       canvas.add(img);
