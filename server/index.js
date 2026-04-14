@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { readdir, readFile } from 'fs/promises';
+import pool from './db.js';
 
 import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
@@ -73,6 +75,32 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`T-Shirt Brothers API running on port ${PORT}`);
+  runBootMigrations().catch((err) => {
+    console.error('[migrations] fatal:', err);
+  });
 });
+
+// Apply every SQL file in ./migrations on boot. All migrations use
+// IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so repeated runs are safe.
+async function runBootMigrations() {
+  const dir = join(__dirname, 'migrations');
+  let files;
+  try {
+    files = await readdir(dir);
+  } catch {
+    console.log('[migrations] no migrations directory, skipping');
+    return;
+  }
+  const sqlFiles = files.filter((f) => f.endsWith('.sql')).sort();
+  for (const file of sqlFiles) {
+    try {
+      const sql = await readFile(join(dir, file), 'utf-8');
+      await pool.query(sql);
+      console.log(`[migrations] applied ${file}`);
+    } catch (err) {
+      console.error(`[migrations] ${file} failed:`, err.message);
+    }
+  }
+}
 
 export default app;
