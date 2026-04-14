@@ -190,7 +190,9 @@ export default function GangSheetBuilder() {
     try {
       const dims = await getImageDimensions(imageUrl);
       const maxWidth = pxToInches(dims.width);
-      const printW = targetWidthInches || Math.min(maxWidth, 10);
+      // Default: at least 6" so low-res graphics are still visible,
+      // capped at 10" or the natural max if it's larger.
+      const printW = targetWidthInches || Math.max(6, Math.min(maxWidth, 10));
       const printH = printW * (dims.height / dims.width);
       const dpi = calculateDPI(dims.width, printW);
 
@@ -244,6 +246,42 @@ export default function GangSheetBuilder() {
 
   function updateDesignQuantity(designId: string, qty: number) {
     setDesigns(prev => prev.map(d => d.id === designId ? { ...d, quantity: Math.max(1, qty) } : d));
+  }
+
+  function updateDesignSize(designId: string, widthInches: number) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const clampedW = Math.max(0.5, Math.min(22, widthInches));
+    setDesigns(prev => prev.map(d => {
+      if (d.id !== designId) return d;
+      const heightInches = clampedW * (d.naturalHeight / d.naturalWidth);
+      const dpi = calculateDPI(d.naturalWidth, clampedW);
+      return { ...d, printWidthInches: clampedW, printHeightInches: heightInches, dpi };
+    }));
+    // Update any fabric objects that belong to this design
+    const objs = canvas.getObjects().filter(o => (o as any).data?.designId === designId);
+    for (const obj of objs) {
+      const img = obj as FabricImage;
+      if (img.width) {
+        const scale = inchesToPx(clampedW) / img.width;
+        img.set({ scaleX: scale, scaleY: scale });
+        img.setCoords();
+      }
+    }
+    canvas.renderAll();
+    recalculateSheet();
+  }
+
+  function updateSheetLength(ft: number) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const newFt = Math.max(1, Math.min(60, Math.round(ft)));
+    const newHeight = feetToPx(newFt);
+    canvas.setHeight(newHeight);
+    canvas.setDimensions({ height: newHeight * zoom }, { cssOnly: true });
+    drawGrid(canvas, newHeight);
+    canvas.renderAll();
+    setSheetLengthFt(newFt);
   }
 
   // ─── Auto Layout ────────────────────────────────────────────────────────
@@ -617,6 +655,27 @@ export default function GangSheetBuilder() {
                     onChange={e => handleFileUpload(e.target.files)} />
                 </label>
 
+                {/* Sheet size controls */}
+                <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase">Sheet Size</p>
+                  <label className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-600">Length (ft)</span>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => updateSheetLength(sheetLengthFt - 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">−</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={60}
+                        value={sheetLengthFt}
+                        onChange={(e) => updateSheetLength(parseInt(e.target.value) || 1)}
+                        className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
+                      />
+                      <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
+                    </div>
+                  </label>
+                  <p className="text-[10px] text-gray-400">Width fixed at 22". Auto Layout will expand length as needed.</p>
+                </div>
+
                 {/* Design list */}
                 {designs.length > 0 && (
                   <div className="space-y-2">
@@ -625,25 +684,48 @@ export default function GangSheetBuilder() {
                       const status = getDPIStatus(d.dpi);
                       const colors = DPI_COLORS[status];
                       return (
-                        <div key={d.id} className={`flex items-center gap-2 p-2 rounded-lg border ${selectedDesign === d.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
-                          <img src={d.imageUrl} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-gray-900 truncate">{d.name}</p>
-                            <p className="text-[10px] text-gray-400">{d.printWidthInches.toFixed(1)}" × {d.printHeightInches.toFixed(1)}"</p>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
-                              {d.dpi} DPI · {colors.label}
-                            </span>
-                          </div>
-                          <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                            <div className="flex items-center gap-0.5">
-                              <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-5 h-5 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">-</button>
-                              <span className="text-xs font-bold w-5 text-center">{d.quantity}</span>
-                              <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-5 h-5 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
+                        <div key={d.id} className={`p-2 rounded-lg border ${selectedDesign === d.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
+                          <div className="flex items-center gap-2">
+                            <img src={d.imageUrl} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{d.name}</p>
+                              <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${colors.bg} ${colors.text}`}>
+                                {d.dpi} DPI · {colors.label}
+                              </span>
                             </div>
-                            <button onClick={() => removeDesign(d.id)} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3 h-3" />
+                            <button onClick={() => removeDesign(d.id)} className="text-red-400 hover:text-red-600 flex-shrink-0">
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <label className="flex flex-col gap-0.5">
+                              <span className="text-[10px] text-gray-500 font-medium">Width (in)</span>
+                              <input
+                                type="number"
+                                min={0.5}
+                                max={22}
+                                step={0.25}
+                                value={d.printWidthInches.toFixed(2)}
+                                onChange={(e) => updateDesignSize(d.id, parseFloat(e.target.value) || 0)}
+                                className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:border-orange-500"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-0.5">
+                              <span className="text-[10px] text-gray-500 font-medium">Quantity</span>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">−</button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={d.quantity}
+                                  onChange={(e) => updateDesignQuantity(d.id, parseInt(e.target.value) || 1)}
+                                  className="flex-1 min-w-0 px-1 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
+                                />
+                                <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
+                              </div>
+                            </label>
+                          </div>
+                          <p className="text-[10px] text-gray-400 mt-1">Height: {d.printHeightInches.toFixed(2)}"</p>
                         </div>
                       );
                     })}
