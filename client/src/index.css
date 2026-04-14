@@ -11,10 +11,13 @@
   html {
     overflow-x: hidden;
     scroll-behavior: smooth;
+    /* Disable browser swipe-back/forward navigation gesture on mobile/trackpads */
+    overscroll-behavior-x: none;
   }
 
   body {
     @apply font-sans antialiased text-brand-black bg-white;
+    overscroll-behavior-x: none;
   }
 
   /* Custom scrollbar */
