@@ -61,3 +61,22 @@ export async function smsStatusUpdateToCustomer(quote, newStatus) {
   const msg = messages[newStatus];
   if (msg) await sendSMS(phone, msg);
 }
+
+// Send a paid-invoice receipt via SMS
+export async function smsInvoiceReceiptToCustomer(invoice) {
+  const phone = invoice.customer_phone;
+  if (!phone) return;
+  const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+  const amount = Number(invoice.amount_paid || invoice.total || 0).toFixed(2);
+  const body = `TShirt Brothers: Payment received. Invoice ${invoice.invoice_number} paid in full ($${amount}). View/print: ${domain}/invoice/view/${invoice.id}`;
+  await sendSMS(phone, body);
+}
+
+// Admin sends an invoice link via SMS on demand (open balance)
+export async function smsInvoiceLinkToCustomer(invoice, viewUrl) {
+  const phone = invoice.customer_phone;
+  if (!phone) return null;
+  const amount = Number(invoice.amount_due ?? invoice.total ?? 0).toFixed(2);
+  const body = `TShirt Brothers: Invoice ${invoice.invoice_number} for $${amount}. View: ${viewUrl}`;
+  return await sendSMS(phone, body);
+}

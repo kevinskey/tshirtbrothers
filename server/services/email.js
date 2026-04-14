@@ -342,6 +342,61 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
   }
 }
 
+export async function sendPaidInvoiceReceipt(invoice) {
+  const items = Array.isArray(invoice.items) ? invoice.items : (() => { try { return JSON.parse(invoice.items || '[]'); } catch { return []; } })();
+  const itemsHtml = items.map((it) => `
+    <tr>
+      <td style="padding:8px 12px;font-size:13px;color:#374151;">${it.description || '—'}</td>
+      <td style="padding:8px 12px;font-size:13px;color:#6b7280;text-align:center;">${it.quantity || 1}</td>
+      <td style="padding:8px 12px;font-size:13px;color:#6b7280;text-align:right;">${formatCurrency(Number(it.unit_price || 0))}</td>
+      <td style="padding:8px 12px;font-size:13px;color:${BRAND_DARK};text-align:right;font-weight:600;">${formatCurrency(Number(it.total || 0))}</td>
+    </tr>
+  `).join('');
+
+  const invoiceUrl = `${DOMAIN}/invoice/view/${invoice.id}`;
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Payment Received — Thank You!</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${invoice.customer_name || 'there'},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We've received your balance payment. Your order is paid in full and moving into production. Here's your receipt:</p>
+
+    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0;background:#f9fafb;">
+      <p style="margin:0;font-size:13px;color:#6b7280;">Invoice</p>
+      <p style="margin:0 0 12px;font-size:18px;font-weight:700;color:${BRAND_DARK};">${invoice.invoice_number}</p>
+      <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+        <thead>
+          <tr style="background:#f3f4f6;">
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;">Item</th>
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;">Qty</th>
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;">Unit</th>
+            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;">Total</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml || `<tr><td colspan="4" style="padding:12px;text-align:center;color:#9ca3af;font-size:13px;">—</td></tr>`}</tbody>
+      </table>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;">
+        <span style="font-size:14px;color:#6b7280;">Paid</span>
+        <span style="font-size:18px;font-weight:700;color:#16a34a;">${formatCurrency(Number(invoice.amount_paid || 0))}</span>
+      </div>
+    </div>
+
+    ${primaryButton('View / Print Invoice', invoiceUrl)}
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Keep this email as your receipt. Questions? Reply to this email or call (470) 622-4845.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [invoice.customer_email],
+      subject: `Receipt - TShirt Brothers Invoice ${invoice.invoice_number}`,
+      html: baseLayout('Payment Received', body),
+    });
+    console.log('[Email] Paid invoice receipt sent to ' + invoice.customer_email);
+  } catch (err) {
+    console.error('[Email] Failed to send paid invoice receipt:', err);
+    throw err;
+  }
+}
+
 export async function sendMockupForApproval(mockup, approveUrl) {
   const productImg = mockup.product_image_url || '';
   const graphic = mockup.graphic_url || '';

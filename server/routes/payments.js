@@ -1,10 +1,90 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import pool from '../db.js';
-import { sendQuoteAcceptedNotification } from '../services/email.js';
-import { smsQuoteAcceptedToAdmin } from '../services/sms.js';
+import { sendQuoteAcceptedNotification, sendPaidInvoiceReceipt } from '../services/email.js';
+import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
 
 const router = Router();
+
+// ── Create a paid invoice record + email a receipt when a balance payment
+// succeeds. Idempotent: if an invoice for this quote already exists it just
+// marks it paid. Returns the invoice row (or null if creation failed).
+async function createPaidInvoiceForQuote(quote, amountPaidCents) {
+  try {
+    const total = Number(quote.estimated_price || 0);
+    const amountPaid = (amountPaidCents || 0) / 100;
+    const items = [
+      {
+        description: quote.product_name || 'Custom printing order',
+        quantity: quote.quantity || 1,
+        unit_price: quote.quantity ? total / quote.quantity : total,
+        total,
+      },
+    ];
+
+    // If we already created an invoice for this quote, just mark it paid.
+    const existing = await pool.query(
+      'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+      [quote.id],
+    );
+    let invoice;
+    if (existing.rows.length > 0) {
+      const { rows } = await pool.query(
+        `UPDATE invoices SET amount_paid = $1, amount_due = 0, status = 'paid', updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [total, existing.rows[0].id],
+      );
+      invoice = rows[0];
+    } else {
+      // Generate next invoice number
+      const seq = await pool.query(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM 'INV-(\\d+)') AS INTEGER)), 1000) + 1 AS next_num FROM invoices`,
+      );
+      const invoiceNumber = `INV-${seq.rows[0].next_num}`;
+      const { rows } = await pool.query(
+        `INSERT INTO invoices
+           (invoice_number, customer_name, customer_email, customer_phone,
+            items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
+            quote_id, status)
+         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,0,$9,'paid')
+         RETURNING *`,
+        [
+          invoiceNumber,
+          quote.customer_name || '',
+          quote.customer_email || '',
+          quote.customer_phone || null,
+          JSON.stringify(items),
+          total,
+          total,
+          amountPaid || total,
+          quote.id,
+        ],
+      );
+      invoice = rows[0];
+    }
+
+    // Best-effort notifications (don't block or fail the webhook)
+    try {
+      if (typeof sendPaidInvoiceReceipt === 'function' && invoice.customer_email) {
+        await sendPaidInvoiceReceipt(invoice);
+      }
+    } catch (emailErr) {
+      console.error('[invoice receipt email] failed:', emailErr.message);
+    }
+    try {
+      if (typeof smsInvoiceReceiptToCustomer === 'function' && invoice.customer_phone) {
+        await smsInvoiceReceiptToCustomer(invoice);
+      }
+    } catch (smsErr) {
+      console.error('[invoice receipt sms] failed:', smsErr.message);
+    }
+
+    return invoice;
+  } catch (err) {
+    console.error('[createPaidInvoiceForQuote] failed:', err);
+    return null;
+  }
+}
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -191,6 +271,8 @@ router.post('/webhook', async (req, res) => {
           );
           if (result.rows.length > 0) {
             console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
+            // Create a paid invoice + send receipt email/SMS (best-effort)
+            await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
           }
         } else {
           // Deposit payment — accept quote
@@ -250,7 +332,9 @@ router.get('/success', async (req, res, next) => {
             );
             if (updated.rows.length > 0) {
               console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (session.amount_total / 100));
-              return res.json({ ...updated.rows[0], payment_type: 'balance' });
+              // Create the paid invoice + send receipt (email + SMS if available)
+              const invoice = await createPaidInvoiceForQuote(updated.rows[0], session.amount_total);
+              return res.json({ ...updated.rows[0], payment_type: 'balance', invoice });
             }
           } else if (quote.status !== 'accepted') {
             // Deposit payment — accept quote

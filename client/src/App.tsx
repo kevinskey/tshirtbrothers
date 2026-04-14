@@ -27,6 +27,7 @@ import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
 import GangSheetPage from '@/pages/GangSheetPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
+import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 import ChatWidget from '@/components/chat/ChatWidget';
 
@@ -59,6 +60,7 @@ function App() {
           <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/mockup/:token" element={<MockupApprovalPage />} />
+          <Route path="/invoice/view/:id" element={<InvoiceViewPage />} />
           <Route path="/payment/checkout" element={<PaymentCheckout />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/cancel" element={<PaymentCancel />} />
