@@ -270,40 +270,52 @@ export default function GangSheetBuilder() {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const clamped = Math.max(1, qty);
+    const design = designs.find((d) => d.id === designId);
     setDesigns(prev => prev.map(d => d.id === designId ? { ...d, quantity: clamped } : d));
+    if (!design) return;
 
     // Keep fabric object count in sync with quantity.
     const existing = canvas.getObjects().filter(o => (o as any).data?.designId === designId) as FabricImage[];
+    console.log('[gangsheet] quantity', { designId, clamped, existingCount: existing.length });
     if (existing.length === clamped) return;
 
     if (existing.length > clamped) {
-      // Too many: remove the extras
       for (let i = existing.length - 1; i >= clamped; i--) {
         canvas.remove(existing[i]!);
       }
-    } else {
-      // Too few: clone the first one
-      const template = existing[0];
-      if (!template) return;
-      const need = clamped - existing.length;
-      let offsetX = 0;
-      let offsetY = 0;
-      for (let i = 0; i < need; i++) {
-        offsetX += (template.getScaledWidth?.() || 0) + DESIGN_SPACING_PX;
-        // Wrap to next row if past sheet width
-        if (((template.left || 0) + offsetX) > SHEET_WIDTH_PX) {
-          offsetX = 0;
-          offsetY += (template.getScaledHeight?.() || 0) + DESIGN_SPACING_PX;
-        }
-        // eslint-disable-next-line no-await-in-loop
-        const clone = await template.clone();
-        clone.set({
-          left: (template.left || 0) + offsetX,
-          top: (template.top || 0) + offsetY,
-          data: { ...((template as any).data || {}), designId },
-        });
-        canvas.add(clone);
+      canvas.renderAll();
+      recalculateSheet();
+      return;
+    }
+
+    // Too few: create additional copies from the same image URL so CORS-tainted
+    // canvases don't break clone().
+    const template = existing[0];
+    if (!template) return;
+    const need = clamped - existing.length;
+    const scale = (template.scaleX as number) || 1;
+    const copyW = (template.getScaledWidth?.() || inchesToPx(design.printWidthInches));
+    const copyH = (template.getScaledHeight?.() || inchesToPx(design.printHeightInches));
+
+    // Figure out a starting position to the right of the existing copies
+    let cursorX = (template.left || DESIGN_SPACING_PX) + copyW + DESIGN_SPACING_PX;
+    let cursorY = (template.top || DESIGN_SPACING_PX);
+    for (let i = 0; i < need; i++) {
+      if (cursorX + copyW > SHEET_WIDTH_PX) {
+        cursorX = DESIGN_SPACING_PX;
+        cursorY += copyH + DESIGN_SPACING_PX;
       }
+      // eslint-disable-next-line no-await-in-loop
+      const img = await loadFabricImage(design.imageUrl);
+      img.set({
+        left: cursorX,
+        top: cursorY,
+        scaleX: scale,
+        scaleY: scale,
+        data: { designId } as any,
+      });
+      canvas.add(img);
+      cursorX += copyW + DESIGN_SPACING_PX;
     }
     canvas.renderAll();
     recalculateSheet();
