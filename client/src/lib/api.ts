@@ -412,6 +412,75 @@ export async function bulkImportCustomers(rows: BulkImportCustomerRow[], updateE
   });
 }
 
+export interface EmbroideryJob {
+  id: number;
+  name: string;
+  notes: string | null;
+  status: 'artwork_received' | 'sent_to_digitizer' | 'dst_ready' | 'in_production' | 'completed' | 'cancelled';
+  source_image_url: string | null;
+  vector_svg_url: string | null;
+  dst_file_url: string | null;
+  colors: number | null;
+  digitizer: string | null;
+  cost: number | string | null;
+  quote_id: number | null;
+  customer_id: number | null;
+  customer_name?: string | null;
+  customer_email?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchEmbroideryJobs(opts: { status?: string; search?: string } = {}) {
+  const p = new URLSearchParams();
+  if (opts.status) p.set('status', opts.status);
+  if (opts.search) p.set('search', opts.search);
+  const qs = p.toString() ? `?${p}` : '';
+  return authRequest<EmbroideryJob[]>(`/admin/embroidery-jobs${qs}`);
+}
+
+export async function createEmbroideryJob(input: {
+  name: string;
+  notes?: string;
+  imageBase64: string;
+  filename?: string;
+  quote_id?: number | null;
+  customer_id?: number | null;
+  colors?: number | null;
+}) {
+  return authRequest<EmbroideryJob>('/admin/embroidery-jobs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateEmbroideryJob(id: number, fields: Partial<EmbroideryJob>) {
+  return authRequest<EmbroideryJob>(`/admin/embroidery-jobs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function attachEmbroideryDst(id: number, dstBase64: string, filename?: string) {
+  return authRequest<EmbroideryJob>(`/admin/embroidery-jobs/${id}/dst`, {
+    method: 'POST',
+    body: JSON.stringify({ dstBase64, filename }),
+  });
+}
+
+export async function vectorizeEmbroideryJob(id: number, colors?: number) {
+  return authRequest<EmbroideryJob>(`/admin/embroidery-jobs/${id}/vectorize`, {
+    method: 'POST',
+    body: JSON.stringify({ colors: colors || 1 }),
+  });
+}
+
+export async function deleteEmbroideryJob(id: number) {
+  return authRequest<{ deleted: true }>(`/admin/embroidery-jobs/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchCustomerDesigns(search?: string) {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
