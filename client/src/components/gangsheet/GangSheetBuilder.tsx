@@ -57,6 +57,7 @@ export default function GangSheetBuilder() {
   const [selectedDesign, setSelectedDesign] = useState<string | null>(null);
   const [sheetLengthFt, setSheetLengthFt] = useState(1);
   const [designCount, setDesignCount] = useState(0);
+  const [fitError, setFitError] = useState<string | null>(null);
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
@@ -67,7 +68,7 @@ export default function GangSheetBuilder() {
   const initCanvas = useCallback(() => {
     if (!canvasRef.current || fabricRef.current) return;
 
-    const initialHeight = feetToPx(3); // Start with 3ft, will grow as designs are added
+    const initialHeight = feetToPx(1); // 12 inches (1 ft) — user changes via the Length input
     const canvas = new FabricCanvas(canvasRef.current, {
       width: SHEET_WIDTH_PX,
       height: initialHeight,
@@ -246,6 +247,7 @@ export default function GangSheetBuilder() {
       canvas.add(img);
       canvas.setActiveObject(img);
       canvas.renderAll();
+      checkFit();
       recalculateSheet();
     } catch (err) {
       console.error('Failed to add design:', err);
@@ -263,6 +265,7 @@ export default function GangSheetBuilder() {
 
     setDesigns(prev => prev.filter(d => d.id !== designId));
     setSelectedDesign(null);
+    checkFit();
     recalculateSheet();
   }
 
@@ -284,6 +287,7 @@ export default function GangSheetBuilder() {
         canvas.remove(existing[i]!);
       }
       canvas.renderAll();
+      checkFit();
       recalculateSheet();
       return;
     }
@@ -317,31 +321,41 @@ export default function GangSheetBuilder() {
       canvas.add(img);
       cursorX += copyW + DESIGN_SPACING_PX;
     }
-    growCanvasToFit();
     canvas.renderAll();
+    checkFit();
     recalculateSheet();
   }
 
-  // Expand canvas height so every design's bottom is visible.
-  function growCanvasToFit() {
+  // Check whether all graphics fit inside the currently-selected sheet size.
+  // Does NOT resize the canvas — shows an error message instead.
+  function checkFit() {
     const canvas = fabricRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      setFitError(null);
+      return true;
+    }
     const objects = canvas.getObjects().filter((o) => !(o as any).data?.isGrid);
     let maxY = 0;
+    let overWidth = false;
     for (const obj of objects) {
+      const right = (obj.left || 0) + (obj.getScaledWidth?.() || 0);
       const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
+      if (right > SHEET_WIDTH_PX + 1) overWidth = true;
       if (bottom > maxY) maxY = bottom;
     }
-    const neededHeight = Math.max(feetToPx(1), maxY + DESIGN_SPACING_PX);
-    const currentBitmapHeight = canvas.getHeight();
-    const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
-    if (neededHeight > currentSheetPxHeight) {
-      canvas.setDimensions({
-        width: SHEET_WIDTH_PX * zoom,
-        height: neededHeight * zoom,
-      });
-      drawGrid(canvas, neededHeight);
+    const sheetPxHeight = canvas.getHeight() / (zoom || 1);
+    const neededIn = pxToInches(maxY).toFixed(1);
+    const haveIn = pxToInches(sheetPxHeight).toFixed(1);
+    if (overWidth) {
+      setFitError(`Graphic is wider than the 22" sheet. Reduce the width.`);
+      return false;
     }
+    if (maxY > sheetPxHeight + 1) {
+      setFitError(`Designs need ${neededIn}" of height but the sheet is only ${haveIn}". Increase Length (ft) or reduce the size/quantity.`);
+      return false;
+    }
+    setFitError(null);
+    return true;
   }
 
   function updateDesignSize(designId: string, widthInches: number) {
@@ -373,6 +387,7 @@ export default function GangSheetBuilder() {
       });
     }
     canvas.renderAll();
+    checkFit();
     recalculateSheet();
   }
 
@@ -389,6 +404,7 @@ export default function GangSheetBuilder() {
     drawGrid(canvas, newHeight);
     canvas.renderAll();
     setSheetLengthFt(newFt);
+    checkFit();
   }
 
   // ─── Auto Layout ────────────────────────────────────────────────────────
@@ -406,12 +422,15 @@ export default function GangSheetBuilder() {
 
     const result = packDesigns(items);
 
-    // Resize canvas to fit
-    const newHeight = Math.max(feetToPx(1), result.totalHeight + DESIGN_SPACING_PX);
-    canvas.setDimensions({
-      width: SHEET_WIDTH_PX * zoom,
-      height: newHeight * zoom,
-    });
+    // Don't auto-resize the sheet. If the packed layout wouldn't fit the
+    // user's chosen sheet length, tell them and bail out.
+    const sheetPxHeight = canvas.getHeight() / (zoom || 1);
+    if (result.totalHeight + DESIGN_SPACING_PX > sheetPxHeight) {
+      const neededIn = pxToInches(result.totalHeight + DESIGN_SPACING_PX).toFixed(1);
+      const haveIn = pxToInches(sheetPxHeight).toFixed(1);
+      setFitError(`Auto Layout needs ${neededIn}" of height but the sheet is only ${haveIn}". Increase Length (ft).`);
+      return;
+    }
 
     // Reposition all objects
     for (const placement of result.placements) {
@@ -423,8 +442,8 @@ export default function GangSheetBuilder() {
       }
     }
 
-    drawGrid(canvas, newHeight);
     canvas.renderAll();
+    checkFit();
     recalculateSheet();
   }
 
@@ -710,14 +729,23 @@ export default function GangSheetBuilder() {
       {/* ── Main Content ───────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* ── Canvas Area ──────────────────────────────────────────────── */}
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-auto bg-gray-200 p-5 flex justify-center"
-          onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-          onDrop={e => { e.preventDefault(); handleFileUpload(e.dataTransfer.files); }}
-        >
-          <div className="inline-block shadow-2xl">
-            <canvas ref={canvasRef} />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {fitError && (
+            <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
+              <span className="font-semibold">⚠ Doesn't fit:</span>
+              <span className="flex-1">{fitError}</span>
+              <button onClick={() => setFitError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className="flex-1 overflow-auto bg-gray-200 p-5 flex justify-center"
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+            onDrop={e => { e.preventDefault(); handleFileUpload(e.dataTransfer.files); }}
+          >
+            <div className="inline-block shadow-2xl">
+              <canvas ref={canvasRef} />
+            </div>
           </div>
         </div>
 
@@ -788,7 +816,7 @@ export default function GangSheetBuilder() {
                       <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
                     </div>
                   </label>
-                  <p className="text-[10px] text-gray-400">Width fixed at 22". Auto Layout will expand length as needed.</p>
+                  <p className="text-[10px] text-gray-400">Width fixed at 22". Set the length manually — if your graphics don't fit you'll get a warning.</p>
                 </div>
 
                 {/* Design list */}
