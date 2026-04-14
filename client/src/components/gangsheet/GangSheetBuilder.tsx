@@ -754,11 +754,12 @@ export default function GangSheetBuilder() {
             {/* Library Panel */}
             {activePanel === 'library' && (() => {
               // Group Design Lab items by category (alphabetical; 'general'/empty last)
-              const grouped = libraryDesigns.reduce<Record<string, typeof libraryDesigns>>((acc, d) => {
+              const grouped: Record<string, typeof libraryDesigns> = {};
+              for (const d of libraryDesigns) {
                 const cat = (d.category || 'general').toLowerCase();
-                (acc[cat] ||= []).push(d);
-                return acc;
-              }, {});
+                if (!grouped[cat]) grouped[cat] = [];
+                grouped[cat].push(d);
+              }
               const categoryKeys = Object.keys(grouped).sort((a, b) => {
                 if (a === 'general') return 1;
                 if (b === 'general') return -1;
@@ -796,20 +797,23 @@ export default function GangSheetBuilder() {
                       <p className="text-xs text-gray-400 text-center py-4">No saved designs</p>
                     ) : (
                       <div className="space-y-3">
-                        {categoryKeys.map((cat) => (
-                          <div key={cat}>
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{catLabel(cat)} ({grouped[cat].length})</p>
-                            <div className="grid grid-cols-3 gap-2">
-                              {grouped[cat].map((d) => (
-                                <button key={d.id} onClick={async () => { await addDesignToCanvas(d.image_url, d.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
-                                  className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
-                                  title={d.name}>
-                                  <img src={d.image_url} alt={d.name} className="w-full h-full object-contain" />
-                                </button>
-                              ))}
+                        {categoryKeys.map((cat) => {
+                          const items = grouped[cat] ?? [];
+                          return (
+                            <div key={cat}>
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{catLabel(cat)} ({items.length})</p>
+                              <div className="grid grid-cols-3 gap-2">
+                                {items.map((d) => (
+                                  <button key={d.id} onClick={async () => { await addDesignToCanvas(d.image_url, d.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                                    className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                                    title={d.name}>
+                                    <img src={d.image_url} alt={d.name} className="w-full h-full object-contain" />
+                                  </button>
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
