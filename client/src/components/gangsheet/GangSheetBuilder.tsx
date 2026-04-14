@@ -334,8 +334,10 @@ export default function GangSheetBuilder() {
     recalculateSheet();
   }
 
-  // Check whether all graphics fit inside the currently-selected sheet size.
-  // Does NOT resize the canvas — shows an error message instead.
+  // Check whether all graphics fit inside the user's chosen sheet length.
+  // If they overflow, the canvas is grown VISUALLY so you can see the extra
+  // rows, but `sheetLengthFt` (the price/save length) is NOT changed — an
+  // error banner tells you to bump the length manually.
   function checkFit() {
     const canvas = fabricRef.current;
     if (!canvas) {
@@ -351,15 +353,28 @@ export default function GangSheetBuilder() {
       if (right > SHEET_WIDTH_PX + 1) overWidth = true;
       if (bottom > maxY) maxY = bottom;
     }
-    const sheetPxHeight = canvas.getHeight() / (zoom || 1);
-    const neededIn = pxToInches(maxY).toFixed(1);
-    const haveIn = pxToInches(sheetPxHeight).toFixed(1);
+    const declaredSheetPx = feetToPx(sheetLengthFt);
+    const neededPx = Math.max(declaredSheetPx, maxY + DESIGN_SPACING_PX);
+    const currentBitmapHeight = canvas.getHeight();
+    const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
+    // Grow canvas visually if needed so all copies are visible.
+    if (Math.abs(neededPx - currentSheetPxHeight) > 1) {
+      canvas.setDimensions({
+        width: SHEET_WIDTH_PX * zoom,
+        height: neededPx * zoom,
+      });
+      drawGrid(canvas, neededPx);
+      canvas.renderAll();
+    }
     if (overWidth) {
       setFitError(`Graphic is wider than the 22" sheet. Reduce the width.`);
       return false;
     }
-    if (maxY > sheetPxHeight + 1) {
-      setFitError(`Designs need ${neededIn}" of height but the sheet is only ${haveIn}". Increase Length (ft) or reduce the size/quantity.`);
+    if (maxY > declaredSheetPx + 1) {
+      const neededIn = pxToInches(maxY).toFixed(1);
+      const haveIn = pxToInches(declaredSheetPx).toFixed(1);
+      const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
+      setFitError(`Designs need ${neededIn}" of height but the sheet is only ${haveIn}" (${sheetLengthFt} ft). Increase Length to ${neededFt} ft, or reduce size/quantity.`);
       return false;
     }
     setFitError(null);
@@ -430,17 +445,9 @@ export default function GangSheetBuilder() {
 
     const result = packDesigns(items);
 
-    // Don't auto-resize the sheet. If the packed layout wouldn't fit the
-    // user's chosen sheet length, tell them and bail out.
-    const sheetPxHeight = canvas.getHeight() / (zoom || 1);
-    if (result.totalHeight + DESIGN_SPACING_PX > sheetPxHeight) {
-      const neededIn = pxToInches(result.totalHeight + DESIGN_SPACING_PX).toFixed(1);
-      const haveIn = pxToInches(sheetPxHeight).toFixed(1);
-      setFitError(`Auto Layout needs ${neededIn}" of height but the sheet is only ${haveIn}". Increase Length (ft).`);
-      return;
-    }
-
-    // Reposition all objects
+    // Reposition all objects. Canvas grows visually via checkFit(); the
+    // user's declared sheet length (sheetLengthFt) is NOT changed — if the
+    // packed layout overflows that length, the banner tells them to bump it.
     for (const placement of result.placements) {
       const objs = canvas.getObjects().filter(o => (o as any).data?.designId === placement.id);
       const obj = objs[placement.instanceIndex] || objs[0];
