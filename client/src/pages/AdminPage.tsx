@@ -143,6 +143,116 @@ const STATUS_COLORS: Record<string, string> = {
 type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
 type InvoiceView = 'list' | 'create' | 'preview';
 
+// Customer private asset library panel — admin uploads graphics that only this
+// customer (plus admins) can see.
+function CustomerAssetsPanel({ customerId }: { customerId: string }) {
+  type Asset = { id: number; name: string; image_url: string; file_type: string | null; created_at: string };
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [assetName, setAssetName] = useState('');
+  const [assetFile, setAssetFile] = useState<File | null>(null);
+  const token = localStorage.getItem('tsb_token') || '';
+
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/admin/customers/${customerId}/assets`, { headers: { Authorization: `Bearer ${token}` } });
+      if (r.ok) setAssets(await r.json());
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [customerId]);
+
+  async function upload() {
+    if (!assetFile || !assetName.trim()) return;
+    setUploading(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(assetFile);
+      });
+      const r = await fetch(`/api/admin/customers/${customerId}/assets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: assetName.trim(), imageBase64: dataUrl, filename: assetFile.name, file_type: assetFile.type }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
+      setAssetName('');
+      setAssetFile(null);
+      await load();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      alert(`Upload failed: ${msg}`);
+    } finally { setUploading(false); }
+  }
+
+  async function remove(id: number) {
+    if (!confirm('Delete this asset?')) return;
+    const r = await fetch(`/api/admin/customer-assets/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    if (r.ok) await load();
+  }
+
+  return (
+    <div>
+      <h4 className="font-medium text-gray-900 mb-3">
+        Private Assets ({assets.length})
+        <span className="text-xs font-normal text-gray-500 ml-2">Only this customer + admins can see these.</span>
+      </h4>
+
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          placeholder="Name"
+          value={assetName}
+          onChange={(e) => setAssetName(e.target.value)}
+          className="px-2 py-1.5 text-sm border border-gray-300 rounded flex-1 min-w-[120px]"
+        />
+        <input
+          type="file"
+          accept="image/*,.svg,.pdf"
+          onChange={(e) => setAssetFile(e.target.files?.[0] || null)}
+          className="text-xs flex-1 min-w-[160px]"
+        />
+        <button
+          onClick={upload}
+          disabled={uploading || !assetFile || !assetName.trim()}
+          className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-1"
+        >
+          {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+          Upload
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+      ) : assets.length === 0 ? (
+        <p className="text-xs text-gray-400 text-center py-4">No private assets yet.</p>
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+          {assets.map((a) => (
+            <div key={a.id} className="relative group bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <a href={a.image_url} target="_blank" rel="noopener noreferrer" className="block aspect-square bg-gray-50">
+                <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
+              </a>
+              <p className="text-[10px] text-gray-700 px-1.5 py-1 truncate">{a.name}</p>
+              <button
+                onClick={() => remove(a.id)}
+                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-white/90 hover:bg-red-50 text-red-600 p-1 rounded shadow transition"
+                title="Delete"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // S&S Pricing helper for the Send Price modal
 function SSPricingInfo({ productName, quantity, printAreas }: { productName: string; quantity: number; printAreas?: unknown }) {
   const { data, isLoading } = useQuery({
@@ -2260,6 +2370,9 @@ export default function AdminPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* Private Asset Library — admin uploads graphics visible only to this customer */}
+                      <CustomerAssetsPanel customerId={String(customerDetail.id)} />
 
                       {/* Quote History */}
                       <div>
