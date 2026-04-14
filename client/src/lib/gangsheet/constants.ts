@@ -16,6 +16,8 @@ export const DISPLAY_SCALE = DEFAULT_VIEWPORT_WIDTH / SHEET_WIDTH_PX; // ~0.121
 
 // Layout
 export const DESIGN_SPACING_PX = 30; // ~0.1" gap between designs
+export const EDGE_PADDING_IN = 0.25; // safe-zone padding from sheet edges
+export const EDGE_PADDING_PX = Math.round(EDGE_PADDING_IN * DPI); // 75px
 export const SNAP_THRESHOLD_PX = 15; // snap distance in display pixels
 export const GRID_COLOR_MAJOR = '#e5e7eb'; // 1-foot lines
 export const GRID_COLOR_MINOR = '#f3f4f6'; // 1-inch lines
