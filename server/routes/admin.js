@@ -106,11 +106,10 @@ router.post('/customers', async (req, res, next) => {
     const hash = await bcrypt.hash(Math.random().toString(36).slice(2) + Date.now(), 10);
 
     const result = await pool.query(
-      'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, created_at',
-      [name, email, hash, 'customer']
+      'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, email, phone, created_at',
+      [name, email, phone || null, hash, 'customer']
     );
 
-    // Store phone in a simple way — add to notes or a separate field if needed
     res.json(result.rows[0]);
   } catch (err) {
     next(err);
@@ -160,10 +159,11 @@ router.post('/customers/bulk-import', async (req, res, next) => {
           results.push({ row: i + 1, email, status: 'skipped', message: 'email already exists' });
           continue;
         }
+        const phoneValue = typeof row.phone === 'string' && row.phone.trim() ? row.phone.trim() : null;
         const hash = await bcrypt.hash(Math.random().toString(36).slice(2) + Date.now(), 10);
         await pool.query(
-          'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)',
-          [name, email, hash, 'customer']
+          'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5)',
+          [name, email, phoneValue, hash, 'customer']
         );
         created++;
         results.push({ row: i + 1, email, status: 'created' });
@@ -203,7 +203,9 @@ router.get('/customers', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `SELECT
-         u.id, u.email, u.name, u.created_at,
+         u.id, u.email, u.name, u.phone,
+         u.address_street, u.address_city, u.address_state, u.address_zip,
+         u.created_at,
          COALESCE(d.design_count, 0)::int AS design_count,
          COALESCE(q.quote_count, 0)::int AS quote_count
        FROM users u
@@ -230,7 +232,7 @@ router.get('/customers/:id', async (req, res, next) => {
     const { id } = req.params;
 
     const userResult = await pool.query(
-      "SELECT id, email, name, created_at FROM users WHERE id = $1 AND role = 'customer'",
+      "SELECT id, email, name, phone, address_street, address_city, address_state, address_zip, created_at FROM users WHERE id = $1 AND role = 'customer'",
       [id]
     );
 
