@@ -1,7 +1,7 @@
 // Bin Packing Algorithm for Gang Sheet Layout
 // Uses Next-Fit Decreasing Height (NFDH) — optimal for strip packing
 
-import { SHEET_WIDTH_PX, DESIGN_SPACING_PX } from './constants';
+import { SHEET_WIDTH_PX, DESIGN_SPACING_PX, EDGE_PADDING_PX } from './constants';
 
 export interface PackItem {
   id: string;
@@ -57,17 +57,18 @@ export function packDesigns(
   expanded.sort((a, b) => b.height - a.height);
 
   const placements: PackPlacement[] = [];
-  let currentShelfY = spacing;
+  // Respect 0.25" safe-zone padding from the top and left
+  let currentShelfY = EDGE_PADDING_PX;
   let currentShelfHeight = 0;
-  let currentX = spacing;
+  let currentX = EDGE_PADDING_PX;
   let totalUsedArea = 0;
 
   for (const item of expanded) {
-    // Check if item fits in current row
-    if (currentX + item.width + spacing > sheetWidth) {
+    // Check if item fits in current row (respect right-edge padding too)
+    if (currentX + item.width > sheetWidth - EDGE_PADDING_PX) {
       // Start new shelf
       currentShelfY += currentShelfHeight + spacing;
-      currentX = spacing;
+      currentX = EDGE_PADDING_PX;
       currentShelfHeight = 0;
     }
 
@@ -86,7 +87,7 @@ export function packDesigns(
     currentShelfHeight = Math.max(currentShelfHeight, item.height);
   }
 
-  const totalHeight = currentShelfY + currentShelfHeight + spacing;
+  const totalHeight = currentShelfY + currentShelfHeight + EDGE_PADDING_PX;
   const sheetLengthFeet = totalHeight / 3600; // PX_PER_FOOT
   const sheetArea = sheetWidth * totalHeight;
   const efficiency = sheetArea > 0 ? totalUsedArea / sheetArea : 0;
