@@ -930,7 +930,7 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1">
           {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
             const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
             const activeOrdersCount = key === 'orders' ? Number(countsQuery.data?.active_orders || 0) : 0;
