@@ -26,6 +26,7 @@ import BlogPage from '@/pages/BlogPage';
 import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
 import GangSheetPage from '@/pages/GangSheetPage';
+import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 import ChatWidget from '@/components/chat/ChatWidget';
 
@@ -57,6 +58,7 @@ function App() {
           <Route path="/admin/gangsheet" element={<GangSheetPage />} />
           <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />
           <Route path="/auth" element={<AuthPage />} />
+          <Route path="/mockup/:token" element={<MockupApprovalPage />} />
           <Route path="/payment/checkout" element={<PaymentCheckout />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/cancel" element={<PaymentCancel />} />

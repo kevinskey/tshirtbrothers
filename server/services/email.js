@@ -341,3 +341,44 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
     console.error('[Email] Failed to send balance due:', err);
   }
 }
+
+export async function sendMockupForApproval(mockup, approveUrl) {
+  const productImg = mockup.product_image_url || '';
+  const graphic = mockup.graphic_url || '';
+  const placement = typeof mockup.placement === 'string' ? JSON.parse(mockup.placement) : (mockup.placement || { x: 35, y: 30, width: 30 });
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Mockup Ready for Your Approval</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${mockup.customer_name || 'there'},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We put together a mockup of your design on the product you picked. Please take a look and let us know if it's approved, or what you'd like changed.</p>
+
+    ${mockup.preview_image_url
+      ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
+      : `
+        <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+          ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
+          ${graphic ? `<img src="${graphic}" alt="Your design" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
+        </div>
+      `}
+
+    <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
+    ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notes:</strong> ${mockup.notes}</p>` : ''}
+
+    ${primaryButton('View & Approve Mockup', approveUrl)}
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [mockup.customer_email],
+      subject: 'Mockup Approval - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
+      html: baseLayout('Mockup Approval', body),
+    });
+    console.log('[Email] Mockup approval sent to ' + mockup.customer_email);
+  } catch (err) {
+    console.error('[Email] Failed to send mockup approval:', err);
+    throw err;
+  }
+}
