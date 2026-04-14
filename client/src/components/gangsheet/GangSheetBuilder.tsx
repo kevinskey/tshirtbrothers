@@ -762,7 +762,7 @@ export default function GangSheetBuilder() {
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       {libraryDesigns.map(d => (
-                        <button key={d.id} onClick={() => addDesignToCanvas(d.image_url, d.name)}
+                        <button key={d.id} onClick={async () => { await addDesignToCanvas(d.image_url, d.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
                           className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1">
                           <img src={d.image_url} alt={d.name} className="w-full h-full object-contain" />
                         </button>
@@ -779,7 +779,7 @@ export default function GangSheetBuilder() {
                   ) : (
                     <div className="space-y-2">
                       {quoteDesigns.map(q => (
-                        <button key={q.id} onClick={() => addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`)}
+                        <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
                           className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
                           <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
                           <div className="min-w-0">
