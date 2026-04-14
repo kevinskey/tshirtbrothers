@@ -481,6 +481,67 @@ export async function deleteEmbroideryJob(id: number) {
   });
 }
 
+export interface Mockup {
+  id: number;
+  name: string | null;
+  customer_id: number | null;
+  customer_email: string | null;
+  customer_name: string | null;
+  quote_id: number | null;
+  product_id: number | null;
+  product_name: string | null;
+  product_image_url: string | null;
+  graphic_url: string | null;
+  placement: { x: number; y: number; width: number; rotation?: number } | null;
+  preview_image_url: string | null;
+  notes: string | null;
+  status: 'draft' | 'sent' | 'approved' | 'rejected' | 'converted_to_quote';
+  approve_token: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchMockups(opts: { status?: string; search?: string } = {}) {
+  const p = new URLSearchParams();
+  if (opts.status) p.set('status', opts.status);
+  if (opts.search) p.set('search', opts.search);
+  const qs = p.toString() ? `?${p}` : '';
+  return authRequest<Mockup[]>(`/admin/mockups${qs}`);
+}
+
+export async function createMockup(input: Partial<Mockup>) {
+  return authRequest<Mockup>('/admin/mockups', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function updateMockup(id: number, fields: Partial<Mockup>) {
+  return authRequest<Mockup>(`/admin/mockups/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function sendMockupForApproval(id: number) {
+  return authRequest<Mockup & { approve_url: string }>(`/admin/mockups/${id}/send`, {
+    method: 'POST',
+  });
+}
+
+export async function convertMockupToQuote(id: number, data: { quantity?: number; sizes?: Record<string, number>; color?: string; print_areas?: string[] }) {
+  return authRequest<{ mockup_id: number; quote: Quote }>(`/admin/mockups/${id}/convert-to-quote`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMockup(id: number) {
+  return authRequest<{ deleted: true }>(`/admin/mockups/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchCustomerDesigns(search?: string) {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);

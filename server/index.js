@@ -20,6 +20,7 @@ import blogRouter from './routes/blog.js';
 import deepseekRouter from './routes/deepseek.js';
 import gangsheetRouter from './routes/gangsheet.js';
 import embroideryRouter from './routes/embroidery.js';
+import mockupsRouter from './routes/mockups.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -55,6 +56,7 @@ app.use('/api/blog', blogRouter);
 app.use('/api/deepseek', deepseekRouter);
 app.use('/api/admin/gangsheets', gangsheetRouter);
 app.use('/api/admin', embroideryRouter);
+app.use('/api', mockupsRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
