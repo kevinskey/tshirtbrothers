@@ -371,11 +371,9 @@ export default function GangSheetBuilder() {
       return false;
     }
     if (maxY > declaredSheetPx + 1) {
-      const neededIn = pxToInches(maxY).toFixed(1);
-      const haveIn = pxToInches(declaredSheetPx).toFixed(1);
+      // Auto-bump the declared sheet length so pricing matches what fits.
       const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
-      setFitError(`Designs need ${neededIn}" of height but the sheet is only ${haveIn}" (${sheetLengthFt} ft). Increase Length to ${neededFt} ft, or reduce size/quantity.`);
-      return false;
+      setSheetLengthFt(neededFt);
     }
     setFitError(null);
     return true;
