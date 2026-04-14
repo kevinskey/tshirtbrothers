@@ -172,6 +172,17 @@ export default function GangSheetBuilder() {
 
   // ─── Design Management ──────────────────────────────────────────────────
 
+  async function loadFabricImage(url: string): Promise<FabricImage> {
+    // Try with crossOrigin first (required for canvas export)
+    try {
+      return await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
+    } catch {
+      // Fallback: load without CORS (canvas will be tainted, export may not work
+      // but image will display)
+      return await FabricImage.fromURL(url);
+    }
+  }
+
   async function addDesignToCanvas(imageUrl: string, name: string, targetWidthInches?: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
@@ -198,7 +209,7 @@ export default function GangSheetBuilder() {
 
       setDesigns(prev => [...prev, design]);
 
-      const img = await FabricImage.fromURL(imageUrl, { crossOrigin: 'anonymous' });
+      const img = await loadFabricImage(imageUrl);
       const targetW = inchesToPx(printW);
       const scale = targetW / img.width!;
       img.set({
