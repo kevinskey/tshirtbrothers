@@ -505,14 +505,23 @@ export default function GangSheetBuilder() {
     }
   }
 
-  async function applyProcessedImage(designId: string, dataUrl: string) {
+  async function applyProcessedImage(designId: string, dataUrl: string, shrinkToNewDims = false) {
     const canvas = fabricRef.current;
     if (!canvas) return;
     // Measure new dims
     const dims = await getImageDimensions(dataUrl);
     const design = designs.find((d) => d.id === designId);
     if (!design) return;
-    const printW = design.printWidthInches;
+
+    // If the processed image was cropped (e.g. background removed + trimmed),
+    // shrink the print width proportionally so the subject stays at its
+    // original physical size — reclaiming the empty background space on
+    // the gang sheet instead of stretching the subject to fill it.
+    let printW = design.printWidthInches;
+    if (shrinkToNewDims && design.naturalWidth > 0) {
+      const widthRatio = dims.width / design.naturalWidth;
+      printW = Math.max(0.5, design.printWidthInches * widthRatio);
+    }
     const printH = printW * (dims.height / dims.width);
     const newDpi = calculateDPI(dims.width, printW);
 
@@ -525,6 +534,7 @@ export default function GangSheetBuilder() {
       imageUrl: uploadedUrl,
       naturalWidth: dims.width,
       naturalHeight: dims.height,
+      printWidthInches: printW,
       printHeightInches: printH,
       dpi: newDpi,
     } : d)));
@@ -566,9 +576,11 @@ export default function GangSheetBuilder() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `remove-bg request failed (${res.status})`);
       if (!data.imageBase64) throw new Error('no image returned');
-      // Trim the now-transparent background space so the subject fills the image
+      // Trim the now-transparent background space so the subject fills the image,
+      // and pass shrinkToNewDims so the print width shrinks proportionally
+      // (reclaiming gang-sheet space instead of stretching the subject).
       const trimmed = await autoCropTransparent(data.imageBase64);
-      await applyProcessedImage(designId, trimmed);
+      await applyProcessedImage(designId, trimmed, true);
     } catch (err: any) {
       console.error(err);
       alert(`Background removal failed: ${err?.message || err}`);
