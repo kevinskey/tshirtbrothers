@@ -178,7 +178,51 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
 }
 
 // All routes require admin auth
+// Public: minimal invoice view (for customer print/share link). Returns only
+// customer-visible fields. Does NOT require auth so the email link works.
+router.get('/public/:id', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    const i = rows[0];
+    res.json({
+      id: i.id,
+      invoice_number: i.invoice_number,
+      customer_name: i.customer_name,
+      customer_email: i.customer_email,
+      customer_phone: i.customer_phone,
+      customer_address: i.customer_address,
+      items: i.items,
+      subtotal: i.subtotal,
+      tax: i.tax,
+      shipping: i.shipping,
+      discount: i.discount,
+      total: i.total,
+      amount_paid: i.amount_paid,
+      amount_due: i.amount_due,
+      status: i.status,
+      due_date: i.due_date,
+      notes: i.notes,
+      created_at: i.created_at,
+    });
+  } catch (err) { next(err); }
+});
+
 router.use(authenticate, adminOnly);
+
+// POST /:id/send-sms - send the invoice link via Twilio
+router.post('/:id/send-sms', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    const inv = rows[0];
+    if (!inv.customer_phone) return res.status(400).json({ error: 'No phone number on this invoice' });
+    const { smsInvoiceLinkToCustomer } = await import('../services/sms.js');
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const sid = await smsInvoiceLinkToCustomer(inv, `${domain}/invoice/view/${inv.id}`);
+    res.json({ sent: true, sid: sid || null });
+  } catch (err) { next(err); }
+});
 
 // GET / - List all invoices, optional ?status= filter
 router.get('/', async (req, res, next) => {
