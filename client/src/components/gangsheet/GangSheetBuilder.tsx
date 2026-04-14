@@ -59,7 +59,7 @@ export default function GangSheetBuilder() {
   const [designCount, setDesignCount] = useState(0);
 
   // Library data
-  const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string }[]>([]);
+  const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
   const [quoteDesigns, setQuoteDesigns] = useState<{ id: number; customer_name: string; design_url: string; product_name: string }[]>([]);
 
   // ─── Canvas Initialization ──────────────────────────────────────────────
@@ -752,47 +752,70 @@ export default function GangSheetBuilder() {
             )}
 
             {/* Library Panel */}
-            {activePanel === 'library' && (
-              <div className="space-y-4">
-                {/* Design Lab designs */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design Lab ({libraryDesigns.length})</p>
-                  {libraryDesigns.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">No saved designs</p>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      {libraryDesigns.map(d => (
-                        <button key={d.id} onClick={async () => { await addDesignToCanvas(d.image_url, d.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
-                          className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1">
-                          <img src={d.image_url} alt={d.name} className="w-full h-full object-contain" />
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {activePanel === 'library' && (() => {
+              // Group Design Lab items by category (alphabetical; 'general'/empty last)
+              const grouped = libraryDesigns.reduce<Record<string, typeof libraryDesigns>>((acc, d) => {
+                const cat = (d.category || 'general').toLowerCase();
+                (acc[cat] ||= []).push(d);
+                return acc;
+              }, {});
+              const categoryKeys = Object.keys(grouped).sort((a, b) => {
+                if (a === 'general') return 1;
+                if (b === 'general') return -1;
+                return a.localeCompare(b);
+              });
+              const catLabel = (key: string) => key.replace(/\b\w/g, (c) => c.toUpperCase());
 
-                {/* Customer quote designs */}
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer Designs ({quoteDesigns.length})</p>
-                  {quoteDesigns.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">No customer designs</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {quoteDesigns.map(q => (
-                        <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
-                          className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
-                          <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-gray-900 truncate">{q.customer_name}</p>
-                            <p className="text-[10px] text-gray-400 truncate">{q.product_name}</p>
+              return (
+                <div className="space-y-4">
+                  {/* Customer / user graphics first */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">User Graphics ({quoteDesigns.length})</p>
+                    {quoteDesigns.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-4">No customer designs</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {quoteDesigns.map(q => (
+                          <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
+                            <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{q.customer_name}</p>
+                              <p className="text-[10px] text-gray-400 truncate">{q.product_name}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Design Lab grouped by category */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design Lab ({libraryDesigns.length})</p>
+                    {libraryDesigns.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-4">No saved designs</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {categoryKeys.map((cat) => (
+                          <div key={cat}>
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">{catLabel(cat)} ({grouped[cat].length})</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              {grouped[cat].map((d) => (
+                                <button key={d.id} onClick={async () => { await addDesignToCanvas(d.image_url, d.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                                  className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                                  title={d.name}>
+                                  <img src={d.image_url} alt={d.name} className="w-full h-full object-contain" />
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Pricing Panel */}
             {activePanel === 'pricing' && (
