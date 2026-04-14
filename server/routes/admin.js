@@ -625,4 +625,47 @@ router.delete('/customer-assets/:assetId', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// POST /customer-assets/:assetId/move-to-library
+//   Promote a customer's private asset into the shared admin library. The
+//   row is moved (deleted from customer_assets, inserted into admin_designs).
+router.post('/customer-assets/:assetId/move-to-library', async (req, res, next) => {
+  try {
+    const { category = 'general', tags = [], description = null } = req.body || {};
+    const existing = await pool.query('SELECT * FROM customer_assets WHERE id = $1', [req.params.assetId]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Asset not found' });
+    const a = existing.rows[0];
+    const inserted = await pool.query(
+      `INSERT INTO admin_designs (name, description, image_url, thumbnail_url, category, tags, width, height, file_size, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
+      [a.name, description, a.image_url, a.image_url, category, Array.isArray(tags) ? tags : [], a.width, a.height, a.size_bytes, req.user?.id || null],
+    );
+    await pool.query('DELETE FROM customer_assets WHERE id = $1', [a.id]);
+    res.json({ moved: true, design: inserted.rows[0] });
+  } catch (err) { next(err); }
+});
+
+// POST /designs-library/:id/move-to-customer
+//   Move an admin-library design into a specific customer's private library.
+//   Body: { customer_id }
+router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
+  try {
+    const { customer_id } = req.body || {};
+    if (!customer_id) return res.status(400).json({ error: 'customer_id is required' });
+    const u = await pool.query("SELECT id FROM users WHERE id = $1 AND role = 'customer'", [customer_id]);
+    if (u.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    const existing = await pool.query('SELECT * FROM admin_designs WHERE id = $1', [req.params.id]);
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Design not found' });
+    const d = existing.rows[0];
+    const inserted = await pool.query(
+      `INSERT INTO customer_assets (user_id, name, image_url, file_type, width, height, size_bytes, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       RETURNING *`,
+      [customer_id, d.name, d.image_url, null, d.width, d.height, d.file_size, d.description, req.user?.id || null],
+    );
+    await pool.query('DELETE FROM admin_designs WHERE id = $1', [d.id]);
+    res.json({ moved: true, asset: inserted.rows[0] });
+  } catch (err) { next(err); }
+});
+
 export default router;

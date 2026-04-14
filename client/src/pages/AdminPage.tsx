@@ -6,6 +6,7 @@ import {
   FileText,
   Package,
   FolderTree,
+  FolderOpen,
   Settings,
   ArrowLeft,
   LogOut,
@@ -204,6 +205,21 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
     if (r.ok) await load();
   }
 
+  async function moveToLibrary(id: number) {
+    if (!confirm('Move this asset to the shared Admin Library? It will no longer be private to this customer.')) return;
+    const r = await fetch(`/api/admin/customer-assets/${id}/move-to-library`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ category: 'general' }),
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      alert(d.error || 'Move failed');
+      return;
+    }
+    await load();
+  }
+
   return (
     <div>
       <h4 className="font-medium text-gray-900 mb-3">
@@ -272,13 +288,22 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
                 <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
               </a>
               <p className="text-[10px] text-gray-700 px-1.5 py-1 truncate">{a.name}</p>
-              <button
-                onClick={() => remove(a.id)}
-                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 bg-white/90 hover:bg-red-50 text-red-600 p-1 rounded shadow transition"
-                title="Delete"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                <button
+                  onClick={() => moveToLibrary(a.id)}
+                  className="bg-white/90 hover:bg-blue-50 text-blue-700 p-1 rounded shadow"
+                  title="Move to shared Admin Library"
+                >
+                  <FolderOpen className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => remove(a.id)}
+                  className="bg-white/90 hover:bg-red-50 text-red-600 p-1 rounded shadow"
+                  title="Delete"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
