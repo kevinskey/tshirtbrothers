@@ -499,13 +499,13 @@ export default function GangSheetBuilder() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('remove-bg request failed');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `remove-bg request failed (${res.status})`);
       if (!data.imageBase64) throw new Error('no image returned');
       await applyProcessedImage(designId, data.imageBase64);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Background removal failed. Please try again.');
+      alert(`Background removal failed: ${err?.message || err}`);
     } finally {
       setAiBusyId(null);
     }
@@ -524,13 +524,13 @@ export default function GangSheetBuilder() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('upscale request failed');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `upscale request failed (${res.status})`);
       if (!data.imageBase64) throw new Error('no image returned');
       await applyProcessedImage(designId, data.imageBase64);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Upscaling failed. Please try again.');
+      alert(`Upscaling failed: ${err?.message || err}`);
     } finally {
       setAiBusyId(null);
     }
