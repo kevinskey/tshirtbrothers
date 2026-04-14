@@ -57,6 +57,12 @@ export default function DesignWorkspace() {
 
   // History for undo
   const [imageHistory, setImageHistory] = useState<string[]>([]);
+  // URL paste + customer graphics picker for the Upload & Fix section
+  const [pasteUrl, setPasteUrl] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerDesigns, setPickerDesigns] = useState<Array<{ id: number; customer_name: string; product_name: string; design_url: string; status: string }>>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
 
   async function fetchDesigns() {
     setLoading(true);
@@ -385,7 +391,8 @@ export default function DesignWorkspace() {
             {/* Upload existing graphic */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
               <h3 className="font-semibold text-gray-900 mb-2">Upload & Fix Graphics</h3>
-              <p className="text-xs text-gray-500 mb-3">Upload a customer graphic to remove backgrounds or fix low-res images.</p>
+              <p className="text-xs text-gray-500 mb-3">Pick or upload a customer graphic to remove backgrounds / fix low-res.</p>
+
               <label className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl px-4 py-4 cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition">
                 <Plus className="w-5 h-5 text-gray-400" />
                 <span className="text-sm text-gray-500">Upload PNG, JPG, SVG, or PDF</span>
@@ -408,7 +415,119 @@ export default function DesignWorkspace() {
                   }}
                 />
               </label>
+
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setPickerOpen(true);
+                    if (pickerDesigns.length === 0) {
+                      setPickerLoading(true);
+                      try {
+                        const res = await fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } });
+                        if (res.ok) {
+                          const quotes = await res.json();
+                          const withDesigns = (Array.isArray(quotes) ? quotes : [])
+                            .filter((q: { design_url?: string | null }) => !!q.design_url)
+                            .map((q: { id: number; customer_name?: string; product_name?: string; design_url: string; status?: string }) => ({
+                              id: q.id,
+                              customer_name: q.customer_name || 'Unknown',
+                              product_name: q.product_name || '',
+                              design_url: q.design_url,
+                              status: q.status || '',
+                            }));
+                          setPickerDesigns(withDesigns);
+                        }
+                      } finally { setPickerLoading(false); }
+                    }
+                  }}
+                  className="w-full text-sm py-2 rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-700 flex items-center justify-center gap-2"
+                >
+                  <FolderOpen className="w-4 h-4" /> Pick from Customer Quote Uploads
+                </button>
+              </div>
+
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Or paste an image URL…"
+                  value={pasteUrl}
+                  onChange={(e) => setPasteUrl(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!pasteUrl.trim()) return;
+                    const url = pasteUrl.trim();
+                    setGeneratedImage(url);
+                    setImageHistory(prev => [...prev, url]);
+                    setPrompt('From URL');
+                    setPasteUrl('');
+                  }}
+                  className="px-3 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-lg text-sm font-medium"
+                >
+                  Load
+                </button>
+              </div>
             </div>
+
+            {/* Quote-design picker modal */}
+            {pickerOpen && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
+                  <div className="flex items-center justify-between px-5 py-3 border-b">
+                    <h3 className="font-semibold text-gray-900">Customer Quote Uploads</h3>
+                    <button onClick={() => setPickerOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+                  </div>
+                  <div className="px-5 py-2 border-b">
+                    <input
+                      type="text"
+                      placeholder="Search customer or product…"
+                      value={pickerSearch}
+                      onChange={(e) => setPickerSearch(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                    />
+                  </div>
+                  <div className="flex-1 overflow-auto p-5">
+                    {pickerLoading ? (
+                      <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                    ) : pickerDesigns.length === 0 ? (
+                      <p className="text-sm text-gray-400 text-center py-8">No customer-uploaded graphics found.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {pickerDesigns
+                          .filter(d => {
+                            const q = pickerSearch.trim().toLowerCase();
+                            if (!q) return true;
+                            return d.customer_name.toLowerCase().includes(q) || d.product_name.toLowerCase().includes(q);
+                          })
+                          .map(d => (
+                            <button
+                              key={d.id}
+                              onClick={() => {
+                                setGeneratedImage(d.design_url);
+                                setImageHistory(prev => [...prev, d.design_url]);
+                                setPrompt(`${d.customer_name} - ${d.product_name}`);
+                                setPickerOpen(false);
+                              }}
+                              className="group text-left bg-white border border-gray-200 rounded-lg overflow-hidden hover:border-orange-400 transition"
+                            >
+                              <div className="aspect-square bg-gray-50 flex items-center justify-center">
+                                <img src={d.design_url} alt="" className="w-full h-full object-contain" />
+                              </div>
+                              <div className="p-2">
+                                <p className="text-xs font-semibold text-gray-900 truncate">{d.customer_name}</p>
+                                <p className="text-[10px] text-gray-500 truncate">{d.product_name || '—'}</p>
+                              </div>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* QR Code Generator */}
             <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
