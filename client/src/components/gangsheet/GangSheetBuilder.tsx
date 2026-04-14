@@ -213,20 +213,16 @@ export default function GangSheetBuilder() {
       setDesigns(prev => [...prev, design]);
 
       const img = await loadFabricImage(imageUrl);
-      // Use the underlying HTMLImageElement's naturalWidth as the authoritative
-      // source — Fabric's img.width can be misleading.
-      const el = img.getElement() as HTMLImageElement;
-      const natW = el?.naturalWidth || dims.width;
       const targetW = inchesToPx(printW);
-      const scale = targetW / natW;
-      console.log('[gangsheet] add', { name, printW, natW, targetW, scale, imgWidth: img.width });
       img.set({
         left: DESIGN_SPACING_PX,
         top: DESIGN_SPACING_PX,
-        scaleX: scale,
-        scaleY: scale,
-        data: { designId: id, natW } as any,
+        data: { designId: id } as any,
       });
+      // Use fabric's built-in scaleToWidth so it hits the right canvas pixel
+      // width regardless of how fabric is tracking the source image width.
+      img.scaleToWidth(targetW);
+      console.log('[gangsheet] add', { name, printW, targetW, fabricScaleX: img.scaleX, fabricWidth: img.width, rendered: (img.width || 0) * (img.scaleX || 1) });
 
       canvas.add(img);
       canvas.setActiveObject(img);
@@ -264,14 +260,12 @@ export default function GangSheetBuilder() {
     const dpi = calculateDPI(target.naturalWidth, clampedW);
     setDesigns((prev) => prev.map((d) => (d.id === designId ? { ...d, printWidthInches: clampedW, printHeightInches: heightInches, dpi } : d)));
     const objs = canvas.getObjects().filter((o) => (o as any).data?.designId === designId);
+    const targetPx = inchesToPx(clampedW);
     for (const obj of objs) {
       const img = obj as FabricImage;
-      const el = img.getElement?.() as HTMLImageElement | undefined;
-      const natW = (obj as any).data?.natW || el?.naturalWidth || target.naturalWidth;
-      const scale = inchesToPx(clampedW) / natW;
-      console.log('[gangsheet] resize', { designId, clampedW, natW, scale });
-      img.set({ scaleX: scale, scaleY: scale });
+      img.scaleToWidth(targetPx);
       img.setCoords();
+      console.log('[gangsheet] resize', { designId, clampedW, targetPx, fabricScaleX: img.scaleX, fabricWidth: img.width, rendered: (img.width || 0) * (img.scaleX || 1) });
     }
     canvas.renderAll();
     recalculateSheet();
