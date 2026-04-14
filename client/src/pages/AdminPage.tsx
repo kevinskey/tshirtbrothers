@@ -80,6 +80,13 @@ import {
   sendBalanceRequest,
   calculateQuotePrice,
   bulkImportCustomers,
+  fetchEmbroideryJobs,
+  createEmbroideryJob,
+  updateEmbroideryJob,
+  attachEmbroideryDst,
+  vectorizeEmbroideryJob,
+  deleteEmbroideryJob,
+  type EmbroideryJob,
   updateAdminNotes,
   fetchAdminCounts,
 } from '@/lib/api';
@@ -87,7 +94,7 @@ import PromoManager from '@/components/admin/PromoManager';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -105,6 +112,7 @@ const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[]
   { key: 'workspace', label: 'Design Lab', icon: Palette },
   { key: 'promotions', label: 'Promotions', icon: Sparkles },
   { key: 'gangsheet', label: 'Gang Sheets', icon: Layers },
+  { key: 'embroidery', label: 'Embroidery', icon: Sparkles },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -523,6 +531,17 @@ export default function AdminPage() {
     enabled: activeSection === 'settings',
   });
 
+  // Embroidery jobs
+  const embroideryQuery = useQuery({
+    queryKey: ['embroidery-jobs'],
+    queryFn: () => fetchEmbroideryJobs(),
+    enabled: activeSection === 'embroidery',
+  });
+  const [embroideryUploadOpen, setEmbroideryUploadOpen] = useState(false);
+  const [embroideryForm, setEmbroideryForm] = useState({ name: '', notes: '', file: null as File | null, colors: '' });
+  const [embroideryBusy, setEmbroideryBusy] = useState(false);
+  const [dstUploadForId, setDstUploadForId] = useState<number | null>(null);
+
   // Load settings into form when fetched
   useEffect(() => {
     if (settingsData && Object.keys(settingsForm).length === 0) {
@@ -856,6 +875,82 @@ export default function AdminPage() {
       setPreviewInvoice(null);
     } catch (err) {
       // errors are handled by the mutation's onError
+    }
+  }
+
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleCreateEmbroideryJob() {
+    if (!embroideryForm.name || !embroideryForm.file) return;
+    setEmbroideryBusy(true);
+    try {
+      const imageBase64 = await fileToBase64(embroideryForm.file);
+      await createEmbroideryJob({
+        name: embroideryForm.name,
+        notes: embroideryForm.notes || undefined,
+        imageBase64,
+        filename: embroideryForm.file.name,
+        colors: embroideryForm.colors ? parseInt(embroideryForm.colors, 10) : null,
+      });
+      setEmbroideryUploadOpen(false);
+      setEmbroideryForm({ name: '', notes: '', file: null, colors: '' });
+      queryClient.invalidateQueries({ queryKey: ['embroidery-jobs'] });
+    } catch (err: any) {
+      alert(`Upload failed: ${err?.message || err}`);
+    } finally {
+      setEmbroideryBusy(false);
+    }
+  }
+
+  async function handleAttachDst(id: number, file: File) {
+    setEmbroideryBusy(true);
+    try {
+      const dstBase64 = await fileToBase64(file);
+      await attachEmbroideryDst(id, dstBase64, file.name);
+      queryClient.invalidateQueries({ queryKey: ['embroidery-jobs'] });
+    } catch (err: any) {
+      alert(`DST upload failed: ${err?.message || err}`);
+    } finally {
+      setEmbroideryBusy(false);
+      setDstUploadForId(null);
+    }
+  }
+
+  async function handleChangeEmbroideryStatus(id: number, status: EmbroideryJob['status']) {
+    try {
+      await updateEmbroideryJob(id, { status });
+      queryClient.invalidateQueries({ queryKey: ['embroidery-jobs'] });
+    } catch (err: any) {
+      alert(err?.message || 'Update failed');
+    }
+  }
+
+  async function handleVectorize(id: number) {
+    setEmbroideryBusy(true);
+    try {
+      await vectorizeEmbroideryJob(id, 1);
+      queryClient.invalidateQueries({ queryKey: ['embroidery-jobs'] });
+    } catch (err: any) {
+      alert(`Vectorize failed: ${err?.message || err}`);
+    } finally {
+      setEmbroideryBusy(false);
+    }
+  }
+
+  async function handleDeleteEmbroideryJob(id: number) {
+    if (!confirm('Delete this embroidery job? The uploaded files will stay on Spaces.')) return;
+    try {
+      await deleteEmbroideryJob(id);
+      queryClient.invalidateQueries({ queryKey: ['embroidery-jobs'] });
+    } catch (err: any) {
+      alert(err?.message || 'Delete failed');
     }
   }
 
@@ -3800,6 +3895,169 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+
+        {activeSection === 'embroidery' && (() => {
+          const jobs: EmbroideryJob[] = embroideryQuery.data ?? [];
+          const STATUS_LABELS: Record<EmbroideryJob['status'], { label: string; color: string }> = {
+            artwork_received:  { label: 'Artwork received',  color: 'bg-gray-100 text-gray-700' },
+            sent_to_digitizer: { label: 'Sent to digitizer', color: 'bg-amber-100 text-amber-800' },
+            dst_ready:         { label: 'DST ready',         color: 'bg-blue-100 text-blue-800' },
+            in_production:     { label: 'In production',     color: 'bg-purple-100 text-purple-800' },
+            completed:         { label: 'Completed',         color: 'bg-green-100 text-green-800' },
+            cancelled:         { label: 'Cancelled',         color: 'bg-red-100 text-red-800' },
+          };
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+                <h2 className="text-2xl font-display font-bold text-gray-900">Embroidery</h2>
+                <button
+                  onClick={() => setEmbroideryUploadOpen(true)}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4" /> New Job
+                </button>
+              </div>
+
+              {jobs.length === 0 ? (
+                <div className="bg-white border border-gray-200 rounded-xl p-12 text-center text-gray-500">
+                  <p className="text-sm">No embroidery jobs yet. Click <span className="font-semibold">New Job</span> to upload artwork (PNG/JPG).</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {jobs.map((j) => (
+                    <div key={j.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
+                      {j.source_image_url && (
+                        <a href={j.source_image_url} target="_blank" rel="noopener noreferrer">
+                          <img src={j.source_image_url} alt={j.name} className="w-full aspect-square object-contain bg-gray-50 border-b border-gray-100" />
+                        </a>
+                      )}
+                      <div className="p-3 flex-1 flex flex-col gap-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-semibold text-gray-900 text-sm truncate" title={j.name}>{j.name}</h3>
+                          <button onClick={() => handleDeleteEmbroideryJob(j.id)} className="text-gray-300 hover:text-red-500 shrink-0">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <span className={`inline-block text-[10px] font-bold uppercase px-2 py-0.5 rounded ${STATUS_LABELS[j.status].color} w-fit`}>
+                          {STATUS_LABELS[j.status].label}
+                        </span>
+                        {j.notes && <p className="text-xs text-gray-500 line-clamp-2">{j.notes}</p>}
+                        <div className="text-[11px] text-gray-400 space-y-0.5">
+                          {j.colors && <div>Colors: {j.colors}</div>}
+                          {j.digitizer && <div>Digitizer: {j.digitizer}</div>}
+                          {j.cost != null && <div>Cost: ${Number(j.cost).toFixed(2)}</div>}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-auto pt-2">
+                          <select
+                            value={j.status}
+                            onChange={(e) => handleChangeEmbroideryStatus(j.id, e.target.value as EmbroideryJob['status'])}
+                            className="text-[11px] border border-gray-200 rounded px-1.5 py-1 focus:outline-none"
+                          >
+                            {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                              <option key={k} value={k}>{v.label}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleVectorize(j.id)}
+                            disabled={embroideryBusy || !j.source_image_url}
+                            className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                            title="Trace the image to an SVG preview (potrace)"
+                          >
+                            Vectorize
+                          </button>
+                          <label className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer">
+                            {dstUploadForId === j.id ? 'Uploading…' : 'Attach DST'}
+                            <input
+                              type="file"
+                              accept=".dst,application/octet-stream"
+                              className="hidden"
+                              onChange={(e) => { const f = e.target.files?.[0]; if (f) { setDstUploadForId(j.id); handleAttachDst(j.id, f); } }}
+                            />
+                          </label>
+                          {j.vector_svg_url && <a href={j.vector_svg_url} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">SVG</a>}
+                          {j.dst_file_url && <a href={j.dst_file_url} target="_blank" rel="noopener noreferrer" className="text-[11px] px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 font-semibold">Download DST</a>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {embroideryUploadOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl max-w-md w-full">
+                    <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                      <h3 className="font-display font-semibold">New Embroidery Job</h3>
+                      <button onClick={() => setEmbroideryUploadOpen(false)} className="text-gray-400 hover:text-gray-600">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Job Name *</label>
+                        <input
+                          type="text"
+                          value={embroideryForm.name}
+                          onChange={(e) => setEmbroideryForm((f) => ({ ...f, name: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="e.g. Maura Keller Logo - Left Chest"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Artwork (PNG / JPG) *</label>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => setEmbroideryForm((f) => ({ ...f, file: e.target.files?.[0] || null }))}
+                          className="w-full text-sm"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Thread Colors</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={embroideryForm.colors}
+                            onChange={(e) => setEmbroideryForm((f) => ({ ...f, colors: e.target.value }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            placeholder="e.g. 3"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                        <textarea
+                          value={embroideryForm.notes}
+                          onChange={(e) => setEmbroideryForm((f) => ({ ...f, notes: e.target.value }))}
+                          rows={3}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"
+                          placeholder="Placement, size, thread colors, digitizer instructions…"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => setEmbroideryUploadOpen(false)}
+                          className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleCreateEmbroideryJob}
+                          disabled={embroideryBusy || !embroideryForm.name || !embroideryForm.file}
+                          className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium"
+                        >
+                          {embroideryBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                          Create
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {activeSection === 'settings' && (
           <div>
