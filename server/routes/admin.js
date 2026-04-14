@@ -543,4 +543,87 @@ router.delete('/designs-library/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Customer private asset library ───────────────────────────────────────────
+// Admin-managed graphics scoped to a single customer. GET /customers/:id/assets
+// and POST/DELETE are admin-only (this router already has that middleware).
+
+import crypto from 'crypto';
+
+function getCustomerAssetS3() {
+  return new S3Client({
+    endpoint: `https://${process.env.SPACES_REGION || 'atl1'}.digitaloceanspaces.com`,
+    region: process.env.SPACES_REGION || 'atl1',
+    credentials: {
+      accessKeyId: process.env.SPACES_KEY,
+      secretAccessKey: process.env.SPACES_SECRET,
+    },
+  });
+}
+
+// GET /customers/:id/assets - list assets for this customer
+router.get('/customers/:id/assets', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM customer_assets WHERE user_id = $1 ORDER BY created_at DESC',
+      [req.params.id],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /customers/:id/assets - upload a graphic for this customer
+// Body: { name, imageBase64, filename?, file_type?, notes? }
+router.post('/customers/:id/assets', express.json({ limit: '25mb' }), async (req, res, next) => {
+  try {
+    const { name, imageBase64, filename, file_type, notes } = req.body;
+    if (!name || !imageBase64) {
+      return res.status(400).json({ error: 'name and imageBase64 are required' });
+    }
+
+    // Make sure customer exists
+    const u = await pool.query("SELECT id FROM users WHERE id = $1 AND role = 'customer'", [req.params.id]);
+    if (u.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+
+    // Upload to Spaces under a per-customer prefix
+    const base64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+    const buf = Buffer.from(base64, 'base64');
+    const detected = /^data:([^;]+);/.exec(imageBase64);
+    const contentType = (detected && detected[1]) || file_type || 'image/png';
+    const safeName = (filename || 'asset').replace(/[^a-zA-Z0-9.\-]/g, '-');
+    const rand = crypto.randomBytes(4).toString('hex');
+    const key = `customer-assets/${req.params.id}/${Date.now()}-${rand}-${safeName}`;
+
+    const s3 = getCustomerAssetS3();
+    const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
+    await s3.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: buf,
+      ContentType: contentType,
+      ACL: 'public-read',
+    }));
+    const region = process.env.SPACES_REGION || 'atl1';
+    const url = `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
+
+    const { rows } = await pool.query(
+      `INSERT INTO customer_assets (user_id, name, image_url, file_type, size_bytes, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [req.params.id, name, url, contentType, buf.length, notes || null, req.user?.id || null],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /customer-assets/:assetId - delete a single asset
+router.delete('/customer-assets/:assetId', async (req, res, next) => {
+  try {
+    const r = await pool.query(
+      'DELETE FROM customer_assets WHERE id = $1 RETURNING id',
+      [req.params.assetId],
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Asset not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
 export default router;

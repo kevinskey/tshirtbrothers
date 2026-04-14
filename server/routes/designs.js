@@ -237,4 +237,17 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
+// GET /my-assets - the logged-in customer's private asset library
+// (admin uploads graphics to a customer via /api/admin/customers/:id/assets;
+// the customer sees them here.)
+router.get('/my-assets', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, image_url, file_type, width, height, size_bytes, created_at FROM customer_assets WHERE user_id = $1 ORDER BY created_at DESC',
+      [req.user.id],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 export default router;
