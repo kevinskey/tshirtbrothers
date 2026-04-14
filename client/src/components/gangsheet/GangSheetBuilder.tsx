@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus,
-  DollarSign, Info, X, Wand2, Eraser, RotateCw
+  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2
 } from 'lucide-react';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT,
@@ -17,6 +17,15 @@ import { calculateDPI, getDPIStatus, getImageDimensions, DPI_COLORS } from '@/li
 import { packDesigns, type PackItem } from '@/lib/gangsheet/binPacking';
 
 // Types
+interface DesignSnapshot {
+  imageUrl: string;
+  naturalWidth: number;
+  naturalHeight: number;
+  printWidthInches: number;
+  printHeightInches: number;
+  dpi: number;
+}
+
 interface DesignItem {
   id: string;
   name: string;
@@ -28,6 +37,7 @@ interface DesignItem {
   quantity: number;
   dpi: number;
   rotation?: number; // degrees, 0/90/180/270
+  history?: DesignSnapshot[]; // stack of previous states for undo
 }
 
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
@@ -360,6 +370,47 @@ export default function GangSheetBuilder() {
     return out.toDataURL('image/png');
   }
 
+  async function undoDesign(designId: string) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const design = designs.find((d) => d.id === designId);
+    if (!design || !design.history || design.history.length === 0) return;
+
+    const prev = design.history[design.history.length - 1]!;
+    const remainingHistory = design.history.slice(0, -1);
+
+    setDesigns((prevDesigns) => prevDesigns.map((d) => (d.id === designId ? {
+      ...d,
+      imageUrl: prev.imageUrl,
+      naturalWidth: prev.naturalWidth,
+      naturalHeight: prev.naturalHeight,
+      printWidthInches: prev.printWidthInches,
+      printHeightInches: prev.printHeightInches,
+      dpi: prev.dpi,
+      history: remainingHistory,
+    } : d)));
+
+    // Swap every fabric copy's image back to the previous one
+    const oldObjs = canvas.getObjects().filter((o) => (o as any).data?.designId === designId);
+    for (const old of oldObjs) {
+      const img = await loadFabricImage(prev.imageUrl);
+      const scale = inchesToPx(prev.printWidthInches) / prev.naturalWidth;
+      img.set({
+        left: old.left || 0,
+        top: old.top || 0,
+        scaleX: scale,
+        scaleY: scale,
+        data: { designId } as any,
+      });
+      canvas.remove(old);
+      canvas.add(img);
+    }
+    canvas.renderAll();
+    resolveOverlaps();
+    checkFit();
+    recalculateSheet();
+  }
+
   async function rotateDesign(designId: string) {
     const design = designs.find((d) => d.id === designId);
     if (!design || aiBusyId) return;
@@ -578,6 +629,16 @@ export default function GangSheetBuilder() {
     // instead of a giant base64 body (which causes 413 Payload Too Large).
     const uploadedUrl = await uploadDataUrlToSpaces(dataUrl, `${design.name || 'design'}-processed.png`);
 
+    // Save current state to history so the user can undo this AI op
+    const snapshot: DesignSnapshot = {
+      imageUrl: design.imageUrl,
+      naturalWidth: design.naturalWidth,
+      naturalHeight: design.naturalHeight,
+      printWidthInches: design.printWidthInches,
+      printHeightInches: design.printHeightInches,
+      dpi: design.dpi,
+    };
+
     setDesigns((prev) => prev.map((d) => (d.id === designId ? {
       ...d,
       imageUrl: uploadedUrl,
@@ -586,6 +647,7 @@ export default function GangSheetBuilder() {
       printWidthInches: printW,
       printHeightInches: printH,
       dpi: newDpi,
+      history: [...(d.history || []), snapshot].slice(-10), // keep last 10
     } : d)));
 
     // Replace all fabric objects tied to this design
@@ -1267,6 +1329,16 @@ export default function GangSheetBuilder() {
                             >
                               {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />}
                             </button>
+                            {(d.history?.length || 0) > 0 && (
+                              <button
+                                onClick={() => undoDesign(d.id)}
+                                disabled={aiBusyId === d.id}
+                                className="flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                                title={`Undo last AI edit (${d.history?.length} available)`}
+                              >
+                                <Undo2 className="w-3 h-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
