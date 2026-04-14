@@ -1264,7 +1264,8 @@ export default function AdminPage() {
             </div>
 
             {/* Desktop table view */}
-            <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <div className="hidden lg:block bg-white rounded-xl border border-gray-200">
+              <div className="overflow-x-auto">
                 <table className="text-sm min-w-[1100px] w-max">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
@@ -1354,6 +1355,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
           </div>
         )}
