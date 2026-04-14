@@ -213,16 +213,34 @@ export default function GangSheetBuilder() {
       setDesigns(prev => [...prev, design]);
 
       const img = await loadFabricImage(imageUrl);
-      const targetW = inchesToPx(printW);
+      const el = img.getElement() as HTMLImageElement;
+      const natW = el?.naturalWidth || dims.width;
+      const natH = el?.naturalHeight || dims.height;
+      // Force fabric's internal width/height to match the underlying image's
+      // natural dimensions — otherwise scaleToWidth math ends up wrong.
       img.set({
+        width: natW,
+        height: natH,
         left: DESIGN_SPACING_PX,
         top: DESIGN_SPACING_PX,
+        scaleX: 1,
+        scaleY: 1,
         data: { designId: id } as any,
       });
-      // Use fabric's built-in scaleToWidth so it hits the right canvas pixel
-      // width regardless of how fabric is tracking the source image width.
-      img.scaleToWidth(targetW);
-      console.log('[gangsheet] add', { name, printW, targetW, fabricScaleX: img.scaleX, fabricWidth: img.width, rendered: (img.width || 0) * (img.scaleX || 1) });
+      const targetW = inchesToPx(printW);
+      const scale = targetW / natW;
+      img.set({ scaleX: scale, scaleY: scale });
+      console.log('[gangsheet] add', {
+        name,
+        printW,
+        natW,
+        targetW,
+        scale,
+        fabricWidth: img.width,
+        renderedCanvasPx: (img.width || 0) * (img.scaleX || 1),
+        sheetPx: SHEET_WIDTH_PX,
+        pctOfSheet: `${(((img.width || 0) * (img.scaleX || 1)) / SHEET_WIDTH_PX * 100).toFixed(1)}%`,
+      });
 
       canvas.add(img);
       canvas.setActiveObject(img);
@@ -263,9 +281,24 @@ export default function GangSheetBuilder() {
     const targetPx = inchesToPx(clampedW);
     for (const obj of objs) {
       const img = obj as FabricImage;
-      img.scaleToWidth(targetPx);
+      const el = img.getElement?.() as HTMLImageElement | undefined;
+      const natW = el?.naturalWidth || target.naturalWidth;
+      const natH = el?.naturalHeight || target.naturalHeight;
+      // Reset internal width to the natural source size so scale math is clean
+      img.set({ width: natW, height: natH });
+      const scale = targetPx / natW;
+      img.set({ scaleX: scale, scaleY: scale });
       img.setCoords();
-      console.log('[gangsheet] resize', { designId, clampedW, targetPx, fabricScaleX: img.scaleX, fabricWidth: img.width, rendered: (img.width || 0) * (img.scaleX || 1) });
+      console.log('[gangsheet] resize', {
+        designId,
+        clampedW,
+        targetPx,
+        natW,
+        scale,
+        renderedCanvasPx: natW * scale,
+        sheetPx: SHEET_WIDTH_PX,
+        pctOfSheet: `${((natW * scale) / SHEET_WIDTH_PX * 100).toFixed(1)}%`,
+      });
     }
     canvas.renderAll();
     recalculateSheet();
