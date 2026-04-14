@@ -117,11 +117,13 @@ router.post('/customers', async (req, res, next) => {
 });
 
 // POST /customers/bulk-import - Create many customers at once from a CSV upload
-// Body: { rows: [{ name, email, phone? }, ...] }
-// Returns per-row status so the UI can show a preview.
+// Body: { rows: [{ name, email, phone? }, ...], update_existing?: boolean }
+// If update_existing is true, existing emails have their name/phone updated
+// (empty fields in the CSV leave the existing value alone). Otherwise they're
+// skipped. Returns per-row status so the UI can show a preview.
 router.post('/customers/bulk-import', async (req, res, next) => {
   try {
-    const { rows } = req.body;
+    const { rows, update_existing = false } = req.body;
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({ error: 'rows must be a non-empty array' });
     }
@@ -132,6 +134,7 @@ router.post('/customers/bulk-import', async (req, res, next) => {
     const bcrypt = (await import('bcryptjs')).default;
     const results = [];
     let created = 0;
+    let updated = 0;
     let skipped = 0;
     let failed = 0;
 
@@ -139,13 +142,13 @@ router.post('/customers/bulk-import', async (req, res, next) => {
       const row = rows[i] || {};
       const name = typeof row.name === 'string' ? row.name.trim() : '';
       const email = typeof row.email === 'string' ? row.email.trim().toLowerCase() : '';
+      const phoneValue = typeof row.phone === 'string' && row.phone.trim() ? row.phone.trim() : null;
 
       if (!name || !email) {
         failed++;
         results.push({ row: i + 1, email, status: 'error', message: 'name and email are required' });
         continue;
       }
-      // Very light email sanity check
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         failed++;
         results.push({ row: i + 1, email, status: 'error', message: 'invalid email' });
@@ -155,11 +158,19 @@ router.post('/customers/bulk-import', async (req, res, next) => {
       try {
         const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
         if (existing.rows.length > 0) {
-          skipped++;
-          results.push({ row: i + 1, email, status: 'skipped', message: 'email already exists' });
+          if (update_existing) {
+            await pool.query(
+              'UPDATE users SET name = COALESCE(NULLIF($1, \'\'), name), phone = COALESCE($2, phone) WHERE id = $3',
+              [name, phoneValue, existing.rows[0].id]
+            );
+            updated++;
+            results.push({ row: i + 1, email, status: 'updated' });
+          } else {
+            skipped++;
+            results.push({ row: i + 1, email, status: 'skipped', message: 'email already exists' });
+          }
           continue;
         }
-        const phoneValue = typeof row.phone === 'string' && row.phone.trim() ? row.phone.trim() : null;
         const hash = await bcrypt.hash(Math.random().toString(36).slice(2) + Date.now(), 10);
         await pool.query(
           'INSERT INTO users (name, email, phone, password_hash, role) VALUES ($1, $2, $3, $4, $5)',
@@ -173,7 +184,7 @@ router.post('/customers/bulk-import', async (req, res, next) => {
       }
     }
 
-    res.json({ created, skipped, failed, total: rows.length, results });
+    res.json({ created, updated, skipped, failed, total: rows.length, results });
   } catch (err) {
     next(err);
   }

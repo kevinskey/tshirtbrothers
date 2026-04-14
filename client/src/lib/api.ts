@@ -393,21 +393,22 @@ export interface BulkImportCustomerRow {
 
 export interface BulkImportResult {
   created: number;
+  updated?: number;
   skipped: number;
   failed: number;
   total: number;
   results: Array<{
     row: number;
     email: string;
-    status: 'created' | 'skipped' | 'error';
+    status: 'created' | 'updated' | 'skipped' | 'error';
     message?: string;
   }>;
 }
 
-export async function bulkImportCustomers(rows: BulkImportCustomerRow[]) {
+export async function bulkImportCustomers(rows: BulkImportCustomerRow[], updateExisting = false) {
   return authRequest<BulkImportResult>('/admin/customers/bulk-import', {
     method: 'POST',
-    body: JSON.stringify({ rows }),
+    body: JSON.stringify({ rows, update_existing: updateExisting }),
   });
 }
 
