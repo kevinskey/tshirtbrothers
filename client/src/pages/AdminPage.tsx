@@ -4081,6 +4081,51 @@ export default function AdminPage() {
                       </p>
                     </div>
 
+                    {/* Deterministic DTF gang-sheet cost (only when DTF) */}
+                    {pricingForm.print_method === 'dtf' && (() => {
+                      const sizeMap: Record<string, [number, number]> = {
+                        'left-chest': [4, 4],
+                        'standard': [10, 12],
+                        'oversized': [14, 16],
+                        'full-front': [12, 14],
+                        'full-back': [12, 16],
+                        'sleeve': [3, 10],
+                      };
+                      const [gw, gh] = sizeMap[pricingForm.design_size] || [10, 12];
+                      // Mirror server/binPacking: 22" sheet, 0.25" edge padding, 0.1" spacing
+                      const SHEET_W = 22;
+                      const PAD = 0.25;
+                      const SPACING = 0.1;
+                      const usableW = SHEET_W - 2 * PAD;
+                      const across = Math.max(1, Math.floor((usableW + SPACING) / (gw + SPACING)));
+                      const rowsPerFoot = Math.max(1, Math.floor((12 + SPACING) / (gh + SPACING)));
+                      const perFoot = across * rowsPerFoot;
+                      const feetNeeded = Math.max(1, Math.ceil(pricingForm.quantity / perFoot));
+                      // Determine tier from is_rush + deadline_days
+                      let tier = 'standard';
+                      let rate = 6;
+                      if (pricingForm.deadline_days <= 1) { tier = 'Hot Rush'; rate = 12; }
+                      else if (pricingForm.is_rush || pricingForm.deadline_days <= 3) { tier = 'Rush'; rate = 8; }
+                      else { tier = 'Standard'; rate = 6; }
+                      const totalPrintCost = feetNeeded * rate;
+                      const perUnitPrintCost = totalPrintCost / pricingForm.quantity;
+                      return (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-semibold text-blue-900">DTF Print Cost (deterministic)</p>
+                            <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-semibold uppercase">KolorMatrix · {tier}</span>
+                          </div>
+                          <div className="text-xs text-blue-800 space-y-0.5">
+                            <div>Graphic: {gw}" × {gh}"</div>
+                            <div>{across} across × {rowsPerFoot} rows/ft = {perFoot} designs/ft</div>
+                            <div>Feet needed: ⌈{pricingForm.quantity} ÷ {perFoot}⌉ = {feetNeeded} ft</div>
+                            <div>Sheet cost: {feetNeeded} ft × ${rate}/ft = <span className="font-bold">${totalPrintCost.toFixed(2)}</span></div>
+                            <div className="pt-1 border-t border-blue-200 mt-1">Per unit print cost: <span className="font-bold">${perUnitPrintCost.toFixed(2)}</span></div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Cost breakdown */}
                     <div className="grid grid-cols-3 gap-2">
                       <div className="bg-gray-50 rounded-lg p-3 text-center">
