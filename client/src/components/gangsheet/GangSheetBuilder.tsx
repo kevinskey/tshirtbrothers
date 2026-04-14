@@ -296,19 +296,23 @@ export default function GangSheetBuilder() {
     // canvases don't break clone().
     const template = existing[0];
     if (!template) return;
+    // Use the LAST existing copy as our starting anchor so we don't overlap
+    // copies that were already placed in previous quantity bumps.
+    const anchor = existing[existing.length - 1] ?? template;
     const need = clamped - existing.length;
     const scale = (template.scaleX as number) || 1;
     const copyW = (template.getScaledWidth?.() || inchesToPx(design.printWidthInches));
     const copyH = (template.getScaledHeight?.() || inchesToPx(design.printHeightInches));
 
-    // Figure out a starting position to the right of the existing copies
-    let cursorX = (template.left || DESIGN_SPACING_PX) + copyW + DESIGN_SPACING_PX;
-    let cursorY = (template.top || DESIGN_SPACING_PX);
+    // Start one slot to the right of the last existing copy; if that'd overflow
+    // the sheet width, wrap to the next row.
+    let cursorX = (anchor.left || DESIGN_SPACING_PX) + copyW + DESIGN_SPACING_PX;
+    let cursorY = (anchor.top || DESIGN_SPACING_PX);
+    if (cursorX + copyW > SHEET_WIDTH_PX) {
+      cursorX = DESIGN_SPACING_PX;
+      cursorY += copyH + DESIGN_SPACING_PX;
+    }
     for (let i = 0; i < need; i++) {
-      if (cursorX + copyW > SHEET_WIDTH_PX) {
-        cursorX = DESIGN_SPACING_PX;
-        cursorY += copyH + DESIGN_SPACING_PX;
-      }
       // eslint-disable-next-line no-await-in-loop
       const img = await loadFabricImage(design.imageUrl);
       img.set({
@@ -320,6 +324,10 @@ export default function GangSheetBuilder() {
       });
       canvas.add(img);
       cursorX += copyW + DESIGN_SPACING_PX;
+      if (cursorX + copyW > SHEET_WIDTH_PX) {
+        cursorX = DESIGN_SPACING_PX;
+        cursorY += copyH + DESIGN_SPACING_PX;
+      }
     }
     canvas.renderAll();
     checkFit();
