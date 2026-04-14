@@ -32,6 +32,7 @@ import {
   PenSquare,
   Sparkles,
   Edit3,
+  Upload,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -78,6 +79,7 @@ import {
   publishBlogPost,
   sendBalanceRequest,
   calculateQuotePrice,
+  bulkImportCustomers,
   updateAdminNotes,
   fetchAdminCounts,
 } from '@/lib/api';
@@ -296,6 +298,12 @@ export default function AdminPage() {
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address_street: '', address_city: '', address_state: '', address_zip: '' });
+  // CSV bulk import
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<{ name: string; email: string; phone?: string }[]>([]);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<Awaited<ReturnType<typeof import('@/lib/api').bulkImportCustomers>> | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'business' | 'notifications' | 'payment'>('business');
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
@@ -847,6 +855,92 @@ export default function AdminPage() {
       setPreviewInvoice(null);
     } catch (err) {
       // errors are handled by the mutation's onError
+    }
+  }
+
+  function parseCustomerCsv(text: string): { name: string; email: string; phone?: string }[] {
+    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    // Detect header
+    const first = lines[0]!.toLowerCase();
+    const hasHeader = /(^|,)\s*(name|first\s*name)/.test(first) || /(^|,)\s*email/.test(first);
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+
+    // Column index map (default: name, email, phone)
+    let nameIdx = 0;
+    let emailIdx = 1;
+    let phoneIdx: number | null = 2;
+    if (hasHeader) {
+      const cols = lines[0]!.split(',').map((c) => c.trim().toLowerCase().replace(/^['"]|['"]$/g, ''));
+      const n = cols.findIndex((c) => c === 'name' || c === 'full name' || c === 'customer' || c === 'customer name');
+      const e = cols.findIndex((c) => c === 'email' || c === 'email address' || c === 'e-mail');
+      const p = cols.findIndex((c) => c === 'phone' || c === 'phone number' || c === 'mobile' || c === 'cell');
+      if (n >= 0) nameIdx = n;
+      if (e >= 0) emailIdx = e;
+      phoneIdx = p >= 0 ? p : null;
+    }
+
+    // Minimal CSV parser that handles quoted fields with commas
+    function splitCsvLine(line: string): string[] {
+      const out: string[] = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+          if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+          else if (ch === '"') { inQuotes = false; }
+          else { cur += ch; }
+        } else {
+          if (ch === ',') { out.push(cur); cur = ''; }
+          else if (ch === '"' && cur === '') { inQuotes = true; }
+          else { cur += ch; }
+        }
+      }
+      out.push(cur);
+      return out.map((s) => s.trim());
+    }
+
+    return dataLines.map((line) => {
+      const cells = splitCsvLine(line);
+      return {
+        name: cells[nameIdx] || '',
+        email: cells[emailIdx] || '',
+        phone: phoneIdx !== null ? (cells[phoneIdx] || undefined) : undefined,
+      };
+    }).filter((r) => r.name && r.email);
+  }
+
+  async function handleCsvFile(file: File) {
+    setCsvError(null);
+    setCsvResult(null);
+    try {
+      const text = await file.text();
+      const rows = parseCustomerCsv(text);
+      if (rows.length === 0) {
+        setCsvError('No valid rows found. CSV needs columns: name, email (and optional phone).');
+        setCsvRows([]);
+        return;
+      }
+      setCsvRows(rows);
+    } catch (err: any) {
+      setCsvError(err?.message || 'Failed to read CSV');
+    }
+  }
+
+  async function handleBulkImport() {
+    if (csvRows.length === 0) return;
+    setCsvImporting(true);
+    setCsvError(null);
+    try {
+      const result = await bulkImportCustomers(csvRows);
+      setCsvResult(result);
+      // Refresh the customer list
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+    } catch (err: any) {
+      setCsvError(err?.message || 'Import failed');
+    } finally {
+      setCsvImporting(false);
     }
   }
 
@@ -1770,14 +1864,22 @@ export default function AdminPage() {
         {/* Customers Section */}
         {activeSection === 'customers' && (
           <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
               <h2 className="text-2xl font-display font-bold text-gray-900">Customers</h2>
-              <button
-                onClick={() => { setCustomerForm({ name: '', email: '', phone: '', address_street: '', address_city: '', address_state: '', address_zip: '' }); setEditingCustomerId(null); setShowCustomerForm(true); }}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-              >
-                <Plus className="w-4 h-4" /> Add Customer
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setCsvImportOpen(true)}
+                  className="flex items-center gap-2 border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition"
+                >
+                  <Upload className="w-4 h-4" /> Import CSV
+                </button>
+                <button
+                  onClick={() => { setCustomerForm({ name: '', email: '', phone: '', address_street: '', address_city: '', address_state: '', address_zip: '' }); setEditingCustomerId(null); setShowCustomerForm(true); }}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                >
+                  <Plus className="w-4 h-4" /> Add Customer
+                </button>
+              </div>
             </div>
 
             {/* Search */}
@@ -4270,6 +4372,129 @@ export default function AdminPage() {
             </div>
           );
         })()}
+
+        {/* Customer CSV Import Modal */}
+        {csvImportOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <h3 className="font-display font-semibold text-gray-900">Import Customers from CSV</h3>
+                <button onClick={() => { setCsvImportOpen(false); setCsvRows([]); setCsvResult(null); setCsvError(null); }} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+                  <p className="font-semibold mb-1">CSV Format</p>
+                  <p>A header row is optional. Recognised columns: <code className="bg-white px-1 rounded">name</code>, <code className="bg-white px-1 rounded">email</code>, <code className="bg-white px-1 rounded">phone</code> (optional). If no header, columns are read as name, email, phone in that order.</p>
+                  <p className="mt-1 font-mono text-[11px]">name,email,phone<br/>Jane Doe,jane@example.com,555-1234</p>
+                </div>
+
+                <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-red-400 hover:bg-red-50/40 transition">
+                  <Upload className="w-8 h-8 text-gray-400" />
+                  <span className="text-sm font-medium text-gray-700">Click to pick a CSV file</span>
+                  <span className="text-xs text-gray-500">or drop one here</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCsvFile(f); }}
+                  />
+                </label>
+
+                {csvError && (
+                  <div className="bg-red-50 text-red-700 text-sm rounded-lg p-3">{csvError}</div>
+                )}
+
+                {csvRows.length > 0 && !csvResult && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-gray-900">Preview — {csvRows.length} row{csvRows.length === 1 ? '' : 's'} ready</p>
+                      <button onClick={() => setCsvRows([])} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg overflow-auto max-h-64">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 text-left text-gray-500 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 font-medium">#</th>
+                            <th className="px-3 py-2 font-medium">Name</th>
+                            <th className="px-3 py-2 font-medium">Email</th>
+                            <th className="px-3 py-2 font-medium">Phone</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {csvRows.slice(0, 100).map((r, i) => (
+                            <tr key={i}>
+                              <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
+                              <td className="px-3 py-1.5">{r.name}</td>
+                              <td className="px-3 py-1.5">{r.email}</td>
+                              <td className="px-3 py-1.5 text-gray-500">{r.phone || ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {csvRows.length > 100 && (
+                        <p className="px-3 py-2 text-xs text-gray-500 bg-gray-50 border-t border-gray-200">…and {csvRows.length - 100} more</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {csvResult && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-green-700">{csvResult.created}</div>
+                        <div className="text-xs text-green-600">Created</div>
+                      </div>
+                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-yellow-700">{csvResult.skipped}</div>
+                        <div className="text-xs text-yellow-600">Skipped (exists)</div>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-red-700">{csvResult.failed}</div>
+                        <div className="text-xs text-red-600">Failed</div>
+                      </div>
+                    </div>
+                    {(csvResult.skipped + csvResult.failed) > 0 && (
+                      <details className="border border-gray-200 rounded-lg">
+                        <summary className="px-3 py-2 text-sm text-gray-700 cursor-pointer">Details</summary>
+                        <div className="max-h-64 overflow-auto text-xs">
+                          {csvResult.results.filter((r) => r.status !== 'created').map((r, i) => (
+                            <div key={i} className={`px-3 py-1.5 border-t border-gray-100 ${r.status === 'error' ? 'text-red-700' : 'text-yellow-700'}`}>
+                              Row {r.row} ({r.email}): {r.status}{r.message ? ` — ${r.message}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => { setCsvImportOpen(false); setCsvRows([]); setCsvResult(null); setCsvError(null); }}
+                    className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    {csvResult ? 'Close' : 'Cancel'}
+                  </button>
+                  {!csvResult && (
+                    <button
+                      type="button"
+                      onClick={handleBulkImport}
+                      disabled={csvImporting || csvRows.length === 0}
+                      className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium"
+                    >
+                      {csvImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      Import {csvRows.length} customer{csvRows.length === 1 ? '' : 's'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Send Price Modal */}
         {priceModalQuote && (

@@ -117,6 +117,68 @@ router.post('/customers', async (req, res, next) => {
   }
 });
 
+// POST /customers/bulk-import - Create many customers at once from a CSV upload
+// Body: { rows: [{ name, email, phone? }, ...] }
+// Returns per-row status so the UI can show a preview.
+router.post('/customers/bulk-import', async (req, res, next) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ error: 'rows must be a non-empty array' });
+    }
+    if (rows.length > 5000) {
+      return res.status(400).json({ error: 'Too many rows (max 5000 per import)' });
+    }
+
+    const bcrypt = (await import('bcryptjs')).default;
+    const results = [];
+    let created = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i] || {};
+      const name = typeof row.name === 'string' ? row.name.trim() : '';
+      const email = typeof row.email === 'string' ? row.email.trim().toLowerCase() : '';
+
+      if (!name || !email) {
+        failed++;
+        results.push({ row: i + 1, email, status: 'error', message: 'name and email are required' });
+        continue;
+      }
+      // Very light email sanity check
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        failed++;
+        results.push({ row: i + 1, email, status: 'error', message: 'invalid email' });
+        continue;
+      }
+
+      try {
+        const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (existing.rows.length > 0) {
+          skipped++;
+          results.push({ row: i + 1, email, status: 'skipped', message: 'email already exists' });
+          continue;
+        }
+        const hash = await bcrypt.hash(Math.random().toString(36).slice(2) + Date.now(), 10);
+        await pool.query(
+          'INSERT INTO users (name, email, password_hash, role) VALUES ($1, $2, $3, $4)',
+          [name, email, hash, 'customer']
+        );
+        created++;
+        results.push({ row: i + 1, email, status: 'created' });
+      } catch (innerErr) {
+        failed++;
+        results.push({ row: i + 1, email, status: 'error', message: innerErr.message || 'insert failed' });
+      }
+    }
+
+    res.json({ created, skipped, failed, total: rows.length, results });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /customers/:id - Delete a customer
 router.delete('/customers/:id', async (req, res, next) => {
   try {
