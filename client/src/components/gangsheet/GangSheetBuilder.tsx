@@ -213,14 +213,19 @@ export default function GangSheetBuilder() {
       setDesigns(prev => [...prev, design]);
 
       const img = await loadFabricImage(imageUrl);
+      // Use the underlying HTMLImageElement's naturalWidth as the authoritative
+      // source — Fabric's img.width can be misleading.
+      const el = img.getElement() as HTMLImageElement;
+      const natW = el?.naturalWidth || dims.width;
       const targetW = inchesToPx(printW);
-      const scale = targetW / dims.width;
+      const scale = targetW / natW;
+      console.log('[gangsheet] add', { name, printW, natW, targetW, scale, imgWidth: img.width });
       img.set({
         left: DESIGN_SPACING_PX,
         top: DESIGN_SPACING_PX,
         scaleX: scale,
         scaleY: scale,
-        data: { designId: id } as any,
+        data: { designId: id, natW } as any,
       });
 
       canvas.add(img);
@@ -258,14 +263,15 @@ export default function GangSheetBuilder() {
     const heightInches = clampedW * (target.naturalHeight / target.naturalWidth);
     const dpi = calculateDPI(target.naturalWidth, clampedW);
     setDesigns((prev) => prev.map((d) => (d.id === designId ? { ...d, printWidthInches: clampedW, printHeightInches: heightInches, dpi } : d)));
-    // Update all fabric objects belonging to this design; use the stored
-    // natural pixel width (not img.width) since img.width is unreliable
-    // when the image was loaded without crossOrigin.
-    const scale = inchesToPx(clampedW) / target.naturalWidth;
     const objs = canvas.getObjects().filter((o) => (o as any).data?.designId === designId);
     for (const obj of objs) {
-      obj.set({ scaleX: scale, scaleY: scale });
-      obj.setCoords();
+      const img = obj as FabricImage;
+      const el = img.getElement?.() as HTMLImageElement | undefined;
+      const natW = (obj as any).data?.natW || el?.naturalWidth || target.naturalWidth;
+      const scale = inchesToPx(clampedW) / natW;
+      console.log('[gangsheet] resize', { designId, clampedW, natW, scale });
+      img.set({ scaleX: scale, scaleY: scale });
+      img.setCoords();
     }
     canvas.renderAll();
     recalculateSheet();
