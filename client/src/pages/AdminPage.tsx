@@ -1264,8 +1264,8 @@ export default function AdminPage() {
             </div>
 
             {/* Desktop table view */}
-            <div className="hidden lg:block bg-white rounded-xl border border-gray-200">
-                <table className="w-full text-sm">
+            <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                <table className="w-full text-sm min-w-[900px]">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
                       <th className="px-6 py-3 font-medium">Date</th>
