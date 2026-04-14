@@ -75,7 +75,11 @@ export default function GangSheetBuilder() {
       selection: true,
     });
 
-    // Set initial zoom to fit viewport
+    // Set initial zoom to fit viewport.
+    // IMPORTANT: when using setZoom(scale), we must NOT also shrink CSS via
+    // cssOnly — that would double-apply the scale (once by fabric's zoom,
+    // once by CSS compression). Shrink bitmap + CSS together so zoom alone
+    // handles the downscale.
     const container = containerRef.current;
     const viewportWidth = container ? container.clientWidth - 40 : 800;
     const scale = viewportWidth / SHEET_WIDTH_PX;
@@ -83,7 +87,7 @@ export default function GangSheetBuilder() {
     canvas.setDimensions({
       width: SHEET_WIDTH_PX * scale,
       height: initialHeight * scale,
-    }, { cssOnly: true });
+    });
 
     setZoom(scale);
     drawGrid(canvas, initialHeight);
@@ -302,8 +306,11 @@ export default function GangSheetBuilder() {
     if (!canvas) return;
     const newFt = Math.max(1, Math.min(60, Math.round(ft)));
     const newHeight = feetToPx(newFt);
-    canvas.setHeight(newHeight);
-    canvas.setDimensions({ height: newHeight * zoom }, { cssOnly: true });
+    // Resize both bitmap and CSS so the zoom factor alone governs display scale
+    canvas.setDimensions({
+      width: SHEET_WIDTH_PX * zoom,
+      height: newHeight * zoom,
+    });
     drawGrid(canvas, newHeight);
     canvas.renderAll();
     setSheetLengthFt(newFt);
@@ -326,8 +333,10 @@ export default function GangSheetBuilder() {
 
     // Resize canvas to fit
     const newHeight = Math.max(feetToPx(1), result.totalHeight + DESIGN_SPACING_PX);
-    canvas.setHeight(newHeight);
-    canvas.setDimensions({ height: newHeight * zoom }, { cssOnly: true });
+    canvas.setDimensions({
+      width: SHEET_WIDTH_PX * zoom,
+      height: newHeight * zoom,
+    });
 
     // Reposition all objects
     for (const placement of result.placements) {
@@ -373,11 +382,17 @@ export default function GangSheetBuilder() {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const newZoom = Math.max(0.05, Math.min(1, zoom + delta));
+    // Figure out the sheet's native height from the current canvas bitmap.
+    // canvas.getHeight() returns the bitmap height which we want to keep
+    // proportional to newZoom.
+    const currentBitmapHeight = canvas.getHeight();
+    const currentZoom = zoom || 1;
+    const sheetPxHeight = currentBitmapHeight / currentZoom;
     canvas.setZoom(newZoom);
     canvas.setDimensions({
       width: SHEET_WIDTH_PX * newZoom,
-      height: (canvas.height || feetToPx(3)) * newZoom,
-    }, { cssOnly: true });
+      height: sheetPxHeight * newZoom,
+    });
     setZoom(newZoom);
   }
 
@@ -428,8 +443,8 @@ export default function GangSheetBuilder() {
       canvas.setZoom(savedZoom);
       canvas.setDimensions({
         width: SHEET_WIDTH_PX * savedZoom,
-        height: (canvas.height || exportHeight) * savedZoom,
-      }, { cssOnly: true });
+        height: exportHeight * savedZoom,
+      });
 
       // Restore grid
       canvas.getObjects().forEach(obj => {
