@@ -150,8 +150,8 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [assetName, setAssetName] = useState('');
-  const [assetFile, setAssetFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number; failed: number }>({ done: 0, total: 0, failed: 0 });
+  const [assetFiles, setAssetFiles] = useState<File[]>([]);
   const token = localStorage.getItem('tsb_token') || '';
 
   async function load() {
@@ -164,29 +164,38 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [customerId]);
 
-  async function upload() {
-    if (!assetFile || !assetName.trim()) return;
+  async function uploadAll() {
+    if (assetFiles.length === 0) return;
     setUploading(true);
-    try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(assetFile);
-      });
-      const r = await fetch(`/api/admin/customers/${customerId}/assets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: assetName.trim(), imageBase64: dataUrl, filename: assetFile.name, file_type: assetFile.type }),
-      });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Upload failed');
-      setAssetName('');
-      setAssetFile(null);
-      await load();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      alert(`Upload failed: ${msg}`);
-    } finally { setUploading(false); }
+    setProgress({ done: 0, total: assetFiles.length, failed: 0 });
+    let done = 0;
+    let failed = 0;
+    for (const file of assetFiles) {
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const name = file.name.replace(/\.[^.]+$/, '') || file.name;
+        const r = await fetch(`/api/admin/customers/${customerId}/assets`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ name, imageBase64: dataUrl, filename: file.name, file_type: file.type }),
+        });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Upload failed (${r.status})`);
+        done++;
+      } catch (e: unknown) {
+        failed++;
+        console.error('[customer assets] upload failed:', file.name, e);
+      }
+      setProgress({ done: done + failed, total: assetFiles.length, failed });
+    }
+    setAssetFiles([]);
+    await load();
+    setUploading(false);
+    if (failed > 0) alert(`${failed} of ${assetFiles.length} files failed to upload. Check the browser console for details.`);
   }
 
   async function remove(id: number) {
@@ -202,28 +211,33 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
         <span className="text-xs font-normal text-gray-500 ml-2">Only this customer + admins can see these.</span>
       </h4>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3 flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          placeholder="Name"
-          value={assetName}
-          onChange={(e) => setAssetName(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-gray-300 rounded flex-1 min-w-[120px]"
-        />
-        <input
-          type="file"
-          accept="image/*,.svg,.pdf"
-          onChange={(e) => setAssetFile(e.target.files?.[0] || null)}
-          className="text-xs flex-1 min-w-[160px]"
-        />
-        <button
-          onClick={upload}
-          disabled={uploading || !assetFile || !assetName.trim()}
-          className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-1"
-        >
-          {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-          Upload
-        </button>
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex-1 min-w-[200px]">
+            <input
+              type="file"
+              accept="image/*,.svg,.pdf"
+              multiple
+              onChange={(e) => setAssetFiles(Array.from(e.target.files || []))}
+              className="text-xs w-full"
+            />
+          </label>
+          <button
+            onClick={uploadAll}
+            disabled={uploading || assetFiles.length === 0}
+            className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-1 whitespace-nowrap"
+          >
+            {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+            {uploading
+              ? `Uploading ${progress.done}/${progress.total}…`
+              : `Upload ${assetFiles.length || ''} file${assetFiles.length === 1 ? '' : 's'}`.trim()}
+          </button>
+        </div>
+        {assetFiles.length > 0 && !uploading && (
+          <p className="text-[10px] text-gray-500 mt-1.5">
+            {assetFiles.length} file{assetFiles.length === 1 ? '' : 's'} selected · names will be derived from filenames.
+          </p>
+        )}
       </div>
 
       {loading ? (
