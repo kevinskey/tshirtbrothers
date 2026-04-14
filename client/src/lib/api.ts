@@ -332,6 +332,41 @@ export async function sendBalanceRequest(quoteId: string) {
   });
 }
 
+export interface QuotePriceBreakdown {
+  product: {
+    name: string;
+    unit_price: number;
+    quantity: number;
+    subtotal: number;
+  };
+  gang_sheet: {
+    graphic_width_in: number;
+    graphic_height_in: number;
+    copies_across: number;
+    rows_per_foot: number;
+    copies_per_foot: number;
+    feet_needed: number;
+    pricing_tier: string;
+    rate_per_foot: number;
+    subtotal: number;
+  };
+  other_costs: number;
+}
+
+export async function calculateQuotePrice(input: {
+  product_id: number;
+  quantity: number;
+  graphic_width_in: number;
+  graphic_height_in: number;
+  pricing_tier?: 'standard' | 'rush' | 'hotRush';
+  other_costs?: number;
+}) {
+  return authRequest<{ breakdown: QuotePriceBreakdown; total: number }>(
+    '/quotes/admin/calculate-price',
+    { method: 'POST', body: JSON.stringify(input) },
+  );
+}
+
 export async function fetchCustomers(search?: string) {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return authRequest<Customer[]>(`/admin/customers${query}`);
