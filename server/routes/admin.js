@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
+import crypto from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticate, adminOnly } from '../middleware/auth.js';
@@ -546,8 +547,6 @@ router.delete('/designs-library/:id', async (req, res, next) => {
 // ── Customer private asset library ───────────────────────────────────────────
 // Admin-managed graphics scoped to a single customer. GET /customers/:id/assets
 // and POST/DELETE are admin-only (this router already has that middleware).
-
-import crypto from 'crypto';
 
 function getCustomerAssetS3() {
   return new S3Client({
