@@ -445,6 +445,51 @@ export default function GangSheetBuilder() {
     return true;
   }
 
+  // Trim fully-transparent pixels around the image so the subject fills the
+  // bounding box. Used after Remove BG to reclaim the empty space the
+  // background occupied.
+  async function autoCropTransparent(dataUrl: string, alphaThreshold = 8): Promise<string> {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const src = document.createElement('canvas');
+    src.width = w;
+    src.height = h;
+    const sctx = src.getContext('2d');
+    if (!sctx) return dataUrl;
+    sctx.drawImage(img, 0, 0);
+    const data = sctx.getImageData(0, 0, w, h).data;
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const a = data[(y * w + x) * 4 + 3];
+        if (a !== undefined && a > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return dataUrl; // fully transparent — nothing to crop
+    const cropW = maxX - minX + 1;
+    const cropH = maxY - minY + 1;
+    if (cropW === w && cropH === h) return dataUrl; // already tight
+    const out = document.createElement('canvas');
+    out.width = cropW;
+    out.height = cropH;
+    const octx = out.getContext('2d');
+    if (!octx) return dataUrl;
+    octx.drawImage(src, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+    return out.toDataURL('image/png');
+  }
+
   async function uploadDataUrlToSpaces(dataUrl: string, filename: string): Promise<string> {
     try {
       const res = await fetch('/api/quotes/upload-design', {
@@ -521,7 +566,9 @@ export default function GangSheetBuilder() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `remove-bg request failed (${res.status})`);
       if (!data.imageBase64) throw new Error('no image returned');
-      await applyProcessedImage(designId, data.imageBase64);
+      // Trim the now-transparent background space so the subject fills the image
+      const trimmed = await autoCropTransparent(data.imageBase64);
+      await applyProcessedImage(designId, trimmed);
     } catch (err: any) {
       console.error(err);
       alert(`Background removal failed: ${err?.message || err}`);
