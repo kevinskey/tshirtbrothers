@@ -402,6 +402,109 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
   }
 });
 
+// POST /admin/calculate-price - Tie quote pricing to gang-sheet placement
+//
+// Body:
+//   product_id        number   quote's product id (uses products.base_price)
+//   quantity          number   number of shirts / items in quote
+//   graphic_width_in  number   width of the graphic in inches
+//   graphic_height_in number   height of the graphic in inches
+//   pricing_tier      string   'standard' | 'rush' | 'hotRush' (default standard)
+//   other_costs       number   optional flat addon (setup/shipping/etc.)
+//
+// Returns: { breakdown: {...}, total }
+router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const {
+      product_id,
+      quantity,
+      graphic_width_in,
+      graphic_height_in,
+      pricing_tier = 'standard',
+      other_costs = 0,
+    } = req.body;
+
+    const qty = Math.max(1, parseInt(quantity, 10) || 0);
+    const gw = Math.max(0.5, parseFloat(graphic_width_in) || 0);
+    const gh = Math.max(0.5, parseFloat(graphic_height_in) || 0);
+
+    if (!product_id) return res.status(400).json({ error: 'product_id is required' });
+    if (!qty) return res.status(400).json({ error: 'quantity must be >= 1' });
+    if (!gw || !gh) return res.status(400).json({ error: 'graphic_width_in and graphic_height_in are required' });
+
+    // Product base cost
+    const productResult = await pool.query('SELECT id, name, base_price, price_breaks FROM products WHERE id = $1', [product_id]);
+    if (productResult.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    const product = productResult.rows[0];
+
+    // Tiered product pricing: price_breaks is an array of { min_qty, price }.
+    // Pick the highest min_qty that qty meets; fall back to base_price.
+    let unitPrice = parseFloat(product.base_price || 0);
+    const breaks = Array.isArray(product.price_breaks) ? product.price_breaks : [];
+    for (const b of breaks) {
+      const minQty = parseInt(b.min_qty || b.minQty || b.min || 0, 10);
+      const price = parseFloat(b.price || b.unit_price || 0);
+      if (minQty && price && qty >= minQty && price < unitPrice) {
+        unitPrice = price;
+      }
+    }
+    const productSubtotal = +(unitPrice * qty).toFixed(2);
+
+    // Gang-sheet cost: how many copies of the graphic (+ spacing) fit per foot
+    // of a 22" sheet, then feet needed = ceil(qty / perFoot).
+    // Mirrors logic in client/src/lib/gangsheet/binPacking.ts.
+    const DPI = 300;
+    const SHEET_WIDTH_IN = 22;
+    const SPACING_IN = 0.1;
+    const EDGE_PADDING_IN = 0.25;
+    const INCHES_PER_FOOT = 12;
+
+    const usableWidthIn = SHEET_WIDTH_IN - 2 * EDGE_PADDING_IN;
+    const across = Math.max(1, Math.floor((usableWidthIn + SPACING_IN) / (gw + SPACING_IN)));
+    const rowsPerFoot = Math.max(1, Math.floor((INCHES_PER_FOOT + SPACING_IN) / (gh + SPACING_IN)));
+    const perFoot = across * rowsPerFoot;
+    const feetNeeded = Math.max(1, Math.ceil(qty / perFoot));
+
+    const PRICING = {
+      standard: 6.0,
+      rush: 8.0,
+      hotRush: 12.0,
+    };
+    const rate = PRICING[pricing_tier] ?? PRICING.standard;
+    const gangSheetCost = +(feetNeeded * rate).toFixed(2);
+
+    const otherCostsNum = Math.max(0, parseFloat(other_costs) || 0);
+
+    const total = +(productSubtotal + gangSheetCost + otherCostsNum).toFixed(2);
+
+    res.json({
+      breakdown: {
+        product: {
+          name: product.name,
+          unit_price: unitPrice,
+          quantity: qty,
+          subtotal: productSubtotal,
+        },
+        gang_sheet: {
+          graphic_width_in: gw,
+          graphic_height_in: gh,
+          copies_across: across,
+          rows_per_foot: rowsPerFoot,
+          copies_per_foot: perFoot,
+          feet_needed: feetNeeded,
+          pricing_tier,
+          rate_per_foot: rate,
+          subtotal: gangSheetCost,
+        },
+        other_costs: otherCostsNum,
+      },
+      total,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /:id - Delete a quote (admin only)
 router.delete('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
