@@ -302,6 +302,7 @@ export default function AdminPage() {
   const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [csvRows, setCsvRows] = useState<{ name: string; email: string; phone?: string }[]>([]);
   const [csvImporting, setCsvImporting] = useState(false);
+  const [csvUpdateExisting, setCsvUpdateExisting] = useState(true);
   const [csvResult, setCsvResult] = useState<Awaited<ReturnType<typeof import('@/lib/api').bulkImportCustomers>> | null>(null);
   const [csvError, setCsvError] = useState<string | null>(null);
   const [savingCustomer, setSavingCustomer] = useState(false);
@@ -933,7 +934,7 @@ export default function AdminPage() {
     setCsvImporting(true);
     setCsvError(null);
     try {
-      const result = await bulkImportCustomers(csvRows);
+      const result = await bulkImportCustomers(csvRows, csvUpdateExisting);
       setCsvResult(result);
       // Refresh the customer list
       queryClient.invalidateQueries({ queryKey: ['customers'] });
@@ -4412,6 +4413,17 @@ export default function AdminPage() {
                       <p className="text-sm font-semibold text-gray-900">Preview — {csvRows.length} row{csvRows.length === 1 ? '' : 's'} ready</p>
                       <button onClick={() => setCsvRows([])} className="text-xs text-gray-500 hover:text-gray-700">Clear</button>
                     </div>
+                    <label className="flex items-start gap-2 mb-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={csvUpdateExisting}
+                        onChange={(e) => setCsvUpdateExisting(e.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="font-medium">Update existing customers</span> — if email matches an existing customer, update their name/phone instead of skipping.
+                      </span>
+                    </label>
                     <div className="border border-gray-200 rounded-lg overflow-auto max-h-64">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-left text-gray-500 sticky top-0">
@@ -4442,14 +4454,18 @@ export default function AdminPage() {
 
                 {csvResult && (
                   <div className="space-y-2">
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-4 gap-2">
                       <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-green-700">{csvResult.created}</div>
                         <div className="text-xs text-green-600">Created</div>
                       </div>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                        <div className="text-2xl font-bold text-blue-700">{csvResult.updated || 0}</div>
+                        <div className="text-xs text-blue-600">Updated</div>
+                      </div>
                       <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-yellow-700">{csvResult.skipped}</div>
-                        <div className="text-xs text-yellow-600">Skipped (exists)</div>
+                        <div className="text-xs text-yellow-600">Skipped</div>
                       </div>
                       <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-red-700">{csvResult.failed}</div>
