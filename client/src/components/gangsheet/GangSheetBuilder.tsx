@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus,
-  DollarSign, Info, X
+  DollarSign, Info, X, Wand2, Eraser
 } from 'lucide-react';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT,
@@ -58,6 +58,7 @@ export default function GangSheetBuilder() {
   const [sheetLengthFt, setSheetLengthFt] = useState(1);
   const [designCount, setDesignCount] = useState(0);
   const [fitError, setFitError] = useState<string | null>(null);
+  const [aiBusyId, setAiBusyId] = useState<string | null>(null);
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
@@ -442,6 +443,97 @@ export default function GangSheetBuilder() {
     }
     setFitError(null);
     return true;
+  }
+
+  async function applyProcessedImage(designId: string, dataUrl: string) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    // Measure new dims
+    const dims = await getImageDimensions(dataUrl);
+    const design = designs.find((d) => d.id === designId);
+    if (!design) return;
+    const printW = design.printWidthInches;
+    const printH = printW * (dims.height / dims.width);
+    const newDpi = calculateDPI(dims.width, printW);
+
+    setDesigns((prev) => prev.map((d) => (d.id === designId ? {
+      ...d,
+      imageUrl: dataUrl,
+      naturalWidth: dims.width,
+      naturalHeight: dims.height,
+      printHeightInches: printH,
+      dpi: newDpi,
+    } : d)));
+
+    // Replace all fabric objects tied to this design
+    const oldObjs = canvas.getObjects().filter((o) => (o as any).data?.designId === designId);
+    for (const old of oldObjs) {
+      const img = await loadFabricImage(dataUrl);
+      const scale = inchesToPx(printW) / dims.width;
+      img.set({
+        left: old.left || 0,
+        top: old.top || 0,
+        scaleX: scale,
+        scaleY: scale,
+        data: { designId, natW: dims.width } as any,
+      });
+      canvas.remove(old);
+      canvas.add(img);
+    }
+    canvas.renderAll();
+    resolveOverlaps();
+    checkFit();
+    recalculateSheet();
+  }
+
+  async function handleRemoveBg(designId: string) {
+    const design = designs.find((d) => d.id === designId);
+    if (!design || aiBusyId) return;
+    setAiBusyId(designId);
+    try {
+      const body = design.imageUrl.startsWith('data:')
+        ? { imageBase64: design.imageUrl }
+        : { imageUrl: design.imageUrl };
+      const res = await fetch('/api/design/remove-bg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('remove-bg request failed');
+      const data = await res.json();
+      if (!data.imageBase64) throw new Error('no image returned');
+      await applyProcessedImage(designId, data.imageBase64);
+    } catch (err) {
+      console.error(err);
+      alert('Background removal failed. Please try again.');
+    } finally {
+      setAiBusyId(null);
+    }
+  }
+
+  async function handleFixDpi(designId: string) {
+    const design = designs.find((d) => d.id === designId);
+    if (!design || aiBusyId) return;
+    setAiBusyId(designId);
+    try {
+      const body = design.imageUrl.startsWith('data:')
+        ? { imageBase64: design.imageUrl, scale: 4 }
+        : { imageUrl: design.imageUrl, scale: 4 };
+      const res = await fetch('/api/design/upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('upscale request failed');
+      const data = await res.json();
+      if (!data.imageBase64) throw new Error('no image returned');
+      await applyProcessedImage(designId, data.imageBase64);
+    } catch (err) {
+      console.error(err);
+      alert('Upscaling failed. Please try again.');
+    } finally {
+      setAiBusyId(null);
+    }
   }
 
   function updateDesignSize(designId: string, widthInches: number) {
@@ -1020,6 +1112,26 @@ export default function GangSheetBuilder() {
                                 {p.label}
                               </button>
                             ))}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => handleRemoveBg(d.id)}
+                              disabled={aiBusyId === d.id}
+                              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                              title="Use AI to remove the background"
+                            >
+                              {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eraser className="w-3 h-3" />}
+                              Remove BG
+                            </button>
+                            <button
+                              onClick={() => handleFixDpi(d.id)}
+                              disabled={aiBusyId === d.id}
+                              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                              title="Use AI to upscale 4× and fix low DPI"
+                            >
+                              {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                              Fix DPI
+                            </button>
                           </div>
                         </div>
                       );
