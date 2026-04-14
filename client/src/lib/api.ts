@@ -347,10 +347,16 @@ export interface QuotePriceBreakdown {
     copies_per_foot: number;
     feet_needed: number;
     pricing_tier: string;
+    is_rush: boolean;
     rate_per_foot: number;
     subtotal: number;
   };
-  other_costs: number;
+  setup_fee: number;
+  design_fee: number;
+  shipping: number;
+  taxable_subtotal: number;
+  tax_rate: number;
+  tax: number;
 }
 
 export async function calculateQuotePrice(input: {
@@ -359,7 +365,10 @@ export async function calculateQuotePrice(input: {
   graphic_width_in: number;
   graphic_height_in: number;
   pricing_tier?: 'standard' | 'rush' | 'hotRush';
-  other_costs?: number;
+  setup_fee?: number;
+  design_fee?: number;
+  shipping?: number;
+  tax_rate?: number;
 }) {
   return authRequest<{ breakdown: QuotePriceBreakdown; total: number }>(
     '/quotes/admin/calculate-price',
