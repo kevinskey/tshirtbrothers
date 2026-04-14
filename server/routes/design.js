@@ -68,7 +68,7 @@ async function upscaleReplicate(imageInput, scaleFactor = 4) {
 
     if (!output) {
       console.error('[upscale] Replicate returned no output');
-      return null;
+      throw new Error('Replicate returned no output');
     }
 
     const resultUrl = typeof output === 'string' ? output : output.toString();
@@ -79,8 +79,9 @@ async function upscaleReplicate(imageInput, scaleFactor = 4) {
     const buffer = await res.arrayBuffer();
     return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
   } catch (err) {
-    console.error('[upscale] Real-ESRGAN error:', err.message);
-    return null;
+    console.error('[upscale] Real-ESRGAN error:', err);
+    // Re-throw so the route handler can surface the real error to the client
+    throw err;
   }
 }
 
@@ -293,12 +294,20 @@ router.post('/upscale', async (req, res, next) => {
 
     const scaleFactor = scale >= 4 ? 4 : 2;
 
-    const result = await upscaleReplicate(replicateInput, scaleFactor);
-    if (!result) {
-      return res.status(500).json({ error: 'Upscaling failed' });
+    if (!process.env.REPLICATE_API_KEY) {
+      return res.status(500).json({ error: 'REPLICATE_API_KEY is not set on the server' });
     }
 
-    res.json({ imageBase64: result });
+    try {
+      const result = await upscaleReplicate(replicateInput, scaleFactor);
+      if (!result) {
+        return res.status(500).json({ error: 'Upscaling failed — Replicate returned nothing.' });
+      }
+      res.json({ imageBase64: result });
+    } catch (replicateErr) {
+      console.error('[upscale] route error:', replicateErr);
+      return res.status(500).json({ error: `Upscaling failed: ${replicateErr.message || replicateErr}` });
+    }
   } catch (err) {
     next(err);
   }
