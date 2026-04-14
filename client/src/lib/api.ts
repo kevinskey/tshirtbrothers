@@ -385,6 +385,32 @@ export async function fetchCustomer(id: string) {
   return authRequest<CustomerDetail>(`/admin/customers/${id}`);
 }
 
+export interface BulkImportCustomerRow {
+  name: string;
+  email: string;
+  phone?: string;
+}
+
+export interface BulkImportResult {
+  created: number;
+  skipped: number;
+  failed: number;
+  total: number;
+  results: Array<{
+    row: number;
+    email: string;
+    status: 'created' | 'skipped' | 'error';
+    message?: string;
+  }>;
+}
+
+export async function bulkImportCustomers(rows: BulkImportCustomerRow[]) {
+  return authRequest<BulkImportResult>('/admin/customers/bulk-import', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  });
+}
+
 export async function fetchCustomerDesigns(search?: string) {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
