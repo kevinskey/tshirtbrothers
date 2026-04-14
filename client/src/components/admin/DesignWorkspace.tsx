@@ -68,6 +68,8 @@ export default function DesignWorkspace() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [privateAssets, setPrivateAssets] = useState<Array<{ id: number; name: string; image_url: string }>>([]);
   const [privateLoading, setPrivateLoading] = useState(false);
+  const [moveToCustomerFor, setMoveToCustomerFor] = useState<{ id: number; name: string } | null>(null);
+  const [moveCustomerId, setMoveCustomerId] = useState('');
 
   async function fetchDesigns() {
     setLoading(true);
@@ -823,6 +825,21 @@ export default function DesignWorkspace() {
                         <button onClick={() => setEditDesign(d)} className="bg-white rounded-full p-1.5 hover:bg-gray-100" title="Edit Info">
                           <Edit3 className="w-3.5 h-3.5 text-gray-700" />
                         </button>
+                        <button
+                          onClick={async () => {
+                            setMoveToCustomerFor({ id: d.id, name: d.name });
+                            if (customers.length === 0) {
+                              try {
+                                const r = await fetch('/api/admin/customers', { headers: { Authorization: `Bearer ${getToken()}` } });
+                                if (r.ok) setCustomers(await r.json());
+                              } catch { /* ignore */ }
+                            }
+                          }}
+                          className="bg-white rounded-full p-1.5 hover:bg-gray-100"
+                          title="Move to customer's private library"
+                        >
+                          <Shirt className="w-3.5 h-3.5 text-blue-600" />
+                        </button>
                         <button onClick={() => handleDelete(d.id)} className="bg-white rounded-full p-1.5 hover:bg-gray-100" title="Delete">
                           <Trash2 className="w-3.5 h-3.5 text-red-500" />
                         </button>
@@ -835,6 +852,52 @@ export default function DesignWorkspace() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Move library design → customer private */}
+          {moveToCustomerFor && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-5">
+                <h3 className="font-semibold text-gray-900 mb-1">Move to Customer's Private Library</h3>
+                <p className="text-xs text-gray-500 mb-3">"{moveToCustomerFor.name}" will be removed from the shared Library and added to the chosen customer's private assets only.</p>
+                <select
+                  value={moveCustomerId}
+                  onChange={(e) => setMoveCustomerId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg mb-4"
+                >
+                  <option value="">— pick a customer —</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name} · {c.email}</option>
+                  ))}
+                </select>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setMoveToCustomerFor(null); setMoveCustomerId(''); }}
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!moveCustomerId}
+                    onClick={async () => {
+                      if (!moveToCustomerFor || !moveCustomerId) return;
+                      const r = await fetch(`/api/admin/designs-library/${moveToCustomerFor.id}/move-to-customer`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+                        body: JSON.stringify({ customer_id: Number(moveCustomerId) }),
+                      });
+                      if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.error || 'Move failed'); return; }
+                      setMoveToCustomerFor(null);
+                      setMoveCustomerId('');
+                      await fetchDesigns();
+                    }}
+                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                  >
+                    Move
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
