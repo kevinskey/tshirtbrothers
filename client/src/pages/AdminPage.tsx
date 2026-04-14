@@ -3900,7 +3900,7 @@ export default function AdminPage() {
             <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailQuote(null)}>
               <div className="absolute inset-0 bg-black/50" />
               <div
-                className="relative bg-white w-full md:max-w-lg h-full overflow-y-auto shadow-2xl animate-slide-in-right"
+                className="relative bg-white w-full md:max-w-lg h-full overflow-auto shadow-2xl animate-slide-in-right"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between z-10">
@@ -4272,7 +4272,7 @@ export default function AdminPage() {
         {/* Send Price Modal */}
         {priceModalQuote && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
                 <h3 className="font-display font-semibold text-gray-900">Send Price Quote</h3>
                 <button
