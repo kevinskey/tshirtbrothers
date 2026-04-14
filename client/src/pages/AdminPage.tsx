@@ -518,6 +518,7 @@ export default function AdminPage() {
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
+  const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState('');
@@ -3011,12 +3012,14 @@ export default function AdminPage() {
                         <input
                           type="text"
                           value={invoiceForm.customer_name}
-                          onChange={e => setInvoiceForm(p => ({ ...p, customer_name: e.target.value }))}
+                          onChange={e => { setInvoiceForm(p => ({ ...p, customer_name: e.target.value })); setInvoiceCustomerSuggestOpen(true); }}
+                          onFocus={() => setInvoiceCustomerSuggestOpen(true)}
+                          onBlur={() => setTimeout(() => setInvoiceCustomerSuggestOpen(false), 150)}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
                           placeholder="Start typing to search customers..."
                         />
                         {/* Customer autocomplete dropdown */}
-                        {invoiceForm.customer_name.length >= 2 && customers.filter((c: Customer) =>
+                        {invoiceCustomerSuggestOpen && invoiceForm.customer_name.length >= 2 && customers.filter((c: Customer) =>
                           c.name.toLowerCase().includes(invoiceForm.customer_name.toLowerCase()) ||
                           c.email.toLowerCase().includes(invoiceForm.customer_name.toLowerCase())
                         ).length > 0 && (
@@ -3044,6 +3047,7 @@ export default function AdminPage() {
                                     zip: c.address_zip || '',
                                   });
                                   setShippingRates([]);
+                                  setInvoiceCustomerSuggestOpen(false);
                                 }}
                                 className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 transition flex justify-between items-center"
                               >
