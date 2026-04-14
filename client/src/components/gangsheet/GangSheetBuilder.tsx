@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus,
-  DollarSign, Info, X, Wand2, Eraser
+  DollarSign, Info, X, Wand2, Eraser, RotateCw
 } from 'lucide-react';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT,
@@ -27,6 +27,7 @@ interface DesignItem {
   printHeightInches: number;
   quantity: number;
   dpi: number;
+  rotation?: number; // degrees, 0/90/180/270
 }
 
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
@@ -327,6 +328,54 @@ export default function GangSheetBuilder() {
     setSelectedDesign(null);
     checkFit();
     recalculateSheet();
+  }
+
+  // Rotate the underlying image bitmap 90° clockwise and re-apply. This way
+  // the fabric object's width/height actually reflects the new orientation
+  // (important for bounding-box overlap detection and bin packing).
+  async function rotateImage90(dataUrl: string): Promise<string> {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = () => {
+        // CORS fallback: try again without crossOrigin
+        const j = new Image();
+        j.onload = () => resolve(j);
+        j.onerror = reject;
+        j.src = dataUrl;
+      };
+      i.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const out = document.createElement('canvas');
+    out.width = h;
+    out.height = w;
+    const ctx = out.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.translate(h / 2, w / 2);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(img, -w / 2, -h / 2);
+    return out.toDataURL('image/png');
+  }
+
+  async function rotateDesign(designId: string) {
+    const design = designs.find((d) => d.id === designId);
+    if (!design || aiBusyId) return;
+    setAiBusyId(designId);
+    try {
+      const rotated = await rotateImage90(design.imageUrl);
+      // Shrink proportionally so physical print size matches what was there
+      // (rotated by 90°). Use shrinkToNewDims: old dims are WxH, new are HxW,
+      // so the print width scales by (H/W).
+      await applyProcessedImage(designId, rotated, true);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Rotate failed: ${err?.message || err}`);
+    } finally {
+      setAiBusyId(null);
+    }
   }
 
   async function updateDesignQuantity(designId: string, qty: number) {
@@ -1209,6 +1258,14 @@ export default function GangSheetBuilder() {
                             >
                               {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
                               Fix DPI
+                            </button>
+                            <button
+                              onClick={() => rotateDesign(d.id)}
+                              disabled={aiBusyId === d.id}
+                              className="flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                              title="Rotate 90° (swap vertical/horizontal)"
+                            >
+                              {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCw className="w-3 h-3" />}
                             </button>
                           </div>
                         </div>
