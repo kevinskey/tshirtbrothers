@@ -9,6 +9,7 @@ import {
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE,
   DESIGN_SPACING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
+  SIZE_PRESETS,
   pxToInches, pxToFeet, inchesToPx, feetToPx, calculateSheetCost,
   type PricingTier
 } from '@/lib/gangsheet/constants';
@@ -213,7 +214,7 @@ export default function GangSheetBuilder() {
 
       const img = await loadFabricImage(imageUrl);
       const targetW = inchesToPx(printW);
-      const scale = targetW / img.width!;
+      const scale = targetW / dims.width;
       img.set({
         left: DESIGN_SPACING_PX,
         top: DESIGN_SPACING_PX,
@@ -252,21 +253,19 @@ export default function GangSheetBuilder() {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const clampedW = Math.max(0.5, Math.min(22, widthInches));
-    setDesigns(prev => prev.map(d => {
-      if (d.id !== designId) return d;
-      const heightInches = clampedW * (d.naturalHeight / d.naturalWidth);
-      const dpi = calculateDPI(d.naturalWidth, clampedW);
-      return { ...d, printWidthInches: clampedW, printHeightInches: heightInches, dpi };
-    }));
-    // Update any fabric objects that belong to this design
-    const objs = canvas.getObjects().filter(o => (o as any).data?.designId === designId);
+    const target = designs.find((d) => d.id === designId);
+    if (!target) return;
+    const heightInches = clampedW * (target.naturalHeight / target.naturalWidth);
+    const dpi = calculateDPI(target.naturalWidth, clampedW);
+    setDesigns((prev) => prev.map((d) => (d.id === designId ? { ...d, printWidthInches: clampedW, printHeightInches: heightInches, dpi } : d)));
+    // Update all fabric objects belonging to this design; use the stored
+    // natural pixel width (not img.width) since img.width is unreliable
+    // when the image was loaded without crossOrigin.
+    const scale = inchesToPx(clampedW) / target.naturalWidth;
+    const objs = canvas.getObjects().filter((o) => (o as any).data?.designId === designId);
     for (const obj of objs) {
-      const img = obj as FabricImage;
-      if (img.width) {
-        const scale = inchesToPx(clampedW) / img.width;
-        img.set({ scaleX: scale, scaleY: scale });
-        img.setCoords();
-      }
+      obj.set({ scaleX: scale, scaleY: scale });
+      obj.setCoords();
     }
     canvas.renderAll();
     recalculateSheet();
@@ -726,6 +725,18 @@ export default function GangSheetBuilder() {
                             </label>
                           </div>
                           <p className="text-[10px] text-gray-400 mt-1">Height: {d.printHeightInches.toFixed(2)}"</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {SIZE_PRESETS.map((p) => (
+                              <button
+                                key={p.label}
+                                onClick={() => updateDesignSize(d.id, p.width)}
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700 transition"
+                                title={`${p.width}" × ~${p.height}"`}
+                              >
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       );
                     })}
