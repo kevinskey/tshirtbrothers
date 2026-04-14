@@ -2212,7 +2212,8 @@ export default function AdminPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto">
+                <table className="text-sm min-w-[1100px] w-max">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500">
                       <th className="px-6 py-3 font-medium">Name</th>
@@ -2275,6 +2276,7 @@ export default function AdminPage() {
                     )}
                   </tbody>
                 </table>
+              </div>
             </div>
 
             {/* Customer Detail Modal */}
