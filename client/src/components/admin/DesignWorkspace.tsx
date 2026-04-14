@@ -88,27 +88,47 @@ export default function DesignWorkspace() {
     } finally { setGenerating(false); }
   }
 
+  // Uploads a data URL to DO Spaces and returns a URL. Falls back to the
+  // data URL if the upload fails. Used to avoid sending huge base64 bodies
+  // to /api/design/remove-bg and /api/design/upscale (nginx rejects with 413).
+  async function uploadDataUrlIfNeeded(value: string, filename: string): Promise<{ body: Record<string, string>; newValue: string }> {
+    if (!value.startsWith('data:')) {
+      return { body: { imageUrl: value }, newValue: value };
+    }
+    try {
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ imageBase64: value, filename, customerEmail: 'admin-workspace' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) return { body: { imageUrl: data.url }, newValue: data.url };
+      }
+    } catch { /* fall through */ }
+    return { body: { imageBase64: value }, newValue: value };
+  }
+
   async function handleRemoveBg() {
     if (!generatedImage || removingBg) return;
     setRemovingBg(true);
     try {
+      const { body, newValue } = await uploadDataUrlIfNeeded(generatedImage, 'workspace-source.png');
+      if (newValue !== generatedImage) setGeneratedImage(newValue);
       const res = await fetch('/api/design/remove-bg', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify(
-          generatedImage.startsWith('data:')
-            ? { imageBase64: generatedImage }
-            : { imageUrl: generatedImage }
-        ),
+        body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       if (data.imageBase64) {
         setGeneratedImage(data.imageBase64);
         setImageHistory(prev => [...prev, data.imageBase64]);
       }
-    } catch { alert('Background removal failed'); }
-    finally { setRemovingBg(false); }
+    } catch (err: any) {
+      alert(`Background removal failed: ${err?.message || err}`);
+    } finally { setRemovingBg(false); }
   }
 
 
@@ -116,23 +136,22 @@ export default function DesignWorkspace() {
     if (!generatedImage || upscaling) return;
     setUpscaling(true);
     try {
+      const { body, newValue } = await uploadDataUrlIfNeeded(generatedImage, 'workspace-source.png');
+      if (newValue !== generatedImage) setGeneratedImage(newValue);
       const res = await fetch('/api/design/upscale', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify(
-          generatedImage.startsWith('data:')
-            ? { imageBase64: generatedImage, scale: 4 }
-            : { imageUrl: generatedImage, scale: 4 }
-        ),
+        body: JSON.stringify({ ...body, scale: 4 }),
       });
-      if (!res.ok) throw new Error('Failed');
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
       if (data.imageBase64) {
         setGeneratedImage(data.imageBase64);
         setImageHistory(prev => [...prev, data.imageBase64]);
       }
-    } catch { alert('Upscaling failed'); }
-    finally { setUpscaling(false); }
+    } catch (err: any) {
+      alert(`Upscaling failed: ${err?.message || err}`);
+    } finally { setUpscaling(false); }
   }
 
 
