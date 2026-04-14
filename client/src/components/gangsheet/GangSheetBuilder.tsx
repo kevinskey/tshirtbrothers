@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Canvas as FabricCanvas, FabricImage, Line, FabricText } from 'fabric';
+import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fabric';
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE,
-  DESIGN_SPACING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
+  DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
   SIZE_PRESETS,
   pxToInches, pxToFeet, inchesToPx, feetToPx, calculateSheetCost,
   type PricingTier
@@ -172,6 +172,23 @@ export default function GangSheetBuilder() {
     });
     canvas.add(border);
 
+    // Safe-zone dashed outline: 0.25" inset from every edge
+    const safeZone = new Rect({
+      left: EDGE_PADDING_PX,
+      top: EDGE_PADDING_PX,
+      width: SHEET_WIDTH_PX - 2 * EDGE_PADDING_PX,
+      height: height - 2 * EDGE_PADDING_PX,
+      fill: 'transparent',
+      stroke: '#fb923c',
+      strokeWidth: 2,
+      strokeDashArray: [12, 8],
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+      data: { isGrid: true },
+    });
+    canvas.add(safeZone);
+
     canvas.sendObjectToBack(border);
     canvas.renderAll();
   }
@@ -226,8 +243,8 @@ export default function GangSheetBuilder() {
       const targetW = inchesToPx(printW);
       const scale = targetW / natW;
       img.set({
-        left: DESIGN_SPACING_PX,
-        top: DESIGN_SPACING_PX,
+        left: EDGE_PADDING_PX,
+        top: EDGE_PADDING_PX,
         scaleX: scale,
         scaleY: scale,
         data: { designId: id, natW } as any,
@@ -306,10 +323,10 @@ export default function GangSheetBuilder() {
 
     // Start one slot to the right of the last existing copy; if that'd overflow
     // the sheet width, wrap to the next row.
-    let cursorX = (anchor.left || DESIGN_SPACING_PX) + copyW + DESIGN_SPACING_PX;
-    let cursorY = (anchor.top || DESIGN_SPACING_PX);
-    if (cursorX + copyW > SHEET_WIDTH_PX) {
-      cursorX = DESIGN_SPACING_PX;
+    let cursorX = (anchor.left || EDGE_PADDING_PX) + copyW + DESIGN_SPACING_PX;
+    let cursorY = (anchor.top || EDGE_PADDING_PX);
+    if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+      cursorX = EDGE_PADDING_PX;
       cursorY += copyH + DESIGN_SPACING_PX;
     }
     for (let i = 0; i < need; i++) {
@@ -324,8 +341,8 @@ export default function GangSheetBuilder() {
       });
       canvas.add(img);
       cursorX += copyW + DESIGN_SPACING_PX;
-      if (cursorX + copyW > SHEET_WIDTH_PX) {
-        cursorX = DESIGN_SPACING_PX;
+      if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+        cursorX = EDGE_PADDING_PX;
         cursorY += copyH + DESIGN_SPACING_PX;
       }
     }
