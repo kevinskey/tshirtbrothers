@@ -77,6 +77,7 @@ import {
   deleteBlogPost,
   publishBlogPost,
   sendBalanceRequest,
+  calculateQuotePrice,
   updateAdminNotes,
   fetchAdminCounts,
 } from '@/lib/api';
@@ -368,6 +369,16 @@ export default function AdminPage() {
   const [priceRushFee, setPriceRushFee] = useState('0');
   const [priceShipping, setPriceShipping] = useState('0');
   const [priceMessage, setPriceMessage] = useState('');
+  // Gang-sheet calculator inputs
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcGraphicW, setCalcGraphicW] = useState('10');
+  const [calcGraphicH, setCalcGraphicH] = useState('12');
+  const [calcTier, setCalcTier] = useState<'standard' | 'rush' | 'hotRush'>('standard');
+  const [calcSetupFee, setCalcSetupFee] = useState('0');
+  const [calcTaxRate, setCalcTaxRate] = useState('8');
+  const [calcBreakdown, setCalcBreakdown] = useState<Awaited<ReturnType<typeof import('@/lib/api').calculateQuotePrice>> | null>(null);
+  const [calcError, setCalcError] = useState<string | null>(null);
+  const [calcLoading, setCalcLoading] = useState(false);
   const [sizeMarkups, setSizeMarkups] = useState<Record<string, string>>({});
 
   // Blog state
@@ -836,6 +847,43 @@ export default function AdminPage() {
       setPreviewInvoice(null);
     } catch (err) {
       // errors are handled by the mutation's onError
+    }
+  }
+
+  async function handleCalculateFromGangSheet() {
+    if (!priceModalQuote) return;
+    setCalcError(null);
+    setCalcLoading(true);
+    try {
+      const qty = Number(priceModalQuote.quantity) || 1;
+      const result = await calculateQuotePrice({
+        product_id: Number((priceModalQuote as unknown as { product_id?: number }).product_id || 0),
+        quantity: qty,
+        graphic_width_in: parseFloat(calcGraphicW) || 0,
+        graphic_height_in: parseFloat(calcGraphicH) || 0,
+        pricing_tier: calcTier,
+        setup_fee: parseFloat(calcSetupFee) || 0,
+        design_fee: parseFloat(priceDesignFee) || 0,
+        shipping: parseFloat(priceShipping) || 0,
+        tax_rate: parseFloat(calcTaxRate) || 0,
+      });
+      setCalcBreakdown(result);
+      // Apply: set every size's per-garment price to total / qty.
+      const perUnit = +(result.total / qty).toFixed(2);
+      setSizeMarkups((prev) => {
+        const next: Record<string, string> = { ...prev };
+        for (const k of Object.keys(next)) next[k] = perUnit.toFixed(2);
+        return next;
+      });
+      // Mirror the calc setup fee into the rush-fee input (that field is the
+      // closest to "additional one-time charges" that currently exists).
+      if (parseFloat(calcSetupFee) > 0 && !parseFloat(priceRushFee)) {
+        setPriceRushFee(calcSetupFee);
+      }
+    } catch (err: any) {
+      setCalcError(err?.message || 'Calculation failed');
+    } finally {
+      setCalcLoading(false);
     }
   }
 
@@ -4278,6 +4326,83 @@ export default function AdminPage() {
                 <SSPricingInfo productName={priceModalQuote.product_name || priceModalQuote.productName || ''} quantity={priceModalQuote.quantity} printAreas={priceModalQuote.print_areas} />
 
                 <form onSubmit={handleSendPrice} className="space-y-4">
+                  {/* Gang-sheet-based price calculator */}
+                  <div className="border border-gray-200 rounded-lg bg-blue-50/40">
+                    <button
+                      type="button"
+                      onClick={() => setCalcOpen((v) => !v)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-blue-900"
+                    >
+                      <span>🧮 Calculate from Gang Sheet</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${calcOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {calcOpen && (
+                      <div className="border-t border-gray-200 p-4 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Graphic Width (in)</label>
+                            <input type="number" step="0.25" min="0.5" value={calcGraphicW} onChange={(e) => setCalcGraphicW(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Graphic Height (in)</label>
+                            <input type="number" step="0.25" min="0.5" value={calcGraphicH} onChange={(e) => setCalcGraphicH(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Rush Tier</label>
+                            <select value={calcTier} onChange={(e) => setCalcTier(e.target.value as 'standard' | 'rush' | 'hotRush')} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded">
+                              <option value="standard">Standard ($6/ft)</option>
+                              <option value="rush">Rush ($8/ft)</option>
+                              <option value="hotRush">Hot Rush ($12/ft)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Setup Fee ($)</label>
+                            <input type="number" step="0.01" min="0" value={calcSetupFee} onChange={(e) => setCalcSetupFee(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-1">Tax Rate (%)</label>
+                            <input type="number" step="0.01" min="0" value={calcTaxRate} onChange={(e) => setCalcTaxRate(e.target.value)} className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded" />
+                          </div>
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={handleCalculateFromGangSheet}
+                              disabled={calcLoading}
+                              className="w-full px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                              {calcLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              Calculate & Apply
+                            </button>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-gray-500">
+                          Uses the quote's product (base price + price breaks), gang-sheet feet needed
+                          for {priceModalQuote.quantity} graphics, plus the fees below. Design fee and
+                          shipping pull from the "Additional Fees" fields. Per-garment price is set to
+                          total / quantity.
+                        </p>
+                        {calcError && (
+                          <div className="bg-red-50 text-red-700 text-xs rounded p-2">{calcError}</div>
+                        )}
+                        {calcBreakdown && (
+                          <div className="bg-white border border-gray-200 rounded p-3 text-xs space-y-1">
+                            <div className="flex justify-between"><span>Product ({calcBreakdown.breakdown.product.quantity} × ${calcBreakdown.breakdown.product.unit_price.toFixed(2)})</span><span>${calcBreakdown.breakdown.product.subtotal.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Gang sheet ({calcBreakdown.breakdown.gang_sheet.feet_needed} ft × ${calcBreakdown.breakdown.gang_sheet.rate_per_foot}/ft)</span><span>${calcBreakdown.breakdown.gang_sheet.subtotal.toFixed(2)}</span></div>
+                            <div className="text-[10px] text-gray-500 italic">  {calcBreakdown.breakdown.gang_sheet.copies_across} across × {calcBreakdown.breakdown.gang_sheet.rows_per_foot} per ft = {calcBreakdown.breakdown.gang_sheet.copies_per_foot}/ft</div>
+                            <div className="flex justify-between"><span>Setup fee</span><span>${calcBreakdown.breakdown.setup_fee.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Design fee</span><span>${calcBreakdown.breakdown.design_fee.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Tax ({calcBreakdown.breakdown.tax_rate}% on ${calcBreakdown.breakdown.taxable_subtotal.toFixed(2)})</span><span>${calcBreakdown.breakdown.tax.toFixed(2)}</span></div>
+                            <div className="flex justify-between"><span>Shipping</span><span>${calcBreakdown.breakdown.shipping.toFixed(2)}</span></div>
+                            <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200 mt-1">
+                              <span>Total</span><span>${calcBreakdown.total.toFixed(2)}</span>
+                            </div>
+                            <div className="text-[10px] text-gray-500 text-right">Per unit: ${(calcBreakdown.total / calcBreakdown.breakdown.product.quantity).toFixed(2)}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Per-size pricing table */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-900 mb-2">Price Per Garment (by size)</label>
