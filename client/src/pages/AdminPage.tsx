@@ -3031,20 +3031,27 @@ export default function AdminPage() {
                               <button
                                 key={c.id}
                                 type="button"
-                                onClick={() => {
+                                onClick={async () => {
+                                  // Fetch the full record so we get address fields
+                                  // even if the cached list omitted them.
+                                  let full: Customer & { address_street?: string; address_city?: string; address_state?: string; address_zip?: string } = c;
+                                  try {
+                                    const r = await fetch(`/api/admin/customers/${c.id}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
+                                    if (r.ok) full = { ...c, ...(await r.json()) };
+                                  } catch { /* fall through to list data */ }
                                   setInvoiceForm(p => ({
                                     ...p,
-                                    customer_name: c.name,
-                                    customer_email: c.email,
-                                    customer_phone: c.phone || p.customer_phone,
-                                    customer_address: [c.address_street, c.address_city, c.address_state, c.address_zip].filter(Boolean).join(', ') || p.customer_address,
+                                    customer_name: full.name || c.name,
+                                    customer_email: full.email || c.email,
+                                    customer_phone: full.phone || p.customer_phone,
+                                    customer_address: [full.address_street, full.address_city, full.address_state, full.address_zip].filter(Boolean).join(', ') || p.customer_address,
                                   }));
                                   setInvoiceShipTo({
-                                    name: c.name,
-                                    street: c.address_street || '',
-                                    city: c.address_city || '',
-                                    state: c.address_state || '',
-                                    zip: c.address_zip || '',
+                                    name: full.name || c.name,
+                                    street: full.address_street || '',
+                                    city: full.address_city || '',
+                                    state: full.address_state || '',
+                                    zip: full.address_zip || '',
                                   });
                                   setShippingRates([]);
                                   setInvoiceCustomerSuggestOpen(false);
