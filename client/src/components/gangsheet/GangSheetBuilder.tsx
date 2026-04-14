@@ -257,16 +257,56 @@ export default function GangSheetBuilder() {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    const obj = canvas.getObjects().find(o => (o as any).data?.designId === designId);
-    if (obj) canvas.remove(obj);
+    // Remove ALL fabric objects that belong to this design (including clones)
+    const objs = canvas.getObjects().filter(o => (o as any).data?.designId === designId);
+    for (const o of objs) canvas.remove(o);
 
     setDesigns(prev => prev.filter(d => d.id !== designId));
     setSelectedDesign(null);
     recalculateSheet();
   }
 
-  function updateDesignQuantity(designId: string, qty: number) {
-    setDesigns(prev => prev.map(d => d.id === designId ? { ...d, quantity: Math.max(1, qty) } : d));
+  async function updateDesignQuantity(designId: string, qty: number) {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const clamped = Math.max(1, qty);
+    setDesigns(prev => prev.map(d => d.id === designId ? { ...d, quantity: clamped } : d));
+
+    // Keep fabric object count in sync with quantity.
+    const existing = canvas.getObjects().filter(o => (o as any).data?.designId === designId) as FabricImage[];
+    if (existing.length === clamped) return;
+
+    if (existing.length > clamped) {
+      // Too many: remove the extras
+      for (let i = existing.length - 1; i >= clamped; i--) {
+        canvas.remove(existing[i]!);
+      }
+    } else {
+      // Too few: clone the first one
+      const template = existing[0];
+      if (!template) return;
+      const need = clamped - existing.length;
+      let offsetX = 0;
+      let offsetY = 0;
+      for (let i = 0; i < need; i++) {
+        offsetX += (template.getScaledWidth?.() || 0) + DESIGN_SPACING_PX;
+        // Wrap to next row if past sheet width
+        if (((template.left || 0) + offsetX) > SHEET_WIDTH_PX) {
+          offsetX = 0;
+          offsetY += (template.getScaledHeight?.() || 0) + DESIGN_SPACING_PX;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const clone = await template.clone();
+        clone.set({
+          left: (template.left || 0) + offsetX,
+          top: (template.top || 0) + offsetY,
+          data: { ...((template as any).data || {}), designId },
+        });
+        canvas.add(clone);
+      }
+    }
+    canvas.renderAll();
+    recalculateSheet();
   }
 
   function updateDesignSize(designId: string, widthInches: number) {
