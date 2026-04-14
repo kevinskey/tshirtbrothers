@@ -405,12 +405,15 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
 // POST /admin/calculate-price - Tie quote pricing to gang-sheet placement
 //
 // Body:
-//   product_id        number   quote's product id (uses products.base_price)
-//   quantity          number   number of shirts / items in quote
-//   graphic_width_in  number   width of the graphic in inches
-//   graphic_height_in number   height of the graphic in inches
-//   pricing_tier      string   'standard' | 'rush' | 'hotRush' (default standard)
-//   other_costs       number   optional flat addon (setup/shipping/etc.)
+//   product_id        number  quote's product id (uses products.base_price)
+//   quantity          number  number of shirts / items in quote
+//   graphic_width_in  number  width of the graphic in inches
+//   graphic_height_in number  height of the graphic in inches
+//   pricing_tier      string  'standard' | 'rush' | 'hotRush' (default standard)
+//   setup_fee         number  one-time setup charge (default 0)
+//   design_fee        number  graphic design / artwork charge (default 0)
+//   shipping          number  shipping charge (default 0; NOT taxed)
+//   tax_rate          number  percent applied to taxable subtotal (default 0)
 //
 // Returns: { breakdown: {...}, total }
 router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, next) => {
@@ -421,7 +424,10 @@ router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, 
       graphic_width_in,
       graphic_height_in,
       pricing_tier = 'standard',
-      other_costs = 0,
+      setup_fee = 0,
+      design_fee = 0,
+      shipping = 0,
+      tax_rate = 0,
     } = req.body;
 
     const qty = Math.max(1, parseInt(quantity, 10) || 0);
@@ -438,7 +444,7 @@ router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, 
     const product = productResult.rows[0];
 
     // Tiered product pricing: price_breaks is an array of { min_qty, price }.
-    // Pick the highest min_qty that qty meets; fall back to base_price.
+    // Pick the lowest price whose min_qty the order meets; fall back to base_price.
     let unitPrice = parseFloat(product.base_price || 0);
     const breaks = Array.isArray(product.price_breaks) ? product.price_breaks : [];
     for (const b of breaks) {
@@ -453,7 +459,6 @@ router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, 
     // Gang-sheet cost: how many copies of the graphic (+ spacing) fit per foot
     // of a 22" sheet, then feet needed = ceil(qty / perFoot).
     // Mirrors logic in client/src/lib/gangsheet/binPacking.ts.
-    const DPI = 300;
     const SHEET_WIDTH_IN = 22;
     const SPACING_IN = 0.1;
     const EDGE_PADDING_IN = 0.25;
@@ -472,10 +477,19 @@ router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, 
     };
     const rate = PRICING[pricing_tier] ?? PRICING.standard;
     const gangSheetCost = +(feetNeeded * rate).toFixed(2);
+    const isRush = pricing_tier !== 'standard';
 
-    const otherCostsNum = Math.max(0, parseFloat(other_costs) || 0);
+    const setupFee = +(Math.max(0, parseFloat(setup_fee) || 0)).toFixed(2);
+    const designFee = +(Math.max(0, parseFloat(design_fee) || 0)).toFixed(2);
+    const shippingCost = +(Math.max(0, parseFloat(shipping) || 0)).toFixed(2);
+    const taxRate = Math.max(0, parseFloat(tax_rate) || 0);
 
-    const total = +(productSubtotal + gangSheetCost + otherCostsNum).toFixed(2);
+    // Taxable = product + gang-sheet + setup + design.
+    // Shipping is NOT taxed (standard practice in most states).
+    const taxable = +(productSubtotal + gangSheetCost + setupFee + designFee).toFixed(2);
+    const tax = +(taxable * (taxRate / 100)).toFixed(2);
+
+    const total = +(taxable + shippingCost + tax).toFixed(2);
 
     res.json({
       breakdown: {
@@ -493,10 +507,16 @@ router.post('/admin/calculate-price', authenticate, adminOnly, async (req, res, 
           copies_per_foot: perFoot,
           feet_needed: feetNeeded,
           pricing_tier,
+          is_rush: isRush,
           rate_per_foot: rate,
           subtotal: gangSheetCost,
         },
-        other_costs: otherCostsNum,
+        setup_fee: setupFee,
+        design_fee: designFee,
+        shipping: shippingCost,
+        taxable_subtotal: taxable,
+        tax_rate: taxRate,
+        tax,
       },
       total,
     });
