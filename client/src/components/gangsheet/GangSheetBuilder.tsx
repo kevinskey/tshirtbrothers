@@ -538,6 +538,8 @@ export default function GangSheetBuilder() {
     }
     canvas.renderAll();
   }
+
+  function updateSheetLength(ft: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
     const newFt = Math.max(1, Math.min(MAX_SHEET_LENGTH_FT, Math.round(ft)));
