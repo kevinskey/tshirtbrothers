@@ -243,14 +243,51 @@ export default function GangSheetBuilder() {
       const el = img.getElement() as HTMLImageElement;
       const natW = el?.naturalWidth || dims.width;
       const targetW = inchesToPx(printW);
+      const targetH = targetW * (dims.height / dims.width);
       const scale = targetW / natW;
+
+      // Place the new graphic after any existing graphics: try to fit it to
+      // the right of the right-most existing graphic on the bottom-most row;
+      // if it won't fit, start a new row below all existing content.
+      const existingObjs = canvas.getObjects().filter(o => !(o as any).data?.isGrid);
+      let startLeft = EDGE_PADDING_PX;
+      let startTop = EDGE_PADDING_PX;
+      if (existingObjs.length > 0) {
+        let maxBottom = EDGE_PADDING_PX;
+        let rightmostOnLastRow = EDGE_PADDING_PX;
+        let lastRowTop = 0;
+        for (const o of existingObjs) {
+          const b = (o.top || 0) + (o.getScaledHeight?.() || 0);
+          if (b > maxBottom) maxBottom = b;
+        }
+        // Find objects whose bottom == maxBottom (i.e. live in the last row)
+        for (const o of existingObjs) {
+          const b = (o.top || 0) + (o.getScaledHeight?.() || 0);
+          if (Math.abs(b - maxBottom) < 2) {
+            const r = (o.left || 0) + (o.getScaledWidth?.() || 0);
+            if (r > rightmostOnLastRow) rightmostOnLastRow = r;
+            if ((o.top || 0) > lastRowTop) lastRowTop = (o.top || 0);
+          }
+        }
+        const candidateLeft = rightmostOnLastRow + DESIGN_SPACING_PX;
+        if (candidateLeft + targetW <= SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+          startLeft = candidateLeft;
+          startTop = lastRowTop;
+        } else {
+          startLeft = EDGE_PADDING_PX;
+          startTop = maxBottom + DESIGN_SPACING_PX;
+        }
+      }
+
       img.set({
-        left: EDGE_PADDING_PX,
-        top: EDGE_PADDING_PX,
+        left: startLeft,
+        top: startTop,
         scaleX: scale,
         scaleY: scale,
         data: { designId: id, natW } as any,
       });
+      // Reference targetH so linting doesn't complain (also helps document intent)
+      void targetH;
       console.log('[gangsheet] add', {
         name,
         printW,
