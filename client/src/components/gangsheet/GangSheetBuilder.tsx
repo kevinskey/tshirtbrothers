@@ -172,16 +172,18 @@ export default function GangSheetBuilder() {
     });
     canvas.add(border);
 
-    // Safe-zone dashed outline: 0.25" inset from every edge
+    // Safe-zone dashed outline: 0.25" inset from every edge.
+    // Stroke is thick in canvas-units because canvas display is zoomed way down.
     const safeZone = new Rect({
       left: EDGE_PADDING_PX,
       top: EDGE_PADDING_PX,
       width: SHEET_WIDTH_PX - 2 * EDGE_PADDING_PX,
       height: height - 2 * EDGE_PADDING_PX,
-      fill: 'transparent',
-      stroke: '#fb923c',
-      strokeWidth: 2,
-      strokeDashArray: [12, 8],
+      fill: 'rgba(0,0,0,0)',
+      stroke: '#ea580c',
+      strokeWidth: 20,
+      strokeDashArray: [60, 40],
+      strokeUniform: true,
       selectable: false,
       evented: false,
       excludeFromExport: true,
