@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText } from 'fabric';
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus,
-  DollarSign, Info
+  DollarSign, Info, X
 } from 'lucide-react';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE,
@@ -52,6 +52,7 @@ export default function GangSheetBuilder() {
 
   // UI state
   const [activePanel, setActivePanel] = useState<'upload' | 'library' | 'pricing' | null>('upload');
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [selectedDesign, setSelectedDesign] = useState<string | null>(null);
   const [sheetLengthFt, setSheetLengthFt] = useState(1);
   const [designCount, setDesignCount] = useState(0);
@@ -556,8 +557,24 @@ export default function GangSheetBuilder() {
           </div>
         </div>
 
-        {/* ── Sidebar ──────────────────────────────────────────────────── */}
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0 hidden md:flex">
+        {/* ── Sidebar (desktop right-side / mobile bottom drawer) ────── */}
+        {mobilePanelOpen && (
+          <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setMobilePanelOpen(false)} />
+        )}
+        <div className={`
+          bg-white border-gray-200 flex flex-col overflow-hidden flex-shrink-0
+          md:w-80 md:border-l md:static md:flex md:translate-y-0
+          fixed bottom-0 left-0 right-0 z-40 rounded-t-2xl border-t max-h-[80vh] transition-transform
+          ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full md:translate-y-0'}
+        `}>
+          {/* Mobile drawer handle + close */}
+          <div className="flex items-center justify-between px-3 pt-2 md:hidden">
+            <div className="w-10 h-1 rounded-full bg-gray-300 mx-auto" />
+            <button onClick={() => setMobilePanelOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 absolute right-2 top-2">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
           {/* Tabs */}
           <div className="flex border-b border-gray-200">
             {([
@@ -729,17 +746,19 @@ export default function GangSheetBuilder() {
 
       {/* ── Mobile Bottom Bar ──────────────────────────────────────────── */}
       <div className="md:hidden bg-white border-t border-gray-200 px-3 py-2 flex items-center gap-2 overflow-x-auto flex-shrink-0">
+        <button
+          onClick={() => { setActivePanel('upload'); setMobilePanelOpen(true); }}
+          className="flex items-center gap-1 px-3 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap"
+        >
+          <Plus className="w-3 h-3" /> Add Graphics
+        </button>
         <button onClick={autoLayout} className="flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg whitespace-nowrap">
           <Layout className="w-3 h-3" /> Layout
         </button>
-        <label className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg whitespace-nowrap cursor-pointer">
-          <Upload className="w-3 h-3" /> Upload
-          <input type="file" multiple accept=".png,.jpg,.jpeg,.svg" className="hidden" onChange={e => handleFileUpload(e.target.files)} />
-        </label>
-        <span className="text-xs text-gray-500 whitespace-nowrap">{designCount} designs · {sheetLengthFt}ft</span>
+        <span className="text-xs text-gray-500 whitespace-nowrap">{designCount} · {sheetLengthFt}ft</span>
         <span className="text-xs font-bold text-green-700 whitespace-nowrap">${totalCost.toFixed(2)}</span>
         <div className="flex-1" />
-        <button onClick={handleExport} disabled={exporting} className="px-3 py-2 bg-orange-500 text-white text-xs font-medium rounded-lg whitespace-nowrap">
+        <button onClick={handleExport} disabled={exporting} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap">
           {exporting ? '...' : 'Export'}
         </button>
       </div>
