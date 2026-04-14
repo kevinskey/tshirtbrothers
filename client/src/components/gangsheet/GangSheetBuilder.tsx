@@ -317,8 +317,31 @@ export default function GangSheetBuilder() {
       canvas.add(img);
       cursorX += copyW + DESIGN_SPACING_PX;
     }
+    growCanvasToFit();
     canvas.renderAll();
     recalculateSheet();
+  }
+
+  // Expand canvas height so every design's bottom is visible.
+  function growCanvasToFit() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const objects = canvas.getObjects().filter((o) => !(o as any).data?.isGrid);
+    let maxY = 0;
+    for (const obj of objects) {
+      const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
+      if (bottom > maxY) maxY = bottom;
+    }
+    const neededHeight = Math.max(feetToPx(1), maxY + DESIGN_SPACING_PX);
+    const currentBitmapHeight = canvas.getHeight();
+    const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
+    if (neededHeight > currentSheetPxHeight) {
+      canvas.setDimensions({
+        width: SHEET_WIDTH_PX * zoom,
+        height: neededHeight * zoom,
+      });
+      drawGrid(canvas, neededHeight);
+    }
   }
 
   function updateDesignSize(designId: string, widthInches: number) {
