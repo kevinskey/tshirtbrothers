@@ -211,32 +211,52 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
         <span className="text-xs font-normal text-gray-500 ml-2">Only this customer + admins can see these.</span>
       </h4>
 
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex-1 min-w-[200px]">
-            <input
-              type="file"
-              accept="image/*,.svg,.pdf"
-              multiple
-              onChange={(e) => setAssetFiles(Array.from(e.target.files || []))}
-              className="text-xs w-full"
-            />
-          </label>
-          <button
-            onClick={uploadAll}
-            disabled={uploading || assetFiles.length === 0}
-            className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-1 whitespace-nowrap"
-          >
-            {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-            {uploading
-              ? `Uploading ${progress.done}/${progress.total}…`
-              : `Upload ${assetFiles.length || ''} file${assetFiles.length === 1 ? '' : 's'}`.trim()}
-          </button>
-        </div>
-        {assetFiles.length > 0 && !uploading && (
-          <p className="text-[10px] text-gray-500 mt-1.5">
-            {assetFiles.length} file{assetFiles.length === 1 ? '' : 's'} selected · names will be derived from filenames.
-          </p>
+      <div
+        className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-4 mb-3 text-center hover:border-red-400 hover:bg-red-50/30 transition-colors"
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const dropped = Array.from(e.dataTransfer.files || []).filter((f) => /image\/|\.svg$|\.pdf$/.test(f.type + f.name));
+          if (dropped.length > 0) setAssetFiles((prev) => [...prev, ...dropped]);
+        }}
+      >
+        <label className="cursor-pointer">
+          <Upload className="w-5 h-5 text-gray-400 mx-auto mb-1" />
+          <p className="text-xs text-gray-600 font-medium">Drop files here or click to pick</p>
+          <p className="text-[10px] text-gray-400">Hold Cmd/Ctrl or Shift in the picker to select many at once</p>
+          <input
+            type="file"
+            accept="image/*,.svg,.pdf"
+            multiple
+            onChange={(e) => setAssetFiles(Array.from(e.target.files || []))}
+            className="hidden"
+          />
+        </label>
+        {assetFiles.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-gray-200">
+            <p className="text-[10px] text-gray-600 mb-1.5">
+              {assetFiles.length} file{assetFiles.length === 1 ? '' : 's'} ready:{' '}
+              <span className="text-gray-400">{assetFiles.slice(0, 3).map((f) => f.name).join(', ')}{assetFiles.length > 3 ? `, +${assetFiles.length - 3} more` : ''}</span>
+            </p>
+            <div className="flex gap-2 justify-center">
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); setAssetFiles([]); }}
+                className="text-[11px] text-gray-500 hover:text-gray-700 px-2 py-1"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); uploadAll(); }}
+                disabled={uploading}
+                className="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded disabled:opacity-50 flex items-center gap-1"
+              >
+                {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                {uploading ? `Uploading ${progress.done}/${progress.total}…` : `Upload ${assetFiles.length} file${assetFiles.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
