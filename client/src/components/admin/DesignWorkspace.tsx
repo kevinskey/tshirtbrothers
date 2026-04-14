@@ -63,6 +63,11 @@ export default function DesignWorkspace() {
   const [pickerDesigns, setPickerDesigns] = useState<Array<{ id: number; customer_name: string; product_name: string; design_url: string; status: string }>>([]);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerTab, setPickerTab] = useState<'quotes' | 'private'>('quotes');
+  const [customers, setCustomers] = useState<Array<{ id: number; name: string; email: string }>>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [privateAssets, setPrivateAssets] = useState<Array<{ id: number; name: string; image_url: string }>>([]);
+  const [privateLoading, setPrivateLoading] = useState(false);
 
   async function fetchDesigns() {
     setLoading(true);
@@ -443,7 +448,7 @@ export default function DesignWorkspace() {
                   }}
                   className="w-full text-sm py-2 rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 text-gray-700 flex items-center justify-center gap-2"
                 >
-                  <FolderOpen className="w-4 h-4" /> Pick from Customer Quote Uploads
+                  <FolderOpen className="w-4 h-4" /> Pick from Customer Graphics
                 </button>
               </div>
 
@@ -472,59 +477,144 @@ export default function DesignWorkspace() {
               </div>
             </div>
 
-            {/* Quote-design picker modal */}
+            {/* Customer graphics picker modal */}
             {pickerOpen && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
                   <div className="flex items-center justify-between px-5 py-3 border-b">
-                    <h3 className="font-semibold text-gray-900">Customer Quote Uploads</h3>
+                    <h3 className="font-semibold text-gray-900">Customer Graphics</h3>
                     <button onClick={() => setPickerOpen(false)} className="text-gray-400 hover:text-gray-600">✕</button>
                   </div>
-                  <div className="px-5 py-2 border-b">
-                    <input
-                      type="text"
-                      placeholder="Search customer or product…"
-                      value={pickerSearch}
-                      onChange={(e) => setPickerSearch(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                    />
+                  {/* Tabs */}
+                  <div className="flex border-b">
+                    <button
+                      onClick={() => setPickerTab('quotes')}
+                      className={`flex-1 py-2.5 text-sm font-medium ${pickerTab === 'quotes' ? 'text-orange-600 border-b-2 border-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Quote Uploads ({pickerDesigns.length})
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setPickerTab('private');
+                        if (customers.length === 0) {
+                          try {
+                            const r = await fetch('/api/admin/customers', { headers: { Authorization: `Bearer ${getToken()}` } });
+                            if (r.ok) setCustomers(await r.json());
+                          } catch { /* ignore */ }
+                        }
+                      }}
+                      className={`flex-1 py-2.5 text-sm font-medium ${pickerTab === 'private' ? 'text-orange-600 border-b-2 border-orange-500' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Private Assets
+                    </button>
                   </div>
-                  <div className="flex-1 overflow-auto p-5">
-                    {pickerLoading ? (
-                      <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
-                    ) : pickerDesigns.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-8">No customer-uploaded graphics found.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {pickerDesigns
-                          .filter(d => {
-                            const q = pickerSearch.trim().toLowerCase();
-                            if (!q) return true;
-                            return d.customer_name.toLowerCase().includes(q) || d.product_name.toLowerCase().includes(q);
-                          })
-                          .map(d => (
-                            <button
-                              key={d.id}
-                              onClick={() => {
-                                setGeneratedImage(d.design_url);
-                                setImageHistory(prev => [...prev, d.design_url]);
-                                setPrompt(`${d.customer_name} - ${d.product_name}`);
-                                setPickerOpen(false);
-                              }}
-                              className="group text-left bg-white border border-gray-200 rounded-lg overflow-hidden hover:border-orange-400 transition"
-                            >
-                              <div className="aspect-square bg-gray-50 flex items-center justify-center">
-                                <img src={d.design_url} alt="" className="w-full h-full object-contain" />
-                              </div>
-                              <div className="p-2">
-                                <p className="text-xs font-semibold text-gray-900 truncate">{d.customer_name}</p>
-                                <p className="text-[10px] text-gray-500 truncate">{d.product_name || '—'}</p>
-                              </div>
-                            </button>
-                          ))}
+
+                  {pickerTab === 'quotes' ? (
+                    <>
+                      <div className="px-5 py-2 border-b">
+                        <input
+                          type="text"
+                          placeholder="Search customer or product…"
+                          value={pickerSearch}
+                          onChange={(e) => setPickerSearch(e.target.value)}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                        />
                       </div>
-                    )}
-                  </div>
+                      <div className="flex-1 overflow-auto p-5">
+                        {pickerLoading ? (
+                          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                        ) : pickerDesigns.length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-8">No customer-uploaded graphics found.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {pickerDesigns
+                              .filter(d => {
+                                const q = pickerSearch.trim().toLowerCase();
+                                if (!q) return true;
+                                return d.customer_name.toLowerCase().includes(q) || d.product_name.toLowerCase().includes(q);
+                              })
+                              .map(d => (
+                                <button
+                                  key={d.id}
+                                  onClick={() => {
+                                    setGeneratedImage(d.design_url);
+                                    setImageHistory(prev => [...prev, d.design_url]);
+                                    setPrompt(`${d.customer_name} - ${d.product_name}`);
+                                    setPickerOpen(false);
+                                  }}
+                                  className="group text-left bg-white border border-gray-200 rounded-lg overflow-hidden hover:border-orange-400 transition"
+                                >
+                                  <div className="aspect-square bg-gray-50 flex items-center justify-center">
+                                    <img src={d.design_url} alt="" className="w-full h-full object-contain" />
+                                  </div>
+                                  <div className="p-2">
+                                    <p className="text-xs font-semibold text-gray-900 truncate">{d.customer_name}</p>
+                                    <p className="text-[10px] text-gray-500 truncate">{d.product_name || '—'}</p>
+                                  </div>
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-5 py-2 border-b">
+                        <select
+                          value={selectedCustomerId}
+                          onChange={async (e) => {
+                            const id = e.target.value;
+                            setSelectedCustomerId(id);
+                            setPrivateAssets([]);
+                            if (id) {
+                              setPrivateLoading(true);
+                              try {
+                                const r = await fetch(`/api/admin/customers/${id}/assets`, { headers: { Authorization: `Bearer ${getToken()}` } });
+                                if (r.ok) setPrivateAssets(await r.json());
+                              } finally { setPrivateLoading(false); }
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                        >
+                          <option value="">— pick a customer —</option>
+                          {customers.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name} · {c.email}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex-1 overflow-auto p-5">
+                        {!selectedCustomerId ? (
+                          <p className="text-sm text-gray-400 text-center py-8">Choose a customer above to see their private assets.</p>
+                        ) : privateLoading ? (
+                          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+                        ) : privateAssets.length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-8">No private assets for this customer yet.</p>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {privateAssets.map((a) => (
+                              <button
+                                key={a.id}
+                                onClick={() => {
+                                  setGeneratedImage(a.image_url);
+                                  setImageHistory(prev => [...prev, a.image_url]);
+                                  setPrompt(a.name);
+                                  setPickerOpen(false);
+                                }}
+                                className="group text-left bg-white border border-gray-200 rounded-lg overflow-hidden hover:border-orange-400 transition"
+                              >
+                                <div className="aspect-square bg-gray-50 flex items-center justify-center">
+                                  <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
+                                </div>
+                                <div className="p-2">
+                                  <p className="text-xs font-semibold text-gray-900 truncate">{a.name}</p>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
