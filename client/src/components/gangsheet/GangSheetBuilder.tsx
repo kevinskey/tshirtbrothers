@@ -266,6 +266,7 @@ export default function GangSheetBuilder() {
       canvas.add(img);
       canvas.setActiveObject(img);
       canvas.renderAll();
+      resolveOverlaps();
       checkFit();
       recalculateSheet();
     } catch (err) {
@@ -349,6 +350,7 @@ export default function GangSheetBuilder() {
       }
     }
     canvas.renderAll();
+    resolveOverlaps();
     checkFit();
     recalculateSheet();
   }
@@ -432,11 +434,71 @@ export default function GangSheetBuilder() {
       });
     }
     canvas.renderAll();
+    resolveOverlaps();
     checkFit();
     recalculateSheet();
   }
 
-  function updateSheetLength(ft: number) {
+  // After a size change, if any two objects overlap, bin-pack everything so
+  // nobody's stacked on top of each other.
+  function resolveOverlaps() {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const objects = canvas.getObjects().filter(o => !(o as any).data?.isGrid);
+    if (objects.length < 2) return;
+    const rects = objects.map((o) => ({
+      obj: o,
+      left: o.left || 0,
+      top: o.top || 0,
+      right: (o.left || 0) + (o.getScaledWidth?.() || 0),
+      bottom: (o.top || 0) + (o.getScaledHeight?.() || 0),
+    }));
+    let hasOverlap = false;
+    outer: for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i]!;
+        const b = rects[j]!;
+        if (a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top) {
+          hasOverlap = true;
+          break outer;
+        }
+      }
+    }
+    if (!hasOverlap) return;
+
+    // Build pack items (one per fabric object so packer knows about all copies)
+    const items: PackItem[] = [];
+    for (const d of designs) {
+      const copies = objects.filter((o) => (o as any).data?.designId === d.id);
+      for (let i = 0; i < copies.length; i++) {
+        items.push({
+          id: d.id + '#' + i,
+          width: inchesToPx(d.printWidthInches),
+          height: inchesToPx(d.printHeightInches),
+          quantity: 1,
+        });
+      }
+    }
+    const result = packDesigns(items);
+
+    // Map placements back to fabric objects
+    const byDesign: Record<string, any[]> = {};
+    for (const d of designs) {
+      byDesign[d.id] = objects.filter((o) => (o as any).data?.designId === d.id);
+    }
+    const cursors: Record<string, number> = {};
+    for (const placement of result.placements) {
+      const designId = placement.id.split('#')[0]!;
+      cursors[designId] = (cursors[designId] ?? -1) + 1;
+      const list = byDesign[designId] ?? [];
+      const obj = list[cursors[designId]!];
+      if (obj) {
+        obj.set({ left: placement.x, top: placement.y });
+        obj.setCoords();
+      }
+    }
+    canvas.renderAll();
+  }
     const canvas = fabricRef.current;
     if (!canvas) return;
     const newFt = Math.max(1, Math.min(MAX_SHEET_LENGTH_FT, Math.round(ft)));
