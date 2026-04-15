@@ -2105,7 +2105,12 @@ export default function DesignStudioPage() {
   // control tucked into a popover, so the canvas/t-shirt stays visible
   // while editing. No more bottom drawer eating ~35% of the viewport.
   const textToolbar = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
+    <div
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
+      onClick={e => e.stopPropagation()}
+      onMouseDown={e => e.stopPropagation()}
+      onTouchStart={e => e.stopPropagation()}
+    >
 
       {/* Edit content */}
       <div className="relative">
