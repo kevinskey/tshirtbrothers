@@ -97,22 +97,24 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
   letterSpacing?: number; wordSpacing?: number;
 }) {
   if (shape === 'normal') return null; // handled by regular span
-  const pathId = `shape-${shape}-${intensity}-${text.length}`;
+  // Include spacing in the ID so React re-creates the <textPath> when the
+  // spacing changes (some browsers don't re-layout text-on-a-path when
+  // letter-spacing is updated in place).
+  const pathId = `shape-${shape}-${intensity}-${text.length}-${letterSpacing ?? 0}-${wordSpacing ?? 0}`;
   const path = getShapePath(shape, intensity);
   const isCircle = shape === 'circle' || shape === 'circle-bottom';
   const scaledSize = isCircle ? fontSize * 0.35 : fontSize * 0.5;
   const vb = isCircle ? '0 0 200 200' : '0 0 200 100';
+  // Convert em-based spacing to SVG user units (px). SVG letter-spacing is
+  // an absolute <length>, not an em multiple.
+  const letterSpacingPx = letterSpacing != null ? letterSpacing * scaledSize : undefined;
+  const wordSpacingPx = wordSpacing != null ? wordSpacing * scaledSize : undefined;
   const textStyle: React.CSSProperties = {};
   if (outline) {
     textStyle.stroke = 'rgba(0,0,0,0.5)';
     textStyle.strokeWidth = 1;
     textStyle.paintOrder = 'stroke fill';
   }
-  // em-based spacing needs to be converted to user units (px) for SVG
-  // because letter-spacing/word-spacing on SVG text are absolute lengths,
-  // not em multiples.
-  if (letterSpacing != null) textStyle.letterSpacing = `${letterSpacing * scaledSize}px`;
-  if (wordSpacing != null) textStyle.wordSpacing = `${wordSpacing * scaledSize}px`;
   return (
     <svg viewBox={vb} className="w-full" style={{ overflow: 'visible' }}>
       <defs>
@@ -124,6 +126,8 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
         fontSize={scaledSize}
         fontWeight="700"
         textAnchor="middle"
+        letterSpacing={letterSpacingPx}
+        wordSpacing={wordSpacingPx}
         style={textStyle}
       >
         <textPath href={`#${pathId}`} startOffset="50%">
