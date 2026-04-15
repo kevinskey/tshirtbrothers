@@ -1480,7 +1480,7 @@ export default function DesignStudioPage() {
   useEffect(() => { setImgPop(null); }, [selectedElementId]);
 
   const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 hidden md:flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1">
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
 
       {/* Size */}
       <div className="relative">
@@ -1873,7 +1873,9 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const textEditorPanel = showTextEditor && selectedEl ? (
-    <div className="fixed top-14 left-16 bottom-16 w-80 bg-white border-r border-gray-200 z-30 hidden md:flex flex-col overflow-y-auto">
+    <div className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
+                    md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
+                    inset-x-0 bottom-12 top-auto max-h-[60vh] rounded-t-2xl border-t shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
         <span className="font-semibold text-gray-900">Edit Text</span>
