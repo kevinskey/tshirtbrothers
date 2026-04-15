@@ -452,6 +452,13 @@ export default function DesignStudioPage() {
   const products = productsData?.products ?? [];
 
   // Load product once on mount — from URL param or default Gildan
+  // Defensive: make absolutely sure the welcome panel is hidden on mobile
+  // once we're client-side, regardless of how the initial state resolved.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.innerWidth < 768) setShowWelcome(false);
+  }, []);
+
   const hasLoadedProduct = useRef(false);
   useEffect(() => {
     if (hasLoadedProduct.current) return;
