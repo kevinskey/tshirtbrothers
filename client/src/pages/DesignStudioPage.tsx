@@ -1747,9 +1747,9 @@ export default function DesignStudioPage() {
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
-  // Text editing now uses a floating top toolbar (no side panel), so it
-  // doesn't contribute to the canvas offset.
-  const canvasLeftOffset = (activeTool || showWelcome) ? 'md:ml-80' : '';
+  // Mobile uses a floating top toolbar (no offset). Desktop uses the
+  // textSidePanel in the left flyout, so add the 320px offset there.
+  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
 
   const canvas = (
     <main
@@ -2100,13 +2100,11 @@ export default function DesignStudioPage() {
   /*  Render: Edit Text Panel (shows when text element is selected)    */
   /* ---------------------------------------------------------------- */
 
-  // Compact floating Edit Text toolbar — modelled on the image toolbar.
-  // Sits at the top of the canvas (like the image edit bar) with every
-  // control tucked into a popover, so the canvas/t-shirt stays visible
-  // while editing. No more bottom drawer eating ~35% of the viewport.
+  // Compact floating Edit Text toolbar — mobile only.
+  // Desktop gets the full side panel below (textSidePanel).
   const textToolbar = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
+      className="md:hidden fixed top-16 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
@@ -2333,6 +2331,174 @@ export default function DesignStudioPage() {
     </div>
   ) : null;
 
+  // Desktop-only Edit Text side panel — lives in the same left flyout
+  // slot as the other tool panels (Upload / Add Text / Add Art). No
+  // popovers; everything is stacked so the user can scroll through
+  // controls without tapping through menus.
+  const textSidePanel = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
+    <div
+      className="hidden md:flex fixed top-14 left-16 bottom-0 w-80 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
+        <span className="font-semibold text-gray-900">Edit Text</span>
+        <button type="button" onClick={() => setSelectedElementId(null)} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+      </div>
+
+      <div className="p-5 space-y-5">
+        <input
+          type="text"
+          value={selectedEl.content}
+          onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
+          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+
+        <div>
+          <span className="text-sm text-gray-600 mb-2 block">Font</span>
+          <input
+            type="text"
+            placeholder="Search fonts..."
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={e => {
+              const container = document.getElementById('font-list-desktop');
+              if (!container) return;
+              const query = e.target.value.toLowerCase();
+              Array.from(container.children).forEach(child => {
+                const name = child.getAttribute('data-font') ?? '';
+                (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
+              });
+            }}
+          />
+          <div id="font-list-desktop" className="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+            {FONT_OPTIONS.map(f => (
+              <button
+                key={f}
+                type="button"
+                data-font={f}
+                onMouseEnter={() => loadGoogleFont(f)}
+                onClick={() => {
+                  loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
+                  updateElement(selectedEl.id, { fontFamily: f });
+                }}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${(selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'}`}
+                style={{ fontFamily: f }}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Color</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">{selectedEl.color ?? '#000000'}</span>
+            <input type="color" value={selectedEl.color ?? '#000000'} onChange={e => updateElement(selectedEl.id, { color: e.target.value })} className="h-8 w-8 cursor-pointer rounded border border-gray-200" />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-600">Text Shape</span>
+            <span className="text-xs text-gray-400 capitalize">{selectedEl.textShape ?? 'normal'}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {TEXT_SHAPES.map(shape => (
+              <button
+                key={shape.name}
+                type="button"
+                onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
+                className={`rounded-lg border px-2 py-2.5 text-[10px] font-bold transition ${(selectedEl.textShape ?? 'normal') === shape.name ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {shape.label}
+              </button>
+            ))}
+          </div>
+          {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">Shape Intensity</span>
+                <span className="text-xs text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
+              </div>
+              <input type="range" min={10} max={100} value={selectedEl.shapeIntensity ?? 50} onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })} className="w-full accent-blue-600" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Size</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
+            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
+            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Rotation</span>
+          <div className="flex items-center gap-2 flex-1 ml-4">
+            <input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" />
+            <span className="text-sm text-gray-700 w-10 text-right">{selectedEl.rotation ?? 0}&deg;</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Letters</span>
+          <div className="flex items-center gap-2 flex-1 ml-4">
+            <input type="range" min={-20} max={100} step={1} value={Math.round((selectedEl.letterSpacing ?? 0) * 100)} onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" />
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}em</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Words</span>
+          <div className="flex items-center gap-2 flex-1 ml-4">
+            <input type="range" min={-30} max={300} step={5} value={Math.round((selectedEl.wordSpacing ?? 0) * 100)} onChange={e => updateElement(selectedEl.id, { wordSpacing: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" />
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.wordSpacing ?? 0).toFixed(2)}em</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Lines</span>
+          <div className="flex items-center gap-2 flex-1 ml-4">
+            <input type="range" min={50} max={300} step={5} value={Math.round((selectedEl.lineHeight ?? 1.2) * 100)} onChange={e => updateElement(selectedEl.id, { lineHeight: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" />
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.lineHeight ?? 1.2).toFixed(1)}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Outline</span>
+          <button type="button" onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })} className={`px-4 py-1.5 text-xs font-medium rounded-lg border transition ${selectedEl.outline ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+            {selectedEl.outline ? 'On' : 'Off'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          <button type="button" onClick={() => updateElement(selectedEl.id, { x: 50 - selectedEl.width / 2 })} className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 p-2 hover:bg-gray-50 text-gray-600">
+            <Move className="h-4 w-4" />
+            <span className="text-[9px] font-medium">Center</span>
+          </button>
+          {(['left', 'center', 'right'] as const).map(align => (
+            <button
+              key={align}
+              type="button"
+              onClick={() => updateElement(selectedEl.id, { textAlign: align })}
+              className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition ${selectedEl.textAlign === align ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+            >
+              <Type className="h-4 w-4" />
+              <span className="text-[9px] font-medium capitalize">{align}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 pt-2">
+          <button type="button" onClick={() => duplicateElement(selectedEl.id)} className="rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Duplicate</button>
+          <button type="button" onClick={() => removeElement(selectedEl.id)} className="rounded-lg border border-red-200 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   /* ---------------------------------------------------------------- */
   /*  Render: Welcome Panel                                            */
   /* ---------------------------------------------------------------- */
@@ -2413,6 +2579,7 @@ export default function DesignStudioPage() {
       {!showWelcome && !showTextEditor && toolPanel}
       {!showTextEditor && welcomePanel}
       {textToolbar}
+      {textSidePanel}
       {imageToolbar}
       {canvas}
       {bottomBar}
