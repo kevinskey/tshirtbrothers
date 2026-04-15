@@ -679,6 +679,11 @@ export default function DesignStudioPage() {
 
   const startDrag = useCallback((clientX: number, clientY: number, elementId: string, mode: 'move' | 'resize') => {
     setSelectedElementId(elementId);
+    // On mobile, auto-close any open tool panel when the user grabs an
+    // element — otherwise the sheet covers the canvas during drag.
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setActiveTool(null);
+    }
     const el = designElements.find(d => d.id === elementId);
     if (!el) return;
     setDragState({
@@ -1591,6 +1596,11 @@ export default function DesignStudioPage() {
                 onClick={e => {
                   e.stopPropagation();
                   setSelectedElementId(el.id);
+                  // On mobile, selecting a canvas element closes any open
+                  // tool panel so the user can see / manipulate the element.
+                  if (typeof window !== 'undefined' && window.innerWidth < 768) {
+                    setActiveTool(null);
+                  }
                 }}
                 className={`absolute cursor-move ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                 style={{
