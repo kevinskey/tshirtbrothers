@@ -450,6 +450,9 @@ export default function DesignStudioPage() {
   const [productSearch, setProductSearch] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [, setFontsReady] = useState(0); // force re-render when fonts load
+  // Keep the font picker collapsed by default so the Edit Text panel
+  // doesn't take up most of the mobile viewport.
+  const [fontPickerOpen, setFontPickerOpen] = useState(false);
 
   // --- Drag / resize state ---
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -2149,7 +2152,7 @@ export default function DesignStudioPage() {
       className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
                  md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
                  inset-x-0 bottom-12 top-auto rounded-t-2xl border-t shadow-2xl
-                 mobile-max-55vh"
+                 mobile-max-35vh"
     >
       {/* Drag handle (mobile only) */}
       <div className="flex justify-center pt-2 md:hidden">
@@ -2184,54 +2187,61 @@ export default function DesignStudioPage() {
           className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        {/* Change Font */}
+        {/* Change Font — collapsed by default; only shows the current font
+             and a Change button so the panel stays short on mobile. The full
+             picker opens in-place when the user taps Change. */}
         <div>
-          <span className="text-sm text-gray-600 mb-2 block">Change Font</span>
-          <div
-            className="text-lg font-bold border border-gray-200 rounded-lg px-4 py-3 mb-2 cursor-pointer hover:bg-gray-50 transition"
-            style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}
-            onClick={() => {
-              const el = document.getElementById('font-search');
-              if (el) el.focus();
-            }}
-          >
-            {selectedEl.fontFamily ?? 'Inter'}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm text-gray-600">Font</span>
+            <button
+              type="button"
+              onClick={() => setFontPickerOpen(v => !v)}
+              className="flex-1 text-right text-sm font-bold border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition truncate"
+              style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}
+            >
+              {selectedEl.fontFamily ?? 'Inter'} {fontPickerOpen ? '▴' : '▾'}
+            </button>
           </div>
-          <input
-            id="font-search"
-            type="text"
-            placeholder="Search fonts..."
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onChange={e => {
-              const container = document.getElementById('font-list');
-              if (!container) return;
-              const query = e.target.value.toLowerCase();
-              Array.from(container.children).forEach(child => {
-                const name = child.getAttribute('data-font') ?? '';
-                (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
-              });
-            }}
-          />
-          <div id="font-list" className="max-h-48 overflow-y-auto rounded-lg border border-gray-200">
-            {FONT_OPTIONS.map(f => (
-              <button
-                key={f}
-                type="button"
-                data-font={f}
-                onMouseEnter={() => loadGoogleFont(f)}
-                onClick={() => {
-                  loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
-                  updateElement(selectedEl.id, { fontFamily: f });
+          {fontPickerOpen && (
+            <>
+              <input
+                id="font-search"
+                type="text"
+                placeholder="Search fonts..."
+                className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                onChange={e => {
+                  const container = document.getElementById('font-list');
+                  if (!container) return;
+                  const query = e.target.value.toLowerCase();
+                  Array.from(container.children).forEach(child => {
+                    const name = child.getAttribute('data-font') ?? '';
+                    (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
+                  });
                 }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${
-                  (selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
-                }`}
-                style={{ fontFamily: f }}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+              />
+              <div id="font-list" className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200">
+                {FONT_OPTIONS.map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    data-font={f}
+                    onMouseEnter={() => loadGoogleFont(f)}
+                    onClick={() => {
+                      loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
+                      updateElement(selectedEl.id, { fontFamily: f });
+                      setFontPickerOpen(false); // collapse after pick
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${
+                      (selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                    }`}
+                    style={{ fontFamily: f }}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Edit Color */}
