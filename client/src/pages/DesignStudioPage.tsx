@@ -105,16 +105,22 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
   const isCircle = shape === 'circle' || shape === 'circle-bottom';
   const scaledSize = isCircle ? fontSize * 0.35 : fontSize * 0.5;
   const vb = isCircle ? '0 0 200 200' : '0 0 200 100';
-  // Convert em-based spacing to SVG user units (px). SVG letter-spacing is
-  // an absolute <length>, not an em multiple.
-  const letterSpacingPx = letterSpacing != null ? letterSpacing * scaledSize : undefined;
-  const wordSpacingPx = wordSpacing != null ? wordSpacing * scaledSize : undefined;
+  // Convert em-based spacing to SVG user units. letterSpacing = extra
+  // space between every character; wordSpacing = extra space between
+  // words (applied to space glyphs on top of letterSpacing).
+  const letterDx = (letterSpacing ?? 0) * scaledSize;
+  const wordDx = (wordSpacing ?? 0) * scaledSize;
   const textStyle: React.CSSProperties = {};
   if (outline) {
     textStyle.stroke = 'rgba(0,0,0,0.5)';
     textStyle.strokeWidth = 1;
     textStyle.paintOrder = 'stroke fill';
   }
+  // Render each character as its own <tspan> with an explicit dx offset —
+  // this is the only reliable way to control spacing on text following a
+  // path across Chrome, Safari and Firefox (SVG letter-spacing is spotty
+  // inside textPath).
+  const chars = Array.from(text);
   return (
     <svg viewBox={vb} className="w-full" style={{ overflow: 'visible' }}>
       <defs>
@@ -126,12 +132,22 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
         fontSize={scaledSize}
         fontWeight="700"
         textAnchor="middle"
-        letterSpacing={letterSpacingPx}
-        wordSpacing={wordSpacingPx}
         style={textStyle}
       >
         <textPath href={`#${pathId}`} startOffset="50%">
-          {text}
+          {chars.map((ch, i) => {
+            // First character has no leading offset. Subsequent characters
+            // get letter spacing, and if the *previous* char was a space we
+            // add word spacing on top.
+            let dx = 0;
+            if (i > 0) {
+              dx = letterDx;
+              if (chars[i - 1] === ' ') dx += wordDx;
+            }
+            return (
+              <tspan key={i} dx={dx || undefined}>{ch === ' ' ? '\u00A0' : ch}</tspan>
+            );
+          })}
         </textPath>
       </text>
     </svg>
