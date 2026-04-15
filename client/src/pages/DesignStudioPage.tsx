@@ -605,7 +605,7 @@ export default function DesignStudioPage() {
   // Trim fully-transparent pixels around an image. Returns a new data URL
   // cropped to the bounding box of non-transparent pixels, plus the crop
   // ratios so callers can resize the placed element proportionally.
-  async function autoCropTransparent(dataUrl: string, alphaThreshold = 8): Promise<{ dataUrl: string; widthRatio: number; heightRatio: number }> {
+  async function autoCropTransparent(dataUrl: string, alphaThreshold = 64): Promise<{ dataUrl: string; widthRatio: number; heightRatio: number }> {
     console.log('[autocrop] start, src prefix:', dataUrl.slice(0, 40));
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image();
@@ -633,21 +633,32 @@ export default function DesignStudioPage() {
       throw new Error(`autocrop: getImageData threw: ${(e as Error).message}`);
     }
 
-    let minX = w, minY = h, maxX = -1, maxY = -1;
+    // Count opaque pixels per row and per column. A row/column is considered
+    // "empty" if fewer than `minCount` of its pixels exceed alphaThreshold.
+    // This prevents a handful of stray semi-transparent pixels from extending
+    // the bounding box past where the actual subject ends.
+    const rowCounts = new Uint32Array(h);
+    const colCounts = new Uint32Array(w);
     for (let y = 0; y < h; y++) {
       const rowStart = y * w * 4;
       for (let x = 0; x < w; x++) {
         const a = data[rowStart + x * 4 + 3]!;
         if (a > alphaThreshold) {
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
+          rowCounts[y]!++;
+          colCounts[x]!++;
         }
       }
     }
-    console.log('[autocrop] bounds', { minX, minY, maxX, maxY });
-    if (maxX < 0) {
+    // Require at least 0.3% of the shorter side in opaque pixels per row/col
+    const minCount = Math.max(2, Math.round(Math.min(w, h) * 0.003));
+
+    let minY = 0; while (minY < h && rowCounts[minY]! < minCount) minY++;
+    let maxY = h - 1; while (maxY >= 0 && rowCounts[maxY]! < minCount) maxY--;
+    let minX = 0; while (minX < w && colCounts[minX]! < minCount) minX++;
+    let maxX = w - 1; while (maxX >= 0 && colCounts[maxX]! < minCount) maxX--;
+
+    console.log('[autocrop] bounds', { minX, minY, maxX, maxY, alphaThreshold, minCount });
+    if (maxX < 0 || maxY < 0 || maxX < minX || maxY < minY) {
       console.warn('[autocrop] no opaque pixels found — returning original');
       return { dataUrl, widthRatio: 1, heightRatio: 1 };
     }
