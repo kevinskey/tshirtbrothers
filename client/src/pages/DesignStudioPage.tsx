@@ -876,6 +876,13 @@ export default function DesignStudioPage() {
       outline: false,
     });
     setTextInput('');
+    // Deselect so the full-screen Edit Text panel doesn't immediately pop
+    // up — the user just wanted to add text, not open another editor.
+    // Blur any focused input so the mobile keyboard dismisses too.
+    setSelectedElementId(null);
+    if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
   }, [textInput, textFontSize, textColor, addDesignElement]);
 
   /* ---------------------------------------------------------------- */
