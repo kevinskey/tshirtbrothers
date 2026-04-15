@@ -227,7 +227,14 @@ export default function DesignStudioPage() {
 
   // --- Core state ---
   const navigate = useNavigate();
-  const [showWelcome, setShowWelcome] = useState(!loadState?.loadDesign);
+  // On mobile the welcome panel covers the whole canvas and hides the
+  // t-shirt. Default it to false on small screens so users see the product
+  // immediately and can access tools via the bottom toolbar.
+  const [showWelcome, setShowWelcome] = useState(() => {
+    if (loadState?.loadDesign) return false;
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
+    return true;
+  });
   const [activeTool, setActiveTool] = useState<ToolName>(null);
   const [aiChatOpen, setAiChatOpen] = useState(false);
 
