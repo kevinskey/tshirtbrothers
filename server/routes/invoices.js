@@ -264,6 +264,7 @@ router.post('/', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, quote_id,
+      deposit_percent,
     } = req.body;
 
     if (!customer_name || !customer_email) {
@@ -272,19 +273,20 @@ router.post('/', async (req, res, next) => {
 
     const invoice_number = await generateInvoiceNumber();
     const amount_due = Number(total) || 0;
+    const depositPct = Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0));
 
     const { rows } = await pool.query(
       `INSERT INTO invoices
         (invoice_number, customer_name, customer_email, customer_phone, customer_address,
          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-         notes, due_date, quote_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft')
+         notes, due_date, quote_id, status, deposit_percent)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16)
        RETURNING *`,
       [
         invoice_number, customer_name, customer_email, customer_phone || null,
         (customer_address && customer_address !== '') ? (typeof customer_address === 'string' ? JSON.stringify({ address: customer_address }) : JSON.stringify(customer_address)) : null,
         JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, Number(total) || 0,
-        amount_due, notes || null, due_date || null, quote_id || null,
+        amount_due, notes || null, due_date || null, quote_id || null, depositPct,
       ]
     );
 
@@ -301,6 +303,7 @@ router.put('/:id', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, status,
+      deposit_percent,
     } = req.body;
 
     const existing = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
@@ -327,6 +330,7 @@ router.put('/:id', async (req, res, next) => {
         notes = COALESCE($13, notes),
         due_date = COALESCE($14, due_date),
         status = COALESCE($15, status),
+        deposit_percent = COALESCE($16, deposit_percent),
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -338,6 +342,7 @@ router.put('/:id', async (req, res, next) => {
         tax !== undefined ? Number(tax) : null, shipping !== undefined ? Number(shipping) : null,
         discount !== undefined ? Number(discount) : null, total !== undefined ? Number(total) : null,
         newAmountDue, notes, due_date, status || null,
+        deposit_percent !== undefined ? Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0)) : null,
       ]
     );
 
@@ -348,6 +353,9 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // POST /:id/send - Send invoice email with Stripe payment link
+// If the invoice has deposit_percent > 0 and no deposit has been paid yet,
+// this charges only the deposit portion. Otherwise it charges the remaining
+// amount_due. Use /:id/send-balance once the deposit is in.
 router.post('/:id/send', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -355,14 +363,33 @@ router.post('/:id/send', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = rows[0];
-    const amountDue = Number(invoice.amount_due ?? invoice.total);
+    const total = Number(invoice.total);
+    const paid = Number(invoice.amount_paid || 0);
+    const depositPercent = Number(invoice.deposit_percent || 0);
 
-    if (amountDue <= 0) {
+    // Decide what to charge: the deposit (if configured and not yet collected),
+    // or whatever remains on the invoice.
+    let chargeAmount;
+    let paymentType = 'full';
+    if (depositPercent > 0 && paid === 0) {
+      chargeAmount = +(total * (depositPercent / 100)).toFixed(2);
+      paymentType = 'deposit';
+    } else {
+      chargeAmount = +(total - paid).toFixed(2);
+      paymentType = paid > 0 ? 'balance' : 'full';
+    }
+
+    if (chargeAmount <= 0) {
       return res.status(400).json({ error: 'No amount due on this invoice' });
     }
 
     // Create Stripe Checkout session
     const stripe = getStripe();
+    const productName = paymentType === 'deposit'
+      ? `Deposit (${depositPercent}%) - Invoice ${invoice.invoice_number}`
+      : paymentType === 'balance'
+      ? `Balance - Invoice ${invoice.invoice_number}`
+      : `Invoice ${invoice.invoice_number}`;
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
@@ -370,10 +397,10 @@ router.post('/:id/send', async (req, res, next) => {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Invoice ${invoice.invoice_number}`,
+              name: productName,
               description: `Payment for invoice ${invoice.invoice_number} - ${invoice.customer_name}`,
             },
-            unit_amount: Math.round(amountDue * 100),
+            unit_amount: Math.round(chargeAmount * 100),
           },
           quantity: 1,
         },
@@ -385,6 +412,7 @@ router.post('/:id/send', async (req, res, next) => {
       metadata: {
         invoice_id: String(id),
         invoice_number: invoice.invoice_number,
+        payment_type: paymentType,
       },
     });
 
