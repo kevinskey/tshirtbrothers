@@ -20,6 +20,25 @@
     overscroll-behavior-x: none;
   }
 
+  /* Mobile input fix: iOS auto-zooms when an input has < 16px font. Lock
+     every text-y input to at least 16px on narrow screens so the viewport
+     doesn't jump on focus. This still lets Tailwind's text-sm/xs apply on
+     desktop via the media query. */
+  @media (max-width: 640px) {
+    input[type='text'],
+    input[type='email'],
+    input[type='password'],
+    input[type='tel'],
+    input[type='url'],
+    input[type='number'],
+    input[type='search'],
+    input[type='date'],
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
