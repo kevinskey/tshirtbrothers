@@ -799,13 +799,26 @@ export default function DesignStudioPage() {
       // Auto-crop the transparent padding so the subject fills the element.
       let cutout = data.imageBase64;
       let widthRatio = 1;
+      let cropResult = '(not run)';
       try {
         const cropped = await autoCropTransparent(cutout);
         cutout = cropped.dataUrl;
         widthRatio = cropped.widthRatio;
+        cropResult = `cropped ratio=${cropped.widthRatio.toFixed(3)}`;
       } catch (cropErr) {
         console.warn('[autocrop] failed on canvas Rm BG:', cropErr);
+        cropResult = `FAILED: ${(cropErr as Error).message}`;
       }
+      // Show a visible one-time banner so we know the code path ran even
+      // when the console is hidden (e.g. mobile).
+      try {
+        (window as unknown as { __tsbLastCrop?: string }).__tsbLastCrop = cropResult;
+        const n = document.createElement('div');
+        n.textContent = `Rm BG done · ${cropResult}`;
+        n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:6px 10px;border-radius:8px;z-index:9999;font:12px sans-serif;max-width:90vw;';
+        document.body.appendChild(n);
+        setTimeout(() => n.remove(), 5000);
+      } catch { /* ignore DOM errors */ }
       updateElement(elementId, {
         content: cutout,
         width: Math.max(5, el.width * widthRatio),
