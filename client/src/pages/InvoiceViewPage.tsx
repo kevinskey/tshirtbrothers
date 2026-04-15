@@ -9,7 +9,7 @@ interface PublicInvoice {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: unknown;
-  items: Array<{ description?: string; quantity?: number; unit_price?: number; total?: number }> | string;
+  items: Array<{ description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }> | string;
   subtotal: number | string;
   tax: number | string;
   shipping: number | string;
@@ -120,15 +120,19 @@ export default function InvoiceViewPage() {
           <thead>
             <tr className="text-xs uppercase text-gray-500">
               <th className="py-3 text-left font-semibold">Description</th>
+              <th className="py-3 text-left font-semibold">Color</th>
+              <th className="py-3 text-left font-semibold">Size</th>
               <th className="py-3 text-center font-semibold">Qty</th>
               <th className="py-3 text-right font-semibold">Unit</th>
               <th className="py-3 text-right font-semibold">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map((it: { description?: string; quantity?: number; unit_price?: number; total?: number }, i: number) => (
+            {items.map((it: { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }, i: number) => (
               <tr key={i}>
                 <td className="py-3 text-gray-900">{it.description || '—'}</td>
+                <td className="py-3 text-gray-600">{it.color || '—'}</td>
+                <td className="py-3 text-gray-600">{it.size || '—'}</td>
                 <td className="py-3 text-center text-gray-600">{it.quantity || 1}</td>
                 <td className="py-3 text-right text-gray-600">${fmt(it.unit_price)}</td>
                 <td className="py-3 text-right font-medium text-gray-900">${fmt(it.total)}</td>
