@@ -1,4 +1,5 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useGooglePlacesAutocomplete } from '@/lib/googlePlaces';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -519,6 +520,16 @@ export default function AdminPage() {
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
   const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
+  const customerAddressRef = useRef<HTMLInputElement | null>(null);
+  useGooglePlacesAutocomplete(customerAddressRef, (addr) => {
+    setCustomerForm((p) => ({
+      ...p,
+      address_street: addr.street || p.address_street,
+      address_city: addr.city || p.address_city,
+      address_state: addr.state || p.address_state,
+      address_zip: addr.zip || p.address_zip,
+    }));
+  });
   const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string> }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
@@ -2534,8 +2545,16 @@ export default function AdminPage() {
                       <input type="tel" value={customerForm.phone} onChange={e => setCustomerForm(p => ({ ...p, phone: e.target.value }))} placeholder="(470) 622-4845" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
-                      <input type="text" value={customerForm.address_street} onChange={e => setCustomerForm(p => ({ ...p, address_street: e.target.value }))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none" />
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Street Address <span className="text-[10px] text-gray-400 font-normal">(start typing for Google suggestions)</span></label>
+                      <input
+                        ref={customerAddressRef}
+                        type="text"
+                        value={customerForm.address_street}
+                        onChange={e => setCustomerForm(p => ({ ...p, address_street: e.target.value }))}
+                        autoComplete="off"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+                        placeholder="123 Main St"
+                      />
                     </div>
                     <div className="grid grid-cols-3 gap-3">
                       <div>
