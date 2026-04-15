@@ -1573,7 +1573,7 @@ export default function DesignStudioPage() {
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
-      <div className="relative w-full max-w-3xl md:max-w-3xl px-2 md:px-4" ref={canvasRef}>
+      <div className="relative w-full max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-2 md:px-6" ref={canvasRef}>
         <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none" style={{ touchAction: 'none' }}>
           {displayImage ? (
             <img
