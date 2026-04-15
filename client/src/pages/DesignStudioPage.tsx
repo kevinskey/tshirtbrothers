@@ -452,9 +452,6 @@ export default function DesignStudioPage() {
   const [productSearch, setProductSearch] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [, setFontsReady] = useState(0); // force re-render when fonts load
-  // Keep the font picker collapsed by default so the Edit Text panel
-  // doesn't take up most of the mobile viewport.
-  const [fontPickerOpen, setFontPickerOpen] = useState(false);
 
   // --- Drag / resize state ---
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1681,6 +1678,8 @@ export default function DesignStudioPage() {
 
   const [imgPop, setImgPop] = useState<string | null>(null);
   useEffect(() => { setImgPop(null); }, [selectedElementId]);
+  const [textPop, setTextPop] = useState<string | null>(null);
+  useEffect(() => { setTextPop(null); }, [selectedElementId]);
 
   const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
     <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
@@ -1748,7 +1747,9 @@ export default function DesignStudioPage() {
   /*  Render: Center Canvas                                            */
   /* ---------------------------------------------------------------- */
 
-  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
+  // Text editing now uses a floating top toolbar (no side panel), so it
+  // doesn't contribute to the canvas offset.
+  const canvasLeftOffset = (activeTool || showWelcome) ? 'md:ml-80' : '';
 
   const canvas = (
     <main
@@ -2099,320 +2100,231 @@ export default function DesignStudioPage() {
   /*  Render: Edit Text Panel (shows when text element is selected)    */
   /* ---------------------------------------------------------------- */
 
-  const textEditorPanel = showTextEditor && selectedEl ? (
-    <div
-      className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
-                 md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
-                 inset-x-0 bottom-12 top-auto rounded-t-2xl border-t shadow-2xl
-                 mobile-max-35vh"
-    >
-      {/* Drag handle (mobile only) */}
-      <div className="flex justify-center pt-2 md:hidden">
-        <div className="w-10 h-1.5 rounded-full bg-gray-300" />
-      </div>
+  // Compact floating Edit Text toolbar — modelled on the image toolbar.
+  // Sits at the top of the canvas (like the image edit bar) with every
+  // control tucked into a popover, so the canvas/t-shirt stays visible
+  // while editing. No more bottom drawer eating ~35% of the viewport.
+  const textToolbar = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
 
-      {/* Sticky header with prominent Done button */}
-      <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
-        <span className="font-semibold text-gray-900">Edit Text</span>
-        <button
-          type="button"
-          onClick={() => setSelectedElementId(null)}
-          className="md:hidden bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg"
-        >
-          Done
+      {/* Edit content */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'tx' ? null : 'tx')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'tx' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+          <Type className="h-4 w-4" /><span>Text</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setSelectedElementId(null)}
-          className="hidden md:block text-gray-400 hover:text-gray-700"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      <div className="p-5 space-y-5">
-        {/* Text content */}
-        <input
-          type="text"
-          value={selectedEl.content}
-          onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
-          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-
-        {/* Change Font — collapsed by default; only shows the current font
-             and a Change button so the panel stays short on mobile. The full
-             picker opens in-place when the user taps Change. */}
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-gray-600">Font</span>
-            <button
-              type="button"
-              onClick={() => setFontPickerOpen(v => !v)}
-              className="flex-1 text-right text-sm font-bold border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition truncate"
-              style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}
-            >
-              {selectedEl.fontFamily ?? 'Inter'} {fontPickerOpen ? '▴' : '▾'}
-            </button>
-          </div>
-          {fontPickerOpen && (
-            <>
-              <input
-                id="font-search"
-                type="text"
-                placeholder="Search fonts..."
-                className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                onChange={e => {
-                  const container = document.getElementById('font-list');
-                  if (!container) return;
-                  const query = e.target.value.toLowerCase();
-                  Array.from(container.children).forEach(child => {
-                    const name = child.getAttribute('data-font') ?? '';
-                    (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
-                  });
-                }}
-              />
-              <div id="font-list" className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-gray-200">
-                {FONT_OPTIONS.map(f => (
-                  <button
-                    key={f}
-                    type="button"
-                    data-font={f}
-                    onMouseEnter={() => loadGoogleFont(f)}
-                    onClick={() => {
-                      loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
-                      updateElement(selectedEl.id, { fontFamily: f });
-                      setFontPickerOpen(false); // collapse after pick
-                    }}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${
-                      (selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
-                    }`}
-                    style={{ fontFamily: f }}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Edit Color */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Edit Color</span>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">{selectedEl.color ?? '#000000'}</span>
+        {textPop === 'tx' && (
+          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-64 z-50">
             <input
-              type="color"
-              value={selectedEl.color ?? '#000000'}
-              onChange={e => updateElement(selectedEl.id, { color: e.target.value })}
-              className="h-8 w-8 cursor-pointer rounded border border-gray-200"
+              type="text"
+              value={selectedEl.content}
+              onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
             />
           </div>
-        </div>
+        )}
+      </div>
 
-        {/* Text Shape (moved up so Circle/Arch/etc. are reachable without
-             scrolling past every other slider on mobile) */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-gray-600">Text Shape</span>
-            <span className="text-xs text-gray-400 capitalize">{selectedEl.textShape ?? 'normal'}</span>
+      {/* Font */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'fn' ? null : 'fn')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'fn' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`} style={{ fontFamily: selectedEl.fontFamily ?? 'Inter' }}>
+          Aa<span>Font</span>
+        </button>
+        {textPop === 'fn' && (
+          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-56 z-50">
+            <input
+              type="text"
+              placeholder="Search fonts..."
+              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={e => {
+                const container = document.getElementById('font-list');
+                if (!container) return;
+                const query = e.target.value.toLowerCase();
+                Array.from(container.children).forEach(child => {
+                  const name = child.getAttribute('data-font') ?? '';
+                  (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
+                });
+              }}
+            />
+            <div id="font-list" className="max-h-56 overflow-y-auto rounded-lg border border-gray-200">
+              {FONT_OPTIONS.map(f => (
+                <button
+                  key={f}
+                  type="button"
+                  data-font={f}
+                  onMouseEnter={() => loadGoogleFont(f)}
+                  onClick={() => {
+                    loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
+                    updateElement(selectedEl.id, { fontFamily: f });
+                    setTextPop(null);
+                  }}
+                  className={`w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 transition ${(selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'}`}
+                  style={{ fontFamily: f }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {TEXT_SHAPES.map(shape => (
+        )}
+      </div>
+
+      {/* Color */}
+      <label className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100 cursor-pointer">
+        <span className="h-4 w-4 rounded-full border border-gray-300" style={{ background: selectedEl.color ?? '#000' }} />
+        <span>Color</span>
+        <input
+          type="color"
+          value={selectedEl.color ?? '#000000'}
+          onChange={e => updateElement(selectedEl.id, { color: e.target.value })}
+          className="sr-only"
+        />
+      </label>
+
+      {/* Shape */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'sh' ? null : 'sh')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'sh' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+          ⌒<span>Shape</span>
+        </button>
+        {textPop === 'sh' && (
+          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-60 z-50">
+            <div className="grid grid-cols-3 gap-1.5">
+              {TEXT_SHAPES.map(shape => (
+                <button
+                  key={shape.name}
+                  type="button"
+                  onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
+                  className={`rounded-lg border px-1.5 py-1.5 text-[9px] font-bold transition ${(selectedEl.textShape ?? 'normal') === shape.name ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {shape.label}
+                </button>
+              ))}
+            </div>
+            {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
+              <div className="mt-2 pt-2 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-500">Intensity</span>
+                  <span className="text-[10px] text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={100}
+                  value={selectedEl.shapeIntensity ?? 50}
+                  onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })}
+                  className="w-full accent-blue-600"
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Size */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
+        {textPop === 'sz' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
+              <span className="flex-1 text-center text-sm font-semibold">{selectedEl.fontSize ?? 24}</span>
+              <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Rotate */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
+        {textPop === 'rt' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+            <div className="flex items-center gap-2">
+              <input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" />
+              <span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Spacing */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'sp' ? null : 'sp')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'sp' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↔<span>Space</span></button>
+        {textPop === 'sp' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-60 z-50 space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-gray-500">Letters</span>
+                <span className="text-[10px] text-gray-400">{(selectedEl.letterSpacing ?? 0).toFixed(2)}em</span>
+              </div>
+              <input type="range" min={-20} max={100} step={1} value={Math.round((selectedEl.letterSpacing ?? 0) * 100)} onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) / 100 })} className="w-full accent-blue-600" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-gray-500">Words</span>
+                <span className="text-[10px] text-gray-400">{(selectedEl.wordSpacing ?? 0).toFixed(2)}em</span>
+              </div>
+              <input type="range" min={-30} max={300} step={5} value={Math.round((selectedEl.wordSpacing ?? 0) * 100)} onChange={e => updateElement(selectedEl.id, { wordSpacing: Number(e.target.value) / 100 })} className="w-full accent-blue-600" />
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] text-gray-500">Lines</span>
+                <span className="text-[10px] text-gray-400">{(selectedEl.lineHeight ?? 1.2).toFixed(1)}</span>
+              </div>
+              <input type="range" min={50} max={300} step={5} value={Math.round((selectedEl.lineHeight ?? 1.2) * 100)} onChange={e => updateElement(selectedEl.id, { lineHeight: Number(e.target.value) / 100 })} className="w-full accent-blue-600" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Align */}
+      <div className="relative">
+        <button type="button" onClick={() => setTextPop(textPop === 'al' ? null : 'al')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'al' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>≡<span>Align</span></button>
+        {textPop === 'al' && (
+          <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">
+            {(['left', 'center', 'right'] as const).map(align => (
               <button
-                key={shape.name}
+                key={align}
                 type="button"
-                onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
-                className={`rounded-lg border px-2 py-2.5 text-[10px] font-bold transition ${
-                  (selectedEl.textShape ?? 'normal') === shape.name
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-                style={{
-                  fontStyle: shape.name === 'curve' || shape.name === 'arch' ? 'italic' : undefined,
-                  letterSpacing: shape.name === 'pinch' ? '-0.05em' : shape.name === 'bulge' ? '0.1em' : undefined,
-                }}
+                onClick={() => { updateElement(selectedEl.id, { textAlign: align }); setTextPop(null); }}
+                className={`px-3 py-1.5 rounded text-[10px] font-medium ${selectedEl.textAlign === align ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
               >
-                {shape.label}
+                {align}
               </button>
             ))}
-          </div>
-          {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500">Shape Intensity</span>
-                <span className="text-xs text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
-              </div>
-              <input
-                type="range"
-                min={10}
-                max={100}
-                value={selectedEl.shapeIntensity ?? 50}
-                onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })}
-                className="w-full accent-blue-600"
-              />
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => updateElement(selectedEl.id, { textShape: 'normal', shapeIntensity: 50 })}
-                  className="text-xs text-gray-400 hover:text-gray-700 transition"
-                >
-                  Remove Shape
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Rotation */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Rotation</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={-180}
-              max={180}
-              value={selectedEl.rotation ?? 0}
-              onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-10 text-right">{selectedEl.rotation ?? 0}&deg;</span>
-          </div>
-        </div>
-
-        {/* Letter Spacing */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Letters</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={-20}
-              max={100}
-              step={1}
-              value={Math.round((selectedEl.letterSpacing ?? 0) * 100)}
-              onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) / 100 })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}em</span>
-          </div>
-        </div>
-
-        {/* Word Spacing */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Words</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={-30}
-              max={300}
-              step={5}
-              value={Math.round((selectedEl.wordSpacing ?? 0) * 100)}
-              onChange={e => updateElement(selectedEl.id, { wordSpacing: Number(e.target.value) / 100 })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.wordSpacing ?? 0).toFixed(2)}em</span>
-          </div>
-        </div>
-
-        {/* Line Height */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Lines</span>
-          <div className="flex items-center gap-2 flex-1 ml-4">
-            <input
-              type="range"
-              min={50}
-              max={300}
-              step={5}
-              value={Math.round((selectedEl.lineHeight ?? 1.2) * 100)}
-              onChange={e => updateElement(selectedEl.id, { lineHeight: Number(e.target.value) / 100 })}
-              className="flex-1 accent-blue-600"
-            />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.lineHeight ?? 1.2).toFixed(1)}</span>
-          </div>
-        </div>
-
-        {/* Outline */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Outline</span>
-          <button
-            type="button"
-            onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })}
-            className={`px-4 py-1.5 text-xs font-medium rounded-lg border transition ${
-              selectedEl.outline ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-            }`}
-          >
-            {selectedEl.outline ? 'On' : 'Off'}
-          </button>
-        </div>
-
-        {/* Text Size */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Text Size</span>
-          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })}
-              className="w-8 h-8 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
+              onClick={() => { updateElement(selectedEl.id, { x: 50 - selectedEl.width / 2 }); setTextPop(null); }}
+              className="px-3 py-1.5 rounded text-[10px] font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
             >
-              -
-            </button>
-            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
-            <button
-              type="button"
-              onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })}
-              className="w-8 h-8 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center justify-center font-bold"
-            >
-              +
+              center on shirt
             </button>
           </div>
-        </div>
-
-        {/* Divider */}
-        <div className="border-t border-gray-200 pt-4 grid grid-cols-4 gap-2">
-          {/* Center */}
-          <button
-            type="button"
-            onClick={() => updateElement(selectedEl.id, { x: 50 - (selectedEl.width) / 2 })}
-            className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 p-2 hover:bg-gray-50 transition text-gray-600"
-          >
-            <Move className="h-4 w-4" />
-            <span className="text-[9px] font-medium">Center</span>
-          </button>
-
-          {/* Text Alignment */}
-          {(['left', 'center', 'right'] as const).map(align => (
-            <button
-              key={align}
-              type="button"
-              onClick={() => updateElement(selectedEl.id, { textAlign: align })}
-              className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition ${
-                selectedEl.textAlign === align ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-              }`}
-            >
-              <Type className="h-4 w-4" />
-              <span className="text-[9px] font-medium capitalize">{align}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Duplicate & Delete */}
-        <div className="grid grid-cols-2 gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => duplicateElement(selectedEl.id)}
-            className="rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            Duplicate
-          </button>
-          <button
-            type="button"
-            onClick={() => removeElement(selectedEl.id)}
-            className="rounded-lg border border-red-200 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition"
-          >
-            Delete
-          </button>
-        </div>
+        )}
       </div>
+
+      {/* Outline */}
+      <button
+        type="button"
+        onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })}
+        className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${selectedEl.outline ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+      >
+        <span className="text-sm">◌</span>
+        <span>Outline</span>
+      </button>
+
+      <div className="w-px h-7 bg-gray-200 mx-0.5" />
+
+      {/* Duplicate */}
+      <button type="button" onClick={() => duplicateElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100">⧉<span>Copy</span></button>
+
+      {/* Delete */}
+      <button type="button" onClick={() => removeElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-red-600 hover:bg-red-50">🗑<span>Delete</span></button>
+
+      <div className="w-px h-7 bg-gray-200 mx-0.5" />
+
+      {/* Done */}
+      <button type="button" onClick={() => setSelectedElementId(null)} className="px-2 py-1.5 rounded-md text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
     </div>
   ) : null;
 
@@ -2495,7 +2407,7 @@ export default function DesignStudioPage() {
       {bottomToolbar}
       {!showWelcome && !showTextEditor && toolPanel}
       {!showTextEditor && welcomePanel}
-      {textEditorPanel}
+      {textToolbar}
       {imageToolbar}
       {canvas}
       {bottomBar}
