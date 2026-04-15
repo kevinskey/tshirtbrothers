@@ -606,27 +606,39 @@ export default function DesignStudioPage() {
   // cropped to the bounding box of non-transparent pixels, plus the crop
   // ratios so callers can resize the placed element proportionally.
   async function autoCropTransparent(dataUrl: string, alphaThreshold = 8): Promise<{ dataUrl: string; widthRatio: number; heightRatio: number }> {
+    console.log('[autocrop] start, src prefix:', dataUrl.slice(0, 40));
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const i = new Image();
+      i.crossOrigin = 'anonymous';
       i.onload = () => resolve(i);
-      i.onerror = reject;
+      i.onerror = () => reject(new Error('image failed to load for autocrop'));
       i.src = dataUrl;
     });
     const w = img.naturalWidth;
     const h = img.naturalHeight;
+    console.log('[autocrop] loaded', w, 'x', h);
+    if (!w || !h) throw new Error(`autocrop: image has zero dimensions (${w}x${h})`);
+
     const src = document.createElement('canvas');
     src.width = w;
     src.height = h;
-    const sctx = src.getContext('2d');
-    if (!sctx) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    const sctx = src.getContext('2d', { willReadFrequently: true });
+    if (!sctx) throw new Error('autocrop: failed to get 2d context');
     sctx.drawImage(img, 0, 0);
-    const data = sctx.getImageData(0, 0, w, h).data;
+
+    let data: Uint8ClampedArray;
+    try {
+      data = sctx.getImageData(0, 0, w, h).data;
+    } catch (e) {
+      throw new Error(`autocrop: getImageData threw: ${(e as Error).message}`);
+    }
 
     let minX = w, minY = h, maxX = -1, maxY = -1;
     for (let y = 0; y < h; y++) {
+      const rowStart = y * w * 4;
       for (let x = 0; x < w; x++) {
-        const a = data[(y * w + x) * 4 + 3];
-        if (a !== undefined && a > alphaThreshold) {
+        const a = data[rowStart + x * 4 + 3]!;
+        if (a > alphaThreshold) {
           if (x < minX) minX = x;
           if (y < minY) minY = y;
           if (x > maxX) maxX = x;
@@ -634,21 +646,26 @@ export default function DesignStudioPage() {
         }
       }
     }
-    if (maxX < 0) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    console.log('[autocrop] bounds', { minX, minY, maxX, maxY });
+    if (maxX < 0) {
+      console.warn('[autocrop] no opaque pixels found — returning original');
+      return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    }
     const cropW = maxX - minX + 1;
     const cropH = maxY - minY + 1;
-    if (cropW === w && cropH === h) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    if (cropW === w && cropH === h) {
+      console.log('[autocrop] already tight');
+      return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    }
     const out = document.createElement('canvas');
     out.width = cropW;
     out.height = cropH;
     const octx = out.getContext('2d');
-    if (!octx) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    if (!octx) throw new Error('autocrop: failed to get output context');
     octx.drawImage(src, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
-    return {
-      dataUrl: out.toDataURL('image/png'),
-      widthRatio: cropW / w,
-      heightRatio: cropH / h,
-    };
+    const result = out.toDataURL('image/png');
+    console.log('[autocrop] cropped to', cropW, 'x', cropH, 'ratio', cropW / w);
+    return { dataUrl: result, widthRatio: cropW / w, heightRatio: cropH / h };
   }
 
   const handleRemoveBg = useCallback(async () => {
@@ -698,7 +715,9 @@ export default function DesignStudioPage() {
           const cropped = await autoCropTransparent(cutout);
           cutout = cropped.dataUrl;
           widthRatio = cropped.widthRatio;
-        } catch { /* if crop fails, use the uncropped cutout */ }
+        } catch (cropErr) {
+          console.warn('[autocrop] failed, using uncropped cutout:', cropErr);
+        }
 
         setDesignElements((prev) => prev.map((el) =>
           el.type === 'image' && el.content === original
