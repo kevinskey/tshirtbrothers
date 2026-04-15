@@ -768,10 +768,21 @@ export default function DesignStudioPage() {
 
   // Remove background from an image already on the canvas
   const [canvasRemovingBg, setCanvasRemovingBg] = useState(false);
+  function showDebugToast(text: string) {
+    try {
+      const n = document.createElement('div');
+      n.textContent = text;
+      n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:6px 10px;border-radius:8px;z-index:9999;font:12px sans-serif;max-width:90vw;text-align:center;';
+      document.body.appendChild(n);
+      setTimeout(() => n.remove(), 6000);
+    } catch { /* ignore */ }
+  }
+
   const removeBgOnCanvas = async (elementId: string) => {
     const el = designElements.find(e => e.id === elementId);
-    if (!el || el.type !== 'image') return;
+    if (!el || el.type !== 'image') { showDebugToast('Rm BG: no image selected'); return; }
     setCanvasRemovingBg(true);
+    showDebugToast('Rm BG: starting...');
     try {
       // If the image is still a data URL, upload it to Spaces first so we
       // don't send a huge base64 body to /remove-bg.
@@ -820,23 +831,16 @@ export default function DesignStudioPage() {
         console.warn('[autocrop] failed on canvas Rm BG:', cropErr);
         cropResult = `FAILED: ${(cropErr as Error).message}`;
       }
-      // Show a visible one-time banner so we know the code path ran even
-      // when the console is hidden (e.g. mobile).
-      try {
-        (window as unknown as { __tsbLastCrop?: string }).__tsbLastCrop = cropResult;
-        const n = document.createElement('div');
-        n.textContent = `Rm BG done · ${cropResult}`;
-        n.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:6px 10px;border-radius:8px;z-index:9999;font:12px sans-serif;max-width:90vw;';
-        document.body.appendChild(n);
-        setTimeout(() => n.remove(), 5000);
-      } catch { /* ignore DOM errors */ }
+      (window as unknown as { __tsbLastCrop?: string }).__tsbLastCrop = cropResult;
+      showDebugToast(`Rm BG done · ${cropResult}`);
       updateElement(elementId, {
         content: cutout,
         width: Math.max(5, el.width * widthRatio),
       });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.error('[canvas Rm BG] failed:', err);
-      alert(err instanceof Error ? err.message : 'Background removal failed');
+      showDebugToast(`Rm BG FAILED: ${msg}`);
     } finally {
       setCanvasRemovingBg(false);
     }
