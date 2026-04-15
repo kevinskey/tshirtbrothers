@@ -638,7 +638,7 @@ export default function DesignStudioPage() {
   async function autoCropTransparent(dataUrl: string, alphaThreshold = 64): Promise<{ dataUrl: string; widthRatio: number; heightRatio: number }> {
     console.log('[autocrop] start, src prefix:', dataUrl.slice(0, 40));
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
+      const i = new window.Image();
       i.crossOrigin = 'anonymous';
       i.onload = () => resolve(i);
       i.onerror = () => reject(new Error('image failed to load for autocrop'));
