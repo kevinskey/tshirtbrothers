@@ -688,6 +688,7 @@ export default function DesignStudioPage() {
     setPendingUpload(null);
     finishUpload(original);
     setIsRemovingBg(true);
+    showDebugToast('Rm BG: starting (upload flow)...');
 
     try {
       // Upload to DO Spaces first so the /remove-bg call passes a tiny
@@ -705,6 +706,7 @@ export default function DesignStudioPage() {
         }
       } catch { /* fall back to base64 */ }
 
+      showDebugToast(bgBody.imageUrl ? 'Rm BG: uploaded, calling Replicate...' : 'Rm BG: calling Replicate (base64)...');
       const res = await fetch('/api/design/remove-bg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -716,6 +718,7 @@ export default function DesignStudioPage() {
       }
       const data = await res.json();
       if (data.imageBase64) {
+        showDebugToast('Rm BG: got cutout, cropping...');
         // Crop away the now-transparent padding so the subject fills the
         // image bounds. Also shrink the placed element's width by the crop
         // ratio so the subject stays roughly the same visual size on the
@@ -728,6 +731,7 @@ export default function DesignStudioPage() {
           widthRatio = cropped.widthRatio;
         } catch (cropErr) {
           console.warn('[autocrop] failed, using uncropped cutout:', cropErr);
+          showDebugToast(`Rm BG: crop failed (${cropErr instanceof Error ? cropErr.message : 'unknown'})`);
         }
 
         setDesignElements((prev) => prev.map((el) =>
@@ -736,10 +740,14 @@ export default function DesignStudioPage() {
             : el
         ));
         setUploadedImages((prev) => prev.map((u) => (u === original ? cutout : u)));
+        showDebugToast(`Rm BG done · ratio=${widthRatio.toFixed(3)}`);
+      } else {
+        showDebugToast('Rm BG: no imageBase64 in response');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[remove-bg] failed:', msg);
+      showDebugToast(`Rm BG FAILED: ${msg}`);
       alert(`Background removal failed: ${msg}. Keeping the original image.`);
     } finally {
       setIsRemovingBg(false);
