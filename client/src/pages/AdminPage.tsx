@@ -519,6 +519,7 @@ export default function AdminPage() {
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
   const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
+  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string> }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState('');
@@ -3141,7 +3142,15 @@ export default function AdminPage() {
                                     if (wr.ok) { const wd = await wr.json(); weightOz = wd.weight_oz || 0; }
                                   } catch {}
                                 }
-                                addInvoiceItem(`${p.name} (${p.brand})`, 1, customP || wholesale || 0, weightOz);
+                                // Open the size/color configurator instead of
+                                // immediately adding a single qty-1 line.
+                                setProductConfig({
+                                  product: p,
+                                  unitPrice: customP || wholesale || 0,
+                                  weightOz,
+                                  color: (p.colors && p.colors.length > 0) ? p.colors[0]! : '',
+                                  sizeQtys: {},
+                                });
                                 setInvoiceProductSearch('');
                               }}
                               className="w-full text-left px-3 py-2.5 hover:bg-gray-50 text-sm flex items-center gap-3"
@@ -3470,6 +3479,105 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
+
+            {/* Product Color/Size Configurator (for invoice line items) */}
+            {productConfig && (() => {
+              const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
+              const totalQty = Object.values(productConfig.sizeQtys).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
+              return (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto">
+                    <div className="px-6 py-4 border-b flex items-center justify-between sticky top-0 bg-white">
+                      <h3 className="font-display font-semibold text-gray-900">Configure {productConfig.product.name}</h3>
+                      <button onClick={() => setProductConfig(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <p className="text-xs text-gray-500">Pick a color and enter quantities per size. One invoice line will be created per size with qty &gt; 0.</p>
+
+                      {productConfig.product.colors && productConfig.product.colors.length > 0 ? (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Color</label>
+                          <select
+                            value={productConfig.color}
+                            onChange={(e) => setProductConfig((p) => p ? { ...p, color: e.target.value } : p)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                          >
+                            {productConfig.product.colors.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Color (free text)</label>
+                          <input
+                            type="text"
+                            value={productConfig.color}
+                            onChange={(e) => setProductConfig((p) => p ? { ...p, color: e.target.value } : p)}
+                            placeholder="e.g. Black"
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-2">Sizes & Quantities</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {STANDARD_SIZES.map((sz) => (
+                            <label key={sz} className="flex items-center gap-2 px-2 py-1.5 border border-gray-200 rounded-lg">
+                              <span className="text-xs font-semibold text-gray-700 w-8">{sz}</span>
+                              <input
+                                type="number"
+                                min={0}
+                                value={productConfig.sizeQtys[sz] || ''}
+                                onChange={(e) => setProductConfig((p) => p ? { ...p, sizeQtys: { ...p.sizeQtys, [sz]: e.target.value } } : p)}
+                                className="flex-1 min-w-0 px-1 py-0.5 text-sm text-right border-0 focus:outline-none"
+                                placeholder="0"
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700">
+                        Unit price <span className="font-semibold">${productConfig.unitPrice.toFixed(2)}</span> ·
+                        Total qty <span className="font-semibold">{totalQty}</span> ·
+                        Subtotal <span className="font-semibold">${(totalQty * productConfig.unitPrice).toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button onClick={() => setProductConfig(null)} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                        <button
+                          disabled={totalQty === 0}
+                          onClick={() => {
+                            const { product, unitPrice, weightOz, color, sizeQtys } = productConfig;
+                            // One invoice line per size that has a qty > 0
+                            const newItems: InvoiceItem[] = [];
+                            for (const sz of STANDARD_SIZES) {
+                              const qty = parseInt(sizeQtys[sz] || '0', 10);
+                              if (qty > 0) {
+                                const desc = `${product.name} (${product.brand})${color ? ` · ${color}` : ''} · ${sz}`;
+                                newItems.push({ description: desc, quantity: qty, unit_price: unitPrice, ...(weightOz ? { weight_oz: weightOz } : {}) });
+                              }
+                            }
+                            if (newItems.length === 0) return;
+                            setInvoiceForm((p) => {
+                              // If the only existing item is the placeholder empty row, replace it
+                              const hasPlaceholder = p.items.length === 1 && !p.items[0]!.description && (!p.items[0]!.unit_price || p.items[0]!.unit_price === 0);
+                              return { ...p, items: hasPlaceholder ? newItems : [...p.items, ...newItems] };
+                            });
+                            setProductConfig(null);
+                          }}
+                          className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium disabled:opacity-50"
+                        >
+                          Add {totalQty || ''} Item{totalQty === 1 ? '' : 's'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Record Payment Modal */}
             {recordPaymentInvoice && (
