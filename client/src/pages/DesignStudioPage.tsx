@@ -510,6 +510,9 @@ export default function DesignStudioPage() {
     const newEl: DesignElement = { ...el, id: Date.now().toString() + Math.random().toString(36).slice(2) };
     setDesignElements(prev => [...prev, newEl]);
     setSelectedElementId(newEl.id);
+    // Auto-close whichever tool panel is open so the user immediately sees
+    // the result on the canvas instead of having to close the panel manually.
+    setActiveTool(null);
   }, []);
 
   const removeElement = useCallback((id: string) => {
@@ -580,10 +583,6 @@ export default function DesignStudioPage() {
     // tap the Uploaded-grid thumbnail afterwards (this was confusing on
     // mobile where the grid was hidden behind the panel/keyboard).
     addDesignElement({ type: 'image', x: 25, y: 20, width: 30, content: imageUrl });
-    // Close the Upload panel on mobile so the canvas is visible.
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setActiveTool(null);
-    }
     // Save to user's upload library if logged in
     const token = getAuthToken();
     if (token) {
@@ -1564,6 +1563,9 @@ export default function DesignStudioPage() {
               onClick={() => {
                 setSelectedProduct(product);
                 setSelectedColorIdx(0);
+                // Close the Change Products panel so the user immediately
+                // sees the new product on the canvas.
+                setActiveTool(null);
               }}
               className={`rounded-lg border overflow-hidden text-left hover:shadow-md transition ${
                 selectedProduct?.ss_id === product.ss_id
