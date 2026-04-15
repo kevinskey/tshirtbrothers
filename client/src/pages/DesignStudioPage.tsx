@@ -432,8 +432,10 @@ export default function DesignStudioPage() {
 
   // --- Text panel state ---
   const [textInput, setTextInput] = useState('');
-  const [textFontSize, setTextFontSize] = useState(24);
-  const [textColor, setTextColor] = useState('#FFFFFF');
+  // Defaults for newly-added text. Tweakable via the Edit Text drawer
+  // after placement, so they don't need to be panel controls.
+  const textFontSize = 24;
+  const textColor = '#FFFFFF';
 
   // --- Art panel state ---
   const [artSource, setArtSource] = useState<'designs' | 'clipart'>('designs');
@@ -1207,78 +1209,28 @@ export default function DesignStudioPage() {
   );
 
   // --- Text Panel ---
+  // Minimal Add-Text panel: just the input + Add button. Size, color,
+  // font etc. are tweakable in the Edit Text drawer *after* the text is
+  // placed, so they don't need to clutter the Add panel (which otherwise
+  // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    <div className="p-4 space-y-4">
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Text</label>
-        <input
-          placeholder="Enter your text..."
-          value={textInput}
-          onChange={e => setTextInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-          className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-          Font Size: {textFontSize}px
-        </label>
-        <input
-          type="range"
-          min={12}
-          max={72}
-          value={textFontSize}
-          onChange={e => setTextFontSize(Number(e.target.value))}
-          className="w-full accent-red-600"
-        />
-      </div>
-      <div className="flex items-center gap-2">
-        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Color</label>
-        <input
-          type="color"
-          value={textColor}
-          onChange={e => setTextColor(e.target.value)}
-          className="h-8 w-8 cursor-pointer rounded border-none"
-        />
-        <span className="text-xs text-gray-400">{textColor}</span>
-      </div>
+    <div className="p-3 flex items-center gap-2">
+      <input
+        placeholder="Enter your text..."
+        value={textInput}
+        onChange={e => setTextInput(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
+        className="flex-1 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        autoFocus
+      />
       <button
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        Add to Design
+        Add
       </button>
-
-      {/* List of text elements on canvas */}
-      {designElements.filter(e => e.type === 'text').length > 0 && (
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Text on canvas</p>
-          <div className="space-y-1">
-            {designElements
-              .filter(e => e.type === 'text')
-              .map(el => (
-                <div
-                  key={el.id}
-                  className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm"
-                >
-                  <span className="flex-1 truncate font-medium" style={{ color: el.color }}>
-                    {el.content}
-                  </span>
-                  <span className="text-xs text-gray-400">{el.fontSize}px</span>
-                  <button
-                    type="button"
-                    onClick={() => removeElement(el.id)}
-                    className="text-gray-400 hover:text-red-600 transition"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 
