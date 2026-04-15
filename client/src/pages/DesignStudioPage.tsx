@@ -583,6 +583,9 @@ export default function DesignStudioPage() {
     // tap the Uploaded-grid thumbnail afterwards (this was confusing on
     // mobile where the grid was hidden behind the panel/keyboard).
     addDesignElement({ type: 'image', x: 25, y: 20, width: 30, content: imageUrl });
+    // Belt-and-suspenders: always close the Upload panel so the canvas is
+    // visible immediately.
+    setActiveTool(null);
     // Save to user's upload library if logged in
     const token = getAuthToken();
     if (token) {
@@ -1152,7 +1155,7 @@ export default function DesignStudioPage() {
               <button
                 key={i}
                 type="button"
-                onClick={() => setPendingUpload(url)}
+                onClick={() => { setPendingUpload(url); setActiveTool(null); }}
                 className="aspect-square rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:border-red-400 transition"
               >
                 <img src={url} alt="Uploaded" className="w-full h-full object-contain p-1" />
