@@ -80,4 +80,8 @@
     height: 55vh !important;
     max-height: 55vh !important;
   }
+  /* 35vh for Design Studio tool panels (Upload/Add Text/Art/etc.) */
+  .mobile-max-35vh {
+    max-height: 35vh !important;
+  }
 }

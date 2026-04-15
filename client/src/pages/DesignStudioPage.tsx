@@ -918,7 +918,7 @@ export default function DesignStudioPage() {
 
   const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
   const desktopPanel = `${panelBase} top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
-  const mobilePanel = `${panelBase} bottom-12 left-0 right-0 max-h-[60vh] rounded-t-2xl border-t border-gray-200 md:hidden`;
+  const mobilePanel = `${panelBase} bottom-12 left-0 right-0 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
 
   const panelHeader = (title: string) => (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -1901,7 +1901,7 @@ export default function DesignStudioPage() {
       className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
                  md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
                  inset-x-0 bottom-12 top-auto rounded-t-2xl border-t shadow-2xl
-                 mobile-max-55vh"
+                 mobile-max-35vh"
     >
       {/* Drag handle (mobile only) */}
       <div className="flex justify-center pt-2 md:hidden">
