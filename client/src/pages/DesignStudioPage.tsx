@@ -598,19 +598,37 @@ export default function DesignStudioPage() {
     if (!pendingUpload) return;
     setIsRemovingBg(true);
     try {
+      // Upload to DO Spaces first so the /remove-bg call passes a tiny
+      // imageUrl instead of a multi-MB base64 body (nginx rejects large
+      // bodies with 413, which silently failed on mobile).
+      let bgBody: Record<string, string> = { imageBase64: pendingUpload };
+      try {
+        const up = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: pendingUpload, filename: 'studio-upload.png', customerEmail: 'studio-anonymous' }),
+        });
+        if (up.ok) {
+          const d = await up.json();
+          if (d.url) bgBody = { imageUrl: d.url };
+        }
+      } catch { /* fall back to base64 */ }
+
       const res = await fetch('/api/design/remove-bg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: pendingUpload }),
+        body: JSON.stringify(bgBody),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Failed to remove background');
+        throw new Error(err.error || `Failed (${res.status})`);
       }
       const data = await res.json();
       finishUpload(data.imageBase64);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Background removal failed. Using original image.');
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[remove-bg] failed:', msg);
+      alert(`Background removal failed: ${msg}. Using original image.`);
       finishUpload(pendingUpload);
     } finally {
       setIsRemovingBg(false);
