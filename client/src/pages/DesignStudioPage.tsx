@@ -1753,14 +1753,18 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto overscroll-contain`}
       onClick={() => setSelectedElementId(null)}
     >
-      {/* Product image + overlay area */}
+      {/* Product image + overlay area. The inner container uses an
+          aspect-square box so the shirt renders at its natural size and
+          any bottom panel (or mobile toolbar) that covers the lower part
+          of the viewport can be scrolled past — the generous pb-64 on
+          main gives the scroll container enough runway to bring the full
+          canvas into view. */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-1 md:px-6" ref={canvasRef}>
         <div
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none
-                     h-[calc(100svh-8rem)] md:h-auto md:aspect-square"
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none aspect-square"
           style={{ touchAction: 'pinch-zoom' }}
         >
           {displayImage ? (
