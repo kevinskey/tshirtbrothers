@@ -576,6 +576,14 @@ export default function DesignStudioPage() {
   const finishUpload = useCallback(async (imageUrl: string) => {
     setUploadedImages(prev => [...prev, imageUrl]);
     setPendingUpload(null);
+    // Drop the graphic straight onto the canvas so the user doesn't have to
+    // tap the Uploaded-grid thumbnail afterwards (this was confusing on
+    // mobile where the grid was hidden behind the panel/keyboard).
+    addDesignElement({ type: 'image', x: 25, y: 20, width: 30, content: imageUrl });
+    // Close the Upload panel on mobile so the canvas is visible.
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setActiveTool(null);
+    }
     // Save to user's upload library if logged in
     const token = getAuthToken();
     if (token) {
@@ -592,7 +600,7 @@ export default function DesignStudioPage() {
         }
       } catch { /* silently fail — local version still works */ }
     }
-  }, []);
+  }, [addDesignElement]);
 
   const handleRemoveBg = useCallback(async () => {
     if (!pendingUpload) return;
