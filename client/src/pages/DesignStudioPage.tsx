@@ -762,10 +762,29 @@ export default function DesignStudioPage() {
     if (!el || el.type !== 'image') return;
     setCanvasRemovingBg(true);
     try {
-      // Send either base64 or URL to the server — server handles the fetch for remote URLs
-      const body = el.content.startsWith('data:')
-        ? { imageBase64: el.content }
-        : { imageUrl: el.content };
+      // If the image is still a data URL, upload it to Spaces first so we
+      // don't send a huge base64 body to /remove-bg.
+      let body: Record<string, string>;
+      if (el.content.startsWith('data:')) {
+        try {
+          const up = await fetch('/api/quotes/upload-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: el.content, filename: 'studio-source.png', customerEmail: 'studio-anonymous' }),
+          });
+          if (up.ok) {
+            const d = await up.json();
+            body = d.url ? { imageUrl: d.url } : { imageBase64: el.content };
+          } else {
+            body = { imageBase64: el.content };
+          }
+        } catch {
+          body = { imageBase64: el.content };
+        }
+      } else {
+        body = { imageUrl: el.content };
+      }
+
       const resp = await fetch('/api/design/remove-bg', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -776,8 +795,23 @@ export default function DesignStudioPage() {
         throw new Error((err as { error?: string }).error || 'Failed');
       }
       const data = await resp.json() as { imageBase64: string };
-      updateElement(elementId, { content: data.imageBase64 });
+
+      // Auto-crop the transparent padding so the subject fills the element.
+      let cutout = data.imageBase64;
+      let widthRatio = 1;
+      try {
+        const cropped = await autoCropTransparent(cutout);
+        cutout = cropped.dataUrl;
+        widthRatio = cropped.widthRatio;
+      } catch (cropErr) {
+        console.warn('[autocrop] failed on canvas Rm BG:', cropErr);
+      }
+      updateElement(elementId, {
+        content: cutout,
+        width: Math.max(5, el.width * widthRatio),
+      });
     } catch (err) {
+      console.error('[canvas Rm BG] failed:', err);
       alert(err instanceof Error ? err.message : 'Background removal failed');
     } finally {
       setCanvasRemovingBg(false);
