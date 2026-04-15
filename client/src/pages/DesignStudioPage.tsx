@@ -1901,12 +1901,28 @@ export default function DesignStudioPage() {
       className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
                  md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
                  inset-x-0 bottom-12 top-auto rounded-t-2xl border-t shadow-2xl
-                 mobile-max-25vh"
+                 mobile-max-55vh"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+      {/* Drag handle (mobile only) */}
+      <div className="flex justify-center pt-2 md:hidden">
+        <div className="w-10 h-1.5 rounded-full bg-gray-300" />
+      </div>
+
+      {/* Sticky header with prominent Done button */}
+      <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
         <span className="font-semibold text-gray-900">Edit Text</span>
-        <button type="button" onClick={() => setSelectedElementId(null)} className="text-gray-400 hover:text-gray-700">
+        <button
+          type="button"
+          onClick={() => setSelectedElementId(null)}
+          className="md:hidden bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg"
+        >
+          Done
+        </button>
+        <button
+          type="button"
+          onClick={() => setSelectedElementId(null)}
+          className="hidden md:block text-gray-400 hover:text-gray-700"
+        >
           <X className="h-5 w-5" />
         </button>
       </div>

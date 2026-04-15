@@ -74,4 +74,10 @@
     height: 25vh !important;
     max-height: 25vh !important;
   }
+  /* Alternate: roomier ~55vh bottom sheet for the Design Studio text
+     editor. Still leaves the canvas visible above. */
+  .mobile-max-55vh {
+    height: 55vh !important;
+    max-height: 55vh !important;
+  }
 }
