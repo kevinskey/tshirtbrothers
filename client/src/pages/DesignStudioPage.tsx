@@ -604,17 +604,23 @@ export default function DesignStudioPage() {
 
   const handleRemoveBg = useCallback(async () => {
     if (!pendingUpload) return;
+    // Snapshot + close the dialog immediately so the UI feels responsive.
+    // The original image goes onto the canvas right away; once the
+    // background-removed version arrives we swap it in.
+    const original = pendingUpload;
+    setPendingUpload(null);
+    finishUpload(original);
     setIsRemovingBg(true);
+
     try {
       // Upload to DO Spaces first so the /remove-bg call passes a tiny
-      // imageUrl instead of a multi-MB base64 body (nginx rejects large
-      // bodies with 413, which silently failed on mobile).
-      let bgBody: Record<string, string> = { imageBase64: pendingUpload };
+      // imageUrl instead of a multi-MB base64 body.
+      let bgBody: Record<string, string> = { imageBase64: original };
       try {
         const up = await fetch('/api/quotes/upload-design', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: pendingUpload, filename: 'studio-upload.png', customerEmail: 'studio-anonymous' }),
+          body: JSON.stringify({ imageBase64: original, filename: 'studio-upload.png', customerEmail: 'studio-anonymous' }),
         });
         if (up.ok) {
           const d = await up.json();
@@ -632,12 +638,17 @@ export default function DesignStudioPage() {
         throw new Error(err.error || `Failed (${res.status})`);
       }
       const data = await res.json();
-      finishUpload(data.imageBase64);
+      if (data.imageBase64) {
+        // Swap the original element's image for the cutout.
+        setDesignElements((prev) => prev.map((el) =>
+          el.type === 'image' && el.content === original ? { ...el, content: data.imageBase64 } : el
+        ));
+        setUploadedImages((prev) => prev.map((u) => (u === original ? data.imageBase64 : u)));
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[remove-bg] failed:', msg);
-      alert(`Background removal failed: ${msg}. Using original image.`);
-      finishUpload(pendingUpload);
+      alert(`Background removal failed: ${msg}. Keeping the original image.`);
     } finally {
       setIsRemovingBg(false);
     }
