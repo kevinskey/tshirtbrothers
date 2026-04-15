@@ -1117,7 +1117,7 @@ export default function DesignStudioPage() {
               <button
                 key={i}
                 type="button"
-                onClick={() => placeImageOnCanvas(url)}
+                onClick={() => setPendingUpload(url)}
                 className="aspect-square rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:border-red-400 transition"
               >
                 <img src={url} alt="Uploaded" className="w-full h-full object-contain p-1" />
