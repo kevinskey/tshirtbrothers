@@ -202,6 +202,57 @@ router.delete('/customers/:id', async (req, res, next) => {
   }
 });
 
+// PUT /customers/:id - Update customer contact info
+router.put('/customers/:id', async (req, res, next) => {
+  try {
+    const {
+      name,
+      email,
+      phone,
+      address_street,
+      address_city,
+      address_state,
+      address_zip,
+    } = req.body || {};
+
+    // If email is being changed, ensure it's not already in use
+    if (email) {
+      const dup = await pool.query(
+        'SELECT id FROM users WHERE email = $1 AND id <> $2',
+        [email, req.params.id],
+      );
+      if (dup.rows.length > 0) return res.status(409).json({ error: 'Email already in use' });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE users SET
+         name           = COALESCE($1, name),
+         email          = COALESCE($2, email),
+         phone          = COALESCE($3, phone),
+         address_street = COALESCE($4, address_street),
+         address_city   = COALESCE($5, address_city),
+         address_state  = COALESCE($6, address_state),
+         address_zip    = COALESCE($7, address_zip)
+       WHERE id = $8 AND role = 'customer'
+       RETURNING id, name, email, phone, address_street, address_city, address_state, address_zip, created_at`,
+      [
+        name || null,
+        email || null,
+        phone || null,
+        address_street || null,
+        address_city || null,
+        address_state || null,
+        address_zip || null,
+        req.params.id,
+      ],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/customers', async (req, res, next) => {
   try {
     const { search } = req.query;
