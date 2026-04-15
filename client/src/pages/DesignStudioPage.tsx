@@ -1754,7 +1754,14 @@ export default function DesignStudioPage() {
   const canvas = (
     <main
       className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto overscroll-contain`}
-      onClick={() => setSelectedElementId(null)}
+      onClick={() => {
+        // Don't auto-deselect while the Edit Text side panel / toolbar is
+        // open — the side panel has its own X to close. Without this, any
+        // stray click in the canvas area (e.g., after typing) collapsed
+        // the side panel.
+        if (showTextEditor) return;
+        setSelectedElementId(null);
+      }}
     >
       {/* Product image + overlay area. The inner container uses an
           aspect-square box so the shirt renders at its natural size and
