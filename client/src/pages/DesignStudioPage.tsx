@@ -1574,7 +1574,11 @@ export default function DesignStudioPage() {
     >
       {/* Product image + overlay area */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-1 md:px-6" ref={canvasRef}>
-        <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none" style={{ touchAction: 'pinch-zoom' }}>
+        <div
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none
+                     h-[calc(100svh-8rem)] md:h-auto md:aspect-square"
+          style={{ touchAction: 'pinch-zoom' }}
+        >
           {displayImage ? (
             <img
               src={displayImage}
