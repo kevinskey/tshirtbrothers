@@ -1866,8 +1866,8 @@ export default function DesignStudioPage() {
                       fontFamily: el.fontFamily ?? 'Inter',
                       fontWeight: 700,
                       textAlign: el.textAlign ?? 'center',
-                      letterSpacing: el.letterSpacing ? `${el.letterSpacing}em` : undefined,
-                      wordSpacing: el.wordSpacing ? `${el.wordSpacing}em` : undefined,
+                      letterSpacing: el.letterSpacing != null ? `${el.letterSpacing}em` : undefined,
+                      wordSpacing: el.wordSpacing != null ? `${el.wordSpacing}em` : undefined,
                       lineHeight: el.lineHeight ?? 1.2,
                       textShadow: el.outline ? `
                         -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5),
@@ -2240,14 +2240,14 @@ export default function DesignStudioPage() {
           <div className="flex items-center gap-2 flex-1 ml-4">
             <input
               type="range"
-              min={-10}
-              max={30}
+              min={-20}
+              max={100}
               step={1}
               value={Math.round((selectedEl.letterSpacing ?? 0) * 100)}
               onChange={e => updateElement(selectedEl.id, { letterSpacing: Number(e.target.value) / 100 })}
               className="flex-1 accent-blue-600"
             />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}</span>
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.letterSpacing ?? 0).toFixed(2)}em</span>
           </div>
         </div>
 
@@ -2257,14 +2257,14 @@ export default function DesignStudioPage() {
           <div className="flex items-center gap-2 flex-1 ml-4">
             <input
               type="range"
-              min={-10}
-              max={30}
-              step={1}
+              min={-30}
+              max={300}
+              step={5}
               value={Math.round((selectedEl.wordSpacing ?? 0) * 100)}
               onChange={e => updateElement(selectedEl.id, { wordSpacing: Number(e.target.value) / 100 })}
               className="flex-1 accent-blue-600"
             />
-            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.wordSpacing ?? 0).toFixed(2)}</span>
+            <span className="text-sm text-gray-700 w-14 text-right">{(selectedEl.wordSpacing ?? 0).toFixed(2)}em</span>
           </div>
         </div>
 
