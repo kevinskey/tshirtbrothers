@@ -513,7 +513,7 @@ export default function AdminPage() {
   }>({
     customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
-    tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+    tax: '8', shipping: '0', discount: '0', notes: '', due_date: '',
   });
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
@@ -980,7 +980,7 @@ export default function AdminPage() {
     setInvoiceForm({
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
-      tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+      tax: '8', shipping: '0', discount: '0', notes: '', due_date: '',
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
@@ -3189,7 +3189,9 @@ export default function AdminPage() {
                         <thead>
                           <tr className="bg-gray-50 text-left text-gray-500">
                             <th className="px-3 py-2 font-medium">Description</th>
-                            <th className="px-2 py-2 font-medium w-14">Qty</th>
+                            <th className="px-2 py-2 font-medium w-24 hidden md:table-cell">Color</th>
+                            <th className="px-2 py-2 font-medium w-16 hidden md:table-cell">Size</th>
+                            <th className="px-2 py-2 font-medium w-20">Qty</th>
                             <th className="px-2 py-2 font-medium w-20">Price</th>
                             <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Wt (oz)</th>
                             <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Ship $</th>
@@ -3206,8 +3208,14 @@ export default function AdminPage() {
                               <td className="px-3 py-2">
                                 <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Item description" />
                               </td>
+                              <td className="px-2 py-2 hidden md:table-cell">
+                                <input type="text" value={item.color || ''} onChange={e => handleInvoiceItemChange(idx, 'color' as keyof InvoiceItem, e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="—" />
+                              </td>
+                              <td className="px-2 py-2 hidden md:table-cell">
+                                <input type="text" value={item.size || ''} onChange={e => handleInvoiceItemChange(idx, 'size' as keyof InvoiceItem, e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="—" />
+                              </td>
                               <td className="px-2 py-2">
-                                <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full min-w-[3.5rem] border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                               </td>
                               <td className="px-2 py-2">
                                 <div className="relative">
@@ -3556,8 +3564,14 @@ export default function AdminPage() {
                             for (const sz of STANDARD_SIZES) {
                               const qty = parseInt(sizeQtys[sz] || '0', 10);
                               if (qty > 0) {
-                                const desc = `${product.name} (${product.brand})${color ? ` · ${color}` : ''} · ${sz}`;
-                                newItems.push({ description: desc, quantity: qty, unit_price: unitPrice, ...(weightOz ? { weight_oz: weightOz } : {}) });
+                                newItems.push({
+                                  description: `${product.name} (${product.brand})`,
+                                  color: color || undefined,
+                                  size: sz,
+                                  quantity: qty,
+                                  unit_price: unitPrice,
+                                  ...(weightOz ? { weight_oz: weightOz } : {}),
+                                });
                               }
                             }
                             if (newItems.length === 0) return;

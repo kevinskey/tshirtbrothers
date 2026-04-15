@@ -571,6 +571,8 @@ export interface InvoiceItem {
   unit_price: number;
   weight_oz?: number;
   shipping_cost?: number;
+  color?: string;
+  size?: string;
 }
 
 export interface Invoice {
