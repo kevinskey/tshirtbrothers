@@ -2133,7 +2133,7 @@ export default function DesignStudioPage() {
       className="fixed z-30 flex flex-col overflow-y-auto bg-white border-gray-200
                  md:top-14 md:left-16 md:bottom-16 md:w-80 md:border-r
                  inset-x-0 bottom-12 top-auto rounded-t-2xl border-t shadow-2xl
-                 mobile-max-35vh"
+                 mobile-max-55vh"
     >
       {/* Drag handle (mobile only) */}
       <div className="flex justify-center pt-2 md:hidden">
@@ -2232,6 +2232,60 @@ export default function DesignStudioPage() {
           </div>
         </div>
 
+        {/* Text Shape (moved up so Circle/Arch/etc. are reachable without
+             scrolling past every other slider on mobile) */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm text-gray-600">Text Shape</span>
+            <span className="text-xs text-gray-400 capitalize">{selectedEl.textShape ?? 'normal'}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            {TEXT_SHAPES.map(shape => (
+              <button
+                key={shape.name}
+                type="button"
+                onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
+                className={`rounded-lg border px-2 py-2.5 text-[10px] font-bold transition ${
+                  (selectedEl.textShape ?? 'normal') === shape.name
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+                style={{
+                  fontStyle: shape.name === 'curve' || shape.name === 'arch' ? 'italic' : undefined,
+                  letterSpacing: shape.name === 'pinch' ? '-0.05em' : shape.name === 'bulge' ? '0.1em' : undefined,
+                }}
+              >
+                {shape.label}
+              </button>
+            ))}
+          </div>
+          {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-500">Shape Intensity</span>
+                <span className="text-xs text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
+              </div>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                value={selectedEl.shapeIntensity ?? 50}
+                onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })}
+                className="w-full accent-blue-600"
+              />
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => updateElement(selectedEl.id, { textShape: 'normal', shapeIntensity: 50 })}
+                  className="text-xs text-gray-400 hover:text-gray-700 transition"
+                >
+                  Remove Shape
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Rotation */}
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">Rotation</span>
@@ -2311,59 +2365,6 @@ export default function DesignStudioPage() {
           >
             {selectedEl.outline ? 'On' : 'Off'}
           </button>
-        </div>
-
-        {/* Text Shape */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm text-gray-600">Text Shape</span>
-            <span className="text-xs text-gray-400 capitalize">{selectedEl.textShape ?? 'normal'}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {TEXT_SHAPES.map(shape => (
-              <button
-                key={shape.name}
-                type="button"
-                onClick={() => updateElement(selectedEl.id, { textShape: shape.name, shapeIntensity: selectedEl.shapeIntensity ?? 50 })}
-                className={`rounded-lg border px-2 py-2.5 text-[10px] font-bold transition ${
-                  (selectedEl.textShape ?? 'normal') === shape.name
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
-                style={{
-                  fontStyle: shape.name === 'curve' || shape.name === 'arch' ? 'italic' : undefined,
-                  letterSpacing: shape.name === 'pinch' ? '-0.05em' : shape.name === 'bulge' ? '0.1em' : undefined,
-                }}
-              >
-                {shape.label}
-              </button>
-            ))}
-          </div>
-          {selectedEl.textShape && selectedEl.textShape !== 'normal' && (
-            <div className="mt-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-xs text-gray-500">Shape Intensity</span>
-                <span className="text-xs text-gray-400">{selectedEl.shapeIntensity ?? 50}%</span>
-              </div>
-              <input
-                type="range"
-                min={10}
-                max={100}
-                value={selectedEl.shapeIntensity ?? 50}
-                onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })}
-                className="w-full accent-blue-600"
-              />
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => updateElement(selectedEl.id, { textShape: 'normal', shapeIntensity: 50 })}
-                  className="text-xs text-gray-400 hover:text-gray-700 transition"
-                >
-                  Remove Shape
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Text Size */}
