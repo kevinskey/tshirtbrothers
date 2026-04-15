@@ -66,3 +66,12 @@
 .animate-bounce-slow {
   animation: bounce-slow 2.5s ease-in-out infinite;
 }
+
+/* Mobile-only: cap an element's height at 25% of viewport. Used by the
+   Design Studio text editor bottom sheet so it doesn't cover the canvas. */
+@media (max-width: 767px) {
+  .mobile-max-25vh {
+    height: 25vh !important;
+    max-height: 25vh !important;
+  }
+}
