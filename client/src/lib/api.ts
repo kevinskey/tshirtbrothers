@@ -614,6 +614,7 @@ export interface CreateInvoiceData {
   notes?: string;
   due_date?: string;
   quote_id?: string;
+  deposit_percent?: number;
 }
 
 export async function fetchInvoices(status?: string): Promise<Invoice[]> {

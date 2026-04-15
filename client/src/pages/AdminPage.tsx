@@ -517,6 +517,8 @@ export default function AdminPage() {
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
   });
   const [invoiceTaxRate, setInvoiceTaxRate] = useState('8');
+  const [invoiceRequireDeposit, setInvoiceRequireDeposit] = useState(true);
+  const [invoiceDepositPercent, setInvoiceDepositPercent] = useState('50');
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
@@ -1061,6 +1063,7 @@ export default function AdminPage() {
       total,
       notes: invoiceForm.notes || undefined,
       due_date: invoiceForm.due_date || undefined,
+      deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
     };
     if (editingInvoiceId) {
       updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
@@ -1085,6 +1088,7 @@ export default function AdminPage() {
       total,
       notes: invoiceForm.notes || undefined,
       due_date: invoiceForm.due_date || undefined,
+      deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
     };
     setPreviewInvoice(data);
     setInvoiceView('preview');
@@ -3401,6 +3405,35 @@ export default function AdminPage() {
                       <div className="border-t border-gray-200 pt-2 flex justify-between">
                         <span className="text-base font-bold text-gray-900">Total</span>
                         <span className="text-xl font-bold text-gray-900">${calcInvoiceTotal().toFixed(2)}</span>
+                      </div>
+                      {/* Deposit toggle */}
+                      <div className="border-t border-gray-200 pt-2 space-y-1">
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={invoiceRequireDeposit}
+                            onChange={(e) => setInvoiceRequireDeposit(e.target.checked)}
+                            className="w-4 h-4 accent-red-600"
+                          />
+                          Require deposit up front
+                        </label>
+                        {invoiceRequireDeposit && (
+                          <div className="flex items-center gap-2 pl-6 text-sm">
+                            <span className="text-gray-500">Deposit %</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max="100"
+                              value={invoiceDepositPercent}
+                              onChange={(e) => setInvoiceDepositPercent(e.target.value)}
+                              className="w-16 px-2 py-1 border border-gray-200 rounded text-right"
+                            />
+                            <span className="text-gray-400 text-xs">
+                              (customer pays ${((calcInvoiceTotal() * (parseInt(invoiceDepositPercent, 10) || 0)) / 100).toFixed(2)} now,
+                              ${(calcInvoiceTotal() - (calcInvoiceTotal() * (parseInt(invoiceDepositPercent, 10) || 0)) / 100).toFixed(2)} later)
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
