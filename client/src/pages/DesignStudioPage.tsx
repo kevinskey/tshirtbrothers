@@ -249,6 +249,7 @@ export default function DesignStudioPage() {
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
+  const [viewSwitcherOpen, setViewSwitcherOpen] = useState(true);
   const [designElements, setDesignElements] = useState<DesignElement[]>(loadState?.elements || []);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [designName, setDesignName] = useState(loadState?.designName || 'Untitled design');
@@ -1568,7 +1569,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`flex-1 flex flex-col items-center bg-gray-100 pt-20 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-20 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
@@ -1726,36 +1727,49 @@ export default function DesignStudioPage() {
         </div>
       </div>
 
-      {/* View Switcher */}
+      {/* View Switcher — left column, collapses once a side is chosen */}
       {selectedProduct && frontImage && (
-        <div className="flex items-center gap-2 mt-4">
-          {(['front', 'back', 'sleeve'] as const).map(view => (
-            <button
-              key={view}
-              type="button"
-              onClick={e => {
-                e.stopPropagation();
-                setCurrentView(view);
-              }}
-              className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2 transition ${
-                currentView === view
-                  ? 'border-red-500 bg-red-50 text-red-600'
-                  : 'border-gray-200 bg-white text-gray-500 hover:border-gray-400'
-              }`}
-            >
-              <div className="h-10 w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
-                {frontImage && (
-                  <img
-                    src={view === 'back' ? (backImage ?? frontImage) : frontImage}
-                    alt={view}
-                    className="h-full w-full object-contain p-0.5"
-                  />
-                )}
-              </div>
-              <span className="text-[10px] font-semibold capitalize">{view === 'sleeve' ? 'Sleeve' : view === 'back' ? 'Back' : 'Front'}</span>
-            </button>
-          ))}
-        </div>
+        viewSwitcherOpen ? (
+          <div className="absolute left-2 top-20 md:top-24 z-20 flex flex-col gap-2 bg-white/90 backdrop-blur rounded-xl shadow-lg border border-gray-200 p-1.5">
+            {(['front', 'back', 'sleeve'] as const).map(view => (
+              <button
+                key={view}
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  setCurrentView(view);
+                  setViewSwitcherOpen(false);
+                }}
+                className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1 transition ${
+                  currentView === view
+                    ? 'border-red-500 bg-red-50 text-red-600'
+                    : 'border-transparent bg-white text-gray-500 hover:border-gray-300'
+                }`}
+                title={view}
+              >
+                <div className="h-8 w-8 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+                  {frontImage && (
+                    <img
+                      src={view === 'back' ? (backImage ?? frontImage) : frontImage}
+                      alt={view}
+                      className="h-full w-full object-contain"
+                    />
+                  )}
+                </div>
+                <span className="text-[9px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          // Tiny pill button to reopen the switcher after it's been dismissed
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); setViewSwitcherOpen(true); }}
+            className="absolute left-2 top-20 md:top-24 z-20 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow px-2 py-1 text-[10px] font-semibold text-gray-600 hover:bg-white capitalize"
+          >
+            {currentView === 'sleeve' ? 'Sleeve' : currentView} ▾
+          </button>
+        )
       )}
     </main>
   );
