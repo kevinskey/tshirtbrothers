@@ -84,6 +84,10 @@ app.listen(PORT, () => {
 
 // Apply every SQL file in ./migrations on boot. All migrations use
 // IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so repeated runs are safe.
+//
+// We also keep a schema_migrations table so we never re-run a file that
+// already succeeded (or that failed with a benign "must be owner" error
+// because the schema change is already present in the DB).
 async function runBootMigrations() {
   const dir = join(__dirname, 'migrations');
   let files;
@@ -93,14 +97,57 @@ async function runBootMigrations() {
     console.log('[migrations] no migrations directory, skipping');
     return;
   }
+
+  // Ensure the tracking table exists. If we can't create it (no privs),
+  // we just fall back to running every migration every boot.
+  let haveTrackingTable = false;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    haveTrackingTable = true;
+  } catch (err) {
+    console.warn('[migrations] no schema_migrations table:', err.message);
+  }
+
+  let applied = new Set();
+  if (haveTrackingTable) {
+    try {
+      const { rows } = await pool.query('SELECT filename FROM schema_migrations');
+      applied = new Set(rows.map((r) => r.filename));
+    } catch { /* ignore */ }
+  }
+
   const sqlFiles = files.filter((f) => f.endsWith('.sql')).sort();
   for (const file of sqlFiles) {
+    if (applied.has(file)) continue;
     try {
       const sql = await readFile(join(dir, file), 'utf-8');
       await pool.query(sql);
       console.log(`[migrations] applied ${file}`);
+      if (haveTrackingTable) {
+        await pool.query(
+          'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+          [file]
+        );
+      }
     } catch (err) {
+      const benign = /must be owner of/i.test(err.message || '');
       console.error(`[migrations] ${file} failed:`, err.message);
+      // If the error is just "not the owner" it means the schema change is
+      // already present (another role applied it). Record the file so we
+      // don't keep retrying and spamming logs every boot.
+      if (benign && haveTrackingTable) {
+        try {
+          await pool.query(
+            'INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING',
+            [file]
+          );
+        } catch { /* ignore */ }
+      }
     }
   }
 }
