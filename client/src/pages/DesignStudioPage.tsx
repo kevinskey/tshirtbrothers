@@ -1569,11 +1569,11 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-20 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-14 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto`}
       onClick={() => setSelectedElementId(null)}
     >
       {/* Product image + overlay area */}
-      <div className="relative w-full max-w-3xl px-4" ref={canvasRef}>
+      <div className="relative w-full max-w-3xl md:max-w-3xl px-2 md:px-4" ref={canvasRef}>
         <div className="relative aspect-square bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none" style={{ touchAction: 'none' }}>
           {displayImage ? (
             <img
