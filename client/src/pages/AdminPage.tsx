@@ -514,8 +514,9 @@ export default function AdminPage() {
   }>({
     customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
-    tax: '8', shipping: '0', discount: '0', notes: '', due_date: '',
+    tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
   });
+  const [invoiceTaxRate, setInvoiceTaxRate] = useState('8');
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
@@ -991,7 +992,7 @@ export default function AdminPage() {
     setInvoiceForm({
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
-      tax: '8', shipping: '0', discount: '0', notes: '', due_date: '',
+      tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
@@ -1003,6 +1004,18 @@ export default function AdminPage() {
   }
 
   const totalWeight = invoiceForm.items.reduce((sum, it) => sum + ((it.weight_oz || 0) * it.quantity), 0);
+
+  // Auto-compute the tax dollar amount from the tax rate whenever items or
+  // the rate change. Admin can still manually override the $ field, but
+  // changing the rate or editing an item recomputes it.
+  useEffect(() => {
+    const rate = parseFloat(invoiceTaxRate);
+    if (!Number.isFinite(rate)) return;
+    const sub = invoiceForm.items.reduce((s, it) => s + (it.quantity * it.unit_price) + ((it.shipping_cost || 0) * it.quantity), 0);
+    const newTax = +(sub * (rate / 100)).toFixed(2);
+    setInvoiceForm((p) => (p.tax === String(newTax) ? p : { ...p, tax: String(newTax) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceTaxRate, JSON.stringify(invoiceForm.items)]);
 
   function calcInvoiceTotal() {
     const sub = calcInvoiceSubtotal();
@@ -3293,11 +3306,24 @@ export default function AdminPage() {
                           <span className="text-gray-600">{totalWeight.toFixed(1)} oz ({(totalWeight / 16).toFixed(1)} lbs)</span>
                         </div>
                       )}
-                      <div className="flex justify-between items-center text-sm">
+                      <div className="flex justify-between items-center text-sm gap-2">
                         <span className="text-gray-500">Tax</span>
-                        <div className="relative w-28">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
-                          <input type="number" step="0.01" min="0" value={invoiceForm.tax} onChange={e => setInvoiceForm(p => ({ ...p, tax: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                        <div className="flex items-center gap-1">
+                          <div className="relative w-20">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={invoiceTaxRate}
+                              onChange={(e) => setInvoiceTaxRate(e.target.value)}
+                              className="w-full pr-5 pl-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                          </div>
+                          <div className="relative w-28">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                            <input type="number" step="0.01" min="0" value={invoiceForm.tax} onChange={e => setInvoiceForm(p => ({ ...p, tax: e.target.value }))} className="w-full pl-5 pr-2 py-1.5 border border-gray-200 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-red-500" />
+                          </div>
                         </div>
                       </div>
                       <div className="text-sm space-y-2">
