@@ -697,7 +697,7 @@ export default function DesignWorkspace() {
             {generatedImage && (
               <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
                 <h4 className="text-sm font-semibold text-gray-700">Tools</h4>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   <button onClick={handleRemoveBg} disabled={removingBg}
                     className="px-3 py-2 bg-purple-50 text-purple-700 text-xs font-medium rounded-lg hover:bg-purple-100 disabled:opacity-50 flex items-center justify-center gap-1">
                     {removingBg ? <Loader2 className="w-3 h-3 animate-spin" /> : '✂️'} Remove BG
