@@ -602,6 +602,55 @@ export default function DesignStudioPage() {
     }
   }, [addDesignElement]);
 
+  // Trim fully-transparent pixels around an image. Returns a new data URL
+  // cropped to the bounding box of non-transparent pixels, plus the crop
+  // ratios so callers can resize the placed element proportionally.
+  async function autoCropTransparent(dataUrl: string, alphaThreshold = 8): Promise<{ dataUrl: string; widthRatio: number; heightRatio: number }> {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = dataUrl;
+    });
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const src = document.createElement('canvas');
+    src.width = w;
+    src.height = h;
+    const sctx = src.getContext('2d');
+    if (!sctx) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    sctx.drawImage(img, 0, 0);
+    const data = sctx.getImageData(0, 0, w, h).data;
+
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const a = data[(y * w + x) * 4 + 3];
+        if (a !== undefined && a > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    const cropW = maxX - minX + 1;
+    const cropH = maxY - minY + 1;
+    if (cropW === w && cropH === h) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    const out = document.createElement('canvas');
+    out.width = cropW;
+    out.height = cropH;
+    const octx = out.getContext('2d');
+    if (!octx) return { dataUrl, widthRatio: 1, heightRatio: 1 };
+    octx.drawImage(src, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+    return {
+      dataUrl: out.toDataURL('image/png'),
+      widthRatio: cropW / w,
+      heightRatio: cropH / h,
+    };
+  }
+
   const handleRemoveBg = useCallback(async () => {
     if (!pendingUpload) return;
     // Snapshot + close the dialog immediately so the UI feels responsive.
@@ -639,11 +688,24 @@ export default function DesignStudioPage() {
       }
       const data = await res.json();
       if (data.imageBase64) {
-        // Swap the original element's image for the cutout.
+        // Crop away the now-transparent padding so the subject fills the
+        // image bounds. Also shrink the placed element's width by the crop
+        // ratio so the subject stays roughly the same visual size on the
+        // t-shirt.
+        let cutout = data.imageBase64 as string;
+        let widthRatio = 1;
+        try {
+          const cropped = await autoCropTransparent(cutout);
+          cutout = cropped.dataUrl;
+          widthRatio = cropped.widthRatio;
+        } catch { /* if crop fails, use the uncropped cutout */ }
+
         setDesignElements((prev) => prev.map((el) =>
-          el.type === 'image' && el.content === original ? { ...el, content: data.imageBase64 } : el
+          el.type === 'image' && el.content === original
+            ? { ...el, content: cutout, width: Math.max(5, el.width * widthRatio) }
+            : el
         ));
-        setUploadedImages((prev) => prev.map((u) => (u === original ? data.imageBase64 : u)));
+        setUploadedImages((prev) => prev.map((u) => (u === original ? cutout : u)));
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
