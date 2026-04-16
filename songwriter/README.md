@@ -6,7 +6,7 @@ AI-assisted lyric writer with Google sign-in and cloud-saved songs.
 - **Backend**: Node + Express + Passport (Google OAuth) + JWT cookies
 - **DB**: PostgreSQL
 - **AI**: DeepSeek (OpenAI-compatible) for rhymes, next-line suggestions, rewrites
-- **Hosting**: DigitalOcean droplet (reuse existing or fresh), served at `focusotp.com`
+- **Hosting**: DigitalOcean droplet (reuse existing or fresh), served at `kpjsongwriting.com`
 
 ## Features
 
@@ -42,7 +42,7 @@ npm run dev
 2. Create OAuth 2.0 Client ID (Web application)
 3. Authorized redirect URIs:
    - `http://localhost:4000/api/auth/google/callback` (dev)
-   - `https://focusotp.com/api/auth/google/callback` (prod)
+   - `https://kpjsongwriting.com/api/auth/google/callback` (prod)
 4. Copy Client ID + Secret into `server/.env`
 
 ## Production deploy (DigitalOcean)
@@ -63,7 +63,7 @@ psql -U songwriter -d songwriter -f /var/www/songwriter/server/schema.sql
 
 # Create server/.env with production values
 # DATABASE_URL, GOOGLE_CLIENT_ID/SECRET, JWT_SECRET, DEEPSEEK_API_KEY,
-# CLIENT_URL=https://focusotp.com, NODE_ENV=production, PORT=4010
+# CLIENT_URL=https://kpjsongwriting.com, NODE_ENV=production, PORT=4010
 ```
 
 ### Nginx vhost
@@ -71,17 +71,17 @@ psql -U songwriter -d songwriter -f /var/www/songwriter/server/schema.sql
 ```nginx
 server {
     listen 80;
-    server_name focusotp.com www.focusotp.com;
-    return 301 https://focusotp.com$request_uri;
+    server_name kpjsongwriting.com www.kpjsongwriting.com;
+    return 301 https://kpjsongwriting.com$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name focusotp.com;
+    server_name kpjsongwriting.com;
 
     # certbot-managed certs
-    ssl_certificate     /etc/letsencrypt/live/focusotp.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/focusotp.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/kpjsongwriting.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/kpjsongwriting.com/privkey.pem;
 
     location / {
         proxy_pass http://localhost:4010;
@@ -94,7 +94,7 @@ server {
 }
 ```
 
-Then: `sudo certbot --nginx -d focusotp.com -d www.focusotp.com`
+Then: `sudo certbot --nginx -d kpjsongwriting.com -d www.kpjsongwriting.com`
 
 ### Deploy
 
@@ -114,7 +114,7 @@ See `.env.example`. Required at minimum:
 - `DATABASE_URL` — Postgres connection string
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 - `JWT_SECRET`, `SESSION_SECRET` — long random strings
-- `CLIENT_URL` — where the browser runs (`https://focusotp.com` in prod)
+- `CLIENT_URL` — where the browser runs (`https://kpjsongwriting.com` in prod)
 - `DEEPSEEK_API_KEY` — reuse the one from the t-shirt site
 
 ## Schema
