@@ -74,6 +74,7 @@ export default function GangSheetBuilder() {
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
   const [quoteDesigns, setQuoteDesigns] = useState<{ id: number; customer_name: string; design_url: string; product_name: string }[]>([]);
+  const [fixedGraphics, setFixedGraphics] = useState<{ id: number; name: string; image_url: string }[]>([]);
 
   // ─── Canvas Initialization ──────────────────────────────────────────────
 
@@ -1074,6 +1075,11 @@ export default function GangSheetBuilder() {
       .then(setLibraryDesigns)
       .catch(() => {});
 
+    fetch('/api/admin/fixed-graphics', { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => r.ok ? r.json() : [])
+      .then(setFixedGraphics)
+      .catch(() => {});
+
     fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
       .then((quotes: { id: number; customer_name: string; design_url: string | null; product_name: string; status: string }[]) => {
@@ -1366,7 +1372,25 @@ export default function GangSheetBuilder() {
 
               return (
                 <div className="space-y-4">
-                  {/* Customer / user graphics first */}
+                  {/* Admin-only Fix Library — cleaned customer graphics */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Fix Library ({fixedGraphics.length})</p>
+                    {fixedGraphics.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-4">No fixed graphics saved yet</p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2">
+                        {fixedGraphics.map(f => (
+                          <button key={f.id} onClick={async () => { await addDesignToCanvas(f.image_url, f.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                            title={f.name}>
+                            <img src={f.image_url} alt={f.name} className="w-full h-full object-contain" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Customer / user graphics next */}
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">User Graphics ({quoteDesigns.length})</p>
                     {quoteDesigns.length === 0 ? (

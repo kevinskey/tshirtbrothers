@@ -44,7 +44,11 @@ export default function DesignWorkspace() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [view, setView] = useState<'create' | 'library'>('create');
+  const [view, setView] = useState<'create' | 'library' | 'fixed'>('create');
+
+  // Admin-only Fix Library (cleaned customer graphics)
+  const [fixedGraphics, setFixedGraphics] = useState<Array<{ id: number; name: string; image_url: string; created_at: string }>>([]);
+  const [fixedLoading, setFixedLoading] = useState(false);
 
   // Save dialog
   const [saveDialog, setSaveDialog] = useState(false);
@@ -88,6 +92,34 @@ export default function DesignWorkspace() {
   }
 
   useEffect(() => { fetchDesigns(); }, [categoryFilter, searchQuery]);
+
+  async function fetchFixedGraphics() {
+    setFixedLoading(true);
+    try {
+      const res = await fetch('/api/admin/fixed-graphics', { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (res.ok) setFixedGraphics(await res.json());
+    } catch { /* ignore */ } finally { setFixedLoading(false); }
+  }
+
+  useEffect(() => { if (view === 'fixed') fetchFixedGraphics(); }, [view]);
+
+  async function handleDeleteFixed(id: number) {
+    if (!confirm('Delete this fixed graphic from the admin library?')) return;
+    await fetch(`/api/admin/fixed-graphics/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } });
+    fetchFixedGraphics();
+  }
+
+  async function handleSendFixedToSheet(id: number) {
+    try {
+      const res = await fetch(`/api/admin/fixed-graphics/${id}/send-to-gangsheet`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (!res.ok) throw new Error('Failed');
+      const { gangsheet_id } = await res.json();
+      navigate(`/admin/gangsheet/${gangsheet_id}`);
+    } catch { alert('Could not create gang sheet'); }
+  }
 
   async function handleGenerate() {
     if (!prompt.trim() || generating) return;
@@ -476,8 +508,11 @@ export default function DesignWorkspace() {
           <button onClick={() => setView('create')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'create' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             <Sparkles className="w-4 h-4 inline mr-1" /> Create
           </button>
+          <button onClick={() => setView('fixed')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'fixed' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <Scissors className="w-4 h-4 inline mr-1" /> Fix Library
+          </button>
           <button onClick={() => setView('library')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'library' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-            <FolderOpen className="w-4 h-4 inline mr-1" /> Library ({designs.length})
+            <FolderOpen className="w-4 h-4 inline mr-1" /> Stock Library ({designs.length})
           </button>
         </div>
       </div>
@@ -870,6 +905,62 @@ export default function DesignWorkspace() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {view === 'fixed' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Fix Library</h3>
+              <p className="text-xs text-gray-500">Cleaned customer graphics — admin-only, not visible to customers.</p>
+            </div>
+            <button onClick={fetchFixedGraphics}
+              className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">
+              Refresh
+            </button>
+          </div>
+          {fixedLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+          ) : fixedGraphics.length === 0 ? (
+            <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+              <Scissors className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No fixed graphics yet.</p>
+              <p className="text-xs text-gray-400 mt-1">Upload a customer graphic, fix it, and click Save.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {fixedGraphics.map(f => (
+                <div key={f.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group hover:shadow-md transition">
+                  <div className="aspect-square bg-gray-50 flex items-center justify-center p-2 relative"
+                    style={{ backgroundImage: 'linear-gradient(45deg, #f3f4f6 25%, transparent 25%, transparent 75%, #f3f4f6 75%), linear-gradient(45deg, #f3f4f6 25%, transparent 25%, transparent 75%, #f3f4f6 75%)', backgroundSize: '16px 16px', backgroundPosition: '0 0, 8px 8px' }}>
+                    <img src={f.image_url} alt={f.name} className="max-w-full max-h-full object-contain" loading="lazy" />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-2">
+                      <button onClick={() => loadDesignToEditor(f.image_url, f.name)}
+                        className="bg-orange-500 hover:bg-orange-600 text-white rounded-lg px-3 py-1.5 text-xs font-bold flex items-center gap-1 shadow-lg">
+                        <Sparkles className="w-3 h-3" /> Edit with Tools
+                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => handleSendFixedToSheet(f.id)} className="bg-white rounded-full p-1.5 hover:bg-gray-100" title="Send to new gang sheet">
+                          <Layout className="w-3.5 h-3.5 text-orange-600" />
+                        </button>
+                        <button onClick={() => handleDownload(f.image_url, f.name)} className="bg-white rounded-full p-1.5 hover:bg-gray-100" title="Download">
+                          <Download className="w-3.5 h-3.5 text-gray-700" />
+                        </button>
+                        <button onClick={() => handleDeleteFixed(f.id)} className="bg-white rounded-full p-1.5 hover:bg-gray-100" title="Delete">
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-2.5">
+                    <p className="text-xs font-semibold text-gray-900 truncate">{f.name}</p>
+                    <p className="text-[10px] text-gray-400">{new Date(f.created_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
