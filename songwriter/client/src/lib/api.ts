@@ -90,4 +90,46 @@ export const api = {
       '/ai/find-poetry',
       { method: 'POST', body: JSON.stringify(body) }
     ),
+
+  analyzeSong: (body: { lyrics?: string; title?: string; artist?: string }) =>
+    req<SongAnalysis>('/ai/analyze-song', { method: 'POST', body: JSON.stringify(body) }),
+
+  generateFromModel: (body: {
+    analysis: SongAnalysis;
+    new_topic: string;
+    new_style?: string;
+    keep_tone?: boolean;
+  }) =>
+    req<{
+      title: string;
+      sections: { type: Section['type']; label: string; lines: string[] }[];
+      notes?: string;
+    }>('/ai/generate-from-model', { method: 'POST', body: JSON.stringify(body) }),
+};
+
+export type SongAnalysis = {
+  song_title?: string;
+  artist?: string;
+  confidence_note?: string;
+  structure: string[];
+  section_patterns?: {
+    verse_line_count?: number;
+    chorus_line_count?: number;
+    bridge_line_count?: number;
+  };
+  rhyme_scheme?: {
+    verse?: string;
+    chorus?: string;
+    bridge?: string;
+  };
+  meter_description?: string;
+  pov?: string;
+  tense?: string;
+  tone?: string;
+  themes?: string[];
+  key_imagery?: string[];
+  devices?: string[];
+  hook?: string;
+  why_it_works?: string;
+  template_summary?: string;
 };

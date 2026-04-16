@@ -290,4 +290,107 @@ Find ${safeCount} classic poems that fit.`;
   } catch (err) { next(err); }
 });
 
+// Analyze a song's lyrics — extract structure, rhyme, themes, devices
+router.post('/analyze-song', async (req, res, next) => {
+  try {
+    const { lyrics = '', title = '', artist = '' } = req.body;
+
+    // At minimum, need either lyrics OR a title+artist to look up
+    if (!lyrics && !(title && artist)) {
+      return res.status(400).json({ error: 'Provide either lyrics, or both title and artist' });
+    }
+
+    const system = `You are a songwriting analyst. The user wants to deeply understand how a song works so they can use it as a structural template for their own song.
+
+${lyrics ? 'The user has pasted the lyrics directly.' : 'The user has given you a title and artist. Use the lyrics you recall. If you\'re not sure of the exact lyrics, say so in the "confidence_note" field and work from what you remember.'}
+
+Output STRICT JSON:
+{
+  "song_title": "...",
+  "artist": "...",
+  "confidence_note": "leave empty if fully confident, otherwise note uncertainty",
+  "structure": ["Intro", "Verse 1", "Chorus", "Verse 2", "Chorus", "Bridge", "Chorus", "Outro"],
+  "section_patterns": {
+    "verse_line_count": 4,
+    "chorus_line_count": 4,
+    "bridge_line_count": 4
+  },
+  "rhyme_scheme": {
+    "verse": "ABAB or AABB etc.",
+    "chorus": "...",
+    "bridge": "..."
+  },
+  "meter_description": "e.g. roughly 8 syllables per line, iambic, conversational",
+  "pov": "first person / second person / third / mixed",
+  "tense": "present / past / mixed",
+  "tone": "e.g. melancholy but resolute",
+  "themes": ["theme 1", "theme 2"],
+  "key_imagery": ["rain", "empty room", "headlights"],
+  "devices": ["metaphor", "anaphora", "repetition", "alliteration"],
+  "hook": "the central repeated line or phrase",
+  "why_it_works": "2-3 sentences on what makes this song effective structurally",
+  "template_summary": "a 2-sentence summary a songwriter could use as a recipe to write a similar song"
+}`;
+
+    const user = lyrics
+      ? `${title ? `Title: ${title}\n` : ''}${artist ? `Artist: ${artist}\n\n` : ''}Lyrics:\n${lyrics}\n\nAnalyze this song.`
+      : `Title: ${title}\nArtist: ${artist}\n\nAnalyze this song using the lyrics you recall.`;
+
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.3, maxTokens: 1800 });
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
+
+    logAI(req.user.id, 'analyze-song', `${title || '(pasted)'} / ${artist}`, parsed.template_summary || '');
+    res.json(parsed);
+  } catch (err) { next(err); }
+});
+
+// Generate a new song using a previous analysis as the structural model
+router.post('/generate-from-model', async (req, res, next) => {
+  try {
+    const { analysis, new_topic, new_style = '', keep_tone = true } = req.body;
+    if (!analysis || !new_topic) {
+      return res.status(400).json({ error: 'analysis and new_topic are required' });
+    }
+
+    const system = `You are a professional songwriter. You've been given a structural analysis of an existing song and a new topic. Write a brand-new song that follows the SAME STRUCTURAL TEMPLATE but with completely original lyrics on the new topic.
+
+RULES:
+- Follow the structure exactly (same sections in same order, same line counts per section).
+- Match the rhyme scheme of each section type.
+- Match the meter / syllable feel.
+- ${keep_tone ? 'Keep roughly the same tone and POV.' : 'Adapt tone/POV to whatever fits the new topic best.'}
+- Use the same kind of imagery technique (concrete, specific) but DIFFERENT images — don\'t copy the original's images.
+- Use similar rhetorical devices (if original uses repetition/anaphora, use those too).
+- Make the chorus a strong hook that repeats.
+- Write completely new, original lyrics — do NOT plagiarize or paraphrase the source song.
+
+Output STRICT JSON:
+{
+  "title": "song title",
+  "sections": [
+    { "type": "verse" | "chorus" | "bridge" | "pre-chorus" | "intro" | "outro", "label": "Verse 1" | "Chorus" | etc., "lines": ["...", "..."] }
+  ],
+  "notes": "one-sentence note on how this song uses the model"
+}`;
+
+    const user = `STRUCTURAL MODEL (from existing song analysis):
+${JSON.stringify(analysis, null, 2)}
+
+NEW TOPIC: ${new_topic}
+${new_style ? `STYLE/MOOD PREFERENCE: ${new_style}` : ''}
+
+Write a brand-new song on the new topic following this structural model.`;
+
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.85, maxTokens: 2500 });
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
+
+    logAI(req.user.id, 'generate-from-model', new_topic, parsed.title || '');
+    res.json(parsed);
+  } catch (err) { next(err); }
+});
+
 export default router;
