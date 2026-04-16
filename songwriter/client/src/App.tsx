@@ -5,6 +5,7 @@ import { api, type User } from '@/lib/api';
 import LandingPage from '@/pages/LandingPage';
 import LibraryPage from '@/pages/LibraryPage';
 import EditorPage from '@/pages/EditorPage';
+import PoetryPage from '@/pages/PoetryPage';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +44,14 @@ export default function App() {
           element={
             <Protected user={user} loading={loading}>
               <EditorPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/poetry"
+          element={
+            <Protected user={user} loading={loading}>
+              <PoetryPage user={user!} onLogout={() => setUser(null)} />
             </Protected>
           }
         />

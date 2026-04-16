@@ -77,4 +77,10 @@ export const api = {
       '/ai/generate-song',
       { method: 'POST', body: JSON.stringify(body) }
     ),
+
+  findPoetry: (body: { theme: string; mood?: string; count?: number }) =>
+    req<{ poems: { title: string; author: string; year: string; excerpt: string; why_it_fits: string }[] }>(
+      '/ai/find-poetry',
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
 };

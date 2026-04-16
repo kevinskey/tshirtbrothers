@@ -1,8 +1,33 @@
-import { Link } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import type { User } from '@/lib/api';
 
 export default function LandingPage({ user }: { user: User | null }) {
   const apiBase = import.meta.env.VITE_API_URL || '';
+  const navigate = useNavigate();
+  const [theme, setTheme] = useState('');
+
+  function handlePoetrySearch() {
+    const q = theme.trim();
+    if (!q) return;
+    if (user) {
+      navigate(`/app/poetry?q=${encodeURIComponent(q)}`);
+    } else {
+      // Stash the query so we can use it after sign-in (basic best-effort via sessionStorage)
+      sessionStorage.setItem('pending_poetry_q', q);
+      window.location.href = `${apiBase}/api/auth/google`;
+    }
+  }
+
+  // If we just came back from sign-in with a pending query, take them straight to poetry
+  if (user) {
+    const pending = sessionStorage.getItem('pending_poetry_q');
+    if (pending) {
+      sessionStorage.removeItem('pending_poetry_q');
+      navigate(`/app/poetry?q=${encodeURIComponent(pending)}`);
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-8 py-6 flex items-center justify-between">
@@ -24,7 +49,7 @@ export default function LandingPage({ user }: { user: User | null }) {
         )}
       </header>
 
-      <main className="flex-1 flex items-center">
+      <main className="flex-1">
         <div className="max-w-3xl mx-auto px-8 py-16 text-center">
           <h1 className="font-serif text-5xl md:text-7xl font-bold tracking-tight text-ink-900 mb-6 leading-[1.05]">
             Write lyrics that <span className="text-accent italic">sing.</span>
@@ -40,11 +65,50 @@ export default function LandingPage({ user }: { user: User | null }) {
             <GoogleMark />
             Start writing — sign in with Google
           </a>
+        </div>
 
-          <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-10 text-left">
+        {/* Poetry inspiration search */}
+        <section className="bg-ink-100 py-16 px-8 border-y border-ink-200">
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-accent mb-2 font-semibold">
+              AI poetry agent
+            </div>
+            <h2 className="font-serif text-3xl md:text-4xl font-bold text-ink-900 mb-3">
+              Find poetry to inspire your next song
+            </h2>
+            <p className="text-ink-600 mb-8 max-w-xl mx-auto">
+              Type a theme — heartbreak, the open road, hope after grief — and our AI will surface
+              classic public-domain poems you can adapt right into your lyrics.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2 max-w-xl mx-auto">
+              <input
+                type="text"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handlePoetrySearch(); }}
+                placeholder="e.g. losing a parent, summer love, the open road"
+                className="flex-1 px-4 py-3 bg-white border border-ink-200 rounded-md focus:outline-none focus:border-accent text-base"
+              />
+              <button
+                onClick={handlePoetrySearch}
+                disabled={!theme.trim()}
+                className="px-6 py-3 bg-ink-900 text-ink-50 rounded-md hover:bg-ink-800 font-medium disabled:opacity-40"
+              >
+                {user ? 'Find poems' : 'Sign in to search'}
+              </button>
+            </div>
+            <p className="text-[11px] text-ink-400 mt-3">
+              {user ? 'Free with your account' : 'Free — Google sign-in required'}
+            </p>
+          </div>
+        </section>
+
+        <div className="max-w-3xl mx-auto px-8 py-16">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 text-left">
             <Feature title="Rhyme finder" body="Perfect, near, and multi-syllable rhymes — context-aware so results fit your song's mood." />
             <Feature title="Next-line suggestions" body="Stuck on a line? Get three options that match your meter and rhyme scheme." />
-            <Feature title="Syllable counter" body="Live syllable count on every line — nail your meter without counting on your fingers." />
+            <Feature title="Generate full songs" body="Give a topic, get a complete verse-chorus-bridge song you can edit and make your own." />
           </div>
         </div>
       </main>

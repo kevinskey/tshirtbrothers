@@ -226,4 +226,45 @@ Write the complete song.`;
   } catch (err) { next(err); }
 });
 
+// Find classic public-domain poetry on a theme
+router.post('/find-poetry', async (req, res, next) => {
+  try {
+    const { theme, mood = '', count = 4 } = req.body;
+    if (!theme) return res.status(400).json({ error: 'theme is required' });
+
+    const system = `You are a poetry librarian. The user is a songwriter looking for classic public-domain poetry to inspire or adapt into lyrics.
+
+Find ${count} real, public-domain poems that match the theme. Prefer poems published before 1928 (clearly public domain in the US). Authors like Whitman, Dickinson, Yeats, Frost, Keats, Wordsworth, Rumi, Hughes, Sandburg, Browning, Tennyson, Donne, Blake, Poe, etc.
+
+For each poem, provide:
+- title
+- author
+- year (approximate is fine)
+- excerpt (4-12 of the strongest lines, formatted with line breaks)
+- why_it_fits (one short sentence)
+
+Output STRICT JSON:
+{
+  "poems": [
+    { "title": "...", "author": "...", "year": "...", "excerpt": "line 1\\nline 2\\n...", "why_it_fits": "..." }
+  ]
+}
+
+Only include real poems you're confident exist. If you can't find ${count} good matches, return fewer rather than fabricating.`;
+
+    const user = `Theme: ${theme}
+${mood ? `Mood/feel: ${mood}` : ''}
+
+Find ${count} classic poems that fit.`;
+
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.5, maxTokens: 2000 });
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
+
+    logAI(req.user.id, 'find-poetry', `${theme} / ${mood}`, (parsed.poems || []).map(p => p.title).join(' | '));
+    res.json(parsed);
+  } catch (err) { next(err); }
+});
+
 export default router;

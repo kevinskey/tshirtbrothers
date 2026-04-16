@@ -13,7 +13,13 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
   return (
     <header className="border-b border-ink-100 bg-white">
       <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-        <Link to="/app" className="font-serif text-xl font-bold">Songwriter</Link>
+        <div className="flex items-center gap-6">
+          <Link to="/app" className="font-serif text-xl font-bold">Songwriter</Link>
+          <nav className="flex items-center gap-4 text-sm">
+            <Link to="/app" className="text-ink-600 hover:text-ink-900">Songs</Link>
+            <Link to="/app/poetry" className="text-ink-600 hover:text-ink-900">Poetry</Link>
+          </nav>
+        </div>
         <div className="flex items-center gap-3">
           {user.avatar_url && (
             <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
