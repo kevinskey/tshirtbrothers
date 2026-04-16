@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { api, type User, type Section, type Psalm } from '@/lib/api';
+import { api, type User, type Section, type Psalm, type BibleTranslation } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 
 type ViewedPsalm = Psalm & { why_it_fits?: string };
 
+const TRANSLATION_KEY = 'sw_psalm_translation';
+
 export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate();
+
+  const [translations, setTranslations] = useState<BibleTranslation[]>([]);
+  const [translation, setTranslation] = useState<string>(
+    () => localStorage.getItem(TRANSLATION_KEY) || 'kjv'
+  );
 
   const [theme, setTheme] = useState('');
   const [count, setCount] = useState(4);
@@ -19,6 +26,48 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
   const [adapting, setAdapting] = useState(false);
   const [adaptStyle, setAdaptStyle] = useState('');
 
+  // Load translation list once
+  useEffect(() => {
+    api.getPsalmTranslations()
+      .then((r) => setTranslations(r.translations))
+      .catch(() => { /* non-fatal */ });
+  }, []);
+
+  // Persist and re-fetch when translation changes
+  useEffect(() => {
+    localStorage.setItem(TRANSLATION_KEY, translation);
+    // If a psalm is currently open, refetch it in the new translation
+    if (selected) refetchSelected(selected.number, selected.why_it_fits);
+    // Refresh search results if any
+    if (searchResults.length > 0 && theme) refetchSearchResults();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [translation]);
+
+  async function refetchSelected(number: number, whyItFits?: string) {
+    setLoadingSelected(true);
+    try {
+      const p = await api.getPsalm(number, translation);
+      setSelected({ ...p, why_it_fits: whyItFits });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLoadingSelected(false);
+    }
+  }
+
+  async function refetchSearchResults() {
+    // Keep the same psalm numbers but in the new translation
+    const numbers = searchResults.map((p) => ({ n: p.number, why: p.why_it_fits }));
+    const refreshed: ViewedPsalm[] = [];
+    for (const { n, why } of numbers) {
+      try {
+        const p = await api.getPsalm(n, translation);
+        refreshed.push({ ...p, why_it_fits: why });
+      } catch { /* skip failures */ }
+    }
+    setSearchResults(refreshed);
+  }
+
   async function searchByTheme() {
     if (!theme.trim()) {
       toast.message('Enter a theme');
@@ -28,7 +77,7 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
     setSearchResults([]);
     setSelected(null);
     try {
-      const r = await api.searchPsalms({ theme, count });
+      const r = await api.searchPsalms({ theme, count, translation });
       setSearchResults(r.psalms || []);
       if ((r.psalms || []).length === 0) toast.message('No matches');
     } catch (e: any) {
@@ -41,7 +90,7 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
   async function openPsalm(number: number, whyItFits?: string) {
     setLoadingSelected(true);
     try {
-      const p = await api.getPsalm(number);
+      const p = await api.getPsalm(number, translation);
       setSelected({ ...p, why_it_fits: whyItFits });
     } catch (e: any) {
       toast.error(e.message);
@@ -53,7 +102,6 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
   async function useAsSong() {
     if (!selected) return;
     try {
-      // Break the text into lines for the first verse section
       const lines = selected.verses.map((v) => v.text.replace(/\s+/g, ' ').trim()).filter(Boolean);
       const sections: Section[] = [
         {
@@ -84,6 +132,7 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
         psalm_number: selected.number,
         style: adaptStyle,
         preserve_imagery: true,
+        translation,
       });
       const sections: Section[] = (adapted.sections || []).map((s) => ({
         id: crypto.randomUUID(),
@@ -113,9 +162,30 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
         <div className="mb-2 text-sm">
           <Link to="/app" className="text-ink-400 hover:text-ink-800">← All songs</Link>
         </div>
-        <h1 className="font-serif text-4xl font-bold mb-2">Psalms</h1>
-        <p className="text-ink-600 mb-8">
+        <div className="flex items-start justify-between gap-4 mb-2 flex-wrap">
+          <h1 className="font-serif text-4xl font-bold">Psalms</h1>
+          {translations.length > 0 && (
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+                Translation
+              </label>
+              <select
+                value={translation}
+                onChange={(e) => setTranslation(e.target.value)}
+                className="text-sm bg-white border border-ink-200 rounded px-3 py-2 focus:outline-none focus:border-accent min-w-[240px]"
+              >
+                {translations.map((t) => (
+                  <option key={t.code} value={t.code}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <p className="text-ink-600 mb-2">
           Browse all 150 psalms, search by theme, or let AI adapt a psalm into a modern song.
+        </p>
+        <p className="text-xs text-ink-400 mb-8">
+          All translations shown are public domain. Modern copyrighted translations (NIV, ESV, NASB, NKJV) are not available for licensing reasons.
         </p>
 
         {/* Search by theme */}

@@ -106,9 +106,13 @@ export const api = {
       notes?: string;
     }>('/ai/generate-from-model', { method: 'POST', body: JSON.stringify(body) }),
 
-  getPsalm: (number: number) => req<Psalm>(`/psalms/${number}`),
+  getPsalmTranslations: () =>
+    req<{ translations: BibleTranslation[]; default: string }>('/psalms/translations'),
 
-  searchPsalms: (body: { theme: string; count?: number }) =>
+  getPsalm: (number: number, translation?: string) =>
+    req<Psalm>(`/psalms/${number}${translation ? `?translation=${translation}` : ''}`),
+
+  searchPsalms: (body: { theme: string; count?: number; translation?: string }) =>
     req<{ psalms: (Psalm & { why_it_fits: string })[] }>('/psalms/search', {
       method: 'POST',
       body: JSON.stringify(body),
@@ -119,12 +123,15 @@ export const api = {
     psalm_text?: string;
     style?: string;
     preserve_imagery?: boolean;
+    translation?: string;
   }) =>
     req<{
       title: string;
       sections: { type: Section['type']; label: string; lines: string[] }[];
     }>('/psalms/adapt', { method: 'POST', body: JSON.stringify(body) }),
 };
+
+export type BibleTranslation = { code: string; label: string; lang: string };
 
 export type Poem = {
   title: string;
@@ -139,6 +146,7 @@ export type Poem = {
 export type Psalm = {
   number: number;
   reference: string;
+  translation_code: string;
   verses: { verse: number; text: string }[];
   text: string;
   translation: string;

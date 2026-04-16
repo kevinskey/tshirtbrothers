@@ -6,45 +6,77 @@ import { authenticate } from '../middleware/auth.js';
 const router = Router();
 router.use(authenticate);
 
+// ── Public-domain Bible translations available via bible-api.com ─────────
+// (bible-api.com only indexes public-domain translations, which is why
+// NIV / ESV / NASB / NKJV etc. aren't available — they're copyrighted.)
+const TRANSLATIONS = {
+  kjv:       { label: 'King James Version (1611)',    lang: 'en' },
+  web:       { label: 'World English Bible (modern)', lang: 'en' },
+  'oeb-us':  { label: 'Open English Bible (US)',      lang: 'en' },
+  'oeb-cw':  { label: 'Open English Bible (UK/CW)',   lang: 'en' },
+  bbe:       { label: 'Bible in Basic English',       lang: 'en' },
+  asv:       { label: 'American Standard Version',    lang: 'en' },
+  ylt:       { label: 'Young\'s Literal Translation', lang: 'en' },
+  dra:       { label: 'Douay-Rheims (Catholic)',      lang: 'en' },
+  clementine:{ label: 'Clementine Vulgate (Latin)',   lang: 'la' },
+  almeida:   { label: 'Almeida (Portuguese)',         lang: 'pt' },
+  rccv:      { label: 'Cornilescu (Romanian)',        lang: 'ro' },
+};
+const DEFAULT_TRANSLATION = 'kjv';
+
+function normalizeTranslation(t) {
+  const code = String(t || '').toLowerCase();
+  return TRANSLATIONS[code] ? code : DEFAULT_TRANSLATION;
+}
+
+// GET /api/psalms/translations — list available translations
+router.get('/translations', (_req, res) => {
+  res.json({
+    translations: Object.entries(TRANSLATIONS).map(([code, meta]) => ({ code, ...meta })),
+    default: DEFAULT_TRANSLATION,
+  });
+});
+
 // ── Psalm text fetch + cache ─────────────────────────────────────────────
-// Uses bible-api.com (KJV, public domain, no key required)
 
-const psalmCache = new Map(); // number -> { reference, verses, text, translation_note }
+const psalmCache = new Map(); // `${translation}:${number}` -> psalm data
 
-async function fetchPsalm(number) {
+async function fetchPsalm(number, translation = DEFAULT_TRANSLATION) {
   const n = parseInt(number, 10);
   if (!n || n < 1 || n > 150) throw new Error('Psalm number must be 1-150');
 
-  const cached = psalmCache.get(n);
+  const tx = normalizeTranslation(translation);
+  const cacheKey = `${tx}:${n}`;
+  const cached = psalmCache.get(cacheKey);
   if (cached) return cached;
 
-  const url = `https://bible-api.com/psalms+${n}?translation=kjv`;
+  const url = `https://bible-api.com/psalms+${n}?translation=${tx}`;
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`bible-api returned ${res.status}`);
+  if (!res.ok) throw new Error(`bible-api returned ${res.status} for ${tx} Psalm ${n}`);
   const data = await res.json();
 
   const result = {
     number: n,
     reference: data.reference,
+    translation_code: tx,
     verses: (data.verses || []).map((v) => ({ verse: v.verse, text: v.text.trim() })),
     text: (data.text || '').trim(),
-    translation: data.translation_name || 'King James Version',
+    translation: data.translation_name || TRANSLATIONS[tx]?.label || tx,
     translation_note: data.translation_note || 'Public Domain',
   };
-  psalmCache.set(n, result);
+  psalmCache.set(cacheKey, result);
   return result;
 }
 
-// GET /api/psalms/:number — fetch one psalm
+// GET /api/psalms/:number?translation=web — fetch one psalm
 router.get('/:number', async (req, res, next) => {
   try {
-    const psalm = await fetchPsalm(req.params.number);
+    const psalm = await fetchPsalm(req.params.number, req.query.translation);
     res.json(psalm);
   } catch (err) { next(err); }
 });
 
 // ── AI-powered theme search ──────────────────────────────────────────────
-// Given a theme, asks AI which psalm numbers best fit, then fetches those.
 
 function getClient() {
   const key = process.env.DEEPSEEK_API_KEY;
@@ -54,10 +86,11 @@ function getClient() {
 
 router.post('/search', async (req, res, next) => {
   try {
-    const { theme, count = 4 } = req.body;
+    const { theme, count = 4, translation } = req.body;
     if (!theme) return res.status(400).json({ error: 'theme is required' });
 
     const safeCount = Math.min(Math.max(parseInt(count) || 4, 1), 8);
+    const tx = normalizeTranslation(translation);
 
     const client = getClient();
     const ai = await client.chat.completions.create({
@@ -88,24 +121,20 @@ Return up to ${safeCount} of the BEST fits from Psalms 1-150. Only include real 
     try { parsed = JSON.parse(raw); }
     catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
 
-    // Fetch each psalm's text
     const enriched = [];
     for (const r of (parsed.results || []).slice(0, safeCount)) {
       try {
-        const psalm = await fetchPsalm(r.number);
-        enriched.push({
-          ...psalm,
-          why_it_fits: r.why_it_fits || '',
-        });
+        const psalm = await fetchPsalm(r.number, tx);
+        enriched.push({ ...psalm, why_it_fits: r.why_it_fits || '' });
       } catch (err) {
-        console.error(`[psalms/search] failed to fetch psalm ${r.number}:`, err.message);
+        console.error(`[psalms/search] failed to fetch psalm ${r.number} (${tx}):`, err.message);
       }
     }
 
     try {
       await pool.query(
         'INSERT INTO ai_logs (user_id, feature, input_preview, output_preview) VALUES ($1, $2, $3, $4)',
-        [req.user.id, 'psalms-search', theme.slice(0, 300), enriched.map((e) => e.number).join(', ')]
+        [req.user.id, 'psalms-search', `${theme} [${tx}]`.slice(0, 300), enriched.map((e) => e.number).join(', ')]
       );
     } catch { /* noop */ }
 
@@ -116,12 +145,18 @@ Return up to ${safeCount} of the BEST fits from Psalms 1-150. Only include real 
 // ── Adapt a psalm into modern song lyrics ────────────────────────────────
 router.post('/adapt', async (req, res, next) => {
   try {
-    const { psalm_number, psalm_text, style = '', preserve_imagery = true } = req.body;
+    const {
+      psalm_number,
+      psalm_text,
+      style = '',
+      preserve_imagery = true,
+      translation,
+    } = req.body;
 
     let sourceText = psalm_text;
     let reference = '';
     if (!sourceText && psalm_number) {
-      const p = await fetchPsalm(psalm_number);
+      const p = await fetchPsalm(psalm_number, translation);
       sourceText = p.text;
       reference = p.reference;
     }
