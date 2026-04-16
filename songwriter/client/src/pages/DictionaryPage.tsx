@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type User, type DictionaryEntry, type WordInsights } from '@/lib/api';
 import TopBar from '@/components/TopBar';
+import PageBanner from '@/components/PageBanner';
 
 export default function DictionaryPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [word, setWord] = useState('');
@@ -51,15 +52,17 @@ export default function DictionaryPage({ user, onLogout }: { user: User; onLogou
     <div className="min-h-screen">
       <TopBar user={user} onLogout={onLogout} />
 
-      <main className="max-w-5xl mx-auto px-8 py-12">
-        <div className="mb-2 text-sm">
-          <Link to="/app" className="text-ink-400 hover:text-ink-800">← All songs</Link>
+      <PageBanner
+        theme="flowers"
+        eyebrow="🌸 Lyricist's lookup"
+        title="Dictionary"
+        subtitle="Definitions, synonyms, antonyms, rhymes, collocations, and AI songwriting insights for any word."
+      />
+
+      <main className="max-w-5xl mx-auto px-8 py-10">
+        <div className="mb-4 text-sm">
+          <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>
-        <h1 className="font-serif text-4xl font-bold mb-2">Dictionary</h1>
-        <p className="text-ink-600 mb-8">
-          A lyricist's lookup tool — definitions, synonyms, antonyms, rhymes, associations,
-          collocations, and AI-powered songwriting insights for any word.
-        </p>
 
         {/* Search */}
         <section className="bg-white border border-ink-100 rounded-lg p-5 mb-6">

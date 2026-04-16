@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type User, type Section, type Poem } from '@/lib/api';
 import TopBar from '@/components/TopBar';
+import PageBanner from '@/components/PageBanner';
 
 const BACKGROUND_OPTIONS = [
   { value: '', label: 'Any' },
@@ -100,14 +101,17 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
     <div className="min-h-screen">
       <TopBar user={user} onLogout={onLogout} />
 
-      <main className="max-w-4xl mx-auto px-8 py-12">
-        <div className="mb-2 text-sm">
-          <Link to="/app" className="text-ink-400 hover:text-ink-800">← All songs</Link>
+      <PageBanner
+        theme="leaves"
+        eyebrow="🍃 Poetry inspiration"
+        title="The poet's grove"
+        subtitle="Classic public-domain poetry by theme, author background, and era. Import any poem as the starting verse of a new song."
+      />
+
+      <main className="max-w-4xl mx-auto px-8 py-10">
+        <div className="mb-4 text-sm">
+          <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>
-        <h1 className="font-serif text-4xl font-bold mb-2">Poetry inspiration</h1>
-        <p className="text-ink-600 mb-8">
-          Search classic public-domain poetry by theme and author background. Import any poem as the starting verse of a new song.
-        </p>
 
         <div className="bg-white border border-ink-100 rounded-lg p-5 mb-8">
           <div className="mb-3">

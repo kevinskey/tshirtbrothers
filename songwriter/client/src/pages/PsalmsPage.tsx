@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type User, type Section, type Psalm, type BibleTranslation } from '@/lib/api';
 import TopBar from '@/components/TopBar';
+import PageBanner from '@/components/PageBanner';
 
 type ViewedPsalm = Psalm & { why_it_fits?: string };
 
@@ -158,34 +159,36 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
     <div className="min-h-screen">
       <TopBar user={user} onLogout={onLogout} />
 
-      <main className="max-w-5xl mx-auto px-8 py-12">
-        <div className="mb-2 text-sm">
-          <Link to="/app" className="text-ink-400 hover:text-ink-800">← All songs</Link>
+      <PageBanner
+        theme="branches"
+        eyebrow="🌿 Scripture sanctuary"
+        title="Psalms"
+        subtitle="All 150 psalms in many translations. Browse, search by theme, or let AI adapt a psalm into a modern song."
+      >
+        {translations.length > 0 && (
+          <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-4 pr-2 py-1.5 border border-meadow-200">
+            <label className="text-[10px] uppercase tracking-wider text-meadow-600 font-semibold">
+              Translation
+            </label>
+            <select
+              value={translation}
+              onChange={(e) => setTranslation(e.target.value)}
+              className="text-sm bg-transparent border-0 focus:outline-none min-w-[220px]"
+            >
+              {translations.map((t) => (
+                <option key={t.code} value={t.code}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </PageBanner>
+
+      <main className="max-w-5xl mx-auto px-8 py-10">
+        <div className="mb-4 text-sm">
+          <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>
-        <div className="flex items-start justify-between gap-4 mb-2 flex-wrap">
-          <h1 className="font-serif text-4xl font-bold">Psalms</h1>
-          {translations.length > 0 && (
-            <div>
-              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
-                Translation
-              </label>
-              <select
-                value={translation}
-                onChange={(e) => setTranslation(e.target.value)}
-                className="text-sm bg-white border border-ink-200 rounded px-3 py-2 focus:outline-none focus:border-accent min-w-[240px]"
-              >
-                {translations.map((t) => (
-                  <option key={t.code} value={t.code}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-        <p className="text-ink-600 mb-2">
-          Browse all 150 psalms, search by theme, or let AI adapt a psalm into a modern song.
-        </p>
-        <p className="text-xs text-ink-400 mb-8">
-          All translations shown are public domain. Modern copyrighted translations (NIV, ESV, NASB, NKJV) are not available for licensing reasons.
+        <p className="text-xs text-meadow-500 mb-6">
+          All translations are public domain. Modern copyrighted translations (NIV, ESV, NASB, NKJV) are not available for licensing reasons.
         </p>
 
         {/* Search by theme */}

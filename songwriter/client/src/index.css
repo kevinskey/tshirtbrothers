@@ -12,12 +12,12 @@ html, body, #root {
 }
 
 body {
-  @apply bg-ink-50 text-ink-800;
+  @apply bg-meadow-50 text-meadow-800;
 }
 
 /* Lyric line input — invisible until focused */
 .lyric-line {
-  @apply w-full bg-transparent border-0 border-b border-transparent hover:border-ink-100
+  @apply w-full bg-transparent border-0 border-b border-transparent hover:border-meadow-200
          focus:border-accent focus:outline-none py-1 px-0
-         font-serif text-lg leading-snug text-ink-900 placeholder:text-ink-200;
+         font-serif text-lg leading-snug text-meadow-900 placeholder:text-meadow-200;
 }
