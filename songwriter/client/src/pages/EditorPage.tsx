@@ -6,6 +6,7 @@ import TopBar from '@/components/TopBar';
 import SectionBlock from '@/components/SectionBlock';
 import AIPanel from '@/components/AIPanel';
 import { useRegisterPage } from '@/lib/assistantContext';
+import VersionHistoryPanel from '@/components/VersionHistoryPanel';
 
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error';
 
@@ -17,6 +18,7 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
   const [saveState, setSaveState] = useState<SaveState>('saved');
   const [focusedLine, setFocusedLine] = useState<{ sectionId: string; index: number } | null>(null);
   const [selectedWord, setSelectedWord] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
 
   // Load song
@@ -197,9 +199,28 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
       <TopBar user={user} onLogout={onLogout} />
 
       <div className="max-w-6xl mx-auto px-6 py-6 flex items-center justify-between text-sm">
-        <Link to="/app" className="text-ink-400 hover:text-ink-800">← All songs</Link>
-        <SaveIndicator state={saveState} />
+        <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setHistoryOpen(true)}
+            className="text-xs text-meadow-500 hover:text-meadow-900 flex items-center gap-1"
+            title="View and restore past versions"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l3 2" />
+            </svg>
+            History
+          </button>
+          <SaveIndicator state={saveState} />
+        </div>
       </div>
+
+      <VersionHistoryPanel
+        songId={song.id}
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onRestored={(restored) => setSong(restored)}
+      />
 
       <div className="max-w-6xl mx-auto px-6 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
         {/* Editor column */}

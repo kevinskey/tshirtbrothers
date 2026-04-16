@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS songs (
 CREATE INDEX IF NOT EXISTS idx_songs_user_id ON songs(user_id);
 CREATE INDEX IF NOT EXISTS idx_songs_updated_at ON songs(updated_at DESC);
 
+-- Version history: snapshots of a song before each meaningful update so the
+-- user can roll back if an AI rewrite (or a wrong typo) destroys good work.
+CREATE TABLE IF NOT EXISTS song_versions (
+  id              SERIAL PRIMARY KEY,
+  song_id         INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+  snapshot        JSONB NOT NULL,  -- { title, sections, notes, tempo_bpm, key_signature }
+  reason          TEXT,            -- optional label: 'autosave', 'ai_rewrite', etc.
+  created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_song_versions_song_id ON song_versions(song_id, created_at DESC);
+
 -- AI usage log (for cost tracking + rate insight)
 CREATE TABLE IF NOT EXISTS ai_logs (
   id              SERIAL PRIMARY KEY,

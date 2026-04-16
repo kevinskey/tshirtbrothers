@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import rateLimit from 'express-rate-limit';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import { checkAIBudget, countAIUsage, DAILY_AI_LIMIT } from '../middleware/aiBudget.js';
 
 const router = Router();
 router.use(authenticate);
@@ -15,6 +16,19 @@ const limiter = rateLimit({
   message: { error: 'Too many AI requests. Try again in a few minutes.' },
 });
 router.use(limiter);
+
+// GET /api/ai/budget — lets the client show current usage without spending any
+router.get('/budget', async (req, res) => {
+  try {
+    const used = await countAIUsage(req.user.id);
+    res.json({ used, limit: DAILY_AI_LIMIT, remaining: Math.max(0, DAILY_AI_LIMIT - used) });
+  } catch {
+    res.json({ used: 0, limit: DAILY_AI_LIMIT, remaining: DAILY_AI_LIMIT });
+  }
+});
+
+// All remaining routes in this file consume AI budget
+router.use(checkAIBudget);
 
 function getClient() {
   const key = process.env.DEEPSEEK_API_KEY;

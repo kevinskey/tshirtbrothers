@@ -2,6 +2,7 @@ import { Router } from 'express';
 import OpenAI from 'openai';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import { checkAIBudget } from '../middleware/aiBudget.js';
 
 const router = Router();
 router.use(authenticate);
@@ -105,7 +106,7 @@ router.delete('/:id', async (req, res, next) => {
 // ── AI: ask about the journal ────────────────────────────────────────────
 // Uses the user's recent entries (up to 30) as context so the AI can
 // remind, find themes, surface relevant passages, or riff for lyrics.
-router.post('/ask', async (req, res, next) => {
+router.post('/ask', checkAIBudget, async (req, res, next) => {
   try {
     const { question, mode = 'recall' } = req.body;
     if (!question) return res.status(400).json({ error: 'question is required' });

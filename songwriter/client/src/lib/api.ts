@@ -167,6 +167,27 @@ export const api = {
       body: JSON.stringify(body),
     }),
   onThisDay: () => req<JournalSummary[]>('/journal/on-this-day'),
+
+  getBudget: () => req<AIBudget>('/ai/budget'),
+
+  listVersions: (songId: number) => req<SongVersion[]>(`/songs/${songId}/versions`),
+  restoreVersion: (songId: number, versionId: number) =>
+    req<Song>(`/songs/${songId}/versions/${versionId}/restore`, { method: 'POST' }),
+};
+
+export type AIBudget = { used: number; limit: number; remaining: number };
+
+export type SongVersion = {
+  id: number;
+  snapshot: {
+    title: string;
+    sections: Section[];
+    notes: string;
+    tempo_bpm: number | null;
+    key_signature: string | null;
+  };
+  reason: string | null;
+  created_at: string;
 };
 
 export type JournalEntry = {

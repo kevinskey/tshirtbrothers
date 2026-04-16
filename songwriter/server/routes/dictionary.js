@@ -2,6 +2,7 @@ import { Router } from 'express';
 import OpenAI from 'openai';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import { checkAIBudget } from '../middleware/aiBudget.js';
 
 const router = Router();
 router.use(authenticate);
@@ -140,7 +141,7 @@ function getClient() {
   return new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: key });
 }
 
-router.post('/:word/insights', async (req, res, next) => {
+router.post('/:word/insights', checkAIBudget, async (req, res, next) => {
   try {
     const word = String(req.params.word || '').trim().toLowerCase();
     if (!word) return res.status(400).json({ error: 'word required' });

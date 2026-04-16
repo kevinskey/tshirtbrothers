@@ -2,6 +2,7 @@ import { Router } from 'express';
 import OpenAI from 'openai';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
+import { checkAIBudget } from '../middleware/aiBudget.js';
 
 const router = Router();
 router.use(authenticate);
@@ -84,7 +85,7 @@ function getClient() {
   return new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: key });
 }
 
-router.post('/search', async (req, res, next) => {
+router.post('/search', checkAIBudget, async (req, res, next) => {
   try {
     const { theme, count = 4, translation } = req.body;
     if (!theme) return res.status(400).json({ error: 'theme is required' });
@@ -143,7 +144,7 @@ Return up to ${safeCount} of the BEST fits from Psalms 1-150. Only include real 
 });
 
 // ── Adapt a psalm into modern song lyrics ────────────────────────────────
-router.post('/adapt', async (req, res, next) => {
+router.post('/adapt', checkAIBudget, async (req, res, next) => {
   try {
     const {
       psalm_number,
@@ -252,7 +253,7 @@ async function fetchPassage(reference, translation) {
   return result;
 }
 
-router.post('/bible/search', async (req, res, next) => {
+router.post('/bible/search', checkAIBudget, async (req, res, next) => {
   try {
     const { query, count = 6, translation, testament = 'any' } = req.body;
     if (!query) return res.status(400).json({ error: 'query is required' });

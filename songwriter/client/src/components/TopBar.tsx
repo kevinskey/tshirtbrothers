@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { api, type User } from '@/lib/api';
 import { Flower } from '@/components/decorations/GardenDecorations';
+import AIBudgetBadge from '@/components/AIBudgetBadge';
 
 export default function TopBar({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate();
@@ -30,6 +31,7 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
           </nav>
         </div>
         <div className="flex items-center gap-3">
+          <AIBudgetBadge />
           {user.avatar_url && (
             <img src={user.avatar_url} alt="" className="w-7 h-7 rounded-full border border-meadow-200" referrerPolicy="no-referrer" />
           )}
