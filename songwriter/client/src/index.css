@@ -11,8 +11,25 @@ html, body, #root {
   height: 100%;
 }
 
+html, body {
+  /* Lock viewport horizontally — no left/right pan, no rubber-banding on iOS */
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  /* Prevent iOS bounce when scrolling past the top of the page */
+  overscroll-behavior-y: contain;
+  width: 100%;
+  max-width: 100vw;
+  position: relative;
+}
+
 body {
   @apply bg-meadow-50 text-meadow-800;
+}
+
+#root {
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 /* Lyric line input — invisible until focused */
