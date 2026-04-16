@@ -9,7 +9,7 @@ const router = Router();
 router.use(authenticate);
 
 // Helper: upload base64 image to DO Spaces
-async function uploadToSpaces(base64Data, folder, filename) {
+async function uploadToSpaces(base64Data, folder, filename, contentType = 'image/png') {
   const spacesKey = process.env.SPACES_KEY;
   const spacesSecret = process.env.SPACES_SECRET;
   if (!spacesKey || !spacesSecret) return null;
@@ -20,20 +20,21 @@ async function uploadToSpaces(base64Data, folder, filename) {
     credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
   });
 
-  const buffer = Buffer.from(base64Data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+  const buffer = Buffer.from(base64Data.replace(/^data:[^;]+;base64,/, ''), 'base64');
   const key = `${folder}/${filename}`;
 
   await s3.send(new PutObjectCommand({
     Bucket: process.env.SPACES_BUCKET,
     Key: key,
     Body: buffer,
-    ContentType: 'image/png',
+    ContentType: contentType,
+    ContentDisposition: `attachment; filename="${filename.split('/').pop()}"`,
     ACL: 'public-read',
   }));
 
   const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
   const region = process.env.SPACES_REGION || 'atl1';
-  return `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
+  return { url: `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`, size: buffer.length };
 }
 
 // GET / - List user's saved designs
@@ -70,18 +71,53 @@ router.post('/uploads', async (req, res, next) => {
     const { imageBase64, filename } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
 
-    const url = await uploadToSpaces(
+    // Preserve the original file type so PDFs, AI, PSD, TIFF, etc. are stored
+    // with the correct bytes and downloadable later.
+    const dataUrlMatch = /^data:([^;]+);base64,/.exec(imageBase64);
+    const contentType = dataUrlMatch?.[1] || 'image/png';
+    const origName = (filename || 'upload').replace(/[^a-zA-Z0-9.\-_]/g, '-');
+    const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(origName);
+    const extFromMime = contentType.split('/')[1]?.split('+')[0] || 'bin';
+    const safeName = hasExt ? origName : `${origName}.${extFromMime}`;
+    const keyName = `${Date.now()}-${safeName}`;
+
+    const uploaded = await uploadToSpaces(
       imageBase64,
       `customers/${req.user.id}/uploads`,
-      `${(filename || 'upload').replace(/[^a-zA-Z0-9.-]/g, '-')}-${Date.now()}.png`
+      keyName,
+      contentType,
     );
 
-    if (!url) return res.status(500).json({ error: 'Upload failed' });
+    if (!uploaded) return res.status(500).json({ error: 'Upload failed' });
+    const { url, size } = uploaded;
 
     const result = await pool.query(
       'INSERT INTO user_uploads (user_id, url, filename) VALUES ($1, $2, $3) RETURNING id, url, filename, created_at',
-      [req.user.id, url, filename || 'upload.png']
+      [req.user.id, url, filename || safeName]
     );
+
+    // If the Design Lab request specifies which customer this graphic is for
+    // (admin working on behalf of a customer), also file it under that
+    // customer's private asset library so it shows up in the customer's
+    // folder, not the admin's.
+    const { customer_id } = req.body;
+    if (customer_id) {
+      try {
+        const target = await pool.query(
+          "SELECT id FROM users WHERE id = $1 AND role = 'customer'",
+          [customer_id],
+        );
+        if (target.rows.length) {
+          await pool.query(
+            `INSERT INTO customer_assets (user_id, name, image_url, file_type, size_bytes, notes, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [customer_id, filename || safeName, url, contentType, size, 'Uploaded in Design Lab', req.user.id],
+          );
+        }
+      } catch (assetErr) {
+        console.error('[designs/uploads] customer_assets filing failed:', assetErr.message);
+      }
+    }
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -134,12 +170,12 @@ router.post('/', async (req, res, next) => {
     for (const el of (elements || [])) {
       if (el.type === 'image' && el.content && el.content.startsWith('data:')) {
         try {
-          const url = await uploadToSpaces(
+          const result = await uploadToSpaces(
             el.content,
             `customers/${req.user.id}/design-elements`,
             `element-${Date.now()}-${Math.random().toString(36).slice(2)}.png`
           );
-          savedElements.push({ ...el, content: url || el.content });
+          savedElements.push({ ...el, content: result?.url || el.content });
         } catch {
           savedElements.push(el);
         }
@@ -153,12 +189,12 @@ router.post('/', async (req, res, next) => {
     const { thumbnail } = req.body;
     if (thumbnail && thumbnail.startsWith('data:')) {
       try {
-        const url = await uploadToSpaces(
+        const result = await uploadToSpaces(
           thumbnail,
           `customers/${req.user.id}/thumbnails`,
           `thumb-${Date.now()}.png`
         );
-        if (url) thumbnailUrl = url;
+        if (result?.url) thumbnailUrl = result.url;
       } catch { /* keep default */ }
     } else if (thumbnail) {
       thumbnailUrl = thumbnail;
@@ -187,12 +223,12 @@ router.put('/:id', async (req, res, next) => {
     let thumbnailUrl = thumbnail;
     if (thumbnail && thumbnail.startsWith('data:')) {
       try {
-        const url = await uploadToSpaces(
+        const result = await uploadToSpaces(
           thumbnail,
           `customers/${req.user.id}/thumbnails`,
           `thumb-${Date.now()}.png`
         );
-        if (url) thumbnailUrl = url;
+        if (result?.url) thumbnailUrl = result.url;
       } catch { /* keep as-is */ }
     }
 
