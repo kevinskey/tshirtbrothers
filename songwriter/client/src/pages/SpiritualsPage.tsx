@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, type User, type Section, type Spiritual, type SpiritualSummary } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
+import PdfPageImage from '@/components/PdfPageImage';
 import { useRegisterPage } from '@/lib/assistantContext';
 
 export default function SpiritualsPage({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -231,12 +232,14 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
               <p className="text-sm italic text-meadow-600 border-l-2 border-meadow-100 pl-3 mb-3">{selected.why_it_fits}</p>
             )}
 
-            {/* Inline PDF score viewer */}
-            {showScore && scoreUrl(selected) && (
-              <div className="mb-4 -mx-5 sm:-mx-6 border-y border-meadow-200 bg-meadow-50">
-                <div className="px-4 py-2 flex items-center justify-between text-xs text-meadow-600">
+            {/* Inline score viewer — rendered client-side from the PDF so it
+                works reliably on iOS (unlike embedded <iframe>). */}
+            {showScore && selected.source_file && selected.page_start && (
+              <div className="mb-4 -mx-5 sm:-mx-6 border-y border-meadow-200 bg-meadow-50 py-4 px-2 sm:px-4">
+                <div className="px-2 pb-3 flex items-center justify-between text-xs text-meadow-600 flex-wrap gap-2">
                   <span>
-                    Score from original PDF{selected.page_start ? ` · page ${selected.page_start}${selected.page_end && selected.page_end !== selected.page_start ? `–${selected.page_end}` : ''}` : ''}
+                    Score from original PDF · page {selected.page_start}
+                    {selected.page_end && selected.page_end !== selected.page_start ? `–${selected.page_end}` : ''}
                   </span>
                   <a
                     href={scoreUrl(selected)!}
@@ -244,15 +247,19 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
                     rel="noreferrer"
                     className="underline hover:text-meadow-900"
                   >
-                    Open in new tab ↗
+                    Open full PDF ↗
                   </a>
                 </div>
-                <iframe
-                  key={selected.id}
-                  src={scoreUrl(selected)!}
-                  title={`Score for ${selected.title}`}
-                  className="w-full h-[70vh] sm:h-[80vh] bg-white"
-                />
+                <div className="space-y-3">
+                  {pageRange(selected.page_start, selected.page_end).map((p) => (
+                    <PdfPageImage
+                      key={p}
+                      pdfUrl={selected.source_file}
+                      pageNumber={p}
+                      maxWidth={900}
+                    />
+                  ))}
+                </div>
               </div>
             )}
 
@@ -334,4 +341,12 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
       </main>
     </div>
   );
+}
+
+function pageRange(start: number | null, end: number | null): number[] {
+  if (!start) return [];
+  const last = end && end >= start ? end : start;
+  const out: number[] = [];
+  for (let p = start; p <= last; p++) out.push(p);
+  return out;
 }

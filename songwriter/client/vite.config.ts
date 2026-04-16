@@ -29,6 +29,18 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
+          // Cache uploaded source PDFs (spirituals, etc.) — immutable files,
+          // large; keep them once fetched so score viewing works offline.
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/uploads/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'sw-uploads',
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+              rangeRequests: true,
+            },
+          },
           // Cache Bible/Psalm passage fetches — public-domain text never changes
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/psalms/') && !url.pathname.includes('/search') && !url.pathname.includes('/adapt'),
