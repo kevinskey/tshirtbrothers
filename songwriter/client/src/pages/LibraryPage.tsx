@@ -67,7 +67,7 @@ export default function LibraryPage({ user, onLogout }: { user: User; onLogout: 
         </button>
       </PageBanner>
 
-      <main className="max-w-4xl mx-auto px-8 py-10">
+      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         {loading ? (
           <div className="text-meadow-500">Loading…</div>
         ) : songs.length === 0 ? (

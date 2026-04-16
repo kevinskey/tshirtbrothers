@@ -147,11 +147,11 @@ export default function AssistantOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4 bg-meadow-900/30 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-4 sm:pt-[12vh] px-2 sm:px-4 bg-meadow-900/30 backdrop-blur-sm"
       onClick={closeAssistant}
     >
       <div
-        className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-meadow-200 overflow-hidden flex flex-col max-h-[75vh]"
+        className="relative w-full max-w-2xl bg-white rounded-xl sm:rounded-2xl shadow-2xl border border-meadow-200 overflow-hidden flex flex-col max-h-[90vh] sm:max-h-[75vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Decorative sun in corner */}

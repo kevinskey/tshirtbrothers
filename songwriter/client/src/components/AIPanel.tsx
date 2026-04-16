@@ -28,12 +28,12 @@ export default function AIPanel({
   const [style, setStyle] = useState('');
 
   return (
-    <aside className="bg-white border border-ink-100 rounded-lg p-5">
-      <div className="flex items-center justify-between mb-4">
+    <aside className="bg-white border border-meadow-200 rounded-xl p-4 sm:p-5 shadow-sm">
+      <div className="hidden lg:flex items-center justify-between mb-4">
         <h2 className="font-serif text-lg font-semibold">AI co-writer</h2>
       </div>
 
-      <div className="flex gap-1 mb-4 bg-ink-50 rounded-md p-1">
+      <div className="flex gap-1 mb-4 bg-meadow-100 rounded-md p-1">
         <TabBtn active={tab === 'generate'} onClick={() => setTab('generate')}>Generate</TabBtn>
         <TabBtn active={tab === 'rhymes'} onClick={() => setTab('rhymes')}>Rhymes</TabBtn>
         <TabBtn active={tab === 'next'} onClick={() => setTab('next')}>Next</TabBtn>

@@ -28,64 +28,64 @@ export default function LandingPage({ user }: { user: User | null }) {
   }
 
   return (
-    <div className="min-h-screen bg-meadow-gradient text-meadow-900 overflow-hidden">
+    <div className="min-h-screen bg-meadow-gradient text-meadow-900 overflow-x-hidden">
       {/* Header */}
-      <header className="relative px-8 py-6 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2">
+      <header className="relative px-4 sm:px-8 py-4 sm:py-6 flex items-center justify-between z-10 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
           <Flower size={28} petal="#f2c6c6" center="#f5c842" />
-          <div className="font-serif text-2xl font-bold tracking-tight text-meadow-800">Songwriter</div>
+          <div className="font-serif text-xl sm:text-2xl font-bold tracking-tight text-meadow-800 truncate">Songwriter</div>
         </div>
         {user ? (
           <Link
             to="/app"
-            className="px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 text-sm font-medium shadow-sm"
+            className="px-3 sm:px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap"
           >
-            Open your songs →
+            Open songs →
           </Link>
         ) : (
           <a
             href={`${apiBase}/api/auth/google`}
-            className="px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 text-sm font-medium shadow-sm"
+            className="px-3 sm:px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 text-xs sm:text-sm font-medium shadow-sm whitespace-nowrap"
           >
-            Sign in with Google
+            Sign in
           </a>
         )}
       </header>
 
       {/* Hero */}
-      <section className="relative">
-        {/* Sun */}
-        <Sun className="absolute top-8 right-6 md:right-16 opacity-95 z-0" size={260} />
-        {/* Floating garden scatter */}
-        <Leaf className="absolute top-16 left-6 opacity-70 z-0" color="#6b8f42" rotate={-30} size={40} />
-        <Leaf className="absolute top-56 left-20 opacity-50 z-0" color="#8eb063" rotate={25} size={30} />
-        <Flower className="absolute top-40 left-[45%] opacity-80 z-0" petal="#f2c6c6" center="#f5c842" size={36} />
-        <Flower className="absolute top-72 right-24 opacity-70 z-0" petal="#cfe7f2" center="#e6b020" size={28} />
-        <Leaf className="absolute bottom-20 right-[35%] opacity-60 z-0" color="#527132" rotate={-55} size={34} />
+      <section className="relative overflow-hidden">
+        {/* Sun — clipped to section on mobile */}
+        <Sun className="absolute top-4 -right-8 sm:top-8 sm:right-6 md:right-16 opacity-90 z-0" size={180} />
+        {/* Floating garden scatter — hide some on mobile */}
+        <Leaf className="absolute top-16 left-4 opacity-70 z-0" color="#6b8f42" rotate={-30} size={30} />
+        <Leaf className="hidden sm:block absolute top-56 left-20 opacity-50 z-0" color="#8eb063" rotate={25} size={30} />
+        <Flower className="hidden md:block absolute top-40 left-[45%] opacity-80 z-0" petal="#f2c6c6" center="#f5c842" size={36} />
+        <Flower className="hidden sm:block absolute top-72 right-24 opacity-70 z-0" petal="#cfe7f2" center="#e6b020" size={28} />
+        <Leaf className="hidden sm:block absolute bottom-20 right-[35%] opacity-60 z-0" color="#527132" rotate={-55} size={34} />
 
-        <div className="relative z-10 max-w-3xl mx-auto px-8 pt-16 pb-28 text-center">
-          <h1 className="font-serif text-5xl md:text-7xl font-bold tracking-tight text-meadow-900 mb-6 leading-[1.05]">
+        <div className="relative z-10 max-w-3xl mx-auto px-4 sm:px-8 pt-8 sm:pt-16 pb-20 sm:pb-28 text-center">
+          <h1 className="font-serif text-4xl sm:text-5xl md:text-7xl font-bold tracking-tight text-meadow-900 mb-4 sm:mb-6 leading-[1.05]">
             Write songs that <span className="italic text-accent">bloom.</span>
           </h1>
-          <p className="text-lg md:text-xl text-meadow-700 mb-10 max-w-xl mx-auto">
+          <p className="text-base sm:text-lg md:text-xl text-meadow-700 mb-8 sm:mb-10 max-w-xl mx-auto">
             A sunlit place for songwriters. Rhymes, next-line prompts, poetry, scripture, and AI
             that helps good lines take root.
           </p>
           <a
             href={`${apiBase}/api/auth/google`}
-            className="inline-flex items-center gap-3 px-6 py-3 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 font-medium shadow-md hover:shadow-lg transition-shadow"
+            className="inline-flex items-center gap-3 px-5 sm:px-6 py-3 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 font-medium shadow-md hover:shadow-lg transition-shadow text-sm sm:text-base"
           >
             <GoogleMark />
-            Start writing — sign in with Google
+            Start writing with Google
           </a>
         </div>
 
         {/* Wavy grass transition */}
-        <GrassStrip className="absolute bottom-0 left-0 w-full h-20 opacity-90" />
+        <GrassStrip className="absolute bottom-0 left-0 w-full h-12 sm:h-20 opacity-90" />
       </section>
 
       {/* Poetry inspiration — the "meadow" section */}
-      <section className="relative bg-meadow-100 border-y border-meadow-200 py-20 px-8">
+      <section className="relative bg-meadow-100 border-y border-meadow-200 py-12 sm:py-20 px-4 sm:px-8 overflow-hidden">
         <Leaf className="absolute top-10 left-10 opacity-40" color="#527132" rotate={-15} size={56} />
         <Leaf className="absolute top-16 right-16 opacity-40" color="#6b8f42" rotate={40} size={44} />
         <Flower className="absolute bottom-14 left-20 opacity-70" petal="#e89b9b" center="#f5c842" size={38} />
@@ -94,12 +94,11 @@ export default function LandingPage({ user }: { user: User | null }) {
           <div className="text-[11px] uppercase tracking-[0.22em] text-meadow-600 font-semibold mb-3">
             🌱 AI poetry agent
           </div>
-          <h2 className="font-serif text-3xl md:text-4xl font-bold text-meadow-900 mb-3">
+          <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-meadow-900 mb-3">
             Find poetry to water your next song
           </h2>
-          <p className="text-meadow-700 mb-8 max-w-xl mx-auto">
-            Type a theme — heartbreak, the open road, hope after grief — and our AI will pluck classic
-            public-domain poems you can adapt right into your lyrics.
+          <p className="text-sm sm:text-base text-meadow-700 mb-6 sm:mb-8 max-w-xl mx-auto">
+            Type a theme and our AI will pluck classic public-domain poems you can adapt right into your lyrics.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-2 max-w-xl mx-auto">
@@ -108,13 +107,13 @@ export default function LandingPage({ user }: { user: User | null }) {
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handlePoetrySearch(); }}
-              placeholder="e.g. losing a parent, summer love, the open road"
+              placeholder="heartbreak, the open road, summer love…"
               className="flex-1 px-4 py-3 bg-white border border-meadow-200 rounded-full focus:outline-none focus:border-accent text-base shadow-sm"
             />
             <button
               onClick={handlePoetrySearch}
               disabled={!theme.trim()}
-              className="px-6 py-3 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 font-medium disabled:opacity-40 shadow-sm"
+              className="px-6 py-3 bg-meadow-700 text-meadow-50 rounded-full hover:bg-meadow-800 font-medium disabled:opacity-40 shadow-sm whitespace-nowrap"
             >
               {user ? 'Find poems' : 'Sign in to search'}
             </button>
@@ -126,17 +125,17 @@ export default function LandingPage({ user }: { user: User | null }) {
       </section>
 
       {/* Feature garden — 6 tools as "plots" */}
-      <section className="relative max-w-5xl mx-auto px-8 py-20">
-        <div className="text-center mb-12">
+      <section className="relative max-w-5xl mx-auto px-4 sm:px-8 py-12 sm:py-20">
+        <div className="text-center mb-8 sm:mb-12">
           <div className="text-[11px] uppercase tracking-[0.22em] text-meadow-600 font-semibold mb-3">
             🌻 Your creative garden
           </div>
-          <h2 className="font-serif text-3xl md:text-4xl font-bold text-meadow-900">
+          <h2 className="font-serif text-2xl sm:text-3xl md:text-4xl font-bold text-meadow-900">
             Six tools, one place to grow
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           <FeatureCard
             icon={<Sun size={40} />}
             title="AI co-writer"
@@ -177,18 +176,18 @@ export default function LandingPage({ user }: { user: User | null }) {
       </section>
 
       {/* Closing band */}
-      <section className="relative bg-sun-gradient py-16 px-8 border-t border-meadow-200">
+      <section className="relative bg-sun-gradient py-12 sm:py-16 px-4 sm:px-8 border-t border-meadow-200 overflow-hidden">
         <div className="absolute top-0 left-0 right-0 overflow-hidden">
-          <GrassStrip className="w-full h-8 opacity-60 rotate-180" />
+          <GrassStrip className="w-full h-6 sm:h-8 opacity-60 rotate-180" />
         </div>
-        <Flower className="absolute top-10 left-12 opacity-70" petal="#e89b9b" center="#f5c842" size={32} />
-        <Flower className="absolute bottom-12 right-16 opacity-80" petal="#cfe7f2" center="#f5c842" size={28} />
+        <Flower className="hidden sm:block absolute top-10 left-12 opacity-70" petal="#e89b9b" center="#f5c842" size={32} />
+        <Flower className="hidden sm:block absolute bottom-12 right-16 opacity-80" petal="#cfe7f2" center="#f5c842" size={28} />
 
         <div className="relative max-w-2xl mx-auto text-center">
-          <h2 className="font-serif text-3xl font-bold text-meadow-900 mb-4">
+          <h2 className="font-serif text-2xl sm:text-3xl font-bold text-meadow-900 mb-3 sm:mb-4">
             Every song starts with a seed.
           </h2>
-          <p className="text-meadow-700 mb-6">
+          <p className="text-sm sm:text-base text-meadow-700 mb-6">
             Plant one today.
           </p>
           <a

@@ -111,14 +111,14 @@ export default function BibleSearchPage({ user, onLogout }: { user: User; onLogo
         subtitle="Search the entire Bible for a word, phrase, or idea. Use any passage as the starting verse of a new song."
       >
         {translations.length > 0 && (
-          <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-4 pr-2 py-1.5 border border-meadow-200">
-            <label className="text-[10px] uppercase tracking-wider text-meadow-600 font-semibold">
+          <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-3 pr-1 py-1.5 border border-meadow-200 max-w-full">
+            <label className="text-[10px] uppercase tracking-wider text-meadow-600 font-semibold whitespace-nowrap">
               Translation
             </label>
             <select
               value={translation}
               onChange={(e) => setTranslation(e.target.value)}
-              className="text-sm bg-transparent border-0 focus:outline-none min-w-[220px]"
+              className="text-sm bg-transparent border-0 focus:outline-none pr-2 py-0.5 min-w-0 max-w-full"
             >
               {translations.map((t) => (
                 <option key={t.code} value={t.code}>{t.label}</option>
@@ -128,7 +128,7 @@ export default function BibleSearchPage({ user, onLogout }: { user: User; onLogo
         )}
       </PageBanner>
 
-      <main className="max-w-4xl mx-auto px-8 py-10">
+      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         <div className="mb-4 text-sm">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>

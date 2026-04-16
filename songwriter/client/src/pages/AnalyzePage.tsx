@@ -102,7 +102,7 @@ export default function AnalyzePage({ user, onLogout }: { user: User; onLogout: 
         subtitle="Study any song — structure, rhyme, meter, imagery — then grow a new song from the same roots."
       />
 
-      <main className="max-w-4xl mx-auto px-8 py-10">
+      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         <div className="mb-4 text-sm">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>

@@ -52,9 +52,9 @@ export default function VersionHistoryPanel({ songId, open, onClose, onRestored 
   const preview = versions.find((v) => v.id === previewId) || null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center pt-20 px-4 bg-meadow-900/30 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex items-start justify-center pt-4 sm:pt-20 px-2 sm:px-4 bg-meadow-900/30 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="relative w-full max-w-4xl max-h-[75vh] bg-white rounded-2xl shadow-2xl border border-meadow-200 overflow-hidden grid grid-cols-1 md:grid-cols-[280px_1fr]"
+        className="relative w-full max-w-4xl max-h-[92vh] sm:max-h-[75vh] bg-white rounded-xl sm:rounded-2xl shadow-2xl border border-meadow-200 overflow-hidden grid grid-cols-1 md:grid-cols-[280px_1fr]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Version list */}

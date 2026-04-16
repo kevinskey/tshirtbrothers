@@ -20,6 +20,7 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
   const [focusedLine, setFocusedLine] = useState<{ sectionId: string; index: number } | null>(null);
   const [selectedWord, setSelectedWord] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [aiOpenMobile, setAiOpenMobile] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
 
   // Load song
@@ -223,32 +224,32 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
         onRestored={(restored) => setSong(restored)}
       />
 
-      <div className="max-w-6xl mx-auto px-6 pb-16 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-24 lg:pb-16 grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 lg:gap-8">
         {/* Editor column */}
         <div>
           <input
             type="text"
             value={song.title}
             onChange={(e) => update({ title: e.target.value })}
-            className="w-full font-serif text-4xl font-bold bg-transparent border-0 focus:outline-none mb-2"
+            className="w-full font-serif text-3xl sm:text-4xl font-bold bg-transparent border-0 focus:outline-none mb-2"
             placeholder="Untitled"
           />
 
           {/* Song meta */}
-          <div className="flex gap-4 mb-8 text-sm">
+          <div className="flex flex-wrap gap-4 mb-6 sm:mb-8 text-sm">
             <input
               type="text"
               value={song.key_signature || ''}
               onChange={(e) => update({ key_signature: e.target.value || null })}
               placeholder="Key (e.g. G major)"
-              className="bg-transparent border-b border-ink-100 focus:border-accent focus:outline-none px-0 py-1 text-ink-600 placeholder:text-ink-200 w-36"
+              className="bg-transparent border-b border-meadow-200 focus:border-accent focus:outline-none px-0 py-1 text-meadow-700 placeholder:text-meadow-300 w-36"
             />
             <input
               type="number"
               value={song.tempo_bpm || ''}
               onChange={(e) => update({ tempo_bpm: e.target.value ? Number(e.target.value) : null })}
               placeholder="BPM"
-              className="bg-transparent border-b border-ink-100 focus:border-accent focus:outline-none px-0 py-1 text-ink-600 placeholder:text-ink-200 w-20"
+              className="bg-transparent border-b border-meadow-200 focus:border-accent focus:outline-none px-0 py-1 text-meadow-700 placeholder:text-meadow-300 w-20"
             />
           </div>
 
@@ -296,21 +297,55 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
           </div>
         </div>
 
-        {/* AI panel */}
-        <div className="lg:sticky lg:top-6 lg:h-[calc(100vh-6rem)] lg:overflow-y-auto">
-          <AIPanel
-            selectedWord={selectedWord}
-            currentLine={currentLine}
-            previousLines={prevLines}
-            sectionType={currentSection?.type || 'verse'}
-            existingSections={song.sections}
-            onInsertLine={insertLine}
-            onReplaceLine={replaceLine}
-            onFillCurrentSection={fillCurrentSection}
-            onAppendSection={appendSection}
-            onReplaceSong={replaceSong}
-          />
+        {/* AI panel — sticky sidebar on desktop, bottom drawer on mobile */}
+        <div
+          className={`
+            lg:block lg:sticky lg:top-6 lg:h-[calc(100vh-6rem)] lg:overflow-y-auto lg:static lg:shadow-none lg:rounded-none lg:border-0 lg:bg-transparent
+            ${aiOpenMobile
+              ? 'fixed inset-x-0 bottom-0 z-40 max-h-[85vh] overflow-y-auto shadow-2xl rounded-t-2xl bg-meadow-50 border-t border-meadow-200'
+              : 'hidden'}
+          `}
+        >
+          {/* Mobile drawer handle */}
+          <div className="lg:hidden sticky top-0 bg-meadow-50 border-b border-meadow-200 px-4 py-2 flex items-center justify-between z-10">
+            <div className="text-xs text-meadow-500">AI co-writer</div>
+            <button
+              onClick={() => setAiOpenMobile(false)}
+              className="text-meadow-500 hover:text-meadow-800 text-sm px-2 py-1"
+              aria-label="Close AI panel"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="px-4 pb-4 lg:p-0">
+            <AIPanel
+              selectedWord={selectedWord}
+              currentLine={currentLine}
+              previousLines={prevLines}
+              sectionType={currentSection?.type || 'verse'}
+              existingSections={song.sections}
+              onInsertLine={(l) => { insertLine(l); setAiOpenMobile(false); }}
+              onReplaceLine={(l) => { replaceLine(l); setAiOpenMobile(false); }}
+              onFillCurrentSection={(ls) => { fillCurrentSection(ls); setAiOpenMobile(false); }}
+              onAppendSection={(t, lbl, ls) => { appendSection(t, lbl, ls); setAiOpenMobile(false); }}
+              onReplaceSong={(t, s) => { replaceSong(t, s); setAiOpenMobile(false); }}
+            />
+          </div>
         </div>
+
+        {/* Mobile floating button to open AI panel */}
+        {!aiOpenMobile && (
+          <button
+            onClick={() => setAiOpenMobile(true)}
+            className="lg:hidden fixed bottom-20 right-4 z-30 bg-meadow-700 text-meadow-50 rounded-full shadow-lg hover:bg-meadow-800 px-4 py-3 text-sm font-medium flex items-center gap-2"
+            aria-label="Open AI co-writer"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 3 L13.5 9 L19.5 10.5 L13.5 12 L12 18 L10.5 12 L4.5 10.5 L10.5 9 Z" />
+            </svg>
+            AI co-writer
+          </button>
+        )}
       </div>
     </div>
   );

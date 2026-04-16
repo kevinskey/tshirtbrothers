@@ -10,12 +10,13 @@ export default function AssistantFab() {
   return (
     <button
       onClick={() => openAssistant()}
-      className="fixed bottom-6 right-6 z-40 group flex items-center gap-2 pl-3 pr-4 py-3 bg-meadow-700 text-meadow-50 rounded-full shadow-lg hover:shadow-xl hover:bg-meadow-800 transition-all"
+      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 group flex items-center gap-2 pl-3 pr-4 py-3 bg-accent text-meadow-900 rounded-full shadow-lg hover:shadow-xl hover:bg-accent-hover transition-all"
+      style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
       title={`AI helper (${shortcut})`}
     >
       <SparkleIcon />
       <span className="text-sm font-medium hidden sm:inline">Ask AI</span>
-      <span className="text-[10px] opacity-70 hidden md:inline border border-meadow-500 rounded px-1.5 py-0.5">
+      <span className="text-[10px] opacity-70 hidden md:inline border border-meadow-600 rounded px-1.5 py-0.5">
         {shortcut}
       </span>
     </button>

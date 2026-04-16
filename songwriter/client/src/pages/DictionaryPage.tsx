@@ -59,7 +59,7 @@ export default function DictionaryPage({ user, onLogout }: { user: User; onLogou
         subtitle="Definitions, synonyms, antonyms, rhymes, collocations, and AI songwriting insights for any word."
       />
 
-      <main className="max-w-5xl mx-auto px-8 py-10">
+      <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         <div className="mb-4 text-sm">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>

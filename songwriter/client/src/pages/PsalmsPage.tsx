@@ -208,14 +208,14 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
         subtitle="All 150 psalms in many translations. Browse, search by theme, or let AI adapt a psalm into a modern song."
       >
         {translations.length > 0 && (
-          <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-4 pr-2 py-1.5 border border-meadow-200">
-            <label className="text-[10px] uppercase tracking-wider text-meadow-600 font-semibold">
+          <div className="inline-flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-3 pr-1 py-1.5 border border-meadow-200 max-w-full">
+            <label className="text-[10px] uppercase tracking-wider text-meadow-600 font-semibold whitespace-nowrap">
               Translation
             </label>
             <select
               value={translation}
               onChange={(e) => setTranslation(e.target.value)}
-              className="text-sm bg-transparent border-0 focus:outline-none min-w-[220px]"
+              className="text-sm bg-transparent border-0 focus:outline-none pr-2 py-0.5 min-w-0 max-w-full"
             >
               {translations.map((t) => (
                 <option key={t.code} value={t.code}>{t.label}</option>
@@ -225,7 +225,7 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
         )}
       </PageBanner>
 
-      <main className="max-w-5xl mx-auto px-8 py-10">
+      <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         <div className="mb-4 text-sm flex items-center justify-between flex-wrap gap-3">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
           {downloadedTranslations.has(translation) ? (
@@ -309,15 +309,15 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
         {/* All 150 grid */}
         <section className="mb-8">
           <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-2">Browse all 150</div>
-          <div className="grid grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1">
+          <div className="grid grid-cols-6 xs:grid-cols-8 sm:grid-cols-10 md:grid-cols-12 gap-1.5">
             {Array.from({ length: 150 }, (_, i) => i + 1).map((n) => (
               <button
                 key={n}
                 onClick={() => openPsalm(n)}
-                className={`aspect-square text-xs rounded border ${
+                className={`aspect-square min-h-[40px] text-sm rounded-md border font-medium ${
                   selected?.number === n
-                    ? 'bg-ink-900 text-ink-50 border-ink-900'
-                    : 'bg-white border-ink-100 hover:border-accent hover:bg-ink-50'
+                    ? 'bg-meadow-800 text-meadow-50 border-meadow-800'
+                    : 'bg-white border-meadow-200 hover:border-accent hover:bg-meadow-100'
                 }`}
               >
                 {n}

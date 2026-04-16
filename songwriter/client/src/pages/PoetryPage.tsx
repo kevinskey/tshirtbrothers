@@ -108,7 +108,7 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
         subtitle="Classic public-domain poetry by theme, author background, and era. Import any poem as the starting verse of a new song."
       />
 
-      <main className="max-w-4xl mx-auto px-8 py-10">
+      <main className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
         <div className="mb-4 text-sm">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
         </div>

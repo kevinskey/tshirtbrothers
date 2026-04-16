@@ -155,8 +155,8 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
         subtitle="A free, private writing space. Every entry is archived forever. Ask AI to remind you, find themes, or turn musings into songs."
       />
 
-      <main className="max-w-6xl mx-auto px-8 py-8 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-8">
-        {/* Sidebar */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 lg:gap-8">
+        {/* Sidebar — on mobile it stacks above the composer, collapsible to save space */}
         <aside className="space-y-4">
           <div className="flex gap-2">
             <button
@@ -278,18 +278,18 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
         </aside>
 
         {/* Composer */}
-        <section className="bg-white border border-meadow-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[70vh]">
-          <div className="px-6 py-3 border-b border-meadow-100 bg-meadow-50 flex items-center justify-between gap-4 flex-wrap">
+        <section className="bg-white border border-meadow-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[60vh] lg:min-h-[70vh]">
+          <div className="px-4 sm:px-6 py-3 border-b border-meadow-100 bg-meadow-50 flex items-center justify-between gap-3 flex-wrap">
             <div className="text-xs text-meadow-500">
-              {entry ? `Started ${new Date(entry.created_at).toLocaleString()}` : 'New entry'}
+              {entry ? `Started ${new Date(entry.created_at).toLocaleDateString()}` : 'New entry'}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <input
                 type="text"
                 value={mood}
                 onChange={(e) => setMood(e.target.value)}
                 placeholder="mood / feeling"
-                className="text-xs bg-white border border-meadow-200 rounded-full px-3 py-1 focus:outline-none focus:border-accent w-40"
+                className="text-xs bg-white border border-meadow-200 rounded-full px-3 py-1 focus:outline-none focus:border-accent w-32 sm:w-40"
               />
               <span className={`text-xs ${saveState === 'saved' ? 'text-meadow-500' : saveState === 'saving' ? 'text-accent' : 'text-meadow-600'}`}>
                 {saveLabel}
@@ -305,20 +305,20 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col px-8 py-6">
+          <div className="flex-1 flex flex-col px-4 sm:px-8 py-4 sm:py-6">
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="A title (optional)"
-              className="w-full font-serif text-3xl font-bold bg-transparent border-0 focus:outline-none mb-4 text-meadow-900 placeholder:text-meadow-200"
+              className="w-full font-serif text-2xl sm:text-3xl font-bold bg-transparent border-0 focus:outline-none mb-3 sm:mb-4 text-meadow-900 placeholder:text-meadow-200"
             />
             <Link to="/app" className="hidden" aria-hidden>keep</Link>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Start writing… nothing here is shared. Come back later and the AI can help you remember, find themes, or pull ideas for songs."
-              className="flex-1 w-full bg-transparent border-0 focus:outline-none font-serif text-lg leading-relaxed text-meadow-900 placeholder:text-meadow-300 resize-none"
+              className="flex-1 w-full bg-transparent border-0 focus:outline-none font-serif text-base sm:text-lg leading-relaxed text-meadow-900 placeholder:text-meadow-300 resize-none min-h-[40vh]"
             />
           </div>
         </section>
