@@ -57,4 +57,24 @@ export const api = {
     req<{ suggestions: string[] }>('/ai/next-line', { method: 'POST', body: JSON.stringify(body) }),
   rewrite: (body: { line: string; instruction?: string; context?: string; count?: number }) =>
     req<{ rewrites: string[] }>('/ai/rewrite', { method: 'POST', body: JSON.stringify(body) }),
+
+  generateSection: (body: {
+    section_type: string;
+    topic?: string;
+    style?: string;
+    existing_sections?: { type: string; lines: string[] }[];
+    line_count?: number;
+  }) =>
+    req<{ lines: string[] }>('/ai/generate-section', { method: 'POST', body: JSON.stringify(body) }),
+
+  generateSong: (body: {
+    topic: string;
+    style?: string;
+    structure?: string[];
+    title_suggestion?: boolean;
+  }) =>
+    req<{ title?: string; sections: { type: Section['type']; label: string; lines: string[] }[] }>(
+      '/ai/generate-song',
+      { method: 'POST', body: JSON.stringify(body) }
+    ),
 };

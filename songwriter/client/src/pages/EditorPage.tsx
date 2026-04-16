@@ -120,6 +120,46 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
     updateSection(section.id, { lines });
   }
 
+  // Fill the currently-focused section with AI-generated lines
+  function fillCurrentSection(lines: string[]) {
+    if (!song || !focusedLine) {
+      toast.message('Click into a section first to choose where to fill');
+      return;
+    }
+    const section = song.sections.find((s) => s.id === focusedLine.sectionId);
+    if (!section) return;
+    updateSection(section.id, { lines });
+  }
+
+  // Append a brand-new section at the end
+  function appendSection(type: Section['type'], label: string, lines: string[]) {
+    if (!song) return;
+    const nextLabel =
+      type === 'verse'
+        ? `Verse ${song.sections.filter((s) => s.type === 'verse').length + 1}`
+        : label;
+    update({
+      sections: [...song.sections, { id: crypto.randomUUID(), type, label: nextLabel, lines }],
+    });
+  }
+
+  // Replace the entire song (from "Generate full song")
+  function replaceSong(
+    title: string | undefined,
+    sections: { type: Section['type']; label: string; lines: string[] }[]
+  ) {
+    if (!song) return;
+    update({
+      title: title || song.title,
+      sections: sections.map((s) => ({
+        id: crypto.randomUUID(),
+        type: s.type,
+        label: s.label,
+        lines: s.lines.length > 0 ? s.lines : [''],
+      })),
+    });
+  }
+
   if (!song) return <div className="p-12 text-ink-400">Loading song…</div>;
 
   const currentLine = focusedLine
@@ -219,8 +259,12 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
             currentLine={currentLine}
             previousLines={prevLines}
             sectionType={currentSection?.type || 'verse'}
+            existingSections={song.sections}
             onInsertLine={insertLine}
             onReplaceLine={replaceLine}
+            onFillCurrentSection={fillCurrentSection}
+            onAppendSection={appendSection}
+            onReplaceSong={replaceSong}
           />
         </div>
       </div>

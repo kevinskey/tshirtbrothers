@@ -1,20 +1,30 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, type Section } from '@/lib/api';
 
 type Props = {
   selectedWord: string;
   currentLine: string;
   previousLines: string[];
   sectionType: string;
+  existingSections: Section[];
   onInsertLine: (line: string) => void;
   onReplaceLine: (line: string) => void;
+  onFillCurrentSection: (lines: string[]) => void;
+  onAppendSection: (type: Section['type'], label: string, lines: string[]) => void;
+  onReplaceSong: (
+    title: string | undefined,
+    sections: { type: Section['type']; label: string; lines: string[] }[]
+  ) => void;
 };
 
-type Tab = 'rhymes' | 'next' | 'rewrite';
+type Tab = 'rhymes' | 'next' | 'rewrite' | 'generate';
 
-export default function AIPanel({ selectedWord, currentLine, previousLines, sectionType, onInsertLine, onReplaceLine }: Props) {
-  const [tab, setTab] = useState<Tab>('rhymes');
+export default function AIPanel({
+  selectedWord, currentLine, previousLines, sectionType, existingSections,
+  onInsertLine, onReplaceLine, onFillCurrentSection, onAppendSection, onReplaceSong,
+}: Props) {
+  const [tab, setTab] = useState<Tab>('generate');
   const [style, setStyle] = useState('');
 
   return (
@@ -24,8 +34,9 @@ export default function AIPanel({ selectedWord, currentLine, previousLines, sect
       </div>
 
       <div className="flex gap-1 mb-4 bg-ink-50 rounded-md p-1">
+        <TabBtn active={tab === 'generate'} onClick={() => setTab('generate')}>Generate</TabBtn>
         <TabBtn active={tab === 'rhymes'} onClick={() => setTab('rhymes')}>Rhymes</TabBtn>
-        <TabBtn active={tab === 'next'} onClick={() => setTab('next')}>Next line</TabBtn>
+        <TabBtn active={tab === 'next'} onClick={() => setTab('next')}>Next</TabBtn>
         <TabBtn active={tab === 'rewrite'} onClick={() => setTab('rewrite')}>Rewrite</TabBtn>
       </div>
 
@@ -40,6 +51,16 @@ export default function AIPanel({ selectedWord, currentLine, previousLines, sect
         />
       </div>
 
+      {tab === 'generate' && (
+        <GenerateTab
+          style={style}
+          sectionType={sectionType}
+          existingSections={existingSections}
+          onFillCurrentSection={onFillCurrentSection}
+          onAppendSection={onAppendSection}
+          onReplaceSong={onReplaceSong}
+        />
+      )}
       {tab === 'rhymes' && (
         <RhymeTab word={selectedWord} context={currentLine} style={style} />
       )}
@@ -70,6 +91,226 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
     >
       {children}
     </button>
+  );
+}
+
+// ── Generate (full song / section) ───────────────────────────────────────
+
+type GenMode = 'song' | 'section';
+
+function GenerateTab({
+  style, sectionType, existingSections,
+  onFillCurrentSection, onAppendSection, onReplaceSong,
+}: {
+  style: string;
+  sectionType: string;
+  existingSections: Section[];
+  onFillCurrentSection: (lines: string[]) => void;
+  onAppendSection: (type: Section['type'], label: string, lines: string[]) => void;
+  onReplaceSong: (
+    title: string | undefined,
+    sections: { type: Section['type']; label: string; lines: string[] }[]
+  ) => void;
+}) {
+  const [mode, setMode] = useState<GenMode>('section');
+  const [topic, setTopic] = useState('');
+  const [targetType, setTargetType] = useState<Section['type']>('verse');
+  const [lineCount, setLineCount] = useState(4);
+  const [loading, setLoading] = useState(false);
+  const [preview, setPreview] = useState<{ lines: string[]; type: Section['type'] } | null>(null);
+  const [songPreview, setSongPreview] = useState<
+    { title?: string; sections: { type: Section['type']; label: string; lines: string[] }[] } | null
+  >(null);
+
+  async function generateSection() {
+    setLoading(true);
+    setPreview(null);
+    try {
+      const r = await api.generateSection({
+        section_type: targetType,
+        topic,
+        style,
+        existing_sections: existingSections.map((s) => ({ type: s.type, lines: s.lines })),
+        line_count: lineCount,
+      });
+      setPreview({ lines: r.lines || [], type: targetType });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function generateSong() {
+    if (!topic) {
+      toast.message('Give the song a topic first');
+      return;
+    }
+    setLoading(true);
+    setSongPreview(null);
+    try {
+      const r = await api.generateSong({
+        topic,
+        style,
+        structure: ['verse', 'chorus', 'verse', 'chorus', 'bridge', 'chorus'],
+        title_suggestion: true,
+      });
+      setSongPreview({ title: r.title, sections: r.sections || [] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex gap-1 mb-3 bg-ink-50 rounded-md p-1">
+        <button
+          onClick={() => setMode('section')}
+          className={`flex-1 text-xs py-1.5 rounded ${mode === 'section' ? 'bg-white shadow-sm font-medium' : 'text-ink-400'}`}
+        >
+          A section
+        </button>
+        <button
+          onClick={() => setMode('song')}
+          className={`flex-1 text-xs py-1.5 rounded ${mode === 'song' ? 'bg-white shadow-sm font-medium' : 'text-ink-400'}`}
+        >
+          Full song
+        </button>
+      </div>
+
+      <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+        {mode === 'song' ? 'What\'s the song about?' : 'Topic / theme (optional if song has context)'}
+      </label>
+      <textarea
+        value={topic}
+        onChange={(e) => setTopic(e.target.value)}
+        placeholder={mode === 'song' ? 'A love song about a rainy Sunday…' : 'e.g. missing home'}
+        className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-2 py-1.5 min-h-[60px] focus:outline-none focus:border-accent mb-3"
+      />
+
+      {mode === 'section' && (
+        <>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">Type</label>
+              <select
+                value={targetType}
+                onChange={(e) => setTargetType(e.target.value as Section['type'])}
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-2 py-1.5 focus:outline-none focus:border-accent"
+              >
+                <option value="verse">Verse</option>
+                <option value="chorus">Chorus</option>
+                <option value="pre-chorus">Pre-Chorus</option>
+                <option value="bridge">Bridge</option>
+                <option value="intro">Intro</option>
+                <option value="outro">Outro</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">Lines</label>
+              <input
+                type="number"
+                min={2}
+                max={12}
+                value={lineCount}
+                onChange={(e) => setLineCount(Number(e.target.value) || 4)}
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-2 py-1.5 focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+          <button
+            onClick={generateSection}
+            disabled={loading}
+            className="w-full px-3 py-2 bg-ink-900 text-ink-50 text-sm rounded hover:bg-ink-800 disabled:opacity-40"
+          >
+            {loading ? 'Writing…' : `Generate ${targetType}`}
+          </button>
+        </>
+      )}
+
+      {mode === 'song' && (
+        <button
+          onClick={generateSong}
+          disabled={loading}
+          className="w-full px-3 py-2 bg-ink-900 text-ink-50 text-sm rounded hover:bg-ink-800 disabled:opacity-40"
+        >
+          {loading ? 'Writing your song…' : 'Generate full song'}
+        </button>
+      )}
+
+      {preview && mode === 'section' && (
+        <div className="mt-4 bg-ink-50 border border-ink-100 rounded p-3">
+          <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-2">{preview.type}</div>
+          <div className="font-serif text-sm text-ink-800 whitespace-pre-line mb-3">
+            {preview.lines.join('\n')}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                onAppendSection(preview.type, `${preview.type[0].toUpperCase()}${preview.type.slice(1)}`, preview.lines);
+                toast.success('Added to song');
+                setPreview(null);
+              }}
+              className="flex-1 text-xs px-2 py-1.5 bg-white border border-ink-200 rounded hover:bg-accent hover:text-ink-900 font-medium"
+            >
+              Add as new section
+            </button>
+            {preview.type === sectionType && (
+              <button
+                onClick={() => {
+                  onFillCurrentSection(preview.lines);
+                  toast.success('Filled current section');
+                  setPreview(null);
+                }}
+                className="flex-1 text-xs px-2 py-1.5 bg-white border border-ink-200 rounded hover:bg-accent hover:text-ink-900 font-medium"
+              >
+                Fill current
+              </button>
+            )}
+          </div>
+          <button
+            onClick={generateSection}
+            className="w-full mt-2 text-[11px] text-ink-400 hover:text-ink-800"
+          >
+            ↻ Try again
+          </button>
+        </div>
+      )}
+
+      {songPreview && mode === 'song' && (
+        <div className="mt-4 bg-ink-50 border border-ink-100 rounded p-3">
+          {songPreview.title && (
+            <div className="font-serif text-lg font-bold mb-2">{songPreview.title}</div>
+          )}
+          {songPreview.sections.map((s, i) => (
+            <div key={i} className="mb-3 last:mb-0">
+              <div className="text-[10px] uppercase tracking-wider text-ink-400 mb-1">{s.label || s.type}</div>
+              <div className="font-serif text-sm text-ink-800 whitespace-pre-line">{s.lines.join('\n')}</div>
+            </div>
+          ))}
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => {
+                onReplaceSong(songPreview.title, songPreview.sections);
+                toast.success('Song loaded');
+                setSongPreview(null);
+              }}
+              className="flex-1 text-xs px-2 py-1.5 bg-white border border-ink-200 rounded hover:bg-accent hover:text-ink-900 font-medium"
+            >
+              Replace current song
+            </button>
+            <button
+              onClick={generateSong}
+              className="text-xs px-2 py-1.5 text-ink-400 hover:text-ink-800"
+            >
+              ↻ Retry
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
