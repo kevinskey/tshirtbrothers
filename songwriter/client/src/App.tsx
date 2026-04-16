@@ -11,6 +11,8 @@ import PsalmsPage from '@/pages/PsalmsPage';
 import DictionaryPage from '@/pages/DictionaryPage';
 import BibleSearchPage from '@/pages/BibleSearchPage';
 import JournalPage from '@/pages/JournalPage';
+import SpiritualsPage from '@/pages/SpiritualsPage';
+import SpiritualsAdminPage from '@/pages/SpiritualsAdminPage';
 import { AssistantProvider } from '@/lib/assistantContext';
 import AssistantOverlay from '@/components/AssistantOverlay';
 import AssistantFab from '@/components/AssistantFab';
@@ -106,6 +108,22 @@ export default function App() {
           element={
             <Protected user={user} loading={loading}>
               <JournalPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/spirituals"
+          element={
+            <Protected user={user} loading={loading}>
+              <SpiritualsPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/spirituals/admin"
+          element={
+            <Protected user={user} loading={loading}>
+              <SpiritualsAdminPage user={user!} onLogout={() => setUser(null)} />
             </Protected>
           }
         />

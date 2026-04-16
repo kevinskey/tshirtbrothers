@@ -510,6 +510,7 @@ THE APP HAS THESE PAGES:
 - /app/poetry — Classic public-domain poetry search
 - /app/psalms — Book of Psalms in 11 translations
 - /app/bible — Full Bible search
+- /app/spirituals — Collection of 100 negro spirituals (search, view, import)
 - /app/analyze — Analyze existing songs and model new ones on them
 
 WHAT YOU CAN DO (respond with structured actions):

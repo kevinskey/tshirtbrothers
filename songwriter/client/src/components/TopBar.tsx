@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/app/poetry', label: 'Poetry' },
   { to: '/app/psalms', label: 'Psalms' },
   { to: '/app/bible', label: 'Bible' },
+  { to: '/app/spirituals', label: 'Spirituals' },
   { to: '/app/analyze', label: 'Analyze' },
 ];
 

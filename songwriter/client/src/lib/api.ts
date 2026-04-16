@@ -173,6 +173,63 @@ export const api = {
   listVersions: (songId: number) => req<SongVersion[]>(`/songs/${songId}/versions`),
   restoreVersion: (songId: number, versionId: number) =>
     req<Song>(`/songs/${songId}/versions/${versionId}/restore`, { method: 'POST' }),
+
+  listSpirituals: () => req<SpiritualSummary[]>('/spirituals'),
+  getSpiritual: (id: number) => req<Spiritual>(`/spirituals/${id}`),
+  createSpiritual: (data: Partial<Spiritual>) =>
+    req<Spiritual>('/spirituals', { method: 'POST', body: JSON.stringify(data) }),
+  updateSpiritual: (id: number, data: Partial<Spiritual>) =>
+    req<Spiritual>(`/spirituals/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSpiritual: (id: number) =>
+    req<{ deleted: true }>(`/spirituals/${id}`, { method: 'DELETE' }),
+  bulkSaveSpirituals: (body: { entries: Partial<Spiritual>[]; source?: string; source_file?: string; replace_all?: boolean }) =>
+    req<{ inserted: number }>('/spirituals/bulk', { method: 'POST', body: JSON.stringify(body) }),
+  searchSpirituals: (body: { theme: string; count?: number }) =>
+    req<{ results: (Spiritual & { why_it_fits: string })[]; message?: string }>('/spirituals/search', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  uploadSpiritualsPdf: async (file: File): Promise<{ entries: Partial<Spiritual>[]; source_file: string; filename: string; pages: number }> => {
+    const fd = new FormData();
+    fd.append('pdf', file);
+    const r = await fetch(`${BASE}/api/spirituals/upload`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    if (!r.ok) {
+      let msg = `Upload failed (${r.status})`;
+      try { msg = (await r.json()).error || msg; } catch { /* noop */ }
+      throw new Error(msg);
+    }
+    return r.json();
+  },
+  parseSpiritualsText: (text: string) =>
+    req<{ entries: Partial<Spiritual>[] }>('/spirituals/parse-text', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+};
+
+export type Spiritual = {
+  id: number;
+  number: number | null;
+  title: string;
+  lyrics: string;
+  notes: string;
+  source: string;
+  source_file: string;
+  created_at?: string;
+  updated_at?: string;
+  why_it_fits?: string;
+};
+
+export type SpiritualSummary = {
+  id: number;
+  number: number | null;
+  title: string;
+  preview: string;
+  source: string;
 };
 
 export type AIBudget = { used: number; limit: number; remaining: number };

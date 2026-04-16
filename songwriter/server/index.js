@@ -16,6 +16,7 @@ import aiRoutes from './routes/ai.js';
 import psalmRoutes from './routes/psalms.js';
 import dictionaryRoutes from './routes/dictionary.js';
 import journalRoutes from './routes/journal.js';
+import spiritualsRoutes from './routes/spirituals.js';
 
 const app = express();
 
@@ -41,6 +42,13 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/psalms', psalmRoutes);
 app.use('/api/dictionary', dictionaryRoutes);
 app.use('/api/journal', journalRoutes);
+app.use('/api/spirituals', spiritualsRoutes);
+
+// Serve uploaded PDFs (original source files — e.g. spirituals PDF)
+app.use('/uploads', express.static(path.resolve(__dirname, 'uploads'), {
+  maxAge: '1y',
+  fallthrough: true,
+}));
 
 // Serve client build in production
 if (process.env.NODE_ENV === 'production') {

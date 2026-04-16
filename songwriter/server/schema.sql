@@ -64,3 +64,20 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 
 CREATE INDEX IF NOT EXISTS idx_journal_user_id ON journal_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_journal_created_at ON journal_entries(user_id, created_at DESC);
+
+-- Negro spirituals collection. Public-domain lyrics + title + optional notes.
+-- Single shared collection populated by admin uploads (one user = admin for now).
+CREATE TABLE IF NOT EXISTS spirituals (
+  id              SERIAL PRIMARY KEY,
+  number          INTEGER,                    -- optional order in the source collection
+  title           TEXT NOT NULL,
+  lyrics          TEXT NOT NULL,              -- full text with stanza breaks as \n\n
+  notes           TEXT DEFAULT '',
+  source          TEXT DEFAULT '',            -- book/compiler if known
+  source_file     TEXT DEFAULT '',            -- path to original PDF on disk, if any
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_spirituals_title ON spirituals(LOWER(title));
+CREATE INDEX IF NOT EXISTS idx_spirituals_number ON spirituals(number);
