@@ -82,14 +82,22 @@ export default function AssistantOverlay() {
           closeAssistant();
           break;
         case 'create_song': {
-          const sections = (a.sections || []).map((s) => ({
+          const rawSections = Array.isArray(a.sections) ? a.sections : [];
+          const sections = rawSections.map((s) => ({
             id: crypto.randomUUID(),
-            type: s.type as any,
-            label: s.label,
-            lines: s.lines.length > 0 ? s.lines : [''],
+            type: (s && typeof s.type === 'string' ? s.type : 'verse') as any,
+            label: (s && typeof s.label === 'string' && s.label.trim()) ? s.label : 'Section',
+            lines: (s && Array.isArray(s.lines) && s.lines.length > 0)
+              ? s.lines.map((l) => String(l || '').trim()).filter(Boolean)
+              : [''],
           }));
           if (sections.length === 0) {
-            sections.push({ id: crypto.randomUUID(), type: 'verse' as any, label: 'Verse 1', lines: [''] });
+            sections.push({
+              id: crypto.randomUUID(),
+              type: 'verse' as any,
+              label: 'Verse 1',
+              lines: [''],
+            });
           }
           const song = await api.createSong({
             title: a.title || 'Untitled',
@@ -97,8 +105,8 @@ export default function AssistantOverlay() {
             notes: a.notes || '',
           });
           toast.success('Song created');
-          navigate(`/app/song/${song.id}`);
           closeAssistant();
+          navigate(`/app/song/${song.id}`);
           break;
         }
         case 'editor_insert_line':

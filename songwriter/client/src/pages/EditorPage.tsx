@@ -165,28 +165,36 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
     });
   }
 
-  if (!song) return <div className="p-12 text-ink-400">Loading song…</div>;
-
-  const currentLine = focusedLine
+  // Derive editor context values (safe when song is null)
+  const currentLine = (song && focusedLine)
     ? song.sections.find((s) => s.id === focusedLine.sectionId)?.lines[focusedLine.index] || ''
     : '';
-  const currentSection = focusedLine ? song.sections.find((s) => s.id === focusedLine.sectionId) : null;
+  const currentSection = (song && focusedLine)
+    ? song.sections.find((s) => s.id === focusedLine.sectionId)
+    : null;
   const prevLines = currentSection
     ? currentSection.lines.slice(0, (focusedLine?.index ?? 0)).filter((l) => l.trim())
     : [];
 
+  // IMPORTANT: This hook MUST be called unconditionally on every render.
+  // Don't move it after the `if (!song) return ...` guard or React will
+  // crash the editor with a hook-count mismatch.
   useRegisterPage(
     {
       page: 'Editor',
-      route: `/app/song/${song.id}`,
-      summary: `Editing "${song.title}"${currentSection ? ` · cursor in ${currentSection.type}` : ''}`,
-      data: {
-        song_title: song.title,
-        current_line: currentLine,
-        current_section_type: currentSection?.type,
-        previous_lines: prevLines,
-        all_sections: song.sections.map((s) => ({ type: s.type, label: s.label, lines: s.lines })),
-      },
+      route: song ? `/app/song/${song.id}` : `/app/song/${songId}`,
+      summary: song
+        ? `Editing "${song.title}"${currentSection ? ` · cursor in ${currentSection.type}` : ''}`
+        : 'Loading song…',
+      data: song
+        ? {
+            song_title: song.title,
+            current_line: currentLine,
+            current_section_type: currentSection?.type,
+            previous_lines: prevLines,
+            all_sections: song.sections.map((s) => ({ type: s.type, label: s.label, lines: s.lines })),
+          }
+        : {},
     },
     {
       onInsertLine: insertLine,
@@ -195,6 +203,8 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
       onSetTitle: (title) => update({ title }),
     }
   );
+
+  if (!song) return <div className="p-12 text-meadow-400">Loading song…</div>;
 
   return (
     <div className="min-h-screen">

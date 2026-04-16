@@ -15,6 +15,7 @@ import { AssistantProvider } from '@/lib/assistantContext';
 import AssistantOverlay from '@/components/AssistantOverlay';
 import AssistantFab from '@/components/AssistantFab';
 import OfflineBanner from '@/components/OfflineBanner';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -37,6 +38,7 @@ export default function App() {
   const { user, loading, setUser } = useAuth();
 
   return (
+    <ErrorBoundary>
     <BrowserRouter>
       <AssistantProvider>
       <OfflineBanner />
@@ -113,5 +115,6 @@ export default function App() {
       <Toaster position="top-right" richColors />
       </AssistantProvider>
     </BrowserRouter>
+    </ErrorBoundary>
   );
 }
