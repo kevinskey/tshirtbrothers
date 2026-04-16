@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', system-ui, sans-serif;
+  color-scheme: light;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-50 text-ink-800;
+}
+
+/* Lyric line input — invisible until focused */
+.lyric-line {
+  @apply w-full bg-transparent border-0 border-b border-transparent hover:border-ink-100
+         focus:border-accent focus:outline-none py-1 px-0
+         font-serif text-lg leading-snug text-ink-900 placeholder:text-ink-200;
+}

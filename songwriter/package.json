@@ -1,0 +1,15 @@
+{
+  "name": "songwriter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-assisted lyric writer app with Google auth and cloud save",
+  "scripts": {
+    "dev": "concurrently -n client,server -c cyan,magenta \"npm --prefix client run dev\" \"npm --prefix server run dev\"",
+    "build": "npm --prefix client run build",
+    "install:all": "npm install && npm --prefix client install && npm --prefix server install",
+    "start": "npm --prefix server start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
