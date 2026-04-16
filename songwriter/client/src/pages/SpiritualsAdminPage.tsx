@@ -27,6 +27,8 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
   const [sourceFile, setSourceFile] = useState('');
   const [replaceAll, setReplaceAll] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [rawText, setRawText] = useState('');
+  const [showRaw, setShowRaw] = useState(false);
 
   useEffect(() => {
     refreshExisting();
@@ -48,7 +50,20 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
     setUploading(true);
     try {
       const r = await api.uploadSpiritualsPdf(f);
-      toast.success(`Parsed ${r.entries.length} entries from ${r.pages} pages`);
+      setRawText(r.raw_text || '');
+      setPasteText(r.raw_text || '');
+
+      if (r.entries.length === 0) {
+        toast.error(
+          r.raw_text
+            ? `Extracted ${r.character_count} chars from ${r.pages} pages but couldn't split into entries. Review the raw text below and use "Parse pasted text" after cleanup, or add entries manually.`
+            : `No text extracted from the PDF. It may be a scanned/image-only PDF that needs OCR.`
+        );
+        setShowRaw(true);
+      } else {
+        toast.success(`Parsed ${r.entries.length} entries from ${r.pages} pages`);
+      }
+
       setDrafts(r.entries.map((e: any) => ({
         number: e.number ?? null,
         title: e.title || '',
@@ -189,21 +204,47 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
           )}
 
           <div className="mt-4 pt-4 border-t border-meadow-100">
-            <h3 className="text-sm font-medium text-meadow-900 mb-2">Or paste text</h3>
+            <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+              <h3 className="text-sm font-medium text-meadow-900">Or paste text</h3>
+              {rawText && (
+                <button
+                  onClick={() => setShowRaw((v) => !v)}
+                  className="text-xs text-meadow-600 hover:text-meadow-900 underline"
+                >
+                  {showRaw ? 'Hide' : 'Show'} extracted text ({rawText.length.toLocaleString()} chars)
+                </button>
+              )}
+            </div>
             <textarea
               value={pasteText}
               onChange={(e) => setPasteText(e.target.value)}
               placeholder="Paste the spirituals text here (numbered '1. Title' or ALL CAPS titles work best)"
-              rows={6}
+              rows={showRaw ? 20 : 6}
               className="w-full text-sm bg-meadow-50 border border-meadow-200 rounded-lg px-3 py-2 focus:outline-none focus:border-accent font-mono"
             />
-            <button
-              onClick={parsePastedText}
-              disabled={parsing || !pasteText.trim()}
-              className="mt-2 px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full text-sm font-medium disabled:opacity-40"
-            >
-              {parsing ? 'Parsing…' : 'Parse pasted text'}
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={parsePastedText}
+                disabled={parsing || !pasteText.trim()}
+                className="px-4 py-2 bg-meadow-700 text-meadow-50 rounded-full text-sm font-medium disabled:opacity-40"
+              >
+                {parsing ? 'Parsing…' : 'Parse pasted text'}
+              </button>
+              {rawText && (
+                <button
+                  onClick={() => setPasteText(rawText)}
+                  className="px-3 py-2 text-xs text-meadow-600 hover:text-meadow-900"
+                >
+                  Restore raw text
+                </button>
+              )}
+            </div>
+            {showRaw && rawText && (
+              <p className="text-xs text-meadow-500 mt-2">
+                Tip: if the parser couldn't find titles automatically, edit the text above to add numbered prefixes
+                like "<span className="font-mono bg-white px-1">1. Title</span>" before each song, or surround titles with blank lines and ALL-CAPS formatting.
+              </p>
+            )}
           </div>
         </section>
 

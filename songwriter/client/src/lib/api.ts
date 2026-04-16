@@ -189,7 +189,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  uploadSpiritualsPdf: async (file: File): Promise<{ entries: Partial<Spiritual>[]; source_file: string; filename: string; pages: number }> => {
+  uploadSpiritualsPdf: async (file: File): Promise<{ entries: Partial<Spiritual>[]; source_file: string; filename: string; pages: number; raw_text?: string; character_count?: number }> => {
     const fd = new FormData();
     fd.append('pdf', file);
     const r = await fetch(`${BASE}/api/spirituals/upload`, {

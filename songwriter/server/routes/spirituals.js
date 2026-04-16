@@ -40,19 +40,55 @@ function getClient() {
 }
 
 // ── Heuristic PDF text splitter ──────────────────────────────────────────
-// pdf-parse separates pages with \f (form-feed). We track page numbers as
-// we scan so each entry records page_start and page_end in the PDF.
-function splitSpiritualsFromText(text) {
+// pdf-parse separates pages with \f (form-feed). Tries multiple strategies
+// so different PDF layouts work.
+//
+// Strategy (in order):
+//   A) "1. TITLE" or "1) TITLE"            — numbered list
+//   B) "1 TITLE"                           — number-prefix, no separator
+//   C) "TITLE."    (ALL CAPS on own line)  — most spiritual collections
+//   D) Form-feed alone (page per entry)    — fallback if one entry per page
+//
+// Returns { entries, raw_text } so the admin UI can show what was extracted
+// when the splitter fails.
+function splitSpiritualsFromText(text, options = {}) {
   if (!text) return [];
   const norm = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const lines = norm.split('\n');
 
+  // Try the per-line scanners in priority order and return the best result.
+  const strategies = [
+    () => scanWithPattern(norm, [
+      { re: /^\s*(\d+)[.)]\s+(.{2,80})$/, extract: (m) => ({ number: parseInt(m[1], 10), title: m[2].trim() }) },
+    ]),
+    () => scanWithPattern(norm, [
+      { re: /^\s*(\d+)\s+([A-Z][A-Za-z'\- ,.!?]{3,80})$/, extract: (m) => ({ number: parseInt(m[1], 10), title: m[2].trim() }) },
+    ]),
+    () => scanWithPattern(norm, [
+      { re: /^\s*([A-Z][A-Z'\- ,.!?]{3,80})\s*$/, extract: (m) => ({ number: null, title: toTitleCase(m[1].trim()) }),
+        extraCheck: (line) => line.trim().split(/\s+/).length >= 2 },
+    ]),
+  ];
+
+  let best = [];
+  for (const strat of strategies) {
+    const out = strat();
+    if (out.length > best.length) best = out;
+    if (best.length >= 3) break; // Good enough
+  }
+
+  // Strategy D: one-entry-per-page fallback if nothing else worked
+  if (best.length === 0) {
+    best = splitOnePerPage(norm);
+  }
+
+  return best;
+}
+
+function scanWithPattern(text, patterns) {
+  const lines = text.split('\n');
   const entries = [];
   let current = null;
-  let currentPage = 1;   // 1-indexed page counter
-
-  const numberedRe = /^\s*(\d+)[.)]\s+(.{2,80})$/;
-  const allCapsRe = /^\s*([A-Z][A-Z'\- ,.!?]{3,80})\s*$/;
+  let currentPage = 1;
 
   function commit() {
     if (current && current.lyrics.trim()) {
@@ -62,44 +98,27 @@ function splitSpiritualsFromText(text) {
   }
 
   for (const raw of lines) {
-    // Detect page break (form-feed char). It can be on its own line OR
-    // embedded in a line along with content.
     const ffCount = (raw.match(/\f/g) || []).length;
     if (ffCount > 0) currentPage += ffCount;
-
-    // Strip form-feeds before continuing
     const line = raw.replace(/\f/g, '').replace(/\s+$/, '');
     if (!line) {
       if (current) current.lyrics += '\n';
       continue;
     }
-
-    const numMatch = line.match(numberedRe);
-    const capsMatch = !numMatch && line.match(allCapsRe) && line.trim().split(/\s+/).length >= 2;
-
-    if (numMatch) {
-      commit();
-      current = {
-        number: parseInt(numMatch[1], 10),
-        title: numMatch[2].trim(),
-        lyrics: '',
-        page_start: currentPage,
-        page_end: currentPage,
-      };
-      continue;
+    let matched = null;
+    for (const p of patterns) {
+      const m = line.match(p.re);
+      if (m && (!p.extraCheck || p.extraCheck(line))) {
+        matched = p.extract(m);
+        break;
+      }
     }
-    if (capsMatch) {
+    if (matched) {
       commit();
-      current = {
-        number: null,
-        title: toTitleCase(line.trim()),
-        lyrics: '',
-        page_start: currentPage,
-        page_end: currentPage,
-      };
-      continue;
+      current = { ...matched, lyrics: '', page_start: currentPage, page_end: currentPage };
+    } else if (current) {
+      current.lyrics += line + '\n';
     }
-    if (current) current.lyrics += line + '\n';
   }
   commit();
 
@@ -110,6 +129,28 @@ function splitSpiritualsFromText(text) {
     page_start: e.page_start,
     page_end: e.page_end,
   }));
+}
+
+function splitOnePerPage(text) {
+  const pages = text.split(/\f/);
+  return pages
+    .map((p, i) => {
+      const trimmed = p.trim();
+      if (!trimmed) return null;
+      // Use first non-blank line as title
+      const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length === 0) return null;
+      const title = lines[0].slice(0, 80);
+      const lyrics = lines.slice(1).join('\n').trim() || lines[0];
+      return {
+        number: i + 1,
+        title,
+        lyrics,
+        page_start: i + 1,
+        page_end: i + 1,
+      };
+    })
+    .filter(Boolean);
 }
 
 function toTitleCase(s) {
@@ -233,6 +274,7 @@ router.post('/upload', upload.single('pdf'), async (req, res, next) => {
       pages: parsed.numpages,
       character_count: parsed.text.length,
       entries,
+      raw_text: parsed.text,             // full extracted text for admin review
       source_file: `/uploads/${req.file.filename}`,
       filename: req.file.originalname,
     });
