@@ -283,10 +283,19 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
         <p className="text-xs text-gray-400 text-center py-4">No private assets yet.</p>
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-          {assets.map((a) => (
+          {assets.map((a) => {
+            const isPdf = (a.file_type || '').toLowerCase().includes('pdf') || /\.pdf(\?|$)/i.test(a.image_url);
+            return (
             <div key={a.id} className="relative group bg-white border border-gray-200 rounded-lg overflow-hidden">
               <a href={a.image_url} target="_blank" rel="noopener noreferrer" className="block aspect-square bg-gray-50">
-                <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
+                {isPdf ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-red-600">
+                    <FileText className="w-8 h-8" />
+                    <span className="text-[10px] font-semibold tracking-wide">PDF</span>
+                  </div>
+                ) : (
+                  <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
+                )}
               </a>
               <p className="text-[10px] text-gray-700 px-1.5 py-1 truncate">{a.name}</p>
               <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition">
@@ -306,7 +315,8 @@ function CustomerAssetsPanel({ customerId }: { customerId: string }) {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
