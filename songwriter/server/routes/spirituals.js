@@ -23,7 +23,7 @@ const upload = multer({
       cb(null, `${Date.now()}-${base}`);
     },
   }),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — nginx client_max_body_size should match
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
       cb(null, true);
