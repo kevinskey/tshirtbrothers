@@ -61,11 +61,15 @@ export default function AnalyzePage({ user, onLogout }: { user: User; onLogout: 
         keep_tone: keepTone,
       });
 
-      const sections: Section[] = (r.sections || []).map((s) => ({
+      if (!r || !Array.isArray(r.sections) || r.sections.length === 0) {
+        throw new Error('The AI did not return any song sections — please try again.');
+      }
+
+      const sections: Section[] = r.sections.map((s) => ({
         id: crypto.randomUUID(),
         type: s.type,
-        label: s.label,
-        lines: s.lines.length > 0 ? s.lines : [''],
+        label: s.label || 'Section',
+        lines: (s.lines && s.lines.length > 0) ? s.lines : [''],
       }));
 
       const song = await api.createSong({

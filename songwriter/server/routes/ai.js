@@ -51,6 +51,22 @@ async function logAI(userId, feature, input, output) {
   }
 }
 
+// Allowed section types — we normalize any AI-returned type into one of these
+const SECTION_TYPES = new Set(['intro', 'verse', 'pre-chorus', 'chorus', 'bridge', 'outro']);
+
+function normalizeSectionType(raw) {
+  if (!raw) return 'verse';
+  const s = String(raw).toLowerCase().trim().replace(/\s+/g, '-').replace(/[^a-z-]/g, '');
+  if (SECTION_TYPES.has(s)) return s;
+  if (s.includes('chorus') && s.includes('pre')) return 'pre-chorus';
+  if (s.includes('chorus')) return 'chorus';
+  if (s.includes('verse')) return 'verse';
+  if (s.includes('bridge')) return 'bridge';
+  if (s.includes('intro') || s === 'prelude') return 'intro';
+  if (s.includes('outro') || s === 'coda' || s === 'ending') return 'outro';
+  return 'verse';
+}
+
 // Rhymes for a word (with optional context + style)
 router.post('/rhymes', async (req, res, next) => {
   try {
@@ -216,10 +232,26 @@ Structure (in order): ${structure.join(' → ')}
 
 Write the complete song.`;
 
-    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.9, maxTokens: 2500 });
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.9, maxTokens: 4000 });
     let parsed;
     try { parsed = JSON.parse(raw); }
-    catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
+    catch {
+      console.error('[generate-song] JSON parse failed, preview:', raw?.slice(0, 300));
+      return res.status(502).json({ error: 'AI returned malformed response — try again' });
+    }
+
+    if (!parsed || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+      return res.status(502).json({ error: 'AI returned no sections — try again' });
+    }
+
+    // Normalize section types + lines
+    parsed.sections = parsed.sections.map((s) => ({
+      type: normalizeSectionType(s.type),
+      label: typeof s.label === 'string' && s.label.trim() ? s.label : 'Section',
+      lines: Array.isArray(s.lines)
+        ? s.lines.map((l) => String(l || '').trim()).filter(Boolean)
+        : String(s.lines || '').split('\n').map((l) => l.trim()).filter(Boolean),
+    })).filter((s) => s.lines.length > 0);
 
     logAI(req.user.id, 'generate-song', topic, parsed.title || '(song generated)');
     res.json(parsed);
@@ -356,7 +388,6 @@ Output STRICT JSON:
     res.json(parsed);
   } catch (err) { next(err); }
 });
-
 // Generate a new song using a previous analysis as the structural model
 router.post('/generate-from-model', async (req, res, next) => {
   try {
@@ -365,6 +396,21 @@ router.post('/generate-from-model', async (req, res, next) => {
       return res.status(400).json({ error: 'analysis and new_topic are required' });
     }
 
+    // Build a compact summary of the analysis — sending the whole raw JSON can
+    // confuse the model and bloat tokens. Strip down to the structural bits.
+    const compactModel = {
+      structure: analysis.structure || ['Verse 1', 'Chorus', 'Verse 2', 'Chorus', 'Bridge', 'Chorus'],
+      section_patterns: analysis.section_patterns || {},
+      rhyme_scheme: analysis.rhyme_scheme || {},
+      meter_description: analysis.meter_description || '',
+      pov: analysis.pov || '',
+      tense: analysis.tense || '',
+      tone: analysis.tone || '',
+      devices: analysis.devices || [],
+      hook: analysis.hook || '',
+      template_summary: analysis.template_summary || '',
+    };
+
     const system = `You are a professional songwriter. You've been given a structural analysis of an existing song and a new topic. Write a brand-new song that follows the SAME STRUCTURAL TEMPLATE but with completely original lyrics on the new topic.
 
 RULES:
@@ -372,32 +418,56 @@ RULES:
 - Match the rhyme scheme of each section type.
 - Match the meter / syllable feel.
 - ${keep_tone ? 'Keep roughly the same tone and POV.' : 'Adapt tone/POV to whatever fits the new topic best.'}
-- Use the same kind of imagery technique (concrete, specific) but DIFFERENT images — don\'t copy the original's images.
+- Use the same kind of imagery technique (concrete, specific) but DIFFERENT images — don't copy the original's images.
 - Use similar rhetorical devices (if original uses repetition/anaphora, use those too).
 - Make the chorus a strong hook that repeats.
 - Write completely new, original lyrics — do NOT plagiarize or paraphrase the source song.
 
-Output STRICT JSON:
+Output STRICT JSON. The "type" field MUST be one of these exact strings: "intro", "verse", "pre-chorus", "chorus", "bridge", "outro".
+
 {
   "title": "song title",
   "sections": [
-    { "type": "verse" | "chorus" | "bridge" | "pre-chorus" | "intro" | "outro", "label": "Verse 1" | "Chorus" | etc., "lines": ["...", "..."] }
+    { "type": "verse", "label": "Verse 1", "lines": ["line 1", "line 2"] }
   ],
   "notes": "one-sentence note on how this song uses the model"
 }`;
 
-    const user = `STRUCTURAL MODEL (from existing song analysis):
-${JSON.stringify(analysis, null, 2)}
+    const user = `STRUCTURAL MODEL (distilled from existing song analysis):
+${JSON.stringify(compactModel, null, 2)}
 
 NEW TOPIC: ${new_topic}
 ${new_style ? `STYLE/MOOD PREFERENCE: ${new_style}` : ''}
 
 Write a brand-new song on the new topic following this structural model.`;
 
-    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.85, maxTokens: 2500 });
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.85, maxTokens: 4000 });
+
     let parsed;
-    try { parsed = JSON.parse(raw); }
-    catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      console.error('[generate-from-model] JSON parse failed. Raw length:', raw?.length, 'preview:', raw?.slice(0, 300));
+      return res.status(502).json({ error: 'AI returned malformed response — try again, maybe simplify the style input' });
+    }
+
+    if (!parsed || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+      console.error('[generate-from-model] no sections in response:', JSON.stringify(parsed).slice(0, 500));
+      return res.status(502).json({ error: 'AI returned no sections — try again with a clearer topic' });
+    }
+
+    // Normalize section types and ensure lines are arrays of strings
+    parsed.sections = parsed.sections.map((s) => ({
+      type: normalizeSectionType(s.type),
+      label: typeof s.label === 'string' && s.label.trim() ? s.label : 'Section',
+      lines: Array.isArray(s.lines)
+        ? s.lines.map((l) => String(l || '').trim()).filter(Boolean)
+        : String(s.lines || '').split('\n').map((l) => l.trim()).filter(Boolean),
+    })).filter((s) => s.lines.length > 0);
+
+    if (parsed.sections.length === 0) {
+      return res.status(502).json({ error: 'AI returned no usable lyric content — try again' });
+    }
 
     logAI(req.user.id, 'generate-from-model', new_topic, parsed.title || '');
     res.json(parsed);
