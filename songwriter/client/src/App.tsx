@@ -16,6 +16,7 @@ import AssistantOverlay from '@/components/AssistantOverlay';
 import AssistantFab from '@/components/AssistantFab';
 import OfflineBanner from '@/components/OfflineBanner';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import PWAUpdatePrompt from '@/components/PWAUpdatePrompt';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -112,6 +113,7 @@ export default function App() {
       </Routes>
       {user && <AssistantFab />}
       <AssistantOverlay />
+      <PWAUpdatePrompt />
       <Toaster position="top-right" richColors />
       </AssistantProvider>
     </BrowserRouter>
