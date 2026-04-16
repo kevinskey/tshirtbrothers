@@ -190,7 +190,7 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
     {
       onInsertLine: insertLine,
       onReplaceLine: replaceLine,
-      onAppendSection: appendSection,
+      onAppendSection: (type, label, lines) => appendSection(type as Section['type'], label, lines),
       onSetTitle: (title) => update({ title }),
     }
   );
