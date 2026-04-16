@@ -78,7 +78,14 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) }
     ),
 
-  findPoetry: (body: { theme: string; mood?: string; count?: number }) =>
+  findPoetry: (body: {
+    theme: string;
+    mood?: string;
+    count?: number;
+    author_background?: string;
+    era?: string;
+    language_origin?: string;
+  }) =>
     req<{ poems: { title: string; author: string; year: string; excerpt: string; why_it_fits: string }[] }>(
       '/ai/find-poetry',
       { method: 'POST', body: JSON.stringify(body) }

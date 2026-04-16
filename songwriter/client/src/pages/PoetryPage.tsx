@@ -6,11 +6,39 @@ import TopBar from '@/components/TopBar';
 
 type Poem = { title: string; author: string; year: string; excerpt: string; why_it_fits: string };
 
+const BACKGROUND_OPTIONS = [
+  { value: '', label: 'Any' },
+  { value: 'Black/African-American', label: 'Black / African-American' },
+  { value: 'Latin American/Hispanic', label: 'Latin American / Hispanic' },
+  { value: 'Asian/Asian-American', label: 'Asian / Asian-American' },
+  { value: 'Middle Eastern/Arab/Persian', label: 'Middle Eastern / Arab / Persian' },
+  { value: 'Indigenous/Native', label: 'Indigenous / Native' },
+  { value: 'Women only', label: 'Women only' },
+  { value: 'Irish', label: 'Irish' },
+  { value: 'British', label: 'British' },
+  { value: 'American', label: 'American' },
+];
+
+const ERA_OPTIONS = [
+  { value: '', label: 'Any era' },
+  { value: 'Harlem Renaissance', label: 'Harlem Renaissance' },
+  { value: 'Romantic (late 1700s–mid 1800s)', label: 'Romantic' },
+  { value: 'Victorian (mid–late 1800s)', label: 'Victorian' },
+  { value: 'Modernist (early 1900s)', label: 'Modernist' },
+  { value: 'Renaissance', label: 'Renaissance' },
+  { value: 'Medieval', label: 'Medieval' },
+  { value: 'Ancient/Classical', label: 'Ancient / Classical' },
+];
+
 export default function PoetryPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [theme, setTheme] = useState(searchParams.get('q') || '');
   const [mood, setMood] = useState('');
+  const [authorBackground, setAuthorBackground] = useState('');
+  const [customBackground, setCustomBackground] = useState('');
+  const [era, setEra] = useState('');
+  const [count, setCount] = useState(4);
   const [poems, setPoems] = useState<Poem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -23,9 +51,15 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
     setPoems([]);
     setSearchParams({ q });
     try {
-      const r = await api.findPoetry({ theme: q, mood, count: 4 });
+      const r = await api.findPoetry({
+        theme: q,
+        mood,
+        count,
+        author_background: authorBackground === 'custom' ? customBackground : authorBackground,
+        era,
+      });
       setPoems(r.poems || []);
-      if ((r.poems || []).length === 0) toast.message('No matches — try a different theme');
+      if ((r.poems || []).length === 0) toast.message('No matches — try different filters');
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -74,36 +108,100 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
         </div>
         <h1 className="font-serif text-4xl font-bold mb-2">Poetry inspiration</h1>
         <p className="text-ink-600 mb-8">
-          Search classic public-domain poetry by theme. Import any poem as the starting verse of a new song.
+          Search classic public-domain poetry by theme and author background. Import any poem as the starting verse of a new song.
         </p>
 
         <div className="bg-white border border-ink-100 rounded-lg p-5 mb-8">
-          <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">Theme or feeling</label>
-          <input
-            type="text"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
-            placeholder="e.g. losing a parent, summer love, the open road"
-            className="w-full text-base bg-ink-50 border border-ink-100 rounded px-3 py-2 mb-3 focus:outline-none focus:border-accent"
-          />
+          <div className="mb-3">
+            <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+              Theme or feeling *
+            </label>
+            <input
+              type="text"
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
+              placeholder="e.g. losing a parent, summer love, the open road"
+              className="w-full text-base bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+            />
+          </div>
 
-          <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">Mood (optional)</label>
-          <input
-            type="text"
-            value={mood}
-            onChange={(e) => setMood(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
-            placeholder="hopeful, melancholy, defiant, tender…"
-            className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 mb-4 focus:outline-none focus:border-accent"
-          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+                Mood
+              </label>
+              <input
+                type="text"
+                value={mood}
+                onChange={(e) => setMood(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
+                placeholder="hopeful, defiant, tender…"
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+                Number of results
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={count}
+                onChange={(e) => setCount(Math.min(10, Math.max(1, Number(e.target.value) || 4)))}
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+                Author background
+              </label>
+              <select
+                value={authorBackground}
+                onChange={(e) => setAuthorBackground(e.target.value)}
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+              >
+                {BACKGROUND_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+                <option value="custom">Custom…</option>
+              </select>
+              {authorBackground === 'custom' && (
+                <input
+                  type="text"
+                  value={customBackground}
+                  onChange={(e) => setCustomBackground(e.target.value)}
+                  placeholder="e.g. Caribbean, Jewish, Russian"
+                  className="mt-2 w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider text-ink-400 mb-1">
+                Era
+              </label>
+              <select
+                value={era}
+                onChange={(e) => setEra(e.target.value)}
+                className="w-full text-sm bg-ink-50 border border-ink-100 rounded px-3 py-2 focus:outline-none focus:border-accent"
+              >
+                {ERA_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           <button
             onClick={() => search()}
             disabled={loading || !theme.trim()}
             className="px-6 py-2 bg-ink-900 text-ink-50 rounded-md hover:bg-ink-800 text-sm font-medium disabled:opacity-40"
           >
-            {loading ? 'Searching the canon…' : 'Find poems'}
+            {loading ? 'Searching the canon…' : `Find ${count} poem${count !== 1 ? 's' : ''}`}
           </button>
         </div>
 

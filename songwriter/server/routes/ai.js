@@ -229,13 +229,28 @@ Write the complete song.`;
 // Find classic public-domain poetry on a theme
 router.post('/find-poetry', async (req, res, next) => {
   try {
-    const { theme, mood = '', count = 4 } = req.body;
+    const {
+      theme,
+      mood = '',
+      count = 4,
+      author_background = '',   // e.g. "Black/African-American", "Latin American", "Women", "Indigenous"
+      era = '',                 // e.g. "Harlem Renaissance", "Romantic", "19th century"
+      language_origin = '',     // e.g. "originally Spanish", "originally Arabic"
+    } = req.body;
     if (!theme) return res.status(400).json({ error: 'theme is required' });
+
+    const safeCount = Math.min(Math.max(parseInt(count) || 4, 1), 10);
+
+    const filters = [];
+    if (author_background) filters.push(`- Author background: ${author_background} poets preferred (e.g. for "Black/African-American" consider Langston Hughes, Paul Laurence Dunbar, Countee Cullen, Phillis Wheatley, Claude McKay, Georgia Douglas Johnson, James Weldon Johnson, Frances Harper; for "Latin American" consider Rubén Darío, José Martí, Gabriela Mistral, Sor Juana; for "Women" prioritize women poets; for "Indigenous" consider poets drawing from Native traditions; for other backgrounds, pick poets authentically from that background).`);
+    if (era) filters.push(`- Era: ${era}`);
+    if (language_origin) filters.push(`- Language origin: ${language_origin} (include well-regarded English translations, credit translator if known)`);
 
     const system = `You are a poetry librarian. The user is a songwriter looking for classic public-domain poetry to inspire or adapt into lyrics.
 
-Find ${count} real, public-domain poems that match the theme. Prefer poems published before 1928 (clearly public domain in the US). Authors like Whitman, Dickinson, Yeats, Frost, Keats, Wordsworth, Rumi, Hughes, Sandburg, Browning, Tennyson, Donne, Blake, Poe, etc.
+Find ${safeCount} real, public-domain poems that match the theme. Prefer poems published before 1928 (clearly public domain in the US).
 
+${filters.length > 0 ? 'FILTERS:\n' + filters.join('\n') + '\n' : ''}
 For each poem, provide:
 - title
 - author
@@ -250,19 +265,27 @@ Output STRICT JSON:
   ]
 }
 
-Only include real poems you're confident exist. If you can't find ${count} good matches, return fewer rather than fabricating.`;
+Only include real poems you're confident exist. If you can't find ${safeCount} good matches under the filters, return fewer rather than fabricating. Never invent poems or mis-attribute them.`;
 
     const user = `Theme: ${theme}
 ${mood ? `Mood/feel: ${mood}` : ''}
+${author_background ? `Author background: ${author_background}` : ''}
+${era ? `Era: ${era}` : ''}
+${language_origin ? `Language origin: ${language_origin}` : ''}
 
-Find ${count} classic poems that fit.`;
+Find ${safeCount} classic poems that fit.`;
 
-    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.5, maxTokens: 2000 });
+    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.5, maxTokens: Math.min(2000 + safeCount * 200, 4000) });
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
 
-    logAI(req.user.id, 'find-poetry', `${theme} / ${mood}`, (parsed.poems || []).map(p => p.title).join(' | '));
+    logAI(
+      req.user.id,
+      'find-poetry',
+      `${theme} | ${mood} | ${author_background} | ${era}`,
+      (parsed.poems || []).map(p => p.title).join(' | ')
+    );
     res.json(parsed);
   } catch (err) { next(err); }
 });
