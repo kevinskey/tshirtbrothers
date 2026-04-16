@@ -5,7 +5,13 @@ import { api, type User, type Spiritual } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
 
-type Draft = { number: number | null; title: string; lyrics: string };
+type Draft = {
+  number: number | null;
+  title: string;
+  lyrics: string;
+  page_start?: number | null;
+  page_end?: number | null;
+};
 
 export default function SpiritualsAdminPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const navigate = useNavigate();
@@ -43,10 +49,12 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
     try {
       const r = await api.uploadSpiritualsPdf(f);
       toast.success(`Parsed ${r.entries.length} entries from ${r.pages} pages`);
-      setDrafts(r.entries.map((e) => ({
+      setDrafts(r.entries.map((e: any) => ({
         number: e.number ?? null,
         title: e.title || '',
         lyrics: e.lyrics || '',
+        page_start: e.page_start ?? null,
+        page_end: e.page_end ?? null,
       })));
       setSourceFile(r.source_file);
       if (!source) setSource(r.filename);
@@ -64,10 +72,12 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
     try {
       const r = await api.parseSpiritualsText(pasteText);
       toast.success(`Found ${r.entries.length} entries`);
-      setDrafts(r.entries.map((e) => ({
+      setDrafts(r.entries.map((e: any) => ({
         number: e.number ?? null,
         title: e.title || '',
         lyrics: e.lyrics || '',
+        page_start: e.page_start ?? null,
+        page_end: e.page_end ?? null,
       })));
     } catch (e: any) {
       toast.error(e.message);
@@ -111,7 +121,13 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
     setSaving(true);
     try {
       const r = await api.bulkSaveSpirituals({
-        entries: valid.map((d) => ({ number: d.number, title: d.title.trim(), lyrics: d.lyrics.trim() })),
+        entries: valid.map((d) => ({
+          number: d.number,
+          title: d.title.trim(),
+          lyrics: d.lyrics.trim(),
+          page_start: d.page_start ?? null,
+          page_end: d.page_end ?? null,
+        })),
         source,
         source_file: sourceFile,
         replace_all: replaceAll,
@@ -229,7 +245,7 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
             <ul className="space-y-3">
               {drafts.map((d, i) => (
                 <li key={i} className="border border-meadow-100 rounded-lg p-3">
-                  <div className="flex items-start gap-2 mb-2">
+                  <div className="flex items-start gap-2 mb-2 flex-wrap">
                     <input
                       type="number"
                       value={d.number ?? ''}
@@ -242,7 +258,7 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
                       value={d.title}
                       onChange={(e) => updateDraft(i, { title: e.target.value })}
                       placeholder="Title"
-                      className="flex-1 text-base font-serif font-semibold bg-meadow-50 border border-meadow-200 rounded px-3 py-1.5 focus:outline-none focus:border-accent"
+                      className="flex-1 min-w-[180px] text-base font-serif font-semibold bg-meadow-50 border border-meadow-200 rounded px-3 py-1.5 focus:outline-none focus:border-accent"
                     />
                     {i > 0 && (
                       <button
@@ -259,6 +275,34 @@ export default function SpiritualsAdminPage({ user, onLogout }: { user: User; on
                     >
                       ✕
                     </button>
+                  </div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="text-[10px] uppercase tracking-wider text-meadow-500 font-semibold">Score pages</label>
+                    <input
+                      type="number"
+                      value={d.page_start ?? ''}
+                      onChange={(e) => updateDraft(i, { page_start: e.target.value ? Number(e.target.value) : null })}
+                      placeholder="start"
+                      className="w-20 text-xs bg-meadow-50 border border-meadow-200 rounded px-2 py-1 focus:outline-none focus:border-accent"
+                    />
+                    <span className="text-xs text-meadow-400">→</span>
+                    <input
+                      type="number"
+                      value={d.page_end ?? ''}
+                      onChange={(e) => updateDraft(i, { page_end: e.target.value ? Number(e.target.value) : null })}
+                      placeholder="end"
+                      className="w-20 text-xs bg-meadow-50 border border-meadow-200 rounded px-2 py-1 focus:outline-none focus:border-accent"
+                    />
+                    {sourceFile && d.page_start && (
+                      <a
+                        href={`${sourceFile}#page=${d.page_start}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-meadow-500 hover:text-meadow-900 underline ml-2"
+                      >
+                        Open page ↗
+                      </a>
+                    )}
                   </div>
                   <textarea
                     value={d.lyrics}

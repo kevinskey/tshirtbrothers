@@ -75,9 +75,15 @@ CREATE TABLE IF NOT EXISTS spirituals (
   notes           TEXT DEFAULT '',
   source          TEXT DEFAULT '',            -- book/compiler if known
   source_file     TEXT DEFAULT '',            -- path to original PDF on disk, if any
+  page_start      INTEGER,                    -- first page of this entry in source_file
+  page_end        INTEGER,                    -- last page of this entry (inclusive)
   created_at      TIMESTAMPTZ DEFAULT NOW(),
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Migration: add page columns if upgrading an existing DB
+ALTER TABLE spirituals ADD COLUMN IF NOT EXISTS page_start INTEGER;
+ALTER TABLE spirituals ADD COLUMN IF NOT EXISTS page_end INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_spirituals_title ON spirituals(LOWER(title));
 CREATE INDEX IF NOT EXISTS idx_spirituals_number ON spirituals(number);

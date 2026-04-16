@@ -19,6 +19,7 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
 
   const [selected, setSelected] = useState<Spiritual | null>(null);
   const [loadingSelected, setLoadingSelected] = useState(false);
+  const [showScore, setShowScore] = useState(false);
 
   useRegisterPage({
     page: 'Spirituals',
@@ -46,16 +47,24 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
 
   async function openOne(id: number, why_it_fits?: string) {
     setLoadingSelected(true);
+    setShowScore(false);
     try {
       const full = await api.getSpiritual(id);
       setSelected({ ...full, why_it_fits: why_it_fits || '' });
-      // Scroll to top of main on mobile
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setLoadingSelected(false);
     }
+  }
+
+  function scoreUrl(s: Spiritual): string | null {
+    if (!s.source_file) return null;
+    const page = s.page_start || 1;
+    // The #page= fragment is the standard Adobe-defined open parameter
+    // supported by Chrome, Safari, Firefox, Edge.
+    return `${s.source_file}#page=${page}`;
   }
 
   async function searchByTheme() {
@@ -185,16 +194,29 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-meadow-500 font-semibold">
                   {selected.number ? `#${selected.number} · ` : ''}Traditional spiritual
+                  {selected.page_start ? (
+                    <> · score {selected.page_end && selected.page_end !== selected.page_start
+                      ? `pp. ${selected.page_start}–${selected.page_end}`
+                      : `p. ${selected.page_start}`}</>
+                  ) : null}
                 </div>
                 <h2 className="font-serif text-2xl sm:text-3xl font-bold text-meadow-900 mt-0.5">{selected.title}</h2>
                 {selected.source && <div className="text-xs text-meadow-500 mt-0.5">Source: {selected.source}</div>}
               </div>
-              <div className="flex gap-2 flex-shrink-0">
+              <div className="flex gap-2 flex-shrink-0 flex-wrap">
+                {scoreUrl(selected) && (
+                  <button
+                    onClick={() => setShowScore((v) => !v)}
+                    className="text-xs px-3 py-1.5 border border-meadow-200 rounded-full hover:bg-meadow-100"
+                  >
+                    {showScore ? 'Hide score' : '♪ View score'}
+                  </button>
+                )}
                 <button
                   onClick={copyText}
                   className="text-xs px-3 py-1.5 border border-meadow-200 rounded-full hover:bg-meadow-100"
                 >
-                  Copy
+                  Copy lyrics
                 </button>
                 <button
                   onClick={useAsSong}
@@ -209,17 +231,52 @@ export default function SpiritualsPage({ user, onLogout }: { user: User; onLogou
               <p className="text-sm italic text-meadow-600 border-l-2 border-meadow-100 pl-3 mb-3">{selected.why_it_fits}</p>
             )}
 
+            {/* Inline PDF score viewer */}
+            {showScore && scoreUrl(selected) && (
+              <div className="mb-4 -mx-5 sm:-mx-6 border-y border-meadow-200 bg-meadow-50">
+                <div className="px-4 py-2 flex items-center justify-between text-xs text-meadow-600">
+                  <span>
+                    Score from original PDF{selected.page_start ? ` · page ${selected.page_start}${selected.page_end && selected.page_end !== selected.page_start ? `–${selected.page_end}` : ''}` : ''}
+                  </span>
+                  <a
+                    href={scoreUrl(selected)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:text-meadow-900"
+                  >
+                    Open in new tab ↗
+                  </a>
+                </div>
+                <iframe
+                  key={selected.id}
+                  src={scoreUrl(selected)!}
+                  title={`Score for ${selected.title}`}
+                  className="w-full h-[70vh] sm:h-[80vh] bg-white"
+                />
+              </div>
+            )}
+
             <pre className="font-serif text-base sm:text-lg leading-relaxed text-meadow-800 whitespace-pre-wrap">
               {selected.lyrics}
             </pre>
 
             {selected.source_file && (
-              <div className="mt-4 pt-4 border-t border-meadow-100">
+              <div className="mt-4 pt-4 border-t border-meadow-100 flex items-center gap-4 text-xs text-meadow-600 flex-wrap">
+                {scoreUrl(selected) && (
+                  <a
+                    href={scoreUrl(selected)!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-meadow-900 underline"
+                  >
+                    View this score in a new tab →
+                  </a>
+                )}
                 <a
                   href={selected.source_file}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-xs text-meadow-600 hover:text-meadow-900 underline"
+                  className="hover:text-meadow-900 underline"
                 >
                   View original PDF →
                 </a>

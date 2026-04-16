@@ -219,6 +219,8 @@ export type Spiritual = {
   notes: string;
   source: string;
   source_file: string;
+  page_start: number | null;
+  page_end: number | null;
   created_at?: string;
   updated_at?: string;
   why_it_fits?: string;
@@ -230,6 +232,9 @@ export type SpiritualSummary = {
   title: string;
   preview: string;
   source: string;
+  source_file: string;
+  page_start: number | null;
+  page_end: number | null;
 };
 
 export type AIBudget = { used: number; limit: number; remaining: number };

@@ -40,6 +40,8 @@ function getClient() {
 }
 
 // ── Heuristic PDF text splitter ──────────────────────────────────────────
+// pdf-parse separates pages with \f (form-feed). We track page numbers as
+// we scan so each entry records page_start and page_end in the PDF.
 function splitSpiritualsFromText(text) {
   if (!text) return [];
   const norm = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -47,41 +49,66 @@ function splitSpiritualsFromText(text) {
 
   const entries = [];
   let current = null;
+  let currentPage = 1;   // 1-indexed page counter
 
   const numberedRe = /^\s*(\d+)[.)]\s+(.{2,80})$/;
   const allCapsRe = /^\s*([A-Z][A-Z'\- ,.!?]{3,80})\s*$/;
 
+  function commit() {
+    if (current && current.lyrics.trim()) {
+      current.page_end = currentPage;
+      entries.push(current);
+    }
+  }
+
   for (const raw of lines) {
-    const line = raw.replace(/\s+$/, '');
+    // Detect page break (form-feed char). It can be on its own line OR
+    // embedded in a line along with content.
+    const ffCount = (raw.match(/\f/g) || []).length;
+    if (ffCount > 0) currentPage += ffCount;
+
+    // Strip form-feeds before continuing
+    const line = raw.replace(/\f/g, '').replace(/\s+$/, '');
+    if (!line) {
+      if (current) current.lyrics += '\n';
+      continue;
+    }
+
     const numMatch = line.match(numberedRe);
     const capsMatch = !numMatch && line.match(allCapsRe) && line.trim().split(/\s+/).length >= 2;
 
     if (numMatch) {
-      if (current && current.lyrics.trim()) entries.push(current);
+      commit();
       current = {
         number: parseInt(numMatch[1], 10),
         title: numMatch[2].trim(),
         lyrics: '',
+        page_start: currentPage,
+        page_end: currentPage,
       };
       continue;
     }
     if (capsMatch) {
-      if (current && current.lyrics.trim()) entries.push(current);
+      commit();
       current = {
         number: null,
         title: toTitleCase(line.trim()),
         lyrics: '',
+        page_start: currentPage,
+        page_end: currentPage,
       };
       continue;
     }
-    if (current) current.lyrics += (line || '') + '\n';
+    if (current) current.lyrics += line + '\n';
   }
-  if (current && current.lyrics.trim()) entries.push(current);
+  commit();
 
   return entries.map((e, i) => ({
     number: e.number ?? i + 1,
     title: e.title,
     lyrics: e.lyrics.replace(/\n{3,}/g, '\n\n').trim(),
+    page_start: e.page_start,
+    page_end: e.page_end,
   }));
 }
 
@@ -98,7 +125,7 @@ function toTitleCase(s) {
 router.get('/', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, number, title, LEFT(lyrics, 180) AS preview, source
+      `SELECT id, number, title, LEFT(lyrics, 180) AS preview, source, source_file, page_start, page_end
          FROM spirituals
         ORDER BY COALESCE(number, 9999), title
         LIMIT 500`
@@ -117,13 +144,13 @@ router.get('/:id', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    const { number, title, lyrics, notes = '', source = '' } = req.body;
+    const { number, title, lyrics, notes = '', source = '', page_start = null, page_end = null } = req.body;
     if (!title || !lyrics) return res.status(400).json({ error: 'title and lyrics are required' });
     const { rows } = await pool.query(
-      `INSERT INTO spirituals (number, title, lyrics, notes, source)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO spirituals (number, title, lyrics, notes, source, page_start, page_end)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [number || null, title, lyrics, notes, source]
+      [number || null, title, lyrics, notes, source, page_start, page_end]
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -131,7 +158,7 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
-    const { number, title, lyrics, notes, source } = req.body;
+    const { number, title, lyrics, notes, source, page_start, page_end } = req.body;
     const { rows } = await pool.query(
       `UPDATE spirituals SET
          number = COALESCE($1, number),
@@ -139,10 +166,12 @@ router.put('/:id', async (req, res, next) => {
          lyrics = COALESCE($3, lyrics),
          notes = COALESCE($4, notes),
          source = COALESCE($5, source),
+         page_start = $6,
+         page_end = $7,
          updated_at = NOW()
-       WHERE id = $6
+       WHERE id = $8
        RETURNING *`,
-      [number ?? null, title ?? null, lyrics ?? null, notes ?? null, source ?? null, req.params.id]
+      [number ?? null, title ?? null, lyrics ?? null, notes ?? null, source ?? null, page_start ?? null, page_end ?? null, req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json(rows[0]);
@@ -172,9 +201,9 @@ router.post('/bulk', async (req, res, next) => {
     for (const e of entries) {
       if (!e?.title || !e?.lyrics) continue;
       await pool.query(
-        `INSERT INTO spirituals (number, title, lyrics, source, source_file)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [e.number ?? null, e.title, e.lyrics, source, source_file]
+        `INSERT INTO spirituals (number, title, lyrics, source, source_file, page_start, page_end)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [e.number ?? null, e.title, e.lyrics, source, source_file, e.page_start ?? null, e.page_end ?? null]
       );
       inserted++;
     }
