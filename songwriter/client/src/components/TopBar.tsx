@@ -72,11 +72,11 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
 
   return (
     <header className="border-b border-meadow-200 bg-meadow-50/90 backdrop-blur-sm sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-5 flex-1 min-w-0">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2 sm:gap-4">
+        <div className="flex items-center gap-3 sm:gap-5 flex-1 min-w-0">
           <Link to="/app" className="flex items-center gap-2 font-serif text-xl font-bold text-meadow-800 flex-shrink-0">
             <Flower size={22} petal="#f2c6c6" center="#f5c842" />
-            Songwriter
+            <span className="hidden sm:inline">Songwriter</span>
           </Link>
 
           {/* Nav slot — measures its available width */}
@@ -98,13 +98,13 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
               <div className="relative" data-nav-menu>
                 <button
                   onClick={() => setMenuOpen((v) => !v)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-meadow-700 hover:text-meadow-900 hover:bg-meadow-100 transition-colors"
+                  className="inline-flex items-center justify-center gap-1.5 w-10 h-10 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 rounded-full text-meadow-700 hover:text-meadow-900 hover:bg-meadow-100 transition-colors"
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
                   aria-label="Main menu"
                 >
                   <HamburgerIcon />
-                  <span className="text-sm font-medium">Menu</span>
+                  <span className="text-sm font-medium hidden sm:inline">Menu</span>
                 </button>
                 {menuOpen && (
                   <div className="absolute left-0 top-full mt-2 w-56 bg-white border border-meadow-200 rounded-xl shadow-lg py-1 z-40">
