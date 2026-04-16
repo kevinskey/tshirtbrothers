@@ -290,59 +290,34 @@ export default function QuotePage() {
       // Upload design file or design studio snapshot to server
       let designUrl: string | null = null;
       
-      // If from Design Studio with a product image, use that as the design preview
-      if (!designSnapshot && fromStudio && studioProductImage) {
-        try {
-          const uploadRes = await fetch('/api/quotes/upload-design', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              imageBase64: studioProductImage,
-              filename: 'design-studio-preview.png',
-              customerEmail: formData.customerEmail,
-            }),
-          });
-          if (uploadRes.ok) {
-            const uploadData = await uploadRes.json();
-            designUrl = uploadData.url;
-          }
-        } catch {}
-      }
-      
-      if (designSnapshot) {
-        // Upload the Design Studio snapshot (data URL)
-        const uploadRes = await fetch('/api/quotes/upload-design', {
+      const uploadDesign = async (imageBase64: string, filename: string) => {
+        const res = await fetch('/api/quotes/upload-design', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageBase64: designSnapshot,
-            filename: `design-studio-${Date.now()}.png`,
-            customerEmail: formData.customerEmail,
-          }),
+          body: JSON.stringify({ imageBase64, filename, customerEmail: formData.customerEmail }),
         });
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          designUrl = uploadData.url;
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `Upload failed (${res.status}). Please try a smaller file or a different format.`);
         }
+        const data = await res.json();
+        return data.url as string;
+      };
+
+      // If from Design Studio with a product image, use that as the design preview
+      if (!designSnapshot && fromStudio && studioProductImage) {
+        designUrl = await uploadDesign(studioProductImage, 'design-studio-preview.png');
+      }
+
+      if (designSnapshot) {
+        designUrl = await uploadDesign(designSnapshot, `design-studio-${Date.now()}.png`);
       } else if (formData.designPreview && formData.designFile) {
         const reader = new FileReader();
         const base64 = await new Promise<string>((resolve) => {
           reader.onload = () => resolve(reader.result as string);
           reader.readAsDataURL(formData.designFile!);
         });
-        const uploadRes = await fetch('/api/quotes/upload-design', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            imageBase64: base64,
-            filename: formData.designFile.name,
-            customerEmail: formData.customerEmail,
-          }),
-        });
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json();
-          designUrl = uploadData.url;
-        }
+        designUrl = await uploadDesign(base64, formData.designFile.name);
       }
 
       await submitQuote({
@@ -908,12 +883,12 @@ export default function QuotePage() {
           <p className="font-medium text-brand-gray-600">
             Drag & drop your file here, or click to browse
           </p>
-          <p className="text-sm text-brand-gray-400">PNG, JPG, or SVG accepted</p>
+          <p className="text-sm text-brand-gray-400">PNG, JPG, SVG, PDF, AI, EPS, PSD, or TIFF accepted</p>
         </div>
         <input
           ref={fileRef}
           type="file"
-          accept=".png,.jpg,.jpeg,.svg"
+          accept=".png,.jpg,.jpeg,.svg,.pdf,.ai,.eps,.psd,.tif,.tiff,.webp,.heic,.zip"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -925,13 +900,27 @@ export default function QuotePage() {
       {/* Preview */}
       {formData.designPreview && (
         <div className="mt-6">
-          <p className="mb-2 text-sm font-medium text-brand-gray-600">Preview</p>
+          <p className="mb-2 text-sm font-medium text-brand-gray-600">Attached</p>
           <div className="relative inline-block">
-            <img
-              src={formData.designPreview}
-              alt="Design preview"
-              className="h-36 w-36 md:h-48 md:w-48 rounded-xl border border-brand-gray-200 object-contain"
-            />
+            {formData.designFile?.type.startsWith('image/') ? (
+              <img
+                src={formData.designPreview}
+                alt="Design preview"
+                className="h-36 w-36 md:h-48 md:w-48 rounded-xl border border-brand-gray-200 object-contain"
+              />
+            ) : (
+              <div className="flex h-36 w-36 md:h-48 md:w-48 flex-col items-center justify-center rounded-xl border border-brand-gray-200 bg-brand-gray-50 p-3 text-center">
+                <Upload className="h-8 w-8 text-brand-gray-400" />
+                <p className="mt-2 break-all text-xs font-medium text-brand-gray-600">
+                  {formData.designFile?.name}
+                </p>
+                {formData.designFile && (
+                  <p className="mt-1 text-[10px] text-brand-gray-400">
+                    {(formData.designFile.size / 1024 / 1024).toFixed(1)} MB
+                  </p>
+                )}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => update({ designFile: null, designPreview: null })}

@@ -5098,8 +5098,32 @@ export default function AdminPage() {
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
                       <a href={q.design_url} target="_blank" rel="noreferrer" className="block">
-                        <img src={q.design_url} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                        <img
+                          src={q.design_url}
+                          alt="Design"
+                          className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
                       </a>
+                      <div className="mt-2 flex gap-2">
+                        <a
+                          href={q.design_url}
+                          download
+                          className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700"
+                        >
+                          <Download className="w-3 h-3" />
+                          Download
+                        </a>
+                        <a
+                          href={q.design_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200"
+                        >
+                          Open in new tab
+                        </a>
+                      </div>
+                      <p className="mt-1 text-[10px] text-gray-400 break-all">{q.design_url}</p>
                     </div>
                   )}
 

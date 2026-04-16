@@ -21,7 +21,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 const router = Router();
 
 // POST /upload-design - Upload a design file for a quote (no auth required)
-router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, next) => {
+router.post('/upload-design', express.json({ limit: '60mb' }), async (req, res, next) => {
   try {
     const { imageBase64, filename, customerEmail } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
@@ -38,17 +38,26 @@ router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, 
       credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
     });
 
-    const buffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-    const safeName = (filename || 'design').replace(/[^a-zA-Z0-9.-]/g, '-');
+    // Detect content type from data URL prefix; fall back to octet-stream.
+    // Customers send more than PNGs (PDFs, AI, PSD, TIFF, etc.) — don't force
+    // image/png or the file becomes unreadable on download.
+    const dataUrlMatch = /^data:([^;]+);base64,/.exec(imageBase64);
+    const contentType = dataUrlMatch?.[1] || 'application/octet-stream';
+    const buffer = Buffer.from(imageBase64.replace(/^data:[^;]+;base64,/, ''), 'base64');
+
+    const origName = (filename || 'design').replace(/[^a-zA-Z0-9.\-_]/g, '-');
+    const hasExt = /\.[a-zA-Z0-9]{2,5}$/.test(origName);
+    const safeName = hasExt ? origName : `${origName}.bin`;
     const timestamp = Date.now();
     const folder = customerEmail ? `quote-designs/${customerEmail.replace(/[^a-zA-Z0-9]/g, '-')}` : 'quote-designs/anonymous';
-    const key = `${folder}/${safeName}-${timestamp}.png`;
+    const key = `${folder}/${timestamp}-${safeName}`;
 
     await s3.send(new PutObjectCommand({
       Bucket: process.env.SPACES_BUCKET || 'tshirtbrothers',
       Key: key,
       Body: buffer,
-      ContentType: 'image/png',
+      ContentType: contentType,
+      ContentDisposition: `attachment; filename="${safeName}"`,
       ACL: 'public-read',
     }));
 
@@ -56,7 +65,34 @@ router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, 
     const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
     const fileUrl = `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
 
-    res.json({ url: fileUrl });
+    // If this email matches an existing customer, drop the file into their
+    // private asset library so it shows up in the customer folder.
+    try {
+      let userId = null;
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const jwt = await import('jsonwebtoken');
+        try {
+          const decoded = jwt.default.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+          userId = decoded.id || decoded.userId || null;
+        } catch { /* ignore */ }
+      }
+      if (!userId && customerEmail) {
+        const u = await pool.query("SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND role = 'customer'", [customerEmail]);
+        if (u.rows.length) userId = u.rows[0].id;
+      }
+      if (userId) {
+        await pool.query(
+          `INSERT INTO customer_assets (user_id, name, image_url, file_type, size_bytes, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [userId, safeName, fileUrl, contentType, buffer.length, 'Uploaded via quote request'],
+        );
+      }
+    } catch (assetErr) {
+      console.error('[upload-design] customer_assets insert failed:', assetErr.message);
+    }
+
+    res.json({ url: fileUrl, filename: safeName, contentType });
   } catch (err) {
     next(err);
   }
