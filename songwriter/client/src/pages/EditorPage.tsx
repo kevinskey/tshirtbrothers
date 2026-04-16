@@ -5,6 +5,7 @@ import { api, type Section, type Song, type User } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import SectionBlock from '@/components/SectionBlock';
 import AIPanel from '@/components/AIPanel';
+import { useRegisterPage } from '@/lib/assistantContext';
 
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error';
 
@@ -169,6 +170,27 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
   const prevLines = currentSection
     ? currentSection.lines.slice(0, (focusedLine?.index ?? 0)).filter((l) => l.trim())
     : [];
+
+  useRegisterPage(
+    {
+      page: 'Editor',
+      route: `/app/song/${song.id}`,
+      summary: `Editing "${song.title}"${currentSection ? ` · cursor in ${currentSection.type}` : ''}`,
+      data: {
+        song_title: song.title,
+        current_line: currentLine,
+        current_section_type: currentSection?.type,
+        previous_lines: prevLines,
+        all_sections: song.sections.map((s) => ({ type: s.type, label: s.label, lines: s.lines })),
+      },
+    },
+    {
+      onInsertLine: insertLine,
+      onReplaceLine: replaceLine,
+      onAppendSection: appendSection,
+      onSetTitle: (title) => update({ title }),
+    }
+  );
 
   return (
     <div className="min-h-screen">

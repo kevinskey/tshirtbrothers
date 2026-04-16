@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, type SongSummary, type User } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
+import { useRegisterPage } from '@/lib/assistantContext';
 
 export default function LibraryPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [songs, setSongs] = useState<SongSummary[]>([]);
@@ -28,6 +29,13 @@ export default function LibraryPage({ user, onLogout }: { user: User; onLogout: 
       toast.error(e.message);
     }
   }
+
+  useRegisterPage({
+    page: 'Songs library',
+    route: '/app',
+    summary: `${songs.length} song${songs.length !== 1 ? 's' : ''}`,
+    data: { recent_titles: songs.slice(0, 8).map((s) => s.title) },
+  });
 
   async function deleteSong(id: number) {
     if (!confirm('Delete this song? This cannot be undone.')) return;

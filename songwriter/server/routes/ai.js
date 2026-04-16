@@ -474,4 +474,120 @@ Write a brand-new song on the new topic following this structural model.`;
   } catch (err) { next(err); }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// GLOBAL ASSISTANT — invoked from anywhere in the app
+// ══════════════════════════════════════════════════════════════════════════════
+// Takes a message + the user's current page context.
+// Returns { reply: string, actions: [...] } where actions are instructions
+// the client will execute (navigate, insert line, create song, etc.).
+
+router.post('/assistant', async (req, res, next) => {
+  try {
+    const { message, history = [], page_context = {} } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+
+    const system = `You are the songwriter's AI assistant inside a web app called Songwriter. The user can summon you from any page with Shift+Cmd+K and ask questions or give commands. You help them write, find inspiration, and navigate the app.
+
+THE APP HAS THESE PAGES:
+- /app — Songs library (list of their songs)
+- /app/song/:id — Editor for one song (sections with lyric lines)
+- /app/journal — Private journal / free-writing archive
+- /app/dictionary — Word lookup (definitions, synonyms, rhymes, AI insights)
+- /app/poetry — Classic public-domain poetry search
+- /app/psalms — Book of Psalms in 11 translations
+- /app/bible — Full Bible search
+- /app/analyze — Analyze existing songs and model new ones on them
+
+WHAT YOU CAN DO (respond with structured actions):
+
+1. Pure chat — just answer the question. Set reply, no actions.
+
+2. Navigate — send user to a page:
+   { "type": "navigate", "path": "/app/dictionary" }
+
+3. Create a new song with starter content:
+   { "type": "create_song", "title": "...", "sections": [{"type":"verse","label":"Verse 1","lines":["..."]}], "notes": "..." }
+   Section types allowed: intro, verse, pre-chorus, chorus, bridge, outro.
+
+4. If the user is in the editor and asks to insert a line:
+   { "type": "editor_insert_line", "line": "..." }
+
+5. If the user is in the editor and asks to rewrite the current line:
+   { "type": "editor_replace_line", "line": "..." }
+
+6. If the user asks you to add a whole section (like "add a bridge about..."):
+   { "type": "editor_append_section", "section_type": "bridge", "label": "Bridge", "lines": ["...", "..."] }
+
+7. Change the song title:
+   { "type": "editor_set_title", "title": "..." }
+
+8. Jump to the dictionary for a word:
+   { "type": "open_dictionary", "word": "ember" }
+
+9. Search the Bible or poetry:
+   { "type": "search_bible", "query": "..." }
+   { "type": "search_poetry", "theme": "..." }
+
+RULES:
+- Output STRICT JSON: { "reply": "what to show the user", "actions": [ ... ] }
+- Actions is an array — can be empty, can have multiple (e.g. insert a line AND explain why).
+- Be concise in reply — the user is mid-creative-flow, don't lecture.
+- When in the editor, USE the editor actions. Don't just describe what to insert — insert it.
+- When the user highlights a word and asks for rhymes or meaning, propose useful answers.
+- If you're unsure what the user wants, ask a short clarifying question in reply (no actions).
+- Respect editor actions only if the page context shows they're in the editor (route starts with /app/song/).`;
+
+    const contextString = JSON.stringify(page_context, null, 2);
+
+    const client = getClient();
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'system', content: `CURRENT PAGE CONTEXT:\n${contextString}` },
+      ...history.slice(-8).map((m) => ({
+        role: m.role === 'user' ? 'user' : 'assistant',
+        content: String(m.content || '').slice(0, 2000),
+      })),
+      { role: 'user', content: message },
+    ];
+
+    const ai = await client.chat.completions.create({
+      model: MODEL,
+      messages,
+      temperature: 0.7,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = ai.choices?.[0]?.message?.content || '{"reply":"(no response)","actions":[]}';
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch {
+      console.error('[assistant] parse failed:', raw?.slice(0, 300));
+      return res.status(502).json({ error: 'AI returned malformed response' });
+    }
+
+    // Normalize: ensure shape
+    const reply = typeof parsed.reply === 'string' ? parsed.reply : '';
+    const actions = Array.isArray(parsed.actions) ? parsed.actions : [];
+
+    // Normalize section types in any editor_append_section / create_song actions
+    for (const action of actions) {
+      if (action.type === 'editor_append_section' && action.section_type) {
+        action.section_type = normalizeSectionType(action.section_type);
+      }
+      if (action.type === 'create_song' && Array.isArray(action.sections)) {
+        action.sections = action.sections.map((s) => ({
+          type: normalizeSectionType(s.type),
+          label: s.label || 'Section',
+          lines: Array.isArray(s.lines) ? s.lines.map((l) => String(l).trim()).filter(Boolean) : [],
+        })).filter((s) => s.lines.length > 0);
+      }
+    }
+
+    logAI(req.user.id, 'assistant', `${page_context.page || '?'}: ${message}`.slice(0, 200), reply.slice(0, 200));
+
+    res.json({ reply, actions });
+  } catch (err) { next(err); }
+});
+
 export default router;

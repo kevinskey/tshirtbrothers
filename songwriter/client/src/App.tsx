@@ -10,6 +10,10 @@ import AnalyzePage from '@/pages/AnalyzePage';
 import PsalmsPage from '@/pages/PsalmsPage';
 import DictionaryPage from '@/pages/DictionaryPage';
 import BibleSearchPage from '@/pages/BibleSearchPage';
+import JournalPage from '@/pages/JournalPage';
+import { AssistantProvider } from '@/lib/assistantContext';
+import AssistantOverlay from '@/components/AssistantOverlay';
+import AssistantFab from '@/components/AssistantFab';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -33,6 +37,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <AssistantProvider>
       <Routes>
         <Route path="/" element={<LandingPage user={user} />} />
         <Route
@@ -91,9 +96,20 @@ export default function App() {
             </Protected>
           }
         />
+        <Route
+          path="/app/journal"
+          element={
+            <Protected user={user} loading={loading}>
+              <JournalPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {user && <AssistantFab />}
+      <AssistantOverlay />
       <Toaster position="top-right" richColors />
+      </AssistantProvider>
     </BrowserRouter>
   );
 }

@@ -36,3 +36,19 @@ CREATE TABLE IF NOT EXISTS ai_logs (
   output_preview  TEXT,
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Journal: free-form chronological musings. Archived entries available to
+-- the AI assistant for inspiration and recall.
+CREATE TABLE IF NOT EXISTS journal_entries (
+  id              SERIAL PRIMARY KEY,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title           TEXT DEFAULT '',
+  body            TEXT NOT NULL DEFAULT '',
+  mood            TEXT,
+  tags            TEXT[] DEFAULT ARRAY[]::TEXT[],
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_user_id ON journal_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_journal_created_at ON journal_entries(user_id, created_at DESC);

@@ -21,6 +21,7 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
           </Link>
           <nav className="flex items-center gap-1 text-sm flex-wrap">
             <NavLink to="/app" label="Songs" />
+            <NavLink to="/app/journal" label="Journal" />
             <NavLink to="/app/dictionary" label="Dictionary" />
             <NavLink to="/app/poetry" label="Poetry" />
             <NavLink to="/app/psalms" label="Psalms" />

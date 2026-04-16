@@ -145,6 +145,49 @@ export const api = {
     req<BiblePassage>(
       `/psalms/bible/passage?ref=${encodeURIComponent(ref)}${translation ? `&translation=${translation}` : ''}`
     ),
+
+  assistant: (body: { message: string; history?: { role: 'user' | 'assistant'; content: string }[]; page_context?: any }) =>
+    req<{ reply: string; actions: any[] }>('/ai/assistant', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  listJournal: (q?: string) =>
+    req<JournalSummary[]>(`/journal${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  getJournal: (id: number) => req<JournalEntry>(`/journal/${id}`),
+  createJournal: (data: Partial<JournalEntry>) =>
+    req<JournalEntry>('/journal', { method: 'POST', body: JSON.stringify(data) }),
+  updateJournal: (id: number, data: Partial<JournalEntry>) =>
+    req<JournalEntry>(`/journal/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteJournal: (id: number) =>
+    req<{ deleted: true }>(`/journal/${id}`, { method: 'DELETE' }),
+  askJournal: (body: { question: string; mode?: 'recall' | 'themes' | 'inspire' }) =>
+    req<{ reply: string; entry_count: number }>('/journal/ask', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  onThisDay: () => req<JournalSummary[]>('/journal/on-this-day'),
+};
+
+export type JournalEntry = {
+  id: number;
+  user_id: number;
+  title: string;
+  body: string;
+  mood: string | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type JournalSummary = {
+  id: number;
+  title: string;
+  preview: string;
+  mood: string | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
 };
 
 export type BiblePassage = {
