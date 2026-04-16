@@ -7,6 +7,7 @@ import SectionBlock from '@/components/SectionBlock';
 import AIPanel from '@/components/AIPanel';
 import { useRegisterPage } from '@/lib/assistantContext';
 import VersionHistoryPanel from '@/components/VersionHistoryPanel';
+import { getSongCached } from '@/lib/cachedApi';
 
 type SaveState = 'saved' | 'saving' | 'dirty' | 'error';
 
@@ -23,7 +24,7 @@ export default function EditorPage({ user, onLogout }: { user: User; onLogout: (
 
   // Load song
   useEffect(() => {
-    api.getSong(songId)
+    getSongCached(songId)
       .then(setSong)
       .catch((e) => toast.error(e.message));
   }, [songId]);

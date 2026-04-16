@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { api, type User, type Section, type Psalm, type BibleTranslation } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
+import { getPsalmCached } from '@/lib/cachedApi';
+import { cacheKeys } from '@/lib/offlineCache';
 
 type ViewedPsalm = Psalm & { why_it_fits?: string };
 
@@ -62,7 +64,7 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
     const refreshed: ViewedPsalm[] = [];
     for (const { n, why } of numbers) {
       try {
-        const p = await api.getPsalm(n, translation);
+        const p = await getPsalmCached(n, translation);
         refreshed.push({ ...p, why_it_fits: why });
       } catch { /* skip failures */ }
     }
@@ -91,12 +93,52 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
   async function openPsalm(number: number, whyItFits?: string) {
     setLoadingSelected(true);
     try {
-      const p = await api.getPsalm(number, translation);
+      const p = await getPsalmCached(number, translation);
       setSelected({ ...p, why_it_fits: whyItFits });
     } catch (e: any) {
       toast.error(e.message);
     } finally {
       setLoadingSelected(false);
+    }
+  }
+
+  // Download-for-offline bulk prefetch
+  const [downloading, setDownloading] = useState<{ done: number; total: number } | null>(null);
+  const [downloadedTranslations, setDownloadedTranslations] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    cacheKeys('psalms').then((keys) => {
+      const perTx: Record<string, number> = {};
+      for (const k of keys) {
+        const [tx] = String(k).split(':');
+        perTx[tx] = (perTx[tx] || 0) + 1;
+      }
+      const complete = new Set<string>();
+      for (const [tx, count] of Object.entries(perTx)) {
+        if (count >= 150) complete.add(tx);
+      }
+      setDownloadedTranslations(complete);
+    });
+  }, [translation, selected]);
+
+  async function downloadAllPsalms() {
+    if (downloading) return;
+    setDownloading({ done: 0, total: 150 });
+    let done = 0;
+    for (let n = 1; n <= 150; n++) {
+      try {
+        await getPsalmCached(n, translation);
+      } catch (err: any) {
+        toast.error(`Stopped at Psalm ${n}: ${err.message}`);
+        break;
+      }
+      done++;
+      setDownloading({ done, total: 150 });
+    }
+    setDownloading(null);
+    if (done === 150) {
+      toast.success(`All 150 Psalms cached offline (${translation.toUpperCase()})`);
+      setDownloadedTranslations((s) => new Set(s).add(translation));
     }
   }
 
@@ -184,8 +226,25 @@ export default function PsalmsPage({ user, onLogout }: { user: User; onLogout: (
       </PageBanner>
 
       <main className="max-w-5xl mx-auto px-8 py-10">
-        <div className="mb-4 text-sm">
+        <div className="mb-4 text-sm flex items-center justify-between flex-wrap gap-3">
           <Link to="/app" className="text-meadow-500 hover:text-meadow-800">← All songs</Link>
+          {downloadedTranslations.has(translation) ? (
+            <span className="text-xs text-meadow-600 inline-flex items-center gap-1">
+              ✓ Available offline ({translation.toUpperCase()})
+            </span>
+          ) : downloading ? (
+            <span className="text-xs text-accent">
+              Downloading… {downloading.done}/{downloading.total}
+            </span>
+          ) : (
+            <button
+              onClick={downloadAllPsalms}
+              className="text-xs px-3 py-1.5 border border-meadow-300 rounded-full hover:bg-meadow-100 text-meadow-700 font-medium"
+              title="Prefetch all 150 psalms in this translation so you can read them without internet"
+            >
+              ↓ Download all 150 for offline
+            </button>
+          )}
         </div>
         <p className="text-xs text-meadow-500 mb-6">
           All translations are public domain. Modern copyrighted translations (NIV, ESV, NASB, NKJV) are not available for licensing reasons.

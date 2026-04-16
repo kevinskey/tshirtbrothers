@@ -14,6 +14,7 @@ import JournalPage from '@/pages/JournalPage';
 import { AssistantProvider } from '@/lib/assistantContext';
 import AssistantOverlay from '@/components/AssistantOverlay';
 import AssistantFab from '@/components/AssistantFab';
+import OfflineBanner from '@/components/OfflineBanner';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -38,6 +39,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AssistantProvider>
+      <OfflineBanner />
       <Routes>
         <Route path="/" element={<LandingPage user={user} />} />
         <Route

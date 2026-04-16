@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#f8faf2"/>
+  <rect width="512" height="512" rx="96" fill="url(#bgGradient)"/>
+
+  <!-- Sun rays -->
+  <g stroke="#e6b020" stroke-width="10" stroke-linecap="round" opacity="0.9">
+    <line x1="256" y1="80" x2="256" y2="130"/>
+    <line x1="256" y1="382" x2="256" y2="432"/>
+    <line x1="80" y1="256" x2="130" y2="256"/>
+    <line x1="382" y1="256" x2="432" y2="256"/>
+    <line x1="131" y1="131" x2="165" y2="165"/>
+    <line x1="347" y1="347" x2="381" y2="381"/>
+    <line x1="131" y1="381" x2="165" y2="347"/>
+    <line x1="347" y1="165" x2="381" y2="131"/>
+  </g>
+
+  <!-- Sun body -->
+  <circle cx="256" cy="256" r="120" fill="#f5c842"/>
+  <circle cx="220" cy="220" r="120" fill="url(#sunGlow)" opacity="0.6"/>
+
+  <!-- Flower petals overlaid -->
+  <g transform="translate(256 256)" opacity="0.85">
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b"/>
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b" transform="rotate(60)"/>
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b" transform="rotate(120)"/>
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b" transform="rotate(180)"/>
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b" transform="rotate(240)"/>
+    <ellipse cx="0" cy="-60" rx="28" ry="50" fill="#e89b9b" transform="rotate(300)"/>
+    <circle cx="0" cy="0" r="32" fill="#c69209"/>
+  </g>
+
+  <defs>
+    <radialGradient id="bgGradient" cx="0.5" cy="0.2" r="0.9">
+      <stop offset="0%" stop-color="#fef3c7" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#eef2e2" stop-opacity="1"/>
+    </radialGradient>
+    <radialGradient id="sunGlow" cx="0.3" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="100%" stop-color="#f5c842" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

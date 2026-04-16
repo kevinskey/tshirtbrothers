@@ -5,6 +5,7 @@ import { api, type User, type JournalEntry, type JournalSummary } from '@/lib/ap
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
 import { useRegisterPage } from '@/lib/assistantContext';
+import { listJournalCached, getJournalCached } from '@/lib/cachedApi';
 
 type AskMode = 'recall' | 'themes' | 'inspire';
 
@@ -48,7 +49,7 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
   async function refresh(q?: string) {
     setLoading(true);
     try {
-      const r = await api.listJournal(q);
+      const r = await listJournalCached(q);
       setEntries(r);
     } catch (e: any) {
       toast.error(e.message);
@@ -59,7 +60,7 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
 
   async function openEntry(id: number) {
     try {
-      const e = await api.getJournal(id);
+      const e = await getJournalCached(id);
       setSelectedId(id);
       setEntry(e);
       setTitle(e.title || '');

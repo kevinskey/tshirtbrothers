@@ -5,6 +5,7 @@ import { api, type SongSummary, type User } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
 import { useRegisterPage } from '@/lib/assistantContext';
+import { listSongsCached } from '@/lib/cachedApi';
 
 export default function LibraryPage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [songs, setSongs] = useState<SongSummary[]>([]);
@@ -12,7 +13,7 @@ export default function LibraryPage({ user, onLogout }: { user: User; onLogout: 
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.listSongs().then(setSongs).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
+    listSongsCached().then(setSongs).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   }, []);
 
   async function newSong() {

@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api, type User, type Section, type BiblePassage, type BibleTranslation } from '@/lib/api';
 import TopBar from '@/components/TopBar';
 import PageBanner from '@/components/PageBanner';
+import { getBiblePassageCached } from '@/lib/cachedApi';
 
 const TRANSLATION_KEY = 'sw_psalm_translation'; // share with PsalmsPage
 
@@ -41,7 +42,7 @@ export default function BibleSearchPage({ user, onLogout }: { user: User; onLogo
     const fresh: BiblePassage[] = [];
     for (const { ref, why } of refs) {
       try {
-        const p = await api.getBiblePassage(ref, translation);
+        const p = await getBiblePassageCached(ref, translation);
         fresh.push({ ...p, why_it_fits: why });
       } catch { /* skip failures */ }
     }
