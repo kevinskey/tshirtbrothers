@@ -696,6 +696,80 @@ router.post('/customer-assets/:assetId/move-to-library', async (req, res, next) 
   } catch (err) { next(err); }
 });
 
+// ============================================================================
+//  Admin-only "Fixed Graphics" library — staging area for customer artwork
+//  that's been cleaned up in the Design Workspace and is ready for the
+//  gang-sheet step. These graphics are NOT shown to customers.
+// ============================================================================
+
+// GET /fixed-graphics - list all fixed graphics
+router.get('/fixed-graphics', async (_req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, image_url, original_source, source_customer_id,
+              file_type, width, height, size_bytes, notes, created_by, created_at
+         FROM admin_fixed_graphics
+         ORDER BY created_at DESC`,
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// POST /fixed-graphics - save a cleaned graphic into the admin-only library.
+// Body: { name, image_url, original_source?, source_customer_id?,
+//         file_type?, width?, height?, size_bytes?, notes? }
+router.post('/fixed-graphics', async (req, res, next) => {
+  try {
+    const { name, image_url, original_source, source_customer_id,
+            file_type, width, height, size_bytes, notes } = req.body || {};
+    if (!name || !image_url) {
+      return res.status(400).json({ error: 'name and image_url are required' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO admin_fixed_graphics
+        (name, image_url, original_source, source_customer_id,
+         file_type, width, height, size_bytes, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [name, image_url, original_source || null, source_customer_id || null,
+       file_type || null, width || null, height || null, size_bytes || null,
+       notes || null, req.user?.id || null],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /fixed-graphics/:id
+router.delete('/fixed-graphics/:id', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM admin_fixed_graphics WHERE id = $1 RETURNING id',
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
+// POST /fixed-graphics/:id/send-to-gangsheet
+//   Creates a new gang sheet pre-populated with this fixed graphic and
+//   returns the new sheet id so the client can redirect into the builder.
+router.post('/fixed-graphics/:id/send-to-gangsheet', async (req, res, next) => {
+  try {
+    const fg = await pool.query('SELECT * FROM admin_fixed_graphics WHERE id = $1', [req.params.id]);
+    if (fg.rows.length === 0) return res.status(404).json({ error: 'Fixed graphic not found' });
+    const g = fg.rows[0];
+
+    const designs = [{ imageUrl: g.image_url, name: g.name }];
+    const { rows } = await pool.query(
+      `INSERT INTO gang_sheets (name, designs, created_by)
+       VALUES ($1, $2, $3) RETURNING id, name`,
+      [g.name || 'Gang sheet', JSON.stringify(designs), req.user?.id || null],
+    );
+    res.json({ gangsheet_id: rows[0].id, name: rows[0].name });
+  } catch (err) { next(err); }
+});
+
 // POST /designs-library/:id/move-to-customer
 //   Move an admin-library design into a specific customer's private library.
 //   Body: { customer_id }

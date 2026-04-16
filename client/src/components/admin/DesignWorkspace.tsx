@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Layout } from 'lucide-react';
 
 interface DesignAsset {
   id: number;
@@ -19,6 +20,7 @@ const headers = () => ({ 'Content-Type': 'application/json', Authorization: `Bea
 const CATEGORIES = ['general', 'logos', 'typography', 'illustrations', 'backgrounds', 'badges', 'icons', 'patterns'];
 
 export default function DesignWorkspace() {
+  const navigate = useNavigate();
   // AI Generation
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
@@ -57,6 +59,9 @@ export default function DesignWorkspace() {
 
   // History for undo
   const [imageHistory, setImageHistory] = useState<string[]>([]);
+  // Admin-only fix library actions
+  const [savingFix, setSavingFix] = useState(false);
+  const [sendingToSheet, setSendingToSheet] = useState(false);
   // URL paste + customer graphics picker for the Upload & Fix section
   const [pasteUrl, setPasteUrl] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -296,6 +301,92 @@ export default function DesignWorkspace() {
     newHistory.pop();
     setImageHistory(newHistory);
     setGeneratedImage(newHistory[newHistory.length - 1] ?? null);
+  }
+
+  // Ensures the graphic is a hosted URL (uploading the data URL to Spaces if
+  // needed). Returns the final URL, or null on failure.
+  async function ensureHostedUrl(): Promise<string | null> {
+    if (!generatedImage) return null;
+    if (!generatedImage.startsWith('data:')) return generatedImage;
+    const slug = (prompt || 'fixed-graphic').replace(/[^a-zA-Z0-9.-]+/g, '-').slice(0, 60) || 'fixed-graphic';
+    try {
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({
+          imageBase64: generatedImage,
+          filename: `${slug}.png`,
+          customerEmail: 'admin-workspace',
+        }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.url || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Save the fixed graphic into the admin-only fix library (not the public
+  // designs library). These graphics are only visible to admins.
+  async function handleSaveFixed() {
+    if (!generatedImage || savingFix) return;
+    setSavingFix(true);
+    try {
+      const url = await ensureHostedUrl();
+      if (!url) { alert('Upload failed. Try again.'); return; }
+      const name = (prompt || 'Untitled fix').trim().slice(0, 120);
+      const res = await fetch('/api/admin/fixed-graphics', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ name, image_url: url, notes: 'Saved from Design Workspace' }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Save failed');
+      }
+      alert('Saved to Fix Library.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSavingFix(false);
+    }
+  }
+
+  // Save to the fix library and open a brand-new gang sheet pre-populated
+  // with this graphic.
+  async function handleSendToGangSheet() {
+    if (!generatedImage || sendingToSheet) return;
+    setSendingToSheet(true);
+    try {
+      const url = await ensureHostedUrl();
+      if (!url) { alert('Upload failed. Try again.'); return; }
+      const name = (prompt || 'Fixed graphic').trim().slice(0, 120);
+      const saveRes = await fetch('/api/admin/fixed-graphics', {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ name, image_url: url, notes: 'Sent to gang sheet' }),
+      });
+      if (!saveRes.ok) {
+        const data = await saveRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Save failed');
+      }
+      const saved = await saveRes.json();
+      const sendRes = await fetch(`/api/admin/fixed-graphics/${saved.id}/send-to-gangsheet`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (!sendRes.ok) {
+        const data = await sendRes.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not create gang sheet');
+      }
+      const { gangsheet_id } = await sendRes.json();
+      navigate(`/admin/gangsheet/${gangsheet_id}`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to send to gang sheet');
+    } finally {
+      setSendingToSheet(false);
+    }
   }
 
   async function handleSave() {
@@ -714,9 +805,20 @@ export default function DesignWorkspace() {
                     className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1">
                     <Download className="w-3 h-3" /> Download
                   </button>
+                  <button onClick={handleSaveFixed} disabled={savingFix}
+                    className="px-3 py-2 bg-green-50 text-green-700 text-xs font-medium rounded-lg hover:bg-green-100 disabled:opacity-50 flex items-center justify-center gap-1"
+                    title="Save to the admin-only Fix Library (not visible to customers)">
+                    {savingFix ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save
+                  </button>
+                  <button onClick={handleSendToGangSheet} disabled={sendingToSheet}
+                    className="px-3 py-2 bg-orange-50 text-orange-700 text-xs font-medium rounded-lg hover:bg-orange-100 disabled:opacity-50 flex items-center justify-center gap-1"
+                    title="Save to Fix Library and open a new gang sheet with this graphic">
+                    {sendingToSheet ? <Loader2 className="w-3 h-3 animate-spin" /> : <Layout className="w-3 h-3" />} To Gang Sheet
+                  </button>
                   <button onClick={() => { setSaveDialog(true); setSaveName(prompt.slice(0, 50)); }}
-                    className="px-3 py-2 bg-green-50 text-green-700 text-xs font-medium rounded-lg hover:bg-green-100 flex items-center justify-center gap-1">
-                    <Save className="w-3 h-3" /> Save to Library
+                    className="px-3 py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 flex items-center justify-center gap-1"
+                    title="Publish to the shared Stock Library (visible to customers)">
+                    <FolderOpen className="w-3 h-3" /> To Stock Library
                   </button>
                 </div>
 
