@@ -299,7 +299,7 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
         </aside>
 
         {/* Composer */}
-        <section className="bg-white border border-meadow-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[60vh] lg:min-h-[70vh]">
+        <section className="bg-white border border-meadow-200 rounded-2xl shadow-sm overflow-hidden flex flex-col min-h-[60dvh] lg:min-h-[70vh]">
           <div className="px-4 sm:px-6 py-2.5 border-b border-meadow-100 bg-meadow-50 flex items-center justify-between gap-2 text-xs flex-wrap min-h-[44px]">
             <div className="text-meadow-500 truncate flex-1 min-w-0">
               {entry
@@ -345,7 +345,7 @@ export default function JournalPage({ user, onLogout }: { user: User; onLogout: 
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Start writing… come back later and the AI can help you remember, find themes, or pull ideas for songs."
-              className="flex-1 w-full bg-transparent border-0 focus:outline-none font-serif text-base sm:text-lg leading-relaxed text-meadow-900 placeholder:text-meadow-300 resize-none min-h-[40vh]"
+              className="flex-1 w-full bg-transparent border-0 focus:outline-none font-serif text-base sm:text-lg leading-relaxed text-meadow-900 placeholder:text-meadow-300 resize-none min-h-[40dvh]"
             />
           </div>
         </section>

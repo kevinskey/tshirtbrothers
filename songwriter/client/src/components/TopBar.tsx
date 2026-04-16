@@ -71,7 +71,7 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
   }
 
   return (
-    <header className="border-b border-meadow-200 bg-meadow-50/90 backdrop-blur-sm sticky top-0 z-30">
+    <header className="border-b border-meadow-200 bg-meadow-50 sm:bg-meadow-50/90 sm:backdrop-blur-sm sticky top-0 z-30">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2 sm:gap-4">
         <div className="flex items-center gap-3 sm:gap-5 flex-1 min-w-0">
           <Link to="/app" className="flex items-center gap-2 font-serif text-xl font-bold text-meadow-800 flex-shrink-0">
