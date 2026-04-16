@@ -1,16 +1,19 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import passport from 'passport';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/auth.js';
 import songRoutes from './routes/songs.js';
 import aiRoutes from './routes/ai.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 // Behind nginx → trust proxy so secure cookies work
