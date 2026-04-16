@@ -44,6 +44,25 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// AI: on this day (from previous years/months) — MUST be declared before /:id
+// so Express doesn't route "on-this-day" into the integer-id handler.
+router.get('/on-this-day', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, title, LEFT(body, 300) AS preview, created_at
+         FROM journal_entries
+        WHERE user_id = $1
+          AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())
+          AND EXTRACT(DAY FROM created_at) = EXTRACT(DAY FROM NOW())
+          AND created_at < NOW() - INTERVAL '1 day'
+        ORDER BY created_at DESC
+        LIMIT 5`,
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // Get a single entry (full body)
 router.get('/:id', async (req, res, next) => {
   try {
@@ -166,24 +185,6 @@ ${context}`,
     } catch { /* noop */ }
 
     res.json({ reply, entry_count: entries.length });
-  } catch (err) { next(err); }
-});
-
-// ── AI: on this day (from previous years/months) ─────────────────────────
-router.get('/on-this-day', async (req, res, next) => {
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, title, LEFT(body, 300) AS preview, created_at
-         FROM journal_entries
-        WHERE user_id = $1
-          AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM NOW())
-          AND EXTRACT(DAY FROM created_at) = EXTRACT(DAY FROM NOW())
-          AND created_at < NOW() - INTERVAL '1 day'
-        ORDER BY created_at DESC
-        LIMIT 5`,
-      [req.user.id]
-    );
-    res.json(rows);
   } catch (err) { next(err); }
 });
 
