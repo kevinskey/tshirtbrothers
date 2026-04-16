@@ -105,6 +105,34 @@ export const api = {
       sections: { type: Section['type']; label: string; lines: string[] }[];
       notes?: string;
     }>('/ai/generate-from-model', { method: 'POST', body: JSON.stringify(body) }),
+
+  getPsalm: (number: number) => req<Psalm>(`/psalms/${number}`),
+
+  searchPsalms: (body: { theme: string; count?: number }) =>
+    req<{ psalms: (Psalm & { why_it_fits: string })[] }>('/psalms/search', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  adaptPsalm: (body: {
+    psalm_number?: number;
+    psalm_text?: string;
+    style?: string;
+    preserve_imagery?: boolean;
+  }) =>
+    req<{
+      title: string;
+      sections: { type: Section['type']; label: string; lines: string[] }[];
+    }>('/psalms/adapt', { method: 'POST', body: JSON.stringify(body) }),
+};
+
+export type Psalm = {
+  number: number;
+  reference: string;
+  verses: { verse: number; text: string }[];
+  text: string;
+  translation: string;
+  translation_note: string;
 };
 
 export type SongAnalysis = {

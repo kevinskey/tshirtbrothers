@@ -7,6 +7,7 @@ import LibraryPage from '@/pages/LibraryPage';
 import EditorPage from '@/pages/EditorPage';
 import PoetryPage from '@/pages/PoetryPage';
 import AnalyzePage from '@/pages/AnalyzePage';
+import PsalmsPage from '@/pages/PsalmsPage';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -61,6 +62,14 @@ export default function App() {
           element={
             <Protected user={user} loading={loading}>
               <AnalyzePage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/psalms"
+          element={
+            <Protected user={user} loading={loading}>
+              <PsalmsPage user={user!} onLogout={() => setUser(null)} />
             </Protected>
           }
         />

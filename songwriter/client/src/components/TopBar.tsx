@@ -18,6 +18,7 @@ export default function TopBar({ user, onLogout }: { user: User; onLogout: () =>
           <nav className="flex items-center gap-4 text-sm">
             <Link to="/app" className="text-ink-600 hover:text-ink-900">Songs</Link>
             <Link to="/app/poetry" className="text-ink-600 hover:text-ink-900">Poetry</Link>
+            <Link to="/app/psalms" className="text-ink-600 hover:text-ink-900">Psalms</Link>
             <Link to="/app/analyze" className="text-ink-600 hover:text-ink-900">Analyze</Link>
           </nav>
         </div>
