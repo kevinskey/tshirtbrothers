@@ -39,7 +39,35 @@ function getClient() {
   return new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: key });
 }
 
-// ── Heuristic PDF text splitter ──────────────────────────────────────────
+// ── Current PDF (just show the most recently uploaded) ──────────────────
+// Simpler API: ignore the parsed entries and just return metadata for the
+// latest PDF file in /uploads/ whose name starts with 'spirituals-'. The
+// admin uploads a new PDF → it becomes the current one.
+router.get('/pdf', async (_req, res, next) => {
+  try {
+    const files = fs.readdirSync(UPLOAD_DIR)
+      .filter((f) => f.toLowerCase().endsWith('.pdf'))
+      .map((f) => {
+        const stat = fs.statSync(path.join(UPLOAD_DIR, f));
+        return { name: f, mtime: stat.mtimeMs, size: stat.size };
+      })
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (files.length === 0) {
+      return res.json({ file: null });
+    }
+
+    const latest = files[0];
+    res.json({
+      file: {
+        url: `/uploads/${latest.name}`,
+        filename: latest.name,
+        size: latest.size,
+        uploaded_at: new Date(latest.mtime).toISOString(),
+      },
+    });
+  } catch (err) { next(err); }
+});
 // pdf-parse separates pages with \f (form-feed). Tries multiple strategies
 // so different PDF layouts work.
 //
