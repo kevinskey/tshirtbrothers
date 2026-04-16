@@ -129,6 +129,65 @@ export const api = {
       title: string;
       sections: { type: Section['type']; label: string; lines: string[] }[];
     }>('/psalms/adapt', { method: 'POST', body: JSON.stringify(body) }),
+
+  lookupWord: (word: string) => req<DictionaryEntry>(`/dictionary/${encodeURIComponent(word)}`),
+
+  wordInsights: (word: string) =>
+    req<WordInsights>(`/dictionary/${encodeURIComponent(word)}/insights`, { method: 'POST' }),
+
+  searchBible: (body: { query: string; count?: number; translation?: string; testament?: 'any' | 'ot' | 'nt' }) =>
+    req<{ passages: BiblePassage[] }>('/psalms/bible/search', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getBiblePassage: (ref: string, translation?: string) =>
+    req<BiblePassage>(
+      `/psalms/bible/passage?ref=${encodeURIComponent(ref)}${translation ? `&translation=${translation}` : ''}`
+    ),
+};
+
+export type BiblePassage = {
+  reference: string;
+  translation_code: string;
+  translation: string;
+  translation_note: string;
+  verses: { book: string; chapter: number; verse: number; text: string }[];
+  text: string;
+  why_it_fits?: string;
+};
+
+export type DictionaryEntry = {
+  word: string;
+  phonetics: { text: string; audio: string | null }[];
+  meanings: {
+    partOfSpeech: string;
+    definitions: { definition: string; example: string | null }[];
+    synonyms: string[];
+    antonyms: string[];
+  }[];
+  origin: string;
+  synonyms: string[];
+  antonyms: string[];
+  associations: string[];
+  rhymes: string[];
+  near_rhymes: string[];
+  collocations: {
+    adjectives_for_noun: string[];
+    nouns_for_adjective: string[];
+  };
+  similar_sound: string[];
+};
+
+export type WordInsights = {
+  connotation?: string;
+  register?: string;
+  emotional_weight?: string;
+  sensory_feel?: string;
+  metaphor_ideas?: string[];
+  contrast_pairs?: string[];
+  song_line_examples?: string[];
+  pitfalls?: string;
 };
 
 export type BibleTranslation = { code: string; label: string; lang: string };

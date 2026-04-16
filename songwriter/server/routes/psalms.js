@@ -212,4 +212,129 @@ Output STRICT JSON:
   } catch (err) { next(err); }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// BIBLE-WIDE SEARCH (not just psalms)
+// Uses AI to pick relevant verse references for a query, then fetches the
+// real verse text from bible-api.com. This endpoint is mounted at
+// /api/psalms/bible/search for colocation, but searches the whole Bible.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Passage-level cache, keyed by `${tx}:${reference}`
+const passageCache = new Map();
+
+async function fetchPassage(reference, translation) {
+  const tx = normalizeTranslation(translation);
+  const cacheKey = `${tx}:${reference}`;
+  if (passageCache.has(cacheKey)) return passageCache.get(cacheKey);
+
+  const ref = String(reference || '').trim();
+  if (!ref) throw new Error('reference required');
+  // bible-api.com accepts refs like "John 3:16" or "Isaiah 40:28-31"
+  const url = `https://bible-api.com/${encodeURIComponent(ref)}?translation=${tx}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`bible-api returned ${res.status} for ${ref} (${tx})`);
+  const data = await res.json();
+
+  const result = {
+    reference: data.reference || ref,
+    translation_code: tx,
+    translation: data.translation_name || TRANSLATIONS[tx]?.label || tx,
+    translation_note: data.translation_note || 'Public Domain',
+    verses: (data.verses || []).map((v) => ({
+      book: v.book_name,
+      chapter: v.chapter,
+      verse: v.verse,
+      text: (v.text || '').trim(),
+    })),
+    text: (data.text || '').trim(),
+  };
+  passageCache.set(cacheKey, result);
+  return result;
+}
+
+router.post('/bible/search', async (req, res, next) => {
+  try {
+    const { query, count = 6, translation, testament = 'any' } = req.body;
+    if (!query) return res.status(400).json({ error: 'query is required' });
+
+    const safeCount = Math.min(Math.max(parseInt(count) || 6, 1), 12);
+    const tx = normalizeTranslation(translation);
+
+    const testamentFilter =
+      testament === 'ot' ? 'Restrict to the Old Testament (Genesis through Malachi).'
+      : testament === 'nt' ? 'Restrict to the New Testament (Matthew through Revelation).'
+      : 'Search the entire Bible (both Old and New Testaments).';
+
+    const client = getClient();
+    const ai = await client.chat.completions.create({
+      model: 'deepseek-chat',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a Bible concordance scholar. The user is searching the Bible for verses matching a word, phrase, or idea.
+
+${testamentFilter}
+
+Return the ${safeCount} BEST-MATCHING passages. Use real, existing references only — do not invent. Format references as "Book Chapter:Verse" or "Book Chapter:Verse-Verse" for short ranges (max ~5 verses per range).
+
+Good book name formats: Genesis, Exodus, 1 Samuel, 2 Kings, Psalms, Song of Solomon, Matthew, 1 Corinthians, Revelation.
+
+Output STRICT JSON:
+{
+  "results": [
+    { "reference": "John 3:16", "why_it_fits": "the core verse on God's love and eternal life" }
+  ]
+}
+
+Order by strongest match. If fewer than ${safeCount} strong matches exist, return fewer.`,
+        },
+        {
+          role: 'user',
+          content: `Search the Bible for: ${query}\n\nFind up to ${safeCount} passages that fit.`,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 800,
+      response_format: { type: 'json_object' },
+    });
+
+    const raw = ai.choices?.[0]?.message?.content || '{"results":[]}';
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch { return res.status(502).json({ error: 'AI returned malformed response' }); }
+
+    const enriched = [];
+    for (const r of (parsed.results || []).slice(0, safeCount)) {
+      if (!r?.reference) continue;
+      try {
+        const passage = await fetchPassage(r.reference, tx);
+        enriched.push({ ...passage, why_it_fits: r.why_it_fits || '' });
+      } catch (err) {
+        console.error(`[bible/search] fetch failed for ${r.reference}:`, err.message);
+      }
+    }
+
+    try {
+      await pool.query(
+        'INSERT INTO ai_logs (user_id, feature, input_preview, output_preview) VALUES ($1, $2, $3, $4)',
+        [req.user.id, 'bible-search', `${query} [${tx}]`.slice(0, 300), enriched.map((e) => e.reference).join(' | ')]
+      );
+    } catch { /* noop */ }
+
+    res.json({ passages: enriched });
+  } catch (err) { next(err); }
+});
+
+// GET a passage by reference (e.g. ?ref=John+3:16&translation=web)
+router.get('/bible/passage', async (req, res, next) => {
+  try {
+    const { ref, translation } = req.query;
+    if (!ref) return res.status(400).json({ error: 'ref is required' });
+    const passage = await fetchPassage(ref, translation);
+    res.json(passage);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

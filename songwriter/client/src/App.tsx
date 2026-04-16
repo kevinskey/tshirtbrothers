@@ -8,6 +8,8 @@ import EditorPage from '@/pages/EditorPage';
 import PoetryPage from '@/pages/PoetryPage';
 import AnalyzePage from '@/pages/AnalyzePage';
 import PsalmsPage from '@/pages/PsalmsPage';
+import DictionaryPage from '@/pages/DictionaryPage';
+import BibleSearchPage from '@/pages/BibleSearchPage';
 
 function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -70,6 +72,22 @@ export default function App() {
           element={
             <Protected user={user} loading={loading}>
               <PsalmsPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/dictionary"
+          element={
+            <Protected user={user} loading={loading}>
+              <DictionaryPage user={user!} onLogout={() => setUser(null)} />
+            </Protected>
+          }
+        />
+        <Route
+          path="/app/bible"
+          element={
+            <Protected user={user} loading={loading}>
+              <BibleSearchPage user={user!} onLogout={() => setUser(null)} />
             </Protected>
           }
         />

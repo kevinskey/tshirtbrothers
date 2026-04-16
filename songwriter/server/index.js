@@ -14,6 +14,7 @@ import authRoutes from './routes/auth.js';
 import songRoutes from './routes/songs.js';
 import aiRoutes from './routes/ai.js';
 import psalmRoutes from './routes/psalms.js';
+import dictionaryRoutes from './routes/dictionary.js';
 
 const app = express();
 
@@ -37,6 +38,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/songs', songRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/psalms', psalmRoutes);
+app.use('/api/dictionary', dictionaryRoutes);
 
 // Serve client build in production
 if (process.env.NODE_ENV === 'production') {
