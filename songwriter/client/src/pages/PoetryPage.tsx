@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { toast } from 'sonner';
-import { api, type User, type Section } from '@/lib/api';
+import { api, type User, type Section, type Poem } from '@/lib/api';
 import TopBar from '@/components/TopBar';
-
-type Poem = { title: string; author: string; year: string; excerpt: string; why_it_fits: string };
 
 const BACKGROUND_OPTIONS = [
   { value: '', label: 'Any' },
@@ -76,7 +74,7 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
 
   async function importAsSong(poem: Poem) {
     try {
-      const lines = poem.excerpt.split('\n').filter(Boolean);
+      const lines = poem.full_text.split('\n').map((l) => l.trim()).filter(Boolean);
       const sections: Section[] = [
         {
           id: crypto.randomUUID(),
@@ -208,30 +206,7 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
         {poems.length > 0 && (
           <div className="space-y-4">
             {poems.map((p, i) => (
-              <article key={i} className="bg-white border border-ink-100 rounded-lg p-6">
-                <div className="flex items-start justify-between mb-3 gap-4">
-                  <div>
-                    <h2 className="font-serif text-2xl font-bold">{p.title}</h2>
-                    <div className="text-sm text-ink-400 mt-0.5">
-                      {p.author} {p.year && `· ${p.year}`}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => importAsSong(p)}
-                    className="text-xs px-3 py-1.5 bg-accent text-ink-900 rounded-md hover:bg-accent-hover font-medium whitespace-nowrap"
-                  >
-                    Use as song →
-                  </button>
-                </div>
-                <pre className="font-serif text-base text-ink-800 whitespace-pre-wrap leading-relaxed mb-3">
-                  {p.excerpt}
-                </pre>
-                {p.why_it_fits && (
-                  <p className="text-xs italic text-ink-400 border-l-2 border-ink-100 pl-3">
-                    {p.why_it_fits}
-                  </p>
-                )}
-              </article>
+              <PoemCard key={i} poem={p} onImport={() => importAsSong(p)} />
             ))}
           </div>
         )}
@@ -243,5 +218,71 @@ export default function PoetryPage({ user, onLogout }: { user: User; onLogout: (
         )}
       </main>
     </div>
+  );
+}
+
+const COLLAPSE_THRESHOLD = 32; // lines before we collapse by default
+
+function PoemCard({ poem, onImport }: { poem: Poem; onImport: () => void }) {
+  const lines = (poem.full_text || '').split('\n');
+  const isLong = lines.length > COLLAPSE_THRESHOLD;
+  const [expanded, setExpanded] = useState(!isLong);
+  const displayText = expanded ? poem.full_text : lines.slice(0, COLLAPSE_THRESHOLD).join('\n');
+
+  async function copyText() {
+    try {
+      await navigator.clipboard.writeText(poem.full_text);
+      toast.success('Poem copied');
+    } catch {
+      toast.error('Copy failed');
+    }
+  }
+
+  return (
+    <article className="bg-white border border-ink-100 rounded-lg p-6">
+      <div className="flex items-start justify-between mb-3 gap-4">
+        <div>
+          <h2 className="font-serif text-2xl font-bold">{poem.title}</h2>
+          <div className="text-sm text-ink-400 mt-0.5">
+            {poem.author} {poem.year && `· ${poem.year}`}
+            {poem.is_excerpt && <span className="ml-2 text-amber-700">· excerpt from longer work</span>}
+            {poem.line_count && <span className="ml-2 text-ink-300">· {poem.line_count} lines</span>}
+          </div>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button
+            onClick={copyText}
+            className="text-xs px-3 py-1.5 border border-ink-200 rounded-md hover:bg-ink-100 whitespace-nowrap"
+          >
+            Copy
+          </button>
+          <button
+            onClick={onImport}
+            className="text-xs px-3 py-1.5 bg-accent text-ink-900 rounded-md hover:bg-accent-hover font-medium whitespace-nowrap"
+          >
+            Use as song →
+          </button>
+        </div>
+      </div>
+
+      <pre className="font-serif text-base text-ink-800 whitespace-pre-wrap leading-relaxed mb-3">
+        {displayText}
+      </pre>
+
+      {isLong && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-xs text-accent hover:text-accent-hover font-medium mb-3"
+        >
+          {expanded ? '↑ Collapse' : `↓ Show all ${lines.length} lines`}
+        </button>
+      )}
+
+      {poem.why_it_fits && (
+        <p className="text-xs italic text-ink-400 border-l-2 border-ink-100 pl-3">
+          {poem.why_it_fits}
+        </p>
+      )}
+    </article>
   );
 }

@@ -86,10 +86,10 @@ export const api = {
     era?: string;
     language_origin?: string;
   }) =>
-    req<{ poems: { title: string; author: string; year: string; excerpt: string; why_it_fits: string }[] }>(
-      '/ai/find-poetry',
-      { method: 'POST', body: JSON.stringify(body) }
-    ),
+    req<{ poems: Poem[] }>('/ai/find-poetry', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   analyzeSong: (body: { lyrics?: string; title?: string; artist?: string }) =>
     req<SongAnalysis>('/ai/analyze-song', { method: 'POST', body: JSON.stringify(body) }),
@@ -124,6 +124,16 @@ export const api = {
       title: string;
       sections: { type: Section['type']; label: string; lines: string[] }[];
     }>('/psalms/adapt', { method: 'POST', body: JSON.stringify(body) }),
+};
+
+export type Poem = {
+  title: string;
+  author: string;
+  year: string;
+  full_text: string;
+  is_excerpt?: boolean;
+  line_count?: number;
+  why_it_fits: string;
 };
 
 export type Psalm = {

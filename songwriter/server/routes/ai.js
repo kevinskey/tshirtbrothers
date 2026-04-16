@@ -251,21 +251,25 @@ router.post('/find-poetry', async (req, res, next) => {
 Find ${safeCount} real, public-domain poems that match the theme. Prefer poems published before 1928 (clearly public domain in the US).
 
 ${filters.length > 0 ? 'FILTERS:\n' + filters.join('\n') + '\n' : ''}
-For each poem, provide:
+For each poem, provide the COMPLETE TEXT of the poem — every line — exactly as originally written. Do not summarize, truncate, or excerpt unless the poem is book-length.
+
+For each poem:
 - title
 - author
 - year (approximate is fine)
-- excerpt (4-12 of the strongest lines, formatted with line breaks)
+- full_text: the ENTIRE poem text with line breaks preserved (\\n between lines, blank \\n\\n between stanzas). For book-length works (like "Song of Myself", "The Prelude", "Paradise Lost"), include the strongest self-contained section up to ~120 lines and set is_excerpt=true.
+- is_excerpt: boolean — true only for book-length works where you're including a section; false when you've included the complete poem
+- line_count: number of lines in full_text
 - why_it_fits (one short sentence)
 
 Output STRICT JSON:
 {
   "poems": [
-    { "title": "...", "author": "...", "year": "...", "excerpt": "line 1\\nline 2\\n...", "why_it_fits": "..." }
+    { "title": "...", "author": "...", "year": "...", "full_text": "line 1\\nline 2\\n\\nline 3 ...", "is_excerpt": false, "line_count": 14, "why_it_fits": "..." }
   ]
 }
 
-Only include real poems you're confident exist. If you can't find ${safeCount} good matches under the filters, return fewer rather than fabricating. Never invent poems or mis-attribute them.`;
+Only include real poems you can reproduce accurately. If you're not sure of the full text, return fewer poems rather than fabricating or paraphrasing lines. Never invent poems or mis-attribute them.`;
 
     const user = `Theme: ${theme}
 ${mood ? `Mood/feel: ${mood}` : ''}
@@ -275,7 +279,14 @@ ${language_origin ? `Language origin: ${language_origin}` : ''}
 
 Find ${safeCount} classic poems that fit.`;
 
-    const raw = await callAI({ system, user, responseFormat: 'json', temperature: 0.5, maxTokens: Math.min(2000 + safeCount * 200, 4000) });
+    // Full-text poems need a lot more tokens than excerpts — budget generously
+    const raw = await callAI({
+      system,
+      user,
+      responseFormat: 'json',
+      temperature: 0.3,
+      maxTokens: Math.min(1500 * safeCount, 8000),
+    });
     let parsed;
     try { parsed = JSON.parse(raw); }
     catch { return res.status(500).json({ error: 'Failed to parse AI response' }); }
