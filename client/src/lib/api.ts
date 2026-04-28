@@ -543,6 +543,19 @@ export async function deleteMockup(id: number) {
   });
 }
 
+export async function regenerateMockupPreview(id: number) {
+  return authRequest<Mockup>(`/admin/mockups/${id}/regenerate-preview`, {
+    method: 'POST',
+  });
+}
+
+export async function backfillMockupPreviews() {
+  return authRequest<{ candidates: number; succeeded: number; failed: number }>(
+    '/admin/mockups/backfill-previews',
+    { method: 'POST' },
+  );
+}
+
 export async function fetchCustomerDesigns(search?: string) {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
