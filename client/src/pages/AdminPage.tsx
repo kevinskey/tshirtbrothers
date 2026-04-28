@@ -1593,9 +1593,9 @@ export default function AdminPage() {
                 {quotes.slice(0, 10).map((q: Quote) => (
                   <div key={q.id} onClick={() => setDetailQuote(q)}
                     className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 cursor-pointer active:bg-gray-50">
-                    {q.design_url && (
+                    {(q.mockup_image_url || q.design_url) && (
                       <div className="w-12 h-12 flex-shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
-                        <img src={q.design_url} alt="" className="w-full h-full object-contain" />
+                        <img src={q.mockup_image_url || q.design_url || ''} alt="" className="w-full h-full object-contain" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -1708,9 +1708,9 @@ export default function AdminPage() {
                   <div className="text-sm text-gray-700">
                     <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
                   </div>
-                  {q.design_url && (
+                  {(q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
-                      <img src={q.design_url} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                      <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                     </div>
                   )}
                   {needed && (
@@ -4651,16 +4651,22 @@ export default function AdminPage() {
                     return (
                       <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
                         <div className="relative bg-gray-50 aspect-square flex items-center justify-center border-b border-gray-100">
-                          {m.product_image_url && (
-                            <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full h-full object-contain" />
-                          )}
-                          {m.graphic_url && (
-                            <img
-                              src={m.graphic_url}
-                              alt="Design"
-                              className="absolute"
-                              style={{ left: `${pl.x}%`, top: `${pl.y}%`, width: `${pl.width}%` }}
-                            />
+                          {m.preview_image_url ? (
+                            <img src={m.preview_image_url} alt={m.name || 'Mockup'} className="w-full h-full object-contain" />
+                          ) : (
+                            <>
+                              {m.product_image_url && (
+                                <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full h-full object-contain" />
+                              )}
+                              {m.graphic_url && (
+                                <img
+                                  src={m.graphic_url}
+                                  alt="Design"
+                                  className="absolute"
+                                  style={{ left: `${pl.x}%`, top: `${pl.y}%`, width: `${pl.width}%` }}
+                                />
+                              )}
+                            </>
                           )}
                         </div>
                         <div className="p-3 flex-1 flex flex-col gap-2">
@@ -5093,12 +5099,15 @@ export default function AdminPage() {
                     </div>
                   )}
 
-                  {/* Design preview */}
-                  {q.design_url && (
+                  {/* Design preview — prefer the flattened mockup so what
+                      the admin sees here matches the customer's approval
+                      page and the recent-quotes thumbnail. The raw
+                      design_url is still linked through for downloads. */}
+                  {(q.mockup_image_url || q.design_url) && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
-                      <a href={q.design_url} target="_blank" rel="noreferrer" className="block">
-                        <img src={q.design_url} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                      <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
+                        <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                       </a>
                     </div>
                   )}
@@ -5568,16 +5577,17 @@ export default function AdminPage() {
                 {/* Quote Summary with Design */}
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <div className="flex gap-4">
-                    {/* Design image */}
-                    {priceModalQuote.design_url && (
+                    {/* Design image — show the flattened mockup if we have
+                        one; the raw design_url is still the click-through. */}
+                    {(priceModalQuote.mockup_image_url || priceModalQuote.design_url) && (
                       <a
-                        href={priceModalQuote.design_url}
+                        href={priceModalQuote.design_url || priceModalQuote.mockup_image_url || '#'}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-shrink-0"
                       >
                         <img
-                          src={priceModalQuote.design_url}
+                          src={priceModalQuote.mockup_image_url || priceModalQuote.design_url || ''}
                           alt="Customer design"
                           className="w-28 h-28 rounded-lg border border-gray-200 bg-white object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
                         />

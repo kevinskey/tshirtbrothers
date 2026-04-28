@@ -105,6 +105,7 @@ export interface Quote {
   print_areas?: unknown;
   design_type?: string;
   design_url?: string | null;
+  mockup_image_url?: string | null;
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
   color?: string;
