@@ -7,26 +7,12 @@
 // identical across flows.
 
 import sharp from 'sharp';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { uploadObject } from './spaces.js';
 
 // Reference render size. All composites are produced at this size so the
 // image looks identical regardless of the original product photo's pixel
 // dimensions. Aspect is preserved by fitting the product into a square.
 const RENDER_SIZE = 1200;
-
-function s3Client() {
-  const spacesKey = process.env.SPACES_KEY;
-  const spacesSecret = process.env.SPACES_SECRET;
-  if (!spacesKey || !spacesSecret) {
-    throw new Error('SPACES_KEY / SPACES_SECRET not configured');
-  }
-  const region = process.env.SPACES_REGION || 'atl1';
-  return new S3Client({
-    endpoint: process.env.SPACES_ENDPOINT?.replace('nyc3', region) || `https://${region}.digitaloceanspaces.com`,
-    region,
-    credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
-  });
-}
 
 async function fetchBuffer(url) {
   const res = await fetch(url);
@@ -116,16 +102,11 @@ export async function renderMockupComposite({ productImageUrl, graphicUrl, place
 }
 
 async function uploadPng(buffer) {
-  const region = process.env.SPACES_REGION || 'atl1';
-  const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
   const key = `mockups/composites/composite-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
-  await s3Client().send(new PutObjectCommand({
-    Bucket: bucket,
-    Key: key,
-    Body: buffer,
-    ContentType: 'image/png',
-    ACL: 'public-read',
-    CacheControl: 'public, max-age=31536000, immutable',
-  }));
-  return `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
+  return uploadObject({
+    key,
+    body: buffer,
+    contentType: 'image/png',
+    cacheControl: 'public, max-age=31536000, immutable',
+  });
 }

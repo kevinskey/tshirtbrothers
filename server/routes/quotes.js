@@ -16,7 +16,7 @@ import {
   smsStatusUpdateToCustomer,
 } from '../services/sms.js';
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 
@@ -26,37 +26,18 @@ router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, 
     const { imageBase64, filename, customerEmail } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
 
-    const spacesKey = process.env.SPACES_KEY;
-    const spacesSecret = process.env.SPACES_SECRET;
-    if (!spacesKey || !spacesSecret) {
+    if (!process.env.SPACES_KEY || !process.env.SPACES_SECRET) {
       return res.status(500).json({ error: 'File storage not configured' });
     }
 
-    const s3 = new S3Client({
-      endpoint: process.env.SPACES_ENDPOINT?.replace('nyc3', process.env.SPACES_REGION || 'atl1') || 'https://atl1.digitaloceanspaces.com',
-      region: process.env.SPACES_REGION || 'atl1',
-      credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
-    });
-
-    const buffer = Buffer.from(imageBase64.replace(/^data:image\/\w+;base64,/, ''), 'base64');
     const safeName = (filename || 'design').replace(/[^a-zA-Z0-9.-]/g, '-');
-    const timestamp = Date.now();
-    const folder = customerEmail ? `quote-designs/${customerEmail.replace(/[^a-zA-Z0-9]/g, '-')}` : 'quote-designs/anonymous';
-    const key = `${folder}/${safeName}-${timestamp}.png`;
+    const folder = customerEmail
+      ? `quote-designs/${customerEmail.replace(/[^a-zA-Z0-9]/g, '-')}`
+      : 'quote-designs/anonymous';
+    const key = `${folder}/${safeName}-${Date.now()}.png`;
 
-    await s3.send(new PutObjectCommand({
-      Bucket: process.env.SPACES_BUCKET || 'tshirtbrothers',
-      Key: key,
-      Body: buffer,
-      ContentType: 'image/png',
-      ACL: 'public-read',
-    }));
-
-    const region = process.env.SPACES_REGION || 'atl1';
-    const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
-    const fileUrl = `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
-
-    res.json({ url: fileUrl });
+    const url = await uploadObject({ key, body: imageBase64 });
+    res.json({ url });
   } catch (err) {
     next(err);
   }
