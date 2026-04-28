@@ -66,26 +66,19 @@ router.post('/upload-url', async (req, res, next) => {
       return res.status(400).json({ error: 'filename and contentType are required' });
     }
 
-    const s3Client = new S3Client({
-      endpoint: process.env.SPACES_ENDPOINT,
-      region: process.env.SPACES_REGION,
-      credentials: {
-        accessKeyId: process.env.SPACES_KEY,
-        secretAccessKey: process.env.SPACES_SECRET,
-      },
-    });
+    const { getSpacesClient, publicUrl, SPACES_BUCKET } = await import('../services/spaces.js');
 
     const key = `uploads/${Date.now()}-${filename}`;
 
     const command = new PutObjectCommand({
-      Bucket: process.env.SPACES_BUCKET,
+      Bucket: SPACES_BUCKET,
       Key: key,
       ContentType: contentType,
       ACL: 'public-read',
     });
 
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
-    const fileUrl = `${process.env.SPACES_ENDPOINT}/${process.env.SPACES_BUCKET}/${key}`;
+    const uploadUrl = await getSignedUrl(getSpacesClient(), command, { expiresIn: 3600 });
+    const fileUrl = publicUrl(key);
 
     res.json({ uploadUrl, fileUrl });
   } catch (err) {
