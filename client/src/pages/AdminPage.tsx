@@ -95,6 +95,8 @@ import {
   sendMockupForApproval,
   convertMockupToQuote,
   deleteMockup,
+  regenerateMockupPreview,
+  backfillMockupPreviews,
   type Mockup,
   updateAdminNotes,
   fetchAdminCounts,
@@ -1261,6 +1263,31 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['mockups'] });
     } catch (err: any) {
       alert(err?.message || 'Delete failed');
+    }
+  }
+
+  async function handleRegenerateMockupPreview(id: number) {
+    try {
+      await regenerateMockupPreview(id);
+      queryClient.invalidateQueries({ queryKey: ['mockups'] });
+    } catch (err: any) {
+      alert(err?.message || 'Re-render failed');
+    }
+  }
+
+  const [backfilling, setBackfilling] = useState(false);
+  async function handleBackfillMockupPreviews() {
+    if (backfilling) return;
+    if (!confirm('Re-render previews for every mockup that doesn\'t have one? This can take a few seconds per row.')) return;
+    setBackfilling(true);
+    try {
+      const result = await backfillMockupPreviews();
+      alert(`Done. ${result.succeeded} re-rendered, ${result.failed} failed (of ${result.candidates} candidates).`);
+      queryClient.invalidateQueries({ queryKey: ['mockups'] });
+    } catch (err: any) {
+      alert(err?.message || 'Backfill failed');
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -4624,12 +4651,22 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                 <h2 className="text-2xl font-display font-bold text-gray-900">Mockups</h2>
-                <button
-                  onClick={() => { setEditingMockup(null); setMockupModalOpen(true); }}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4" /> New Mockup
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBackfillMockupPreviews}
+                    disabled={backfilling}
+                    className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                    title="Re-render any mockup that doesn't have a flattened preview yet"
+                  >
+                    {backfilling ? 'Re-rendering…' : 'Re-render Missing Previews'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingMockup(null); setMockupModalOpen(true); }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    <Plus className="w-4 h-4" /> New Mockup
+                  </button>
+                </div>
               </div>
 
               {mockupAfterSend && (
@@ -4705,6 +4742,13 @@ export default function AdminPage() {
                               title={m.customer_email ? 'Email the approval link to the customer' : 'No customer email on file'}
                             >
                               Send for Approval
+                            </button>
+                            <button
+                              onClick={() => handleRegenerateMockupPreview(m.id)}
+                              className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              title="Re-render the flattened preview from the current placement"
+                            >
+                              Re-render
                             </button>
                             <button
                               onClick={() => handleConvertMockup(m.id)}
