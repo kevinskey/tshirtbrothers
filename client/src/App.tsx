@@ -28,6 +28,7 @@ import AccountPage from '@/pages/AccountPage';
 import GangSheetPage from '@/pages/GangSheetPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
+import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 import ChatWidget from '@/components/chat/ChatWidget';
 
@@ -52,6 +53,7 @@ function App() {
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/quote" element={<QuotePage />} />
           <Route path="/blog" element={<BlogPage />} />
+          <Route path="/local-businesses" element={<LocalBusinessesPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/account" element={<AccountPage />} />

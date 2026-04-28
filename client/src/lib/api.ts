@@ -105,6 +105,7 @@ export interface Quote {
   print_areas?: unknown;
   design_type?: string;
   design_url?: string | null;
+  mockup_image_url?: string | null;
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
   color?: string;
@@ -708,6 +709,60 @@ export async function deleteBlogPost(id: string): Promise<{ deleted: boolean }> 
 
 export async function publishBlogPost(id: string): Promise<BlogPost> {
   return authRequest<BlogPost>(`/blog/${id}/publish`, { method: 'POST' });
+}
+
+// Local businesses (South Atlanta open-data discovery)
+export interface LocalBusiness {
+  id: number;
+  name: string;
+  business_type: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  opened_at: string | null;
+  first_seen_at: string;
+}
+
+export interface LocalBusinessFilters {
+  zip?: string;
+  since?: string;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchLocalBusinesses(filters: LocalBusinessFilters = {}): Promise<{
+  businesses: LocalBusiness[];
+  limit: number;
+  offset: number;
+}> {
+  const params = new URLSearchParams();
+  if (filters.zip) params.set('zip', filters.zip);
+  if (filters.since) params.set('since', filters.since);
+  if (filters.q) params.set('q', filters.q);
+  if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.offset !== undefined) params.set('offset', String(filters.offset));
+  const qs = params.toString();
+  return request(`/local-businesses${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchSouthAtlantaZips(): Promise<{ zips: string[] }> {
+  return request('/local-businesses/zips');
+}
+
+export async function refreshLocalBusinesses(limit?: number): Promise<{
+  fetched: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+}> {
+  return authRequest('/local-businesses/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ limit }),
+  });
 }
 
 // Settings

@@ -21,6 +21,7 @@ import deepseekRouter from './routes/deepseek.js';
 import gangsheetRouter from './routes/gangsheet.js';
 import embroideryRouter from './routes/embroidery.js';
 import mockupsRouter from './routes/mockups.js';
+import localBusinessesRouter from './routes/localBusinesses.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -57,6 +58,7 @@ app.use('/api/deepseek', deepseekRouter);
 app.use('/api/admin/gangsheets', gangsheetRouter);
 app.use('/api/admin', embroideryRouter);
 app.use('/api', mockupsRouter);
+app.use('/api/local-businesses', localBusinessesRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
