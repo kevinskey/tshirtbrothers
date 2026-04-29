@@ -456,7 +456,12 @@ router.post('/:id/record-payment', async (req, res, next) => {
     const invoice = existing[0];
     const newAmountPaid = Number(invoice.amount_paid) + Number(amount);
     const newAmountDue = Number(invoice.total) - newAmountPaid;
-    const newStatus = newAmountDue <= 0 ? 'paid' : invoice.status;
+    // Flip to 'partial' when some — but not all — of the total has been
+    // paid, so the UI can show a distinct status badge and the admin can
+    // see at a glance which invoices have a balance still due.
+    const newStatus = newAmountDue <= 0
+      ? 'paid'
+      : (newAmountPaid > 0 ? 'partial' : invoice.status);
 
     // Store payment in a JSON array
     const payments = typeof invoice.payments === 'string'

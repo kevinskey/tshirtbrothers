@@ -2968,14 +2968,22 @@ export default function AdminPage() {
                         </div>
                         <div className="text-sm text-gray-700">{inv.customer_name}</div>
                         <div className="text-xs text-gray-500">{inv.customer_email}</div>
-                        <div className="flex items-center gap-4 text-xs">
+                        <div className="flex items-center gap-4 text-xs flex-wrap">
                           <span className="text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</span>
                           <span className="font-semibold text-gray-900">Total: ${Number(inv.total).toFixed(2)}</span>
+                          {Number(inv.amount_paid) > 0 && (
+                            <span className="text-green-600 font-medium">Paid: ${Number(inv.amount_paid).toFixed(2)}</span>
+                          )}
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
                           <button onClick={() => { setEditingInvoiceId(inv.id); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
+                          {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
+                            <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
+                              {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
+                            </button>
+                          )}
                           {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
                           <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
                         </div>
@@ -3042,6 +3050,16 @@ export default function AdminPage() {
                                     className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
                                   >
                                     <Send className="w-3 h-3 inline mr-1" />Send
+                                  </button>
+                                )}
+                                {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
+                                  <button
+                                    onClick={() => sendInvoiceMutation.mutate(inv.id)}
+                                    disabled={sendInvoiceMutation.isPending}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Send className="w-3 h-3 inline mr-1" />
+                                    {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
                                   </button>
                                 )}
                                 {inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
