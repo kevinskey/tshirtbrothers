@@ -92,6 +92,79 @@ function getStripe() {
   return new Stripe(key);
 }
 
+// Apply a payment to an existing invoice row. Used by the Stripe webhook
+// when metadata.invoice_id is set on a checkout session. Mirrors the
+// admin /:id/record-payment handler in routes/invoices.js — both append
+// to the same `payments` JSONB column so the invoice's payment history
+// is one canonical list regardless of where the money came from.
+//
+// Idempotent: if the payment_intent_id is already in `payments`, no-op.
+async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, method = 'stripe' }) {
+  const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
+  if (rows.length === 0) return null;
+  const inv = rows[0];
+
+  const existingPayments = Array.isArray(inv.payments)
+    ? inv.payments
+    : (typeof inv.payments === 'string' ? JSON.parse(inv.payments || '[]') : []);
+
+  if (paymentIntentId && existingPayments.some((p) => p.payment_intent_id === paymentIntentId)) {
+    return inv; // already recorded
+  }
+
+  const total = Number(inv.total);
+  const newPaid = +(Number(inv.amount_paid || 0) + Number(amount)).toFixed(2);
+  const newDue = +(total - newPaid).toFixed(2);
+  const newStatus = newDue <= 0 ? 'paid' : (newPaid > 0 ? 'partial' : inv.status);
+
+  const newPayments = [
+    ...existingPayments,
+    {
+      amount: Number(amount),
+      method,
+      payment_intent_id: paymentIntentId || null,
+      date: new Date().toISOString(),
+    },
+  ];
+
+  const updated = await pool.query(
+    `UPDATE invoices SET
+       amount_paid = $2,
+       amount_due  = $3,
+       status      = $4,
+       payments    = $5,
+       updated_at  = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [invoiceId, newPaid, Math.max(0, newDue), newStatus, JSON.stringify(newPayments)],
+  );
+
+  const row = updated.rows[0];
+
+  // Send the receipt only when the invoice flips to fully paid, so partial
+  // (deposit) payments don't trigger a "thanks, paid in full" email.
+  if (newStatus === 'paid') {
+    try {
+      if (typeof sendPaidInvoiceReceipt === 'function' && row.customer_email) {
+        await sendPaidInvoiceReceipt(row);
+      }
+    } catch (err) {
+      console.error('[invoice receipt email] failed:', err.message);
+    }
+    try {
+      if (typeof smsInvoiceReceiptToCustomer === 'function' && row.customer_phone) {
+        await smsInvoiceReceiptToCustomer(row);
+      }
+    } catch (err) {
+      console.error('[invoice receipt sms] failed:', err.message);
+    }
+  }
+
+  return row;
+}
+
+export { applyPaymentToInvoice };
+
 // POST /create-checkout - Create Stripe Checkout session for deposit payment
 router.post('/create-checkout', async (req, res, next) => {
   try {
@@ -255,7 +328,29 @@ router.post('/webhook', async (req, res) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
     const quoteId = session.metadata?.quoteId;
-    const paymentType = session.metadata?.type || 'deposit';
+    const invoiceId = session.metadata?.invoice_id;
+    const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+
+    // Invoice payment: separate metadata shape from the quote flow. The
+    // checkout session is created in routes/invoices.js with metadata
+    // { invoice_id, payment_type }. Without this branch the webhook would
+    // silently drop the event and the invoice would stay at amount_paid=0
+    // even after a successful charge.
+    if (invoiceId) {
+      try {
+        const amount = (session.amount_total || 0) / 100;
+        const updated = await applyPaymentToInvoice({
+          invoiceId: parseInt(invoiceId, 10),
+          amount,
+          paymentIntentId: session.payment_intent || null,
+        });
+        if (updated) {
+          console.log('[Stripe] Invoice #' + invoiceId + ' payment recorded: $' + amount + ' (' + paymentType + ')');
+        }
+      } catch (err) {
+        console.error('[Stripe Webhook] invoice update failed:', err);
+      }
+    }
 
     if (quoteId) {
       try {
