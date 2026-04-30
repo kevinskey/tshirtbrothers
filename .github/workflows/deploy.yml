@@ -20,4 +20,20 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          script: sudo bash /var/www/tshirtbrothers/deploy.sh
+          script: |
+            sudo bash -c '
+              set -e
+              cd /var/www/tshirtbrothers
+              git fetch origin
+              git checkout main
+              # If the droplet has commits on main that arent on origin/main,
+              # the in-script "git pull --ff-only" cant recover. Do it here so
+              # the freshly pulled deploy.sh always runs from a clean state.
+              if ! git merge-base --is-ancestor HEAD origin/main; then
+                ts=$(date +%Y%m%d-%H%M%S)
+                echo "==> Local main diverged; tagging HEAD as droplet-backup-${ts} and resetting to origin/main"
+                git tag "droplet-backup-${ts}" HEAD 2>/dev/null || true
+                git reset --hard origin/main
+              fi
+              bash /var/www/tshirtbrothers/deploy.sh
+            '
