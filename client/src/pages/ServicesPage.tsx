@@ -100,16 +100,16 @@ export default function ServicesPage() {
   return (
     <Layout>
       {/* Hero */}
-      <section className="bg-gray-900 text-white py-20 text-center">
+      <section className="bg-gray-900 text-white py-12 md:py-20 text-center">
         <div className="container mx-auto px-4">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">
+          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold">
             Our Services
           </h1>
-          <p className="mt-4 text-gray-400 max-w-2xl mx-auto text-lg">
+          <p className="mt-3 sm:mt-4 text-gray-400 max-w-2xl mx-auto text-base sm:text-lg">
             From custom apparel to professional signage, we bring your vision to
             life with precision and care.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
+          <div className="mt-5 sm:mt-6 flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
             {badges.map((badge) => (
               <span
                 key={badge}
@@ -123,32 +123,32 @@ export default function ServicesPage() {
       </section>
 
       {/* Service Cards */}
-      <section className="py-20">
-        <div className="container mx-auto px-4 space-y-16">
+      <section className="py-12 md:py-20">
+        <div className="container mx-auto px-4 space-y-12 md:space-y-16">
           {services.map((service) => {
             const Icon = service.icon;
             return (
               <div
                 key={service.title}
-                className={`grid md:grid-cols-2 gap-10 items-center ${
+                className={`grid md:grid-cols-2 gap-6 md:gap-10 items-center ${
                   service.reverse ? 'md:[direction:rtl]' : ''
                 }`}
               >
                 {/* Visual */}
                 <div
-                  className={`${service.bgColor} rounded-2xl aspect-square md:aspect-[4/3] flex items-center justify-center ${
+                  className={`${service.bgColor} rounded-2xl aspect-[4/3] md:aspect-[4/3] flex items-center justify-center ${
                     service.reverse ? 'md:[direction:ltr]' : ''
                   }`}
                 >
                   <Icon
-                    className={`${service.iconColor} w-24 h-24 opacity-40`}
+                    className={`${service.iconColor} w-20 h-20 md:w-24 md:h-24 opacity-40`}
                     strokeWidth={1}
                   />
                 </div>
 
                 {/* Content */}
                 <div className={service.reverse ? 'md:[direction:ltr]' : ''}>
-                  <h2 className="font-display text-2xl font-bold">
+                  <h2 className="font-display text-xl md:text-2xl font-bold">
                     {service.title}
                   </h2>
                   <p className="mt-3 text-gray-600 leading-relaxed">
@@ -203,17 +203,17 @@ export default function ServicesPage() {
       </section>
 
       {/* How It Works */}
-      <section className="bg-gray-50 py-20">
+      <section className="bg-gray-50 py-12 md:py-20">
         <div className="container mx-auto px-4">
-          <h2 className="font-display text-3xl font-bold text-center">
+          <h2 className="font-display text-2xl md:text-3xl font-bold text-center">
             How It Works
           </h2>
-          <p className="mt-3 text-gray-500 text-center max-w-xl mx-auto">
+          <p className="mt-3 text-gray-500 text-center max-w-xl mx-auto text-sm md:text-base">
             Getting custom gear has never been easier. Three simple steps and
             you're done.
           </p>
 
-          <div className="mt-12 grid md:grid-cols-3 gap-8">
+          <div className="mt-8 md:mt-12 grid md:grid-cols-3 gap-8">
             {steps.map((step) => {
               const StepIcon = step.icon;
               return (
@@ -236,11 +236,11 @@ export default function ServicesPage() {
       </section>
 
       {/* Local Delivery */}
-      <section className="py-20">
+      <section className="py-12 md:py-20">
         <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
             {/* Local Express */}
-            <div className="border border-gray-200 rounded-2xl p-8">
+            <div className="border border-gray-200 rounded-2xl p-6 md:p-8">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
                   <MapPin className="w-5 h-5 text-green-600" />
@@ -260,7 +260,7 @@ export default function ServicesPage() {
             </div>
 
             {/* Nationwide */}
-            <div className="border border-gray-200 rounded-2xl p-8">
+            <div className="border border-gray-200 rounded-2xl p-6 md:p-8">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
                   <Package className="w-5 h-5 text-blue-600" />
@@ -283,16 +283,16 @@ export default function ServicesPage() {
       </section>
 
       {/* Bottom CTA */}
-      <section className="bg-gray-900 text-white py-16 text-center">
+      <section className="bg-gray-900 text-white py-12 md:py-16 text-center">
         <div className="container mx-auto px-4">
-          <h2 className="font-display text-3xl font-bold">
+          <h2 className="font-display text-2xl md:text-3xl font-bold">
             Ready to Get Started?
           </h2>
-          <p className="mt-3 text-gray-400 max-w-lg mx-auto">
+          <p className="mt-3 text-gray-400 max-w-lg mx-auto text-sm md:text-base">
             Contact us today for a free quote or start designing online right
             now.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-4 flex-wrap">
+          <div className="mt-5 md:mt-6 flex items-center justify-center gap-3 md:gap-4 flex-wrap">
             <Link
               to="/design"
               className="bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"

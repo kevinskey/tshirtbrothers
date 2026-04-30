@@ -49,17 +49,17 @@ export default function Navbar() {
 
       {/* Main nav row */}
       <div className="bg-white border-b border-gray-200">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8 py-3">
+          <div className="flex items-center gap-2 sm:gap-4">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+            <Link to="/" className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 min-w-0">
               <img
                 src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
                 alt="TShirt Brothers"
-                className="h-10 w-10 object-contain"
+                className="h-9 w-9 sm:h-10 sm:w-10 object-contain flex-shrink-0"
               />
               <span
-                className="text-sm sm:text-lg font-bold text-gray-900"
+                className="text-sm sm:text-lg font-bold text-gray-900 whitespace-nowrap truncate"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
                 TShirt Brothers
@@ -89,7 +89,7 @@ export default function Navbar() {
             </div>
 
             {/* Right side */}
-            <div className="flex items-center gap-3 flex-shrink-0 ml-auto md:ml-0">
+            <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0 ml-auto md:ml-0">
               {/* Phone - desktop only */}
               <div className="relative hidden md:block">
                 <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm sm:text-base font-bold text-orange-600 hover:text-orange-700 transition-colors">

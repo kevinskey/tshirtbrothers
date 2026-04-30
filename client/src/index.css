@@ -18,6 +18,22 @@
   body {
     @apply font-sans antialiased text-brand-black bg-white;
     overscroll-behavior-x: none;
+    /* Respect iPhone safe areas (notch / home indicator) */
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+  }
+
+  /* Always allow word-breaking on long, unbreakable strings (URLs, codes)
+     so they can't punch the layout wider than the viewport on iPhones. */
+  h1, h2, h3, h4, h5, h6, p, li, a, span, button {
+    overflow-wrap: anywhere;
+  }
+
+  /* Tap targets: keep buttons and inputs comfortably tappable on phones */
+  @media (max-width: 640px) {
+    button, [role='button'], a.inline-flex, .btn {
+      touch-action: manipulation;
+    }
   }
 
   /* Mobile input fix: iOS auto-zooms when an input has < 16px font. Lock
