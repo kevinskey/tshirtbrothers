@@ -306,94 +306,133 @@ router.post('/create-balance-checkout', async (req, res, next) => {
   }
 });
 
-// POST /webhook - Stripe webhook for payment confirmation
-router.post('/webhook', async (req, res) => {
-  const stripe = getStripe();
+// Process a checkout.session.completed event: update the quote/invoice and
+// fire off receipts. Runs after we've already 200'd Stripe so a slow Resend or
+// Twilio call can't blow the webhook's HTTP timeout.
+async function handleCheckoutSessionCompleted(session) {
+  const quoteId = session.metadata?.quoteId;
+  const invoiceId = session.metadata?.invoice_id;
+  const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+
+  // Invoice payment: separate metadata shape from the quote flow. The
+  // checkout session is created in routes/invoices.js with metadata
+  // { invoice_id, payment_type }. Without this branch the webhook would
+  // silently drop the event and the invoice would stay at amount_paid=0
+  // even after a successful charge.
+  if (invoiceId) {
+    try {
+      const amount = (session.amount_total || 0) / 100;
+      const updated = await applyPaymentToInvoice({
+        invoiceId: parseInt(invoiceId, 10),
+        amount,
+        paymentIntentId: session.payment_intent || null,
+      });
+      if (updated) {
+        console.log('[Stripe] Invoice #' + invoiceId + ' payment recorded: $' + amount + ' (' + paymentType + ')');
+      }
+    } catch (err) {
+      console.error('[Stripe Webhook] invoice update failed:', err);
+    }
+  }
+
+  if (quoteId) {
+    try {
+      if (paymentType === 'balance') {
+        const result = await pool.query(
+          `UPDATE quotes SET
+            deposit_amount = estimated_price,
+            balance_paid_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+          [quoteId]
+        );
+        if (result.rows.length > 0) {
+          console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
+          await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
+        }
+      } else {
+        const result = await pool.query(
+          `UPDATE quotes SET
+            status = 'accepted',
+            accepted_at = NOW(),
+            deposit_amount = $1
+          WHERE id = $2
+          RETURNING *`,
+          [session.amount_total / 100, quoteId]
+        );
+        if (result.rows.length > 0) {
+          const quote = result.rows[0];
+          console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (session.amount_total / 100));
+          sendQuoteAcceptedNotification(quote).catch(() => {});
+          smsQuoteAcceptedToAdmin(quote).catch(() => {});
+        }
+      }
+    } catch (err) {
+      console.error('[Stripe Webhook] DB update failed:', err);
+    }
+  }
+
+  if (!invoiceId && !quoteId) {
+    console.warn('[Stripe Webhook] checkout.session.completed had no quoteId or invoice_id in metadata; session=' + session.id);
+  }
+}
+
+// POST /webhook - Stripe webhook for payment confirmation.
+//
+// Stripe expects a 2xx response within seconds; if we wait on DB writes plus
+// Resend plus Twilio before responding, slow upstreams cause webhook timeouts
+// and the endpoint gets disabled. We verify the signature, ack immediately,
+// then process the event asynchronously.
+router.post('/webhook', (req, res) => {
   const sig = req.headers['stripe-signature'];
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  let event;
+  // Stripe sends a Buffer (because index.js mounts express.raw on this path).
+  // If something upstream JSON-parsed it instead, signature verification can
+  // never succeed — log loudly so this misconfiguration doesn't hide.
+  if (!Buffer.isBuffer(req.body)) {
+    console.error('[Stripe Webhook] req.body is not a Buffer (type=' + typeof req.body + '). Raw body middleware is not running for this route.');
+    return res.status(400).send('Webhook Error: raw body not available');
+  }
 
-  if (endpointSecret && sig) {
+  let event;
+  if (endpointSecret) {
+    if (!sig) {
+      console.error('[Stripe Webhook] missing stripe-signature header');
+      return res.status(400).send('Webhook Error: missing signature');
+    }
     try {
+      const stripe = getStripe();
       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
     } catch (err) {
       console.error('[Stripe Webhook] Signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
   } else {
-    event = JSON.parse(req.body.toString());
+    // No secret configured — accept events unverified (dev/staging only).
+    console.warn('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not set; skipping signature verification');
+    try {
+      event = JSON.parse(req.body.toString('utf8'));
+    } catch (err) {
+      console.error('[Stripe Webhook] failed to parse body:', err.message);
+      return res.status(400).send('Webhook Error: invalid JSON');
+    }
   }
+
+  // Acknowledge Stripe immediately. Anything that throws after this point
+  // would crash the response if we awaited it, so it goes to a queued
+  // handler whose only job is to log on failure.
+  res.json({ received: true });
+
+  console.log('[Stripe Webhook] received event ' + event.type + ' (' + event.id + ')');
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const quoteId = session.metadata?.quoteId;
-    const invoiceId = session.metadata?.invoice_id;
-    const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
-
-    // Invoice payment: separate metadata shape from the quote flow. The
-    // checkout session is created in routes/invoices.js with metadata
-    // { invoice_id, payment_type }. Without this branch the webhook would
-    // silently drop the event and the invoice would stay at amount_paid=0
-    // even after a successful charge.
-    if (invoiceId) {
-      try {
-        const amount = (session.amount_total || 0) / 100;
-        const updated = await applyPaymentToInvoice({
-          invoiceId: parseInt(invoiceId, 10),
-          amount,
-          paymentIntentId: session.payment_intent || null,
-        });
-        if (updated) {
-          console.log('[Stripe] Invoice #' + invoiceId + ' payment recorded: $' + amount + ' (' + paymentType + ')');
-        }
-      } catch (err) {
-        console.error('[Stripe Webhook] invoice update failed:', err);
-      }
-    }
-
-    if (quoteId) {
-      try {
-        if (paymentType === 'balance') {
-          // Balance payment — mark fully paid
-          const result = await pool.query(
-            `UPDATE quotes SET
-              deposit_amount = estimated_price,
-              balance_paid_at = NOW()
-            WHERE id = $1
-            RETURNING *`,
-            [quoteId]
-          );
-          if (result.rows.length > 0) {
-            console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
-            // Create a paid invoice + send receipt email/SMS (best-effort)
-            await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
-          }
-        } else {
-          // Deposit payment — accept quote
-          const result = await pool.query(
-            `UPDATE quotes SET
-              status = 'accepted',
-              accepted_at = NOW(),
-              deposit_amount = $1
-            WHERE id = $2
-            RETURNING *`,
-            [session.amount_total / 100, quoteId]
-          );
-          if (result.rows.length > 0) {
-            const quote = result.rows[0];
-            console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (session.amount_total / 100));
-            sendQuoteAcceptedNotification(quote).catch(() => {});
-            smsQuoteAcceptedToAdmin(quote).catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.error('[Stripe Webhook] DB update failed:', err);
-      }
-    }
+    setImmediate(() => {
+      handleCheckoutSessionCompleted(event.data.object).catch((err) => {
+        console.error('[Stripe Webhook] handler crashed for ' + event.id + ':', err);
+      });
+    });
   }
-
-  res.json({ received: true });
 });
 
 // GET /success - Verify Stripe payment and update quote status
