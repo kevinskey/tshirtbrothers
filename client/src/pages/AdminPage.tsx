@@ -3493,6 +3493,78 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  {/* Payments — only when editing an existing invoice. The
+                      list view's Payment button does the same thing, but
+                      surfacing it here means an admin who navigated into
+                      the Edit screen doesn't have to bounce back out to
+                      see or record a payment. */}
+                  {editingInvoiceId && (() => {
+                    const editingInvoice = invoices.find((i) => String(i.id) === editingInvoiceId);
+                    if (!editingInvoice) return null;
+                    const total = Number(editingInvoice.total || 0);
+                    const paid = Number(editingInvoice.amount_paid || 0);
+                    const due = Number(editingInvoice.amount_due || 0);
+                    const recordedPayments = Array.isArray(editingInvoice.payments)
+                      ? editingInvoice.payments
+                      : (typeof editingInvoice.payments === 'string'
+                          ? JSON.parse(editingInvoice.payments || '[]')
+                          : []);
+                    return (
+                      <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="font-semibold text-gray-900 text-sm">Payments</h3>
+                          <StatusBadge status={editingInvoice.status} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+                          <div>
+                            <p className="text-xs text-gray-500">Total</p>
+                            <p className="font-semibold text-gray-900">${total.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Paid</p>
+                            <p className="font-semibold text-green-600">${paid.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Due</p>
+                            <p className={`font-semibold ${due <= 0 ? 'text-green-600' : 'text-red-600'}`}>${due.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        {recordedPayments.length > 0 && (
+                          <div className="text-xs text-gray-600 space-y-1 mb-3 bg-white rounded p-2 border border-gray-100">
+                            {recordedPayments.map((p: { amount: number; method: string; date: string }, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between">
+                                <span>{new Date(p.date).toLocaleDateString()} · {p.method}</span>
+                                <span className="font-medium text-gray-900">${Number(p.amount).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {due > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => { setRecordPaymentInvoice(editingInvoice); setPaymentAmount(String(due)); }}
+                              className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 px-3 py-1.5 rounded-lg"
+                            >
+                              <DollarSign className="w-3 h-3 inline mr-1" />Record Payment
+                            </button>
+                          )}
+                          {due > 0 && editingInvoice.status !== 'draft' && (
+                            <button
+                              type="button"
+                              onClick={() => sendInvoiceMutation.mutate(editingInvoice.id)}
+                              disabled={sendInvoiceMutation.isPending}
+                              className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg"
+                            >
+                              <Send className="w-3 h-3 inline mr-1" />
+                              {paid > 0 ? 'Send Balance' : 'Resend Invoice'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Action Buttons */}
                   <div className="flex gap-3 pt-4 border-t border-gray-100">
                     <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
