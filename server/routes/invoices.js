@@ -145,10 +145,13 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
         <td style="padding:6px 0;font-size:14px;color:#16a34a;">Paid</td>
         <td style="padding:6px 0;font-size:14px;color:#16a34a;text-align:right;">-${formatCurrency(amountPaid)}</td>
       </tr>` : ''}
-      <tr>
+      ${amountDue <= 0 ? `<tr>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;">Status</td>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;text-align:right;">PAID</td>
+      </tr>` : `<tr>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Amount Due</td>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(amountDue)}</td>
-      </tr>
+      </tr>`}
     </table>
 
     ${invoice.notes ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;margin:24px 0;">
@@ -379,57 +382,68 @@ router.post('/:id/send', async (req, res, next) => {
       paymentType = paid > 0 ? 'balance' : 'full';
     }
 
-    if (chargeAmount <= 0) {
-      return res.status(400).json({ error: 'No amount due on this invoice' });
+    // If nothing is owed, send a receipt (no Stripe session, no Pay Now button).
+    const isReceipt = chargeAmount <= 0;
+    let paymentUrl = null;
+
+    if (!isReceipt) {
+      const stripe = getStripe();
+      const productName = paymentType === 'deposit'
+        ? `Deposit (${depositPercent}%) - Invoice ${invoice.invoice_number}`
+        : paymentType === 'balance'
+        ? `Balance - Invoice ${invoice.invoice_number}`
+        : `Invoice ${invoice.invoice_number}`;
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: productName,
+                description: `Payment for invoice ${invoice.invoice_number} - ${invoice.customer_name}`,
+              },
+              unit_amount: Math.round(chargeAmount * 100),
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: `${DOMAIN}/invoice/paid?invoice=${id}`,
+        cancel_url: `${DOMAIN}/invoice/view/${id}`,
+        customer_email: invoice.customer_email,
+        metadata: {
+          invoice_id: String(id),
+          invoice_number: invoice.invoice_number,
+          payment_type: paymentType,
+        },
+      });
+      paymentUrl = session.url;
     }
 
-    // Create Stripe Checkout session
-    const stripe = getStripe();
-    const productName = paymentType === 'deposit'
-      ? `Deposit (${depositPercent}%) - Invoice ${invoice.invoice_number}`
+    const subject = isReceipt
+      ? `Receipt for Invoice ${invoice.invoice_number} from TShirt Brothers`
+      : paymentType === 'deposit'
+      ? `Deposit due — Invoice ${invoice.invoice_number} from TShirt Brothers`
       : paymentType === 'balance'
-      ? `Balance - Invoice ${invoice.invoice_number}`
-      : `Invoice ${invoice.invoice_number}`;
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: productName,
-              description: `Payment for invoice ${invoice.invoice_number} - ${invoice.customer_name}`,
-            },
-            unit_amount: Math.round(chargeAmount * 100),
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url: `${DOMAIN}/invoice/paid?invoice=${id}`,
-      cancel_url: `${DOMAIN}/invoice/view/${id}`,
-      customer_email: invoice.customer_email,
-      metadata: {
-        invoice_id: String(id),
-        invoice_number: invoice.invoice_number,
-        payment_type: paymentType,
-      },
-    });
+      ? `Balance due — Invoice ${invoice.invoice_number} from TShirt Brothers`
+      : `Invoice ${invoice.invoice_number} from TShirt Brothers`;
 
-    // Send email
     const resend = getResend();
-    const html = buildInvoiceEmailHtml(invoice, session.url);
+    const html = buildInvoiceEmailHtml(invoice, paymentUrl);
 
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [invoice.customer_email],
-      subject: `Invoice ${invoice.invoice_number} from TShirt Brothers`,
+      subject,
       html,
     });
 
-    // Update status to sent
+    // Don't downgrade a paid invoice back to 'sent'; just bump sent_at.
     const updated = await pool.query(
-      `UPDATE invoices SET status = 'sent', sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
+      isReceipt
+        ? `UPDATE invoices SET sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`
+        : `UPDATE invoices SET status = 'sent', sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
       [id]
     );
 
