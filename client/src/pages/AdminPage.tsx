@@ -1119,6 +1119,29 @@ export default function AdminPage() {
     }
   }
 
+  // Customer has already paid (cash, Zelle, etc.) — create the invoice,
+  // record a full payment for it, then send. The server-side /:id/send route
+  // will see amount_due === 0 and email a receipt instead of a payment link.
+  async function handleSaveAndMarkPaid() {
+    if (!previewInvoice) return;
+    const method = window.prompt('How was this paid? (cash, check, zelle, cashapp, card)', 'cash');
+    if (method === null) return;
+    try {
+      const created = await createInvoiceMutation.mutateAsync(previewInvoice);
+      if (created?.id) {
+        await recordPaymentMutation.mutateAsync({
+          id: String(created.id),
+          amount: Number(previewInvoice.total),
+          method: method.trim() || 'cash',
+        });
+        await sendInvoiceMutation.mutateAsync(String(created.id));
+      }
+      setPreviewInvoice(null);
+    } catch (err) {
+      // errors are handled by the mutation's onError
+    }
+  }
+
   function fileToBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -3677,9 +3700,18 @@ export default function AdminPage() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex justify-center gap-3 mt-6">
+                <div className="flex flex-wrap justify-center gap-3 mt-6">
                   <button onClick={() => setInvoiceView('create')} className="px-6 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                     Edit
+                  </button>
+                  <button
+                    onClick={handleSaveAndMarkPaid}
+                    disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending || recordPaymentMutation.isPending}
+                    title="Use this when the customer has already paid (cash, Zelle, etc.). Records the payment and emails a receipt."
+                    className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                  >
+                    {(createInvoiceMutation.isPending || recordPaymentMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+                    Save & Mark Paid
                   </button>
                   <button
                     onClick={handleSendPreviewedInvoice}
