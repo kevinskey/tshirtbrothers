@@ -512,6 +512,10 @@ export default function AdminPage() {
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all');
   const [invoiceView, setInvoiceView] = useState<InvoiceView>('list');
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+  // Full invoice record (status / amount_paid / amount_due / payments) for the
+  // one being edited. Kept separate from the form fields so the Payments block
+  // still renders when the list is filtered and `invoices.find` would miss it.
+  const [editingInvoiceFull, setEditingInvoiceFull] = useState<Invoice | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<{
     customer_name: string;
     customer_email: string;
@@ -975,8 +979,14 @@ export default function AdminPage() {
 
   const recordPaymentMutation = useMutation({
     mutationFn: ({ id, amount, method }: { id: string; amount: number; method: string }) => recordPayment(id, { amount, method }),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      // Keep the Edit-screen Payments block in sync after a recorded payment
+      // — invoicesQuery refetches, but if the list filter excludes this row
+      // we'd otherwise be stuck on stale numbers.
+      if (updated && String(updated.id) === editingInvoiceId) {
+        setEditingInvoiceFull(updated);
+      }
       setRecordPaymentInvoice(null);
       setPaymentAmount('');
       setPaymentMethod('card');
@@ -1011,6 +1021,7 @@ export default function AdminPage() {
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
     setEditingInvoiceId(null);
+    setEditingInvoiceFull(null);
   }
 
   function calcInvoiceSubtotal() {
@@ -3000,7 +3011,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -3048,6 +3059,7 @@ export default function AdminPage() {
                                 <button
                                   onClick={() => {
                                     setEditingInvoiceId(inv.id);
+                                    setEditingInvoiceFull(inv);
                                     setInvoiceForm({
                                       customer_name: inv.customer_name || '',
                                       customer_email: inv.customer_email || '',
@@ -3522,7 +3534,8 @@ export default function AdminPage() {
                       the Edit screen doesn't have to bounce back out to
                       see or record a payment. */}
                   {editingInvoiceId && (() => {
-                    const editingInvoice = invoices.find((i) => String(i.id) === editingInvoiceId);
+                    const editingInvoice = editingInvoiceFull
+                      ?? invoices.find((i) => String(i.id) === editingInvoiceId);
                     if (!editingInvoice) return null;
                     const total = Number(editingInvoice.total || 0);
                     const paid = Number(editingInvoice.amount_paid || 0);
