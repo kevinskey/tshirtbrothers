@@ -95,6 +95,8 @@ import {
   sendMockupForApproval,
   convertMockupToQuote,
   deleteMockup,
+  regenerateMockupPreview,
+  backfillMockupPreviews,
   type Mockup,
   updateAdminNotes,
   fetchAdminCounts,
@@ -1264,6 +1266,31 @@ export default function AdminPage() {
     }
   }
 
+  async function handleRegenerateMockupPreview(id: number) {
+    try {
+      await regenerateMockupPreview(id);
+      queryClient.invalidateQueries({ queryKey: ['mockups'] });
+    } catch (err: any) {
+      alert(err?.message || 'Re-render failed');
+    }
+  }
+
+  const [backfilling, setBackfilling] = useState(false);
+  async function handleBackfillMockupPreviews() {
+    if (backfilling) return;
+    if (!confirm('Re-render previews for every mockup that doesn\'t have one? This can take a few seconds per row.')) return;
+    setBackfilling(true);
+    try {
+      const result = await backfillMockupPreviews();
+      alert(`Done. ${result.succeeded} re-rendered, ${result.failed} failed (of ${result.candidates} candidates).`);
+      queryClient.invalidateQueries({ queryKey: ['mockups'] });
+    } catch (err: any) {
+      alert(err?.message || 'Backfill failed');
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   async function handleDeleteEmbroideryJob(id: number) {
     if (!confirm('Delete this embroidery job? The uploaded files will stay on Spaces.')) return;
     try {
@@ -1593,9 +1620,9 @@ export default function AdminPage() {
                 {quotes.slice(0, 10).map((q: Quote) => (
                   <div key={q.id} onClick={() => setDetailQuote(q)}
                     className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 cursor-pointer active:bg-gray-50">
-                    {q.design_url && (
+                    {(q.mockup_image_url || q.design_url) && (
                       <div className="w-12 h-12 flex-shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
-                        <img src={q.design_url} alt="" className="w-full h-full object-contain" />
+                        <img src={q.mockup_image_url || q.design_url || ''} alt="" className="w-full h-full object-contain" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -1708,9 +1735,9 @@ export default function AdminPage() {
                   <div className="text-sm text-gray-700">
                     <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
                   </div>
-                  {q.design_url && (
+                  {(q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
-                      <img src={q.design_url} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                      <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                     </div>
                   )}
                   {needed && (
@@ -2941,15 +2968,23 @@ export default function AdminPage() {
                         </div>
                         <div className="text-sm text-gray-700">{inv.customer_name}</div>
                         <div className="text-xs text-gray-500">{inv.customer_email}</div>
-                        <div className="flex items-center gap-4 text-xs">
+                        <div className="flex items-center gap-4 text-xs flex-wrap">
                           <span className="text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</span>
                           <span className="font-semibold text-gray-900">Total: ${Number(inv.total).toFixed(2)}</span>
+                          {Number(inv.amount_paid) > 0 && (
+                            <span className="text-green-600 font-medium">Paid: ${Number(inv.amount_paid).toFixed(2)}</span>
+                          )}
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
                           <button onClick={() => { setEditingInvoiceId(inv.id); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
-                          {inv.status === 'sent' && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
+                          {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
+                            <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
+                              {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
+                            </button>
+                          )}
+                          {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
                           <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
                         </div>
                       </div>
@@ -3017,7 +3052,17 @@ export default function AdminPage() {
                                     <Send className="w-3 h-3 inline mr-1" />Send
                                   </button>
                                 )}
-                                {inv.status === 'sent' && (
+                                {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
+                                  <button
+                                    onClick={() => sendInvoiceMutation.mutate(inv.id)}
+                                    disabled={sendInvoiceMutation.isPending}
+                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                                  >
+                                    <Send className="w-3 h-3 inline mr-1" />
+                                    {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
+                                  </button>
+                                )}
+                                {inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
                                   <button
                                     onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }}
                                     className="text-xs font-medium text-green-600 hover:text-green-700 bg-green-50 px-3 py-1.5 rounded-lg transition-colors"
@@ -3447,6 +3492,78 @@ export default function AdminPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Payments — only when editing an existing invoice. The
+                      list view's Payment button does the same thing, but
+                      surfacing it here means an admin who navigated into
+                      the Edit screen doesn't have to bounce back out to
+                      see or record a payment. */}
+                  {editingInvoiceId && (() => {
+                    const editingInvoice = invoices.find((i) => String(i.id) === editingInvoiceId);
+                    if (!editingInvoice) return null;
+                    const total = Number(editingInvoice.total || 0);
+                    const paid = Number(editingInvoice.amount_paid || 0);
+                    const due = Number(editingInvoice.amount_due || 0);
+                    const recordedPayments = Array.isArray(editingInvoice.payments)
+                      ? editingInvoice.payments
+                      : (typeof editingInvoice.payments === 'string'
+                          ? JSON.parse(editingInvoice.payments || '[]')
+                          : []);
+                    return (
+                      <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="font-semibold text-gray-900 text-sm">Payments</h3>
+                          <StatusBadge status={editingInvoice.status} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 text-sm mb-3">
+                          <div>
+                            <p className="text-xs text-gray-500">Total</p>
+                            <p className="font-semibold text-gray-900">${total.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Paid</p>
+                            <p className="font-semibold text-green-600">${paid.toFixed(2)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Due</p>
+                            <p className={`font-semibold ${due <= 0 ? 'text-green-600' : 'text-red-600'}`}>${due.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        {recordedPayments.length > 0 && (
+                          <div className="text-xs text-gray-600 space-y-1 mb-3 bg-white rounded p-2 border border-gray-100">
+                            {recordedPayments.map((p: { amount: number; method: string; date: string }, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between">
+                                <span>{new Date(p.date).toLocaleDateString()} · {p.method}</span>
+                                <span className="font-medium text-gray-900">${Number(p.amount).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-2">
+                          {due > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => { setRecordPaymentInvoice(editingInvoice); setPaymentAmount(String(due)); }}
+                              className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 px-3 py-1.5 rounded-lg"
+                            >
+                              <DollarSign className="w-3 h-3 inline mr-1" />Record Payment
+                            </button>
+                          )}
+                          {due > 0 && editingInvoice.status !== 'draft' && (
+                            <button
+                              type="button"
+                              onClick={() => sendInvoiceMutation.mutate(editingInvoice.id)}
+                              disabled={sendInvoiceMutation.isPending}
+                              className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg"
+                            >
+                              <Send className="w-3 h-3 inline mr-1" />
+                              {paid > 0 ? 'Send Balance' : 'Resend Invoice'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Action Buttons */}
                   <div className="flex gap-3 pt-4 border-t border-gray-100">
@@ -4624,12 +4741,22 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                 <h2 className="text-2xl font-display font-bold text-gray-900">Mockups</h2>
-                <button
-                  onClick={() => { setEditingMockup(null); setMockupModalOpen(true); }}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4" /> New Mockup
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBackfillMockupPreviews}
+                    disabled={backfilling}
+                    className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                    title="Re-render any mockup that doesn't have a flattened preview yet"
+                  >
+                    {backfilling ? 'Re-rendering…' : 'Re-render Missing Previews'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingMockup(null); setMockupModalOpen(true); }}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    <Plus className="w-4 h-4" /> New Mockup
+                  </button>
+                </div>
               </div>
 
               {mockupAfterSend && (
@@ -4651,16 +4778,22 @@ export default function AdminPage() {
                     return (
                       <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
                         <div className="relative bg-gray-50 aspect-square flex items-center justify-center border-b border-gray-100">
-                          {m.product_image_url && (
-                            <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full h-full object-contain" />
-                          )}
-                          {m.graphic_url && (
-                            <img
-                              src={m.graphic_url}
-                              alt="Design"
-                              className="absolute"
-                              style={{ left: `${pl.x}%`, top: `${pl.y}%`, width: `${pl.width}%` }}
-                            />
+                          {m.preview_image_url ? (
+                            <img src={m.preview_image_url} alt={m.name || 'Mockup'} className="w-full h-full object-contain" />
+                          ) : (
+                            <>
+                              {m.product_image_url && (
+                                <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full h-full object-contain" />
+                              )}
+                              {m.graphic_url && (
+                                <img
+                                  src={m.graphic_url}
+                                  alt="Design"
+                                  className="absolute"
+                                  style={{ left: `${pl.x}%`, top: `${pl.y}%`, width: `${pl.width}%` }}
+                                />
+                              )}
+                            </>
                           )}
                         </div>
                         <div className="p-3 flex-1 flex flex-col gap-2">
@@ -4699,6 +4832,13 @@ export default function AdminPage() {
                               title={m.customer_email ? 'Email the approval link to the customer' : 'No customer email on file'}
                             >
                               Send for Approval
+                            </button>
+                            <button
+                              onClick={() => handleRegenerateMockupPreview(m.id)}
+                              className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              title="Re-render the flattened preview from the current placement"
+                            >
+                              Re-render
                             </button>
                             <button
                               onClick={() => handleConvertMockup(m.id)}
@@ -5093,12 +5233,15 @@ export default function AdminPage() {
                     </div>
                   )}
 
-                  {/* Design preview */}
-                  {q.design_url && (
+                  {/* Design preview — prefer the flattened mockup so what
+                      the admin sees here matches the customer's approval
+                      page and the recent-quotes thumbnail. The raw
+                      design_url is still linked through for downloads. */}
+                  {(q.mockup_image_url || q.design_url) && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
-                      <a href={q.design_url} target="_blank" rel="noreferrer" className="block">
-                        <img src={q.design_url} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                      <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
+                        <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                       </a>
                     </div>
                   )}
@@ -5568,16 +5711,17 @@ export default function AdminPage() {
                 {/* Quote Summary with Design */}
                 <div className="bg-gray-50 rounded-lg p-4 mb-6">
                   <div className="flex gap-4">
-                    {/* Design image */}
-                    {priceModalQuote.design_url && (
+                    {/* Design image — show the flattened mockup if we have
+                        one; the raw design_url is still the click-through. */}
+                    {(priceModalQuote.mockup_image_url || priceModalQuote.design_url) && (
                       <a
-                        href={priceModalQuote.design_url}
+                        href={priceModalQuote.design_url || priceModalQuote.mockup_image_url || '#'}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex-shrink-0"
                       >
                         <img
-                          src={priceModalQuote.design_url}
+                          src={priceModalQuote.mockup_image_url || priceModalQuote.design_url || ''}
                           alt="Customer design"
                           className="w-28 h-28 rounded-lg border border-gray-200 bg-white object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
                         />

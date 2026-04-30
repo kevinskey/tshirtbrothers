@@ -105,6 +105,7 @@ export interface Quote {
   print_areas?: unknown;
   design_type?: string;
   design_url?: string | null;
+  mockup_image_url?: string | null;
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
   color?: string;
@@ -540,6 +541,19 @@ export async function deleteMockup(id: number) {
   return authRequest<{ deleted: true }>(`/admin/mockups/${id}`, {
     method: 'DELETE',
   });
+}
+
+export async function regenerateMockupPreview(id: number) {
+  return authRequest<Mockup>(`/admin/mockups/${id}/regenerate-preview`, {
+    method: 'POST',
+  });
+}
+
+export async function backfillMockupPreviews() {
+  return authRequest<{ candidates: number; succeeded: number; failed: number }>(
+    '/admin/mockups/backfill-previews',
+    { method: 'POST' },
+  );
 }
 
 export async function fetchCustomerDesigns(search?: string) {

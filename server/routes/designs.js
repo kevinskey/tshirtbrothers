@@ -1,39 +1,28 @@
 import { Router } from 'express';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { authenticate } from '../middleware/auth.js';
 import pool from '../db.js';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 
 // All design routes require authentication
 router.use(authenticate);
 
-// Helper: upload base64 image to DO Spaces
+// Helper: upload base64 image to DO Spaces. Delegates to the shared helper
+// in services/spaces.js so the endpoint/region/URL stay consistent with
+// every other uploader in the app.
 async function uploadToSpaces(base64Data, folder, filename) {
-  const spacesKey = process.env.SPACES_KEY;
-  const spacesSecret = process.env.SPACES_SECRET;
-  if (!spacesKey || !spacesSecret) return null;
-
-  const s3 = new S3Client({
-    endpoint: process.env.SPACES_ENDPOINT,
-    region: process.env.SPACES_REGION || 'atl1',
-    credentials: { accessKeyId: spacesKey, secretAccessKey: spacesSecret },
-  });
-
-  const buffer = Buffer.from(base64Data.replace(/^data:image\/\w+;base64,/, ''), 'base64');
-  const key = `${folder}/${filename}`;
-
-  await s3.send(new PutObjectCommand({
-    Bucket: process.env.SPACES_BUCKET,
-    Key: key,
-    Body: buffer,
-    ContentType: 'image/png',
-    ACL: 'public-read',
-  }));
-
-  const bucket = process.env.SPACES_BUCKET || 'tshirtbrothers';
-  const region = process.env.SPACES_REGION || 'atl1';
-  return `https://${bucket}.${region}.cdn.digitaloceanspaces.com/${key}`;
+  if (!process.env.SPACES_KEY || !process.env.SPACES_SECRET) return null;
+  try {
+    return await uploadObject({
+      key: `${folder}/${filename}`,
+      body: base64Data,
+      contentType: 'image/png',
+    });
+  } catch (err) {
+    console.error('[designs] upload failed:', err.message);
+    return null;
+  }
 }
 
 // GET / - List user's saved designs

@@ -2,8 +2,32 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
+import { renderMockupComposite } from '../services/composite.js';
 
 const router = Router();
+
+// Render a composite for the given mockup row and persist preview_image_url.
+// Returns the updated row, or the original row if compositing was skipped
+// (missing inputs) or failed (logged but non-fatal — UI falls back to
+// CSS-positioned overlay so the customer still sees something).
+async function regeneratePreviewForMockup(row) {
+  if (!row?.product_image_url || !row?.graphic_url) return row;
+  try {
+    const url = await renderMockupComposite({
+      productImageUrl: row.product_image_url,
+      graphicUrl: row.graphic_url,
+      placement: row.placement,
+    });
+    const { rows } = await pool.query(
+      `UPDATE mockups SET preview_image_url = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [url, row.id],
+    );
+    return rows[0] || row;
+  } catch (err) {
+    console.error(`[mockup ${row.id}] composite failed:`, err.message);
+    return row;
+  }
+}
 
 // GET /admin/mockups - list all
 router.get('/admin/mockups', authenticate, adminOnly, async (req, res, next) => {
@@ -98,7 +122,15 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
         notes || null,
       ],
     );
-    res.json(rows[0]);
+
+    // If admin didn't supply a pre-rendered preview, render one now so the
+    // approval page, admin grid, and any quote spawned from this mockup
+    // all show the same flattened image.
+    let row = rows[0];
+    if (!preview_image_url) {
+      row = await regeneratePreviewForMockup(row);
+    }
+    res.json(row);
   } catch (err) { next(err); }
 });
 
@@ -123,7 +155,47 @@ router.patch('/admin/mockups/:id', authenticate, adminOnly, async (req, res, nex
       params,
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+
+    // If a field that affects the composite changed (and the caller didn't
+    // hand us a fresh preview_image_url themselves), re-render so every
+    // page stays in sync with the new placement / artwork / product image.
+    const compositeInputs = ['graphic_url', 'product_image_url', 'placement'];
+    const compositeChanged = compositeInputs.some((k) => k in fields);
+    let row = rows[0];
+    if (compositeChanged && !('preview_image_url' in fields)) {
+      row = await regeneratePreviewForMockup(row);
+    }
+    res.json(row);
+  } catch (err) { next(err); }
+});
+
+// POST /admin/mockups/:id/regenerate-preview - manually re-render the composite
+router.post('/admin/mockups/:id/regenerate-preview', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const updated = await regeneratePreviewForMockup(rows[0]);
+    res.json(updated);
+  } catch (err) { next(err); }
+});
+
+// POST /admin/mockups/backfill-previews - render missing composites for old rows
+router.post('/admin/mockups/backfill-previews', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM mockups
+        WHERE preview_image_url IS NULL
+          AND graphic_url IS NOT NULL
+          AND product_image_url IS NOT NULL`,
+    );
+    let succeeded = 0;
+    let failed = 0;
+    for (const row of rows) {
+      const updated = await regeneratePreviewForMockup(row);
+      if (updated.preview_image_url) succeeded += 1;
+      else failed += 1;
+    }
+    res.json({ candidates: rows.length, succeeded, failed });
   } catch (err) { next(err); }
 });
 
@@ -132,8 +204,14 @@ router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res,
   try {
     const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    const m = rows[0];
+    let m = rows[0];
     if (!m.customer_email) return res.status(400).json({ error: 'Mockup has no customer_email' });
+
+    // Make sure the customer's approval link has a flattened composite to
+    // show. If it doesn't yet, render one before sending.
+    if (!m.preview_image_url && m.product_image_url && m.graphic_url) {
+      m = await regeneratePreviewForMockup(m);
+    }
 
     const token = m.approve_token || crypto.randomBytes(16).toString('hex');
     const updated = await pool.query(
@@ -168,25 +246,35 @@ router.post('/admin/mockups/:id/convert-to-quote', authenticate, adminOnly, asyn
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const m = rows[0];
 
+    // Make sure the mockup has a flattened composite before we hand it
+    // off to the quote — otherwise the quote view would have nothing
+    // consistent to display.
+    let mockupRow = m;
+    if (!mockupRow.preview_image_url && mockupRow.product_image_url && mockupRow.graphic_url) {
+      mockupRow = await regeneratePreviewForMockup(mockupRow);
+    }
+
     const { rows: qRows } = await pool.query(
       `INSERT INTO quotes (
          customer_name, customer_email, customer_phone, product_id, product_name,
-         color, sizes, print_areas, design_type, design_url, quantity, status, user_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12)
+         color, sizes, print_areas, design_type, design_url, mockup_image_url,
+         quantity, status, user_id
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13)
        RETURNING *`,
       [
-        m.customer_name || 'Unknown',
-        m.customer_email || '',
+        mockupRow.customer_name || 'Unknown',
+        mockupRow.customer_email || '',
         null,
-        m.product_id,
-        m.product_name,
+        mockupRow.product_id,
+        mockupRow.product_name,
         color,
         JSON.stringify(sizes),
         JSON.stringify(print_areas),
         'upload',
-        m.graphic_url,
+        mockupRow.graphic_url,
+        mockupRow.preview_image_url || null,
         Math.max(1, parseInt(quantity, 10) || 1),
-        m.customer_id,
+        mockupRow.customer_id,
       ],
     );
 
