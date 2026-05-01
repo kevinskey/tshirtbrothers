@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
+import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
 
@@ -211,6 +212,122 @@ router.get('/public/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Public: PDF of the invoice. Accessed from the customer success page's
+// "Download invoice" button — no auth, just the invoice id.
+router.get('/:id/pdf', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    const inv = rows[0];
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="Invoice-${inv.invoice_number}.pdf"`);
+
+    const doc = new PDFDocument({ size: 'LETTER', margin: 50 });
+    doc.pipe(res);
+
+    const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
+    const isPaid = inv.status === 'paid' || Number(inv.amount_due) <= 0;
+
+    // Header
+    doc.fillColor(BRAND_DARK).fontSize(22).font('Helvetica-Bold').text('TShirt Brothers', 50, 50);
+    doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+      .text('6010 Renaissance Parkway', 50, 78)
+      .text('Fairburn, GA 30213', 50, 90)
+      .text('(470) 622-4845', 50, 102);
+    doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND_DARK).text('INVOICE', 400, 50, { align: 'right' });
+    doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(inv.invoice_number, 400, 78, { align: 'right' });
+    if (isPaid) {
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#16a34a').text('PAID', 400, 95, { align: 'right' });
+    }
+
+    // Bill to
+    let y = 140;
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#9ca3af').text('BILL TO', 50, y);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(BRAND_DARK).text(inv.customer_name, 50, y + 12);
+    doc.fontSize(10).font('Helvetica').fillColor('#4b5563');
+    let lineY = y + 28;
+    if (inv.customer_email) { doc.text(inv.customer_email, 50, lineY); lineY += 12; }
+    if (inv.customer_phone) { doc.text(inv.customer_phone, 50, lineY); lineY += 12; }
+
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#9ca3af').text('DATE', 400, y, { align: 'right' });
+    doc.fontSize(10).font('Helvetica').fillColor(BRAND_DARK)
+      .text(new Date(inv.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 400, y + 12, { align: 'right' });
+    if (inv.due_date) {
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#9ca3af').text('DUE', 400, y + 30, { align: 'right' });
+      doc.fontSize(10).font('Helvetica').fillColor(BRAND_DARK)
+        .text(new Date(inv.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 400, y + 42, { align: 'right' });
+    }
+
+    // Items table
+    const tableTop = Math.max(lineY, y + 70) + 20;
+    doc.moveTo(50, tableTop).lineTo(562, tableTop).strokeColor('#e5e7eb').stroke();
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#6b7280');
+    doc.text('DESCRIPTION', 50, tableTop + 8, { width: 280 });
+    doc.text('QTY', 330, tableTop + 8, { width: 50, align: 'center' });
+    doc.text('UNIT', 380, tableTop + 8, { width: 80, align: 'right' });
+    doc.text('TOTAL', 462, tableTop + 8, { width: 100, align: 'right' });
+    doc.moveTo(50, tableTop + 24).lineTo(562, tableTop + 24).strokeColor('#e5e7eb').stroke();
+
+    let rowY = tableTop + 32;
+    doc.fontSize(10).font('Helvetica').fillColor(BRAND_DARK);
+    for (const it of items) {
+      const desc = it.description || '—';
+      const qty = it.quantity || 1;
+      const unit = Number(it.unit_price || 0);
+      const lineTotal = it.total != null ? Number(it.total) : qty * unit;
+      doc.fillColor(BRAND_DARK).text(desc, 50, rowY, { width: 280 });
+      doc.fillColor('#4b5563').text(String(qty), 330, rowY, { width: 50, align: 'center' });
+      doc.text(`$${unit.toFixed(2)}`, 380, rowY, { width: 80, align: 'right' });
+      doc.fillColor(BRAND_DARK).text(`$${lineTotal.toFixed(2)}`, 462, rowY, { width: 100, align: 'right' });
+      rowY += 22;
+    }
+    doc.moveTo(50, rowY + 6).lineTo(562, rowY + 6).strokeColor('#e5e7eb').stroke();
+
+    // Totals (right-aligned column)
+    let totalsY = rowY + 22;
+    const labelX = 380;
+    const valueX = 462;
+    const labelW = 80;
+    const valueW = 100;
+    const drawRow = (label, value, opts = {}) => {
+      doc.fontSize(opts.bold ? 11 : 10)
+        .font(opts.bold ? 'Helvetica-Bold' : 'Helvetica')
+        .fillColor(opts.color || '#6b7280')
+        .text(label, labelX, totalsY, { width: labelW, align: 'right' });
+      doc.fillColor(opts.color || BRAND_DARK)
+        .text(value, valueX, totalsY, { width: valueW, align: 'right' });
+      totalsY += opts.bold ? 20 : 16;
+    };
+    drawRow('Subtotal', `$${Number(inv.subtotal).toFixed(2)}`);
+    if (Number(inv.tax) > 0) drawRow('Tax', `$${Number(inv.tax).toFixed(2)}`);
+    if (Number(inv.shipping) > 0) drawRow('Shipping', `$${Number(inv.shipping).toFixed(2)}`);
+    if (Number(inv.discount) > 0) drawRow('Discount', `-$${Number(inv.discount).toFixed(2)}`, { color: '#16a34a' });
+    doc.moveTo(380, totalsY).lineTo(562, totalsY).strokeColor('#e5e7eb').stroke();
+    totalsY += 6;
+    drawRow('Total', `$${Number(inv.total).toFixed(2)}`, { bold: true, color: BRAND_DARK });
+    if (Number(inv.amount_paid) > 0) drawRow('Paid', `-$${Number(inv.amount_paid).toFixed(2)}`, { color: '#16a34a' });
+    doc.moveTo(380, totalsY).lineTo(562, totalsY).strokeColor(BRAND_DARK).lineWidth(1.5).stroke();
+    doc.lineWidth(1);
+    totalsY += 6;
+    drawRow(
+      isPaid ? 'Balance' : 'Due',
+      `$${Number(inv.amount_due).toFixed(2)}`,
+      { bold: true, color: isPaid ? '#16a34a' : BRAND_ORANGE },
+    );
+
+    if (inv.notes) {
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#9ca3af').text('NOTES', 50, totalsY + 30);
+      doc.fontSize(10).font('Helvetica').fillColor('#4b5563').text(String(inv.notes), 50, totalsY + 44, { width: 512 });
+    }
+
+    doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af')
+      .text('Thank you for your business!', 50, 720, { align: 'center', width: 512 });
+
+    doc.end();
+  } catch (err) { next(err); }
+});
+
 router.use(authenticate, adminOnly);
 
 // POST /:id/send-sms - send the invoice link via Twilio
@@ -409,7 +526,7 @@ router.post('/:id/send', async (req, res, next) => {
           },
         ],
         mode: 'payment',
-        success_url: `${DOMAIN}/invoice/paid?invoice=${id}`,
+        success_url: `${DOMAIN}/payment/success?invoice=${id}&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${DOMAIN}/invoice/view/${id}`,
         customer_email: invoice.customer_email,
         metadata: {

@@ -435,66 +435,164 @@ router.post('/webhook', (req, res) => {
   }
 });
 
-// GET /success - Verify Stripe payment and update quote status
+// Pull the bits of a Stripe Checkout session the customer-facing success
+// page needs (receipt URL, card brand + last4 / wallet, transaction id).
+// Returns null if the session can't be retrieved.
+async function loadStripePaymentDetails(sessionId) {
+  if (!sessionId) return null;
+  try {
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent.latest_charge.payment_method_details'],
+    });
+    const charge = session.payment_intent?.latest_charge;
+    const pmDetails = charge?.payment_method_details;
+    const card = pmDetails?.card;
+    const wallet = card?.wallet?.type || null; // 'apple_pay', 'google_pay', etc.
+
+    return {
+      session,
+      transaction_id: charge?.id || session.payment_intent?.id || session.id,
+      receipt_url: charge?.receipt_url || null,
+      payment_method: card
+        ? { brand: card.brand, last4: card.last4, wallet }
+        : pmDetails
+          ? { brand: pmDetails.type, last4: null, wallet: null }
+          : null,
+      amount_total: session.amount_total || 0,
+      paid: session.payment_status === 'paid',
+    };
+  } catch (err) {
+    console.error('[loadStripePaymentDetails] failed:', err.message);
+    return null;
+  }
+}
+
+// Public success-page payload. Accepts either ?quote=ID or ?invoice=ID
+// (plus session_id from Stripe). Returns a uniform shape so the frontend
+// can render the same QB-style summary regardless of which flow paid.
+//
+// Shape: { invoice_number, customer_name, business_name, amount_total,
+//   transaction_id, paid_at, payment_method, receipt_url, invoice_pdf_url,
+//   payment_type }
 router.get('/success', async (req, res, next) => {
   try {
-    const { quote: quoteId, session_id, type } = req.query;
-    if (!quoteId) return res.status(400).json({ error: 'Missing quote ID' });
+    const { quote: quoteId, invoice: invoiceIdQuery, session_id, type } = req.query;
+    if (!quoteId && !invoiceIdQuery) {
+      return res.status(400).json({ error: 'Missing quote or invoice ID' });
+    }
 
+    const stripeDetails = await loadStripePaymentDetails(session_id);
+
+    // ---------- Invoice flow (came from /api/invoices/:id/send) ----------
+    if (invoiceIdQuery) {
+      const invRes = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceIdQuery]);
+      if (invRes.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+
+      // If Stripe says paid and our DB hasn't recorded it yet, apply the
+      // payment now so the success page never shows "amount due > 0" right
+      // after a paid checkout (in case the webhook is slow / not delivered).
+      if (stripeDetails?.paid && stripeDetails.session?.metadata?.invoice_id === String(invoiceIdQuery)) {
+        await applyPaymentToInvoice({
+          invoiceId: parseInt(invoiceIdQuery, 10),
+          amount: (stripeDetails.amount_total || 0) / 100,
+          paymentIntentId: stripeDetails.session.payment_intent?.id || stripeDetails.session.payment_intent || null,
+        });
+      }
+
+      const fresh = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceIdQuery]);
+      const inv = fresh.rows[0];
+      return res.json({
+        payment_type: stripeDetails?.session?.metadata?.payment_type || 'invoice',
+        business_name: 'TShirt Brothers',
+        customer_name: inv.customer_name,
+        invoice_id: inv.id,
+        invoice_number: inv.invoice_number,
+        amount_total: stripeDetails?.amount_total ?? Math.round(Number(inv.total) * 100),
+        amount_due: Number(inv.amount_due),
+        paid_at: new Date().toISOString(),
+        transaction_id: stripeDetails?.transaction_id || null,
+        receipt_url: stripeDetails?.receipt_url || null,
+        invoice_pdf_url: `/api/invoices/${inv.id}/pdf`,
+        payment_method: stripeDetails?.payment_method || null,
+      });
+    }
+
+    // ---------- Quote flow (existing deposit/balance behaviour) ----------
     const result = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    let quote = result.rows[0];
+    let invoiceForQuote = null;
+    let paymentType = type || stripeDetails?.session?.metadata?.type || 'deposit';
 
-    const quote = result.rows[0];
-
-    if (session_id) {
-      try {
-        const stripe = getStripe();
-        const session = await stripe.checkout.sessions.retrieve(session_id);
-
-        if (session.payment_status === 'paid' && session.metadata?.quoteId === String(quoteId)) {
-          const paymentType = type || session.metadata?.type || 'deposit';
-
-          if (paymentType === 'balance') {
-            // Balance payment — mark fully paid
-            const updated = await pool.query(
-              `UPDATE quotes SET
-                deposit_amount = estimated_price,
-                balance_paid_at = NOW()
-              WHERE id = $1 AND balance_paid_at IS NULL
-              RETURNING *`,
-              [quoteId]
-            );
-            if (updated.rows.length > 0) {
-              console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (session.amount_total / 100));
-              // Create the paid invoice + send receipt (email + SMS if available)
-              const invoice = await createPaidInvoiceForQuote(updated.rows[0], session.amount_total);
-              return res.json({ ...updated.rows[0], payment_type: 'balance', invoice });
-            }
-          } else if (quote.status !== 'accepted') {
-            // Deposit payment — accept quote
-            const updated = await pool.query(
-              `UPDATE quotes SET
-                status = 'accepted',
-                accepted_at = NOW(),
-                deposit_amount = $1
-              WHERE id = $2 AND status != 'accepted'
-              RETURNING *`,
-              [session.amount_total / 100, quoteId]
-            );
-            if (updated.rows.length > 0) {
-              console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (session.amount_total / 100));
-              sendQuoteAcceptedNotification(updated.rows[0]).catch(() => {});
-              smsQuoteAcceptedToAdmin(updated.rows[0]).catch(() => {});
-              return res.json({ ...updated.rows[0], payment_type: 'deposit' });
-            }
-          }
+    if (stripeDetails?.paid && stripeDetails.session?.metadata?.quoteId === String(quoteId)) {
+      if (paymentType === 'balance') {
+        const updated = await pool.query(
+          `UPDATE quotes SET
+             deposit_amount = estimated_price,
+             balance_paid_at = NOW()
+           WHERE id = $1 AND balance_paid_at IS NULL
+           RETURNING *`,
+          [quoteId],
+        );
+        if (updated.rows.length > 0) {
+          quote = updated.rows[0];
+          console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (stripeDetails.amount_total / 100));
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, stripeDetails.amount_total);
+        } else {
+          // Already balance-paid earlier — surface the existing invoice.
+          const existing = await pool.query(
+            'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+            [quoteId],
+          );
+          invoiceForQuote = existing.rows[0] || null;
         }
-      } catch (stripeErr) {
-        console.error('[Payment Success] Stripe verification failed:', stripeErr.message);
+      } else if (quote.status !== 'accepted') {
+        const updated = await pool.query(
+          `UPDATE quotes SET
+             status = 'accepted',
+             accepted_at = NOW(),
+             deposit_amount = $1
+           WHERE id = $2 AND status != 'accepted'
+           RETURNING *`,
+          [stripeDetails.amount_total / 100, quoteId],
+        );
+        if (updated.rows.length > 0) {
+          quote = updated.rows[0];
+          console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (stripeDetails.amount_total / 100));
+          sendQuoteAcceptedNotification(quote).catch(() => {});
+          smsQuoteAcceptedToAdmin(quote).catch(() => {});
+        }
       }
     }
 
-    res.json(quote);
+    if (!invoiceForQuote && paymentType === 'balance') {
+      const existing = await pool.query(
+        'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+        [quoteId],
+      );
+      invoiceForQuote = existing.rows[0] || null;
+    }
+
+    res.json({
+      payment_type: paymentType,
+      business_name: 'TShirt Brothers',
+      customer_name: quote.customer_name,
+      product_name: quote.product_name,
+      quote_id: quote.id,
+      invoice_id: invoiceForQuote?.id || null,
+      invoice_number: invoiceForQuote?.invoice_number || null,
+      amount_total: stripeDetails?.amount_total ?? Math.round(Number(quote.deposit_amount || 0) * 100),
+      amount_due:
+        paymentType === 'balance'
+          ? 0
+          : Math.max(0, Number(quote.estimated_price || 0) - Number(quote.deposit_amount || 0)),
+      paid_at: new Date().toISOString(),
+      transaction_id: stripeDetails?.transaction_id || null,
+      receipt_url: stripeDetails?.receipt_url || null,
+      invoice_pdf_url: invoiceForQuote ? `/api/invoices/${invoiceForQuote.id}/pdf` : null,
+      payment_method: stripeDetails?.payment_method || null,
+    });
   } catch (err) {
     next(err);
   }
