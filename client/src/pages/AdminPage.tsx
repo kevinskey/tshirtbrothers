@@ -133,6 +133,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'studio',    label: 'Design Studio',    icon: Palette, to: '/design' },
     { key: 'designs',   label: 'Customer Designs', icon: Palette },
     { key: 'workspace', label: 'Art Library',      icon: FolderOpen },
+    { key: 'mockups',   label: 'Mockups',          icon: Eye },
     { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
   ]},
