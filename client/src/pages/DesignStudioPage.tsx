@@ -6,6 +6,7 @@ import type { FabricRendererBridgeHandle } from '@/components/design-studio/Fabr
 import { LayersPanel } from '@/components/design-studio/LayersPanel';
 import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 import { FontPicker } from '@/components/design-studio/FontPicker';
+import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -63,6 +64,11 @@ interface DesignElement {
   borderRadius?: number; // 0-50 percent
   opacity?: number; // 0-1
   filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  // Phase 2 PR #14: text effects (Fabric-only painting; round-trip safe).
+  shadow?: { offsetX: number; offsetY: number; blur: number; color: string };
+  strokeColor?: string;
+  strokeWidth?: number;
+  gradient?: { colorA: string; colorB: string; angle: number };
 }
 
 type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone' | 'circle' | 'circle-bottom';
@@ -2811,6 +2817,25 @@ export default function DesignStudioPage() {
             {selectedEl.outline ? 'On' : 'Off'}
           </button>
         </div>
+
+        {/* Phase 2 PR #14: text effects (drop shadow / real stroke /
+            gradient fill). Fabric-only — legacy renderer doesn't paint
+            these fields, but they round-trip through save/load fine. */}
+        {useFabricRenderer && (
+          <div>
+            <span className="text-sm text-gray-600 mb-2 block">Effects</span>
+            <TextEffectsPanel
+              element={{
+                id: selectedEl.id,
+                shadow: selectedEl.shadow,
+                strokeColor: selectedEl.strokeColor,
+                strokeWidth: selectedEl.strokeWidth,
+                gradient: selectedEl.gradient,
+              }}
+              onUpdate={(updates) => updateElement(selectedEl.id, updates)}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-4 gap-2">
           <button type="button" onClick={() => updateElement(selectedEl.id, { x: 50 - selectedEl.width / 2 })} className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 p-2 hover:bg-gray-50 text-gray-600">

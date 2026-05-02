@@ -42,6 +42,38 @@ export interface DesignElement {
   borderRadius?: number;
   opacity?: number;
   filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+
+  // ─── Phase 2 PR #14: text effects ──────────────────────────────────────
+  // These supersede the boolean `outline` for anyone in Fabric mode. Legacy
+  // renderer still honors `outline`; these fields are Fabric-only because
+  // the legacy positioned-div renderer is being deleted in PR #15 (date
+  // TBD, depends on the toggle exit criteria).
+
+  /** Drop shadow. Undefined = no shadow. */
+  shadow?: {
+    offsetX: number;
+    offsetY: number;
+    blur: number;
+    color: string;
+  };
+
+  /**
+   * Real stroke (outline) — independent of the legacy boolean `outline`.
+   * When strokeWidth > 0 and strokeColor is set, Fabric draws these instead
+   * of the legacy fixed-style outline.
+   */
+  strokeColor?: string;
+  strokeWidth?: number;
+
+  /**
+   * Linear gradient fill. When set, takes precedence over the solid `color`
+   * field. angle is degrees (0 = left-to-right).
+   */
+  gradient?: {
+    colorA: string;
+    colorB: string;
+    angle: number;
+  };
 }
 
 // Stored design payload as it lands on /api/designs. Either a v1 array

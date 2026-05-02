@@ -19,7 +19,7 @@
  */
 
 import {
-  IText, util, loadSVGFromString,
+  IText, util, loadSVGFromString, Shadow, Gradient,
   filters as fabricFilters,
   type Canvas as FabricCanvas,
   type FabricObject,
@@ -124,24 +124,47 @@ function convertPlainText(el: DesignElement, meta: FabricObjectMeta): FabricObje
   const leftPx = el.x * COORD_SCALE;
   const topPx = el.y * COORD_SCALE;
 
+  // Phase 2 PR #14: real stroke from el.strokeColor/strokeWidth takes
+  // precedence over the legacy boolean `outline`. Fall back to the legacy
+  // styling when the new fields aren't set so old saved designs render
+  // identically.
+  const useRealStroke =
+    typeof el.strokeWidth === 'number' && el.strokeWidth > 0 && !!el.strokeColor;
+  const strokeColor = useRealStroke
+    ? el.strokeColor
+    : el.outline ? 'rgba(0,0,0,0.5)' : undefined;
+  const strokeWidth = useRealStroke
+    ? (el.strokeWidth as number) * FONT_SCALE
+    : el.outline ? 1 : 0;
+  const hasStroke = strokeWidth > 0;
+
+  // Phase 2 PR #14: gradient fill takes precedence over the solid color
+  // when set. Fabric's Gradient class accepts angle via coords; we convert.
+  const fill = el.gradient
+    ? buildLinearGradient(el.gradient.colorA, el.gradient.colorB, el.gradient.angle)
+    : (el.color ?? '#000000');
+
   const text = new IText(el.content, {
     fontSize,
     fontFamily: el.fontFamily ?? 'Inter',
     fontWeight: 'bold',
-    fill: el.color ?? '#000000',
+    fill,
     textAlign: el.textAlign ?? 'center',
-    // Fabric's charSpacing is in 1/1000 em — legacy letterSpacing is in em.
     charSpacing: (el.letterSpacing ?? 0) * 1000,
     lineHeight,
-    stroke: el.outline ? 'rgba(0,0,0,0.5)' : undefined,
-    strokeWidth: el.outline ? 1 : 0,
-    paintFirst: el.outline ? 'stroke' : 'fill',
+    stroke: strokeColor,
+    strokeWidth,
+    paintFirst: hasStroke ? 'stroke' : 'fill',
+    shadow: el.shadow ? new Shadow({
+      offsetX: el.shadow.offsetX * FONT_SCALE,
+      offsetY: el.shadow.offsetY * FONT_SCALE,
+      blur: el.shadow.blur * FONT_SCALE,
+      color: el.shadow.color,
+    }) : undefined,
     opacity: el.opacity ?? 1,
     angle: el.rotation ?? 0,
     originX: 'center',
     originY: 'center',
-    // Legacy element box height ≈ fontSize * lineHeight; center it so the
-    // top-left of that box lines up with (el.x, el.y) post-rotation.
     left: leftPx + widthPx / 2,
     top: topPx + (fontSize * lineHeight) / 2,
   });
@@ -149,6 +172,32 @@ function convertPlainText(el: DesignElement, meta: FabricObjectMeta): FabricObje
   if (el.wordSpacing != null) meta.wordSpacing = el.wordSpacing;
   (text as FabricObjectWithMeta).data = meta;
   return text;
+}
+
+/**
+ * Build a Fabric Gradient (linear) from a color pair + angle in degrees.
+ * Coordinates are computed at draw time off the object's bounding box; we
+ * use `coords: { x1, y1, x2, y2 }` on a 0..1 unit square that Fabric
+ * stretches to the text bounds.
+ */
+function buildLinearGradient(colorA: string, colorB: string, angleDeg: number): Gradient<'linear'> {
+  const rad = (angleDeg * Math.PI) / 180;
+  // Vector across a centered unit square. We project the unit-circle
+  // vector into [-0.5, 0.5] then shift to [0, 1].
+  const dx = Math.cos(rad) * 0.5;
+  const dy = Math.sin(rad) * 0.5;
+  return new Gradient({
+    type: 'linear',
+    gradientUnits: 'percentage',
+    coords: {
+      x1: 0.5 - dx, y1: 0.5 - dy,
+      x2: 0.5 + dx, y2: 0.5 + dy,
+    },
+    colorStops: [
+      { offset: 0, color: colorA },
+      { offset: 1, color: colorB },
+    ],
+  });
 }
 
 async function convertShapedText(
