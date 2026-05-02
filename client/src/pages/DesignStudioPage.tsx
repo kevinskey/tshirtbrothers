@@ -2735,6 +2735,15 @@ export default function DesignStudioPage() {
         </div>
 
         <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Size</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
+            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
+            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">Color</span>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-500">{selectedEl.color ?? '#000000'}</span>
@@ -2768,15 +2777,6 @@ export default function DesignStudioPage() {
               <input type="range" min={10} max={100} value={selectedEl.shapeIntensity ?? 50} onChange={e => updateElement(selectedEl.id, { shapeIntensity: Number(e.target.value) })} className="w-full accent-blue-600" />
             </div>
           )}
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Size</span>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
-            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
-            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
-          </div>
         </div>
 
         <div className="flex items-center justify-between">
