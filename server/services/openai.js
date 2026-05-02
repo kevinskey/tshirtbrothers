@@ -185,6 +185,9 @@ async function generateWithFluxDev(prompt, style) {
   if (!apiKey) throw new Error('Replicate not configured');
 
   const fullPrompt = framePrompt(prompt, style);
+  // Flux Dev exposes a guidance knob — bump it for vinyl/print so the
+  // 'no text' / 'flat single-color' instructions get heavier weight.
+  const guidance = (style === 'vinyl' || style === 'print') ? 6.5 : 3.5;
 
   const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-dev/predictions', {
     method: 'POST',
@@ -199,6 +202,7 @@ async function generateWithFluxDev(prompt, style) {
         aspect_ratio: '1:1',
         output_format: 'png',
         go_fast: true,
+        guidance,
       },
     }),
   });
@@ -351,10 +355,9 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
   const classification = classifyPrompt(prompt, style);
   console.log(`[Smart Router] "${prompt.slice(0, 60)}..." → ${classification.tier} (${classification.reason}) [style=${style}]`);
 
-  // ── VINYL — route by classification. If the prompt actually wants text
-  // rendering (quoted phrase, "the words…"), use Ideogram. Otherwise prefer
-  // Flux Schnell for clean shape work; Ideogram on a descriptive prompt
-  // tends to render the prompt itself as typography.
+  // ── VINYL — Flux Dev primary (better instruction-following than Schnell;
+  // Schnell still hallucinates fake text on graphics even when explicitly
+  // told not to). DALL-E is best for hard "no text" requirements.
   if (style === 'vinyl') {
     if (classification.tier === 'text' && process.env.IDEOGRAM_API_KEY) {
       try {
@@ -364,13 +367,13 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
       }
     }
     if (process.env.REPLICATE_API_KEY) {
-      try { return await generateWithFluxSchnell(prompt, style); } catch {}
       try { return await generateWithFluxDev(prompt, style); } catch {}
+      try { return await generateWithFluxSchnell(prompt, style); } catch {}
     }
+    try { return await generateWithDalle(prompt, style); } catch {}
     if (process.env.IDEOGRAM_API_KEY) {
       try { return await generateWithIdeogram(prompt, style); } catch {}
     }
-    try { return await generateWithDalle(prompt, style); } catch {}
     throw new Error('All vinyl generation models failed');
   }
 
