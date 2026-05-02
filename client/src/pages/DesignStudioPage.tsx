@@ -15,6 +15,7 @@ import {
   Loader2,
   Move,
   Sparkles,
+  FolderOpen,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -309,6 +310,104 @@ export default function DesignStudioPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Admin "Save to Art Library" — composes whatever elements are currently
+  // on the front side into a transparent PNG and uploads it as a design
+  // asset (no product needed). Visible only when an admin Bearer token is
+  // present in localStorage (customers use cookie auth, not tsb_token).
+  const [librarySaveOpen, setLibrarySaveOpen] = useState(false);
+  const [librarySaveName, setLibrarySaveName] = useState('');
+  const [librarySaveCategory, setLibrarySaveCategory] = useState('general');
+  const [librarySaving, setLibrarySaving] = useState(false);
+  const [isAdmin] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return !!localStorage.getItem('tsb_token');
+  });
+
+  async function handleSaveToLibrary() {
+    if (!librarySaveName.trim() || librarySaving) return;
+    const els = designElements.filter(el => (el.side ?? 'front') === 'front');
+    if (els.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
+    setLibrarySaving(true);
+    try {
+      // Render front-side elements to a 2048x2048 transparent canvas. Bigger
+      // than the on-screen design surface so the saved asset is print-quality.
+      const SIZE = 2048;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas context unavailable');
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      for (const el of els) {
+        const x = ((el.x ?? 0) / 100) * SIZE;
+        const y = ((el.y ?? 0) / 100) * SIZE;
+        const w = ((el.width ?? 30) / 100) * SIZE;
+        if (el.type === 'image' && el.content) {
+          try {
+            const img = document.createElement('img');
+            img.crossOrigin = 'anonymous';
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error('img load failed'));
+              img.src = el.content;
+            });
+            const aspect = img.naturalHeight / img.naturalWidth;
+            ctx.drawImage(img, x, y, w, w * aspect);
+          } catch { /* skip on load failure */ }
+        } else if (el.type === 'text' && el.content) {
+          const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
+          ctx.save();
+          if (el.rotation) {
+            ctx.translate(x + w / 2, y + fontSize / 2);
+            ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+            ctx.translate(-(x + w / 2), -(y + fontSize / 2));
+          }
+          ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
+          ctx.fillStyle = el.color ?? '#000000';
+          ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+          ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
+          ctx.restore();
+        }
+      }
+      const dataUrl = canvas.toDataURL('image/png');
+
+      // Upload PNG to Spaces, get hosted URL
+      const token = getAuthToken();
+      const uploadRes = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          filename: librarySaveName.replace(/\s+/g, '-').toLowerCase() + '.png',
+          customerEmail: 'admin-studio',
+        }),
+      });
+      if (!uploadRes.ok) throw new Error('Upload failed');
+      const { url } = await uploadRes.json();
+
+      // Save library record
+      const saveRes = await fetch('/api/admin/designs-library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: librarySaveName.trim(),
+          image_url: url,
+          category: librarySaveCategory,
+          tags: [],
+        }),
+      });
+      if (!saveRes.ok) throw new Error('Library save failed');
+
+      setLibrarySaveOpen(false);
+      setLibrarySaveName('');
+      alert('Saved to Art Library!');
+    } catch (e) {
+      alert(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setLibrarySaving(false);
+    }
+  }
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
@@ -1079,6 +1178,17 @@ export default function DesignStudioPage() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => { setLibrarySaveName(designName === 'Untitled design' ? '' : designName); setLibrarySaveOpen(true); }}
+            className="hidden md:flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100 transition"
+            title="Save the current design to the Art Library (no product required)"
+          >
+            <FolderOpen className="h-4 w-4" />
+            Save to Library
+          </button>
+        )}
         <button
           type="button"
           onClick={handleSave}
@@ -2663,6 +2773,54 @@ export default function DesignStudioPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Save to Art Library modal (admin) */}
+      {librarySaveOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4" onClick={() => !librarySaving && setLibrarySaveOpen(false)}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSaveToLibrary(); }}
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-display font-semibold text-gray-900">Save to Art Library</h3>
+              <button type="button" onClick={() => setLibrarySaveOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">Composes the current front-side elements into a transparent PNG and saves it as an Art Library asset (no product needed).</p>
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Name *</label>
+              <input
+                type="text" required autoFocus
+                value={librarySaveName}
+                onChange={(e) => setLibrarySaveName(e.target.value)}
+                placeholder="e.g. Vintage axe logo"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Category</label>
+              <select
+                value={librarySaveCategory}
+                onChange={(e) => setLibrarySaveCategory(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+              >
+                {['general', 'logos', 'typography', 'illustrations', 'backgrounds', 'badges', 'icons', 'patterns'].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setLibrarySaveOpen(false)} disabled={librarySaving} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
+              <button type="submit" disabled={librarySaving || !librarySaveName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 flex items-center gap-2">
+                {librarySaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {librarySaving ? 'Saving…' : 'Save to Library'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
