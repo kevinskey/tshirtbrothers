@@ -165,22 +165,43 @@ const FONT_OPTIONS = [
   'Barlow', 'Karla', 'Cabin', 'Exo 2', 'Titillium Web', 'Varela Round',
   'Archivo', 'Outfit', 'Sora', 'DM Sans', 'Space Grotesk', 'Manrope',
   'Plus Jakarta Sans', 'Albert Sans', 'Figtree',
+  // Athletic / sports / heavy display — t-shirt staples
+  'Bebas Neue', 'Anton', 'Oswald', 'Fjalla One', 'Big Shoulders Display',
+  'Squada One', 'Faster One', 'Racing Sans One', 'Saira Condensed',
+  'Teko', 'Yanone Kaffeesatz', 'Khand', 'Staatliches', 'Saira Stencil One',
   // Serif
   'Playfair Display', 'Merriweather', 'Lora', 'PT Serif', 'Bitter', 'Libre Baskerville',
   'EB Garamond', 'Crimson Text', 'Cormorant Garamond', 'Spectral', 'Source Serif 4',
-  'DM Serif Display', 'Noto Serif',
-  // Display / Decorative
-  'Bebas Neue', 'Anton', 'Righteous', 'Passion One', 'Bungee', 'Bangers',
+  'DM Serif Display', 'Noto Serif', 'Abril Fatface', 'Cinzel',
+  'Yeseva One', 'Prata', 'Cardo', 'Old Standard TT',
+  // Display / Decorative — popular for apparel
+  'Righteous', 'Passion One', 'Bungee', 'Bangers',
   'Fredoka One', 'Lobster', 'Pacifico', 'Permanent Marker', 'Press Start 2P',
   'Russo One', 'Orbitron', 'Audiowide', 'Black Ops One', 'Bungee Shade',
-  'Creepster', 'Fascinate Inline', 'Monoton', 'Racing Sans One', 'Sigmar One',
-  'Special Elite', 'Titan One', 'Ultra',
+  'Bungee Outline', 'Bungee Inline', 'Bungee Spice',
+  'Creepster', 'Fascinate Inline', 'Monoton', 'Sigmar One',
+  'Special Elite', 'Titan One', 'Ultra', 'Alfa Slab One', 'Bowlby One',
+  'Concert One', 'Knewave', 'Modak', 'Frijole', 'Limelight',
+  'Sansita', 'Shrikhand', 'Nosifer', 'Eater', 'Pirata One',
+  'Rampart One', 'Codystar',
+  // Rubik distressed/textured family — cut/printed-look styles
+  'Rubik Mono One', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Iso',
+  'Rubik Vinyl', 'Rubik Marker Hatched', 'Rubik Beastly',
+  'Rubik Spray Paint', 'Rubik Wet Paint', 'Rubik Puddles',
+  'Rubik Burned', 'Rubik 80s Fade',
+  'Rubik Lines', 'Rubik Maze', 'Rubik Pixels',
   // Handwriting / Script
   'Dancing Script', 'Great Vibes', 'Sacramento', 'Satisfy', 'Kalam',
   'Caveat', 'Indie Flower', 'Shadows Into Light', 'Patrick Hand', 'Architects Daughter',
   'Amatic SC', 'Gloria Hallelujah', 'Covered By Your Grace', 'Rock Salt',
-  // Monospace
+  'Kaushan Script', 'Gochi Hand', 'Oleo Script', 'Pinyon Script',
+  'Stalemate', 'Henny Penny', 'Yellowtail', 'Allura', 'Tangerine',
+  'Marck Script', 'Zeyada', 'Homemade Apple',
+  // Gothic / blackletter
+  'UnifrakturMaguntia', 'UnifrakturCook', 'MedievalSharp',
+  // Monospace / pixel / tech
   'Roboto Mono', 'Source Code Pro', 'Fira Code', 'JetBrains Mono', 'Space Mono', 'DM Mono',
+  'VT323', 'Wallpoet',
   // System fallbacks
   'Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Verdana', 'Comic Sans MS',
 ];
