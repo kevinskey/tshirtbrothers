@@ -409,19 +409,19 @@ router.get('/customer-designs', async (req, res, next) => {
       quoteParams,
     );
 
-    // Customer Designs — every studio design with real elements, even if a
-    // server-side print_url hasn't been generated yet (the studio's save flow
-    // doesn't currently populate print_url; it's reserved for future use).
-    // Prefer print_url for the thumbnail when available (bare graphic), fall
-    // back to thumbnail (canvas snapshot) so the design at least appears.
+    // Customer Designs — pass through every studio design with non-empty
+    // elements. Thumbnail uses print_url (bare graphic) only; fall back to
+    // null and let the frontend render the elements client-side onto a
+    // transparent canvas. Don't use the canvas-snapshot thumbnail because
+    // it includes the product backdrop (= mockup).
     const designRows = designsQ.rows.map((d) => ({
       ...d,
       id: `design-${d.id}`,
       source: 'design',
       source_id: d.id,
-      thumbnail: d.print_url || d.thumbnail,
-      product_image: null,    // hide bare product image fallback in UI
-      mockup_url: null,        // hide product+graphic composite
+      thumbnail: d.print_url || null,
+      product_image: null,
+      mockup_url: null,
     }));
 
     const quoteRows = quotesQ.rows
