@@ -4,7 +4,7 @@ import { generateDesign } from '../services/openai.js';
 import Replicate from 'replicate';
 import QRCode from 'qrcode';
 import { execFile } from 'child_process';
-import { writeFile, readFile, unlink, mkdtemp } from 'fs/promises';
+import { writeFile, readFile, unlink, mkdtemp, rmdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
@@ -299,6 +299,39 @@ router.post('/generate', async (req, res, next) => {
     const colorsForTrace = requestedColors;
 
     if (!shouldVectorize) {
+      // Multi-color vinyl: quantize to exactly N colors so the customer's
+      // cut software gets a clean palette to separate. DALL-E often returns
+      // 5-7 colors even when told to use 3.
+      if (style === 'vinyl' && requestedColors > 1) {
+        try {
+          const tmpDir = await mkdtemp(join(tmpdir(), 'quantize-'));
+          const inPath = join(tmpDir, 'in.png');
+          const outPath = join(tmpDir, 'out.png');
+          const base64Data = transparent.replace(/^data:image\/\w+;base64,/, '');
+          await writeFile(inPath, Buffer.from(base64Data, 'base64'));
+          await execFileAsync('convert', [
+            inPath,
+            '-colors', String(requestedColors + 1), // +1 keeps transparent as one of the slots
+            '-dither', 'None',
+            outPath,
+          ]);
+          const quantized = await readFile(outPath);
+          await unlink(inPath).catch(() => {});
+          await unlink(outPath).catch(() => {});
+          await rmdir(tmpDir).catch(() => {});
+          const quantizedDataUrl = 'data:image/png;base64,' + quantized.toString('base64');
+          return res.json({
+            imageUrl: quantizedDataUrl,
+            format: 'png',
+            backgroundRemoved: true,
+            style,
+            quantizedTo: requestedColors,
+          });
+        } catch (qErr) {
+          console.error('[generate] quantize step failed, returning unquantized:', qErr.message);
+          // fall through to unquantized
+        }
+      }
       return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, style });
     }
 
