@@ -67,17 +67,25 @@ function isVinylIntent(prompt) {
 }
 
 function classifyPrompt(prompt, style) {
-  // Explicit style override
-  if (style === 'vinyl') return { tier: 'text', reason: 'vinyl cut mode' };
-
-  // Auto-detect vinyl from prompt
-  if (isVinylIntent(prompt)) return { tier: 'text', reason: 'vinyl keywords detected' };
+  // Vinyl + Screen Print used to force tier='text' (Ideogram) regardless
+  // of prompt content. That made descriptive prompts ("a blue bowling ball
+  // reflecting the beach…") come back as literal typography of the prompt.
+  // Now route to text-tier ONLY when the prompt actually wants rendered
+  // text (quoted phrase, "the words…", etc.). Otherwise classify normally.
 
   const wantsText = hasTextIntent(prompt);
   const simple = isSimpleDesign(prompt);
   const complex = isComplexDesign(prompt);
 
   if (wantsText) return { tier: 'text', reason: 'text rendering needed' };
+
+  // Vinyl/auto-vinyl is a hint that the design wants clean shapes — but
+  // 'simple' tier (Flux Schnell) handles that better than Ideogram for
+  // non-text prompts.
+  if (style === 'vinyl' || isVinylIntent(prompt)) {
+    return { tier: 'simple', reason: 'vinyl/cut style — clean shapes' };
+  }
+
   if (simple) return { tier: 'simple', reason: 'simple graphic detected' };
   if (complex) return { tier: 'complex', reason: 'complex/detailed design' };
   return { tier: 'medium', reason: 'standard graphic' };
@@ -341,19 +349,24 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
   const classification = classifyPrompt(prompt, style);
   console.log(`[Smart Router] "${prompt.slice(0, 60)}..." → ${classification.tier} (${classification.reason}) [style=${style}]`);
 
-  // ── VINYL — always route to Ideogram (best text rendering, $0.030) ────
+  // ── VINYL — route by classification. If the prompt actually wants text
+  // rendering (quoted phrase, "the words…"), use Ideogram. Otherwise prefer
+  // Flux Schnell for clean shape work; Ideogram on a descriptive prompt
+  // tends to render the prompt itself as typography.
   if (style === 'vinyl') {
-    if (process.env.IDEOGRAM_API_KEY) {
+    if (classification.tier === 'text' && process.env.IDEOGRAM_API_KEY) {
       try {
         return await generateWithIdeogram(prompt, style);
       } catch (err) {
-        console.error('[Smart Router] Ideogram failed for vinyl:', err.message);
+        console.error('[Smart Router] Ideogram failed for vinyl text:', err.message);
       }
     }
-    // Fallback: Flux Schnell is cheap and decent for solid shapes
     if (process.env.REPLICATE_API_KEY) {
       try { return await generateWithFluxSchnell(prompt, style); } catch {}
       try { return await generateWithFluxDev(prompt, style); } catch {}
+    }
+    if (process.env.IDEOGRAM_API_KEY) {
+      try { return await generateWithIdeogram(prompt, style); } catch {}
     }
     try { return await generateWithDalle(prompt, style); } catch {}
     throw new Error('All vinyl generation models failed');
