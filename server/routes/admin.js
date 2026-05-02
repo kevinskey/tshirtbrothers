@@ -409,22 +409,20 @@ router.get('/customer-designs', async (req, res, next) => {
       quoteParams,
     );
 
-    // Customer Designs is GRAPHICS ONLY — no product mockups. Each tile shows
-    // the bare artwork file the customer made (`print_url` for studio designs)
-    // or uploaded (`design_url` for quotes). Rows that have no bare graphic
-    // file are skipped — they're either incomplete saves or pure mockups,
-    // and pure mockups belong on the Mockups page now.
-    const designRows = designsQ.rows
-      .filter((d) => !!d.print_url)
-      .map((d) => ({
-        ...d,
-        id: `design-${d.id}`,
-        source: 'design',
-        source_id: d.id,
-        thumbnail: d.print_url,    // force bare graphic, ignore mockup
-        product_image: null,        // hide product fallback in UI
-        mockup_url: null,           // hide product+graphic composite
-      }));
+    // Customer Designs — every studio design with real elements, even if a
+    // server-side print_url hasn't been generated yet (the studio's save flow
+    // doesn't currently populate print_url; it's reserved for future use).
+    // Prefer print_url for the thumbnail when available (bare graphic), fall
+    // back to thumbnail (canvas snapshot) so the design at least appears.
+    const designRows = designsQ.rows.map((d) => ({
+      ...d,
+      id: `design-${d.id}`,
+      source: 'design',
+      source_id: d.id,
+      thumbnail: d.print_url || d.thumbnail,
+      product_image: null,    // hide bare product image fallback in UI
+      mockup_url: null,        // hide product+graphic composite
+    }));
 
     const quoteRows = quotesQ.rows
       .filter((q) => !!q.design_url)
