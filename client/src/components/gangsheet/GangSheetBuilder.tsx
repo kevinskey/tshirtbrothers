@@ -15,6 +15,7 @@ import {
 } from '@/lib/gangsheet/constants';
 import { calculateDPI, getDPIStatus, getImageDimensions, DPI_COLORS } from '@/lib/gangsheet/dpiUtils';
 import { packDesigns, type PackItem } from '@/lib/gangsheet/binPacking';
+import { loadFabricImage } from '@/lib/fabric/loadImage';
 
 // Types
 interface DesignSnapshot {
@@ -208,17 +209,6 @@ export default function GangSheetBuilder() {
   }
 
   // ─── Design Management ──────────────────────────────────────────────────
-
-  async function loadFabricImage(url: string): Promise<FabricImage> {
-    // Try with crossOrigin first (required for canvas export)
-    try {
-      return await FabricImage.fromURL(url, { crossOrigin: 'anonymous' });
-    } catch {
-      // Fallback: load without CORS (canvas will be tainted, export may not work
-      // but image will display)
-      return await FabricImage.fromURL(url);
-    }
-  }
 
   async function addDesignToCanvas(imageUrl: string, name: string, targetWidthInches?: number) {
     const canvas = fabricRef.current;
