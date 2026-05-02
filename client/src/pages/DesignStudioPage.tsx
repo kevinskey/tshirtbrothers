@@ -3,6 +3,7 @@ import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-do
 import { useQuery } from '@tanstack/react-query';
 import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
 import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
+import { LayersPanel } from '@/components/design-studio/LayersPanel';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -1993,10 +1994,15 @@ export default function DesignStudioPage() {
   // Mobile uses a floating top toolbar (no offset). Desktop uses the
   // textSidePanel in the left flyout, so add the 320px offset there.
   const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
+  // Phase 2 PR #10: layers panel takes 18rem of the right edge in Fabric
+  // mode. Add a matching margin so the canvas isn't covered. Legacy mode
+  // pays nothing for this — the panel doesn't render and the class isn't
+  // applied.
+  const canvasRightOffset = useFabricRenderer ? 'md:mr-72' : '';
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} transition-all duration-200 overflow-y-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-y-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -2917,6 +2923,19 @@ export default function DesignStudioPage() {
       {textSidePanel}
       {imageToolbar}
       {canvas}
+      {useFabricRenderer && (
+        <LayersPanel
+          elements={designElements}
+          currentView={currentView}
+          selectedElementId={selectedElementId}
+          onSelect={(id) => setSelectedElementId(id)}
+          onBringForward={bringForward}
+          onSendBackward={sendBackward}
+          onBringToFront={bringToFront}
+          onSendToBack={sendToBack}
+          onRemove={removeElement}
+        />
+      )}
       {bottomBar}
       {loginPromptModal}
 
