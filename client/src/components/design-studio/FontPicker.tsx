@@ -18,7 +18,8 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { Search } from 'lucide-react';
-import { FONT_CATALOG, FONT_CATEGORIES, type FontCategory } from './fontCatalog';
+import { FONT_CATALOG, FONT_CATEGORIES, type CategorizedFont, type FontCategory } from './fontCatalog';
+import { useCustomFonts } from './useCustomFonts';
 
 interface FontPickerProps {
   /** Current font name (for highlighting the selected row). */
@@ -44,14 +45,24 @@ export function FontPicker(props: FontPickerProps) {
     if (props.autoFocus) inputRef.current?.focus();
   }, [props.autoFocus]);
 
+  // Custom fonts injected via the admin uploader — auto-merged into the
+  // catalog under their stored category (defaults to 'custom'). The
+  // useCustomFonts hook handles @font-face injection; we just need names.
+  const customFonts = useCustomFonts();
+
+  const fullCatalog = useMemo<CategorizedFont[]>(() => {
+    // Custom fonts first so they top the list when "All" is selected.
+    return [...customFonts, ...FONT_CATALOG];
+  }, [customFonts]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return FONT_CATALOG.filter((f) => {
+    return fullCatalog.filter((f) => {
       if (activeCat !== 'all' && f.category !== activeCat) return false;
       if (q && !f.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [query, activeCat]);
+  }, [query, activeCat, fullCatalog]);
 
   return (
     <div className={`flex flex-col bg-white ${props.className ?? ''}`}>

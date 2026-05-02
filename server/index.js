@@ -23,6 +23,7 @@ import embroideryRouter from './routes/embroidery.js';
 import mockupsRouter from './routes/mockups.js';
 import localBusinessesRouter from './routes/localBusinesses.js';
 import clientErrorsRouter from './routes/clientErrors.js';
+import { adminRouter as customFontsAdminRouter, publicRouter as customFontsPublicRouter } from './routes/customFonts.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -61,6 +62,8 @@ app.use('/api/admin', embroideryRouter);
 app.use('/api', mockupsRouter);
 app.use('/api/local-businesses', localBusinessesRouter);
 app.use('/api/client-errors', clientErrorsRouter);
+app.use('/api/admin/custom-fonts', customFontsAdminRouter);
+app.use('/api/custom-fonts', customFontsPublicRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
