@@ -360,14 +360,18 @@ router.get('/customer-designs', async (req, res, next) => {
     const { search } = req.query;
     const designSearch = [];
     const quoteSearch = [];
+    const mockupSearch = [];
     const designParams = [];
     const quoteParams = [];
+    const mockupParams = [];
 
     if (search) {
       designParams.push(`%${search}%`);
       designSearch.push(`(sd.name ILIKE $${designParams.length} OR u.name ILIKE $${designParams.length} OR u.email ILIKE $${designParams.length})`);
       quoteParams.push(`%${search}%`);
       quoteSearch.push(`(q.product_name ILIKE $${quoteParams.length} OR q.customer_name ILIKE $${quoteParams.length} OR q.customer_email ILIKE $${quoteParams.length})`);
+      mockupParams.push(`%${search}%`);
+      mockupSearch.push(`(m.name ILIKE $${mockupParams.length} OR m.customer_name ILIKE $${mockupParams.length} OR m.customer_email ILIKE $${mockupParams.length})`);
     }
 
     // Studio designs — only rows where the customer actually placed at least
@@ -443,7 +447,38 @@ router.get('/customer-designs', async (req, res, next) => {
         quote_status: q.status,
       }));
 
-    const merged = [...designRows, ...quoteRows].sort(
+    // Mockups table — pre-existing customer artwork rows. Surface their
+    // bare graphic (graphic_url), no product image.
+    const mockupsQ = await pool.query(
+      `SELECT m.id, m.name, m.graphic_url, m.customer_name, m.customer_email,
+              m.created_at, m.status
+       FROM mockups m
+       WHERE m.graphic_url IS NOT NULL
+         ${mockupSearch.length ? 'AND ' + mockupSearch.join(' AND ') : ''}
+       ORDER BY m.created_at DESC`,
+      mockupParams,
+    );
+
+    const mockupRows = mockupsQ.rows.map((m) => ({
+      id: `mockup-${m.id}`,
+      source: 'mockup',
+      source_id: m.id,
+      name: m.name || 'Mockup graphic',
+      product_name: null,
+      product_ss_id: null,
+      product_image: null,
+      color_index: null,
+      elements: [],
+      mockup_url: null,
+      print_url: m.graphic_url,
+      thumbnail: m.graphic_url,
+      created_at: m.created_at,
+      user_name: m.customer_name || null,
+      user_email: m.customer_email || null,
+      mockup_status: m.status,
+    }));
+
+    const merged = [...designRows, ...quoteRows, ...mockupRows].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
 

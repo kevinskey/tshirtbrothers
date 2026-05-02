@@ -133,7 +133,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'studio',    label: 'Design Studio',    icon: Palette, to: '/design' },
     { key: 'designs',   label: 'Customer Designs', icon: Palette },
     { key: 'workspace', label: 'Art Library',      icon: FolderOpen },
-    { key: 'mockups',   label: 'Mockups',          icon: Eye },
     { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
   ]},
@@ -2484,6 +2483,9 @@ export default function AdminPage() {
                         })()}
                         {d.source === 'quote' && (
                           <div className="bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">FROM QUOTE</div>
+                        )}
+                        {d.source === 'mockup' && (
+                          <div className="bg-purple-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">MOCKUP</div>
                         )}
                       </div>
                     </div>
