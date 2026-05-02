@@ -347,31 +347,89 @@ router.get('/customers/:id', async (req, res, next) => {
   }
 });
 
-// GET /customer-designs - List all saved designs across all customers
+// GET /customer-designs — list real customer artwork only:
+//   1. Saved studio designs that actually have elements (skip blanks where the
+//      customer opened the studio, picked a product, and saved without doing
+//      anything — those rows show up as the customer's name with no design).
+//   2. Quote uploads (`design_url` / `mockup_image_url`) — artwork the customer
+//      attached when requesting a quote.
+// Each row carries a `source` of 'design' | 'quote' so the admin UI can
+// render the right action set.
 router.get('/customer-designs', async (req, res, next) => {
   try {
     const { search } = req.query;
-    let whereClause = '';
-    const params = [];
+    const designSearch = [];
+    const quoteSearch = [];
+    const designParams = [];
+    const quoteParams = [];
 
     if (search) {
-      params.push(`%${search}%`);
-      whereClause = `WHERE sd.name ILIKE $${params.length} OR u.name ILIKE $${params.length}`;
+      designParams.push(`%${search}%`);
+      designSearch.push(`(sd.name ILIKE $${designParams.length} OR u.name ILIKE $${designParams.length} OR u.email ILIKE $${designParams.length})`);
+      quoteParams.push(`%${search}%`);
+      quoteSearch.push(`(q.product_name ILIKE $${quoteParams.length} OR q.customer_name ILIKE $${quoteParams.length} OR q.customer_email ILIKE $${quoteParams.length})`);
     }
 
-    const { rows } = await pool.query(
+    // Studio designs — only rows with non-empty elements. Cast to jsonb so the
+    // query works whether `elements` is stored as jsonb or text.
+    const designsQ = await pool.query(
       `SELECT
          sd.id, sd.name, sd.product_name, sd.product_ss_id, sd.product_image, sd.color_index,
          sd.elements, sd.mockup_url, sd.print_url, sd.thumbnail, sd.created_at,
          u.name AS user_name, u.email AS user_email
        FROM saved_designs sd
        JOIN users u ON u.id = sd.user_id
-       ${whereClause}
+       WHERE sd.elements IS NOT NULL
+         AND jsonb_typeof((sd.elements)::jsonb) = 'array'
+         AND jsonb_array_length((sd.elements)::jsonb) > 0
+         ${designSearch.length ? 'AND ' + designSearch.join(' AND ') : ''}
        ORDER BY sd.created_at DESC`,
-      params
+      designParams,
     );
 
-    res.json(rows);
+    // Quote uploads — anything where the customer attached artwork.
+    const quotesQ = await pool.query(
+      `SELECT
+         q.id, q.product_name, q.design_url, q.mockup_image_url, q.created_at,
+         q.customer_name, q.customer_email, q.status
+       FROM quotes q
+       WHERE (q.design_url IS NOT NULL OR q.mockup_image_url IS NOT NULL)
+         ${quoteSearch.length ? 'AND ' + quoteSearch.join(' AND ') : ''}
+       ORDER BY q.created_at DESC`,
+      quoteParams,
+    );
+
+    const designRows = designsQ.rows.map((d) => ({
+      ...d,
+      id: `design-${d.id}`,
+      source: 'design',
+      source_id: d.id,
+    }));
+
+    const quoteRows = quotesQ.rows.map((q) => ({
+      id: `quote-${q.id}`,
+      source: 'quote',
+      source_id: q.id,
+      name: q.product_name || 'Quote artwork',
+      product_name: q.product_name || null,
+      product_ss_id: null,
+      product_image: null,
+      color_index: null,
+      elements: [],
+      mockup_url: q.mockup_image_url || null,
+      print_url: q.design_url || null,
+      thumbnail: q.mockup_image_url || q.design_url || null,
+      created_at: q.created_at,
+      user_name: q.customer_name || null,
+      user_email: q.customer_email || null,
+      quote_status: q.status,
+    }));
+
+    const merged = [...designRows, ...quoteRows].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+
+    res.json(merged);
   } catch (err) {
     next(err);
   }

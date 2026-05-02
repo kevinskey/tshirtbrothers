@@ -2394,9 +2394,14 @@ export default function AdminPage() {
                           <Palette className="w-10 h-10 text-gray-300" />
                         </div>
                       )}
-                      {Array.isArray(d.elements) && d.elements.length > 0 && (
-                        <div className="absolute top-1 right-1 bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
-                      )}
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        {Array.isArray(d.elements) && d.elements.length > 0 && (
+                          <div className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
+                        )}
+                        {d.source === 'quote' && (
+                          <div className="bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">FROM QUOTE</div>
+                        )}
+                      </div>
                     </div>
                     <div className="p-4">
                       <h3 className="font-semibold text-gray-900 mb-1">{d.name}</h3>
@@ -2431,20 +2436,31 @@ export default function AdminPage() {
                             Download Print File
                           </a>
                         )}
-                        <Link
-                          to={`/design?product=${d.product_ss_id || ''}`}
-                          state={{
-                            loadDesign: true,
-                            designName: d.name,
-                            elements: d.elements || [],
-                            productImage: d.product_image,
-                            colorIndex: d.color_index || 0,
-                          }}
-                          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          <Eye className="w-3 h-3" />
-                          Open in Studio
-                        </Link>
+                        {d.source === 'design' && (
+                          <Link
+                            to={`/design?product=${d.product_ss_id || ''}`}
+                            state={{
+                              loadDesign: true,
+                              designName: d.name,
+                              elements: d.elements || [],
+                              productImage: d.product_image,
+                              colorIndex: d.color_index || 0,
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Eye className="w-3 h-3" />
+                            Open in Studio
+                          </Link>
+                        )}
+                        {d.source === 'quote' && (
+                          <button
+                            onClick={() => { setActiveSection('quotes'); setHighlightedQuoteId(String(d.source_id)); }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <FileText className="w-3 h-3" />
+                            Open Quote
+                          </button>
+                        )}
                         {Array.isArray(d.elements) && d.elements.length > 0 && (
                           <button
                             onClick={async () => {
@@ -2489,17 +2505,19 @@ export default function AdminPage() {
                             Design Only
                           </button>
                         )}
-                        <button
-                          onClick={() => {
-                            if (confirm('Delete this design? This cannot be undone.')) {
-                              deleteDesignMutation.mutate(String(d.id));
-                            }
-                          }}
-                          className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Delete
-                        </button>
+                        {d.source === 'design' && (
+                          <button
+                            onClick={async () => {
+                              if (await confirmDestructive('Delete this design? This cannot be undone.')) {
+                                deleteDesignMutation.mutate(String(d.source_id));
+                              }
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
