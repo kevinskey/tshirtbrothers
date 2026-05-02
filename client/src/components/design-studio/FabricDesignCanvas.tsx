@@ -240,6 +240,9 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
         },
         setSide,
         setBackgroundProduct,
+        getCanvas() {
+          return fabricRef.current;
+        },
       }),
       // setSide and setBackgroundProduct close over fabricRef which is
       // mutable; the handle is recomputed each render so callers always
