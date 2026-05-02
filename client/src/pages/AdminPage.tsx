@@ -2438,7 +2438,7 @@ export default function AdminPage() {
                 No designs found
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {designs.map((d: CustomerDesign) => (
                   <div key={d.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="aspect-square bg-gray-50 relative overflow-hidden">
@@ -6590,13 +6590,24 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       ctx.clearRect(0, 0, SIZE, SIZE);
-      // Render only the 'front' side (or untagged elements) — keeps the
-      // tile preview consistent. Admin can switch to back/sleeve via Edit.
+
+      // Render only the 'front' side (or untagged elements). Admin can
+      // switch to back/sleeve via Edit in Studio.
       const frontEls = els.filter((e) => (e.side ?? 'front') === 'front');
+
+      // Pre-resolve image natural dimensions so we can include them in the
+      // bounding box computation. (Text height is fontSize-based, no async.)
+      type Resolved = {
+        el: (typeof frontEls)[number];
+        img?: HTMLImageElement;
+        // bbox in percent space (0..100), in the same coords as element.x/y
+        bx: number; by: number; bw: number; bh: number;
+      };
+      const resolved: Resolved[] = [];
       for (const el of frontEls) {
-        const x = ((el.x ?? 0) / 100) * SIZE;
-        const y = ((el.y ?? 0) / 100) * SIZE;
-        const w = ((el.width ?? 30) / 100) * SIZE;
+        const bx = el.x ?? 0;
+        const by = el.y ?? 0;
+        const bw = el.width ?? 30;
         if (el.type === 'image' && el.content) {
           try {
             const img = document.createElement('img');
@@ -6607,10 +6618,44 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
               img.src = el.content!;
             });
             const aspect = img.naturalHeight / img.naturalWidth;
-            ctx.drawImage(img, x, y, w, w * aspect);
+            resolved.push({ el, img, bx, by, bw, bh: bw * aspect });
           } catch { /* skip element on load failure */ }
         } else if (el.type === 'text' && el.content) {
-          const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
+          // approximate height from fontSize (which is in studio canvas units;
+          // canvas was 800px there, so ~el.fontSize / 800 * 100 in percent)
+          const bh = ((el.fontSize ?? 24) / 800) * 100;
+          resolved.push({ el, bx, by, bw, bh });
+        }
+      }
+
+      if (resolved.length === 0) {
+        if (!cancelled) setRenderedUrl(canvas.toDataURL('image/png'));
+        return;
+      }
+
+      // Auto-fit: compute bounding box, then translate + scale so the
+      // design fills ~90% of the tile regardless of where the customer
+      // placed it on the original product canvas.
+      const minX = Math.min(...resolved.map((r) => r.bx));
+      const minY = Math.min(...resolved.map((r) => r.by));
+      const maxX = Math.max(...resolved.map((r) => r.bx + r.bw));
+      const maxY = Math.max(...resolved.map((r) => r.by + r.bh));
+      const bboxW = Math.max(1, maxX - minX);
+      const bboxH = Math.max(1, maxY - minY);
+      const scale = (SIZE * 0.9) / Math.max(bboxW, bboxH); // % → px factor
+      const offsetX = (SIZE - bboxW * scale) / 2 - minX * scale;
+      const offsetY = (SIZE - bboxH * scale) / 2 - minY * scale;
+      const px = (pct: number, off: number) => pct * scale + off;
+
+      for (const r of resolved) {
+        const { el } = r;
+        const x = px(r.bx, offsetX);
+        const y = px(r.by, offsetY);
+        const w = r.bw * scale;
+        if (el.type === 'image' && r.img) {
+          ctx.drawImage(r.img, x, y, w, r.bh * scale);
+        } else if (el.type === 'text' && el.content) {
+          const fontSize = r.bh * scale; // text height in px
           ctx.save();
           if (el.rotation) {
             ctx.translate(x + w / 2, y + fontSize / 2);
@@ -6643,7 +6688,7 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
     <img
       src={src}
       alt={alt}
-      className="w-full h-full object-contain p-2"
+      className="w-full h-full object-contain"
       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
     />
   );
