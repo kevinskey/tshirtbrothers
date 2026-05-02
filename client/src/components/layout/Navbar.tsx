@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -98,24 +99,26 @@ export default function Navbar() {
                   (470) 622-4845
                 </button>
                 {phoneMenu && (() => {
-                  // Render the dropdown in fixed position so it escapes any
-                  // ancestor's overflow clipping (the nav uses
-                  // overflow-x-hidden, which CSS spec forces overflow-y to
-                  // auto — that was chopping off the second link).
+                  // Portal directly under <body> so this dropdown escapes
+                  // every ancestor stacking context AND every overflow
+                  // clipping container (the nav has overflow-x-hidden,
+                  // which the CSS spec promotes to overflow-y: auto and
+                  // would otherwise chop the dropdown).
                   const r = phoneBtnRef.current?.getBoundingClientRect();
                   const top = r ? r.bottom + 8 : 64;
                   const right = r ? window.innerWidth - r.right : 16;
-                  return (
+                  return createPortal(
                     <>
-                      <div className="fixed inset-0 z-[90]" onClick={() => setPhoneMenu(false)} />
+                      <div className="fixed inset-0 z-[9998]" onClick={() => setPhoneMenu(false)} />
                       <div
-                        className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[100]"
+                        className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]"
                         style={{ top, right }}
                       >
                         <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
                         <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
                       </div>
-                    </>
+                    </>,
+                    document.body,
                   );
                 })()}
               </div>
