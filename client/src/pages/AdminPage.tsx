@@ -112,7 +112,11 @@ type OrderFilter = 'all' | 'accepted' | 'completed';
 // NOT in the sidebar — they're routable via ?section= deep-links and reachable
 // as sub-tabs inside Products / Pipeline / Settings respectively. Keeps the
 // sidebar manageable (was 16 flat items; now 11 in 4 groups).
-type NavItem = { key: Section; label: string; icon: typeof LayoutDashboard };
+// Items can either flip activeSection (internal admin section) or navigate
+// to a route via `to` (e.g. the customer-facing Design Studio at /design).
+type NavItem =
+  | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never }
+  | { key: string; label: string; icon: typeof LayoutDashboard; to: string };
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   { label: 'Workflow', items: [
     { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard },
@@ -124,6 +128,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'products',  label: 'Products',   icon: Package },
   ]},
   { label: 'Production', items: [
+    { key: 'studio',    label: 'Design Studio',    icon: Palette, to: '/design' },
     { key: 'designs',   label: 'Customer Designs', icon: Palette },
     { key: 'workspace', label: 'Art Library',      icon: FolderOpen },
     { key: 'mockups',   label: 'Mockups',          icon: Eye },
@@ -1688,7 +1693,24 @@ export default function AdminPage() {
                   {group.label}
                 </div>
               )}
-              {group.items.map(({ key, label, icon: Icon }) => {
+              {group.items.map((item) => {
+                const { key, label, icon: Icon } = item;
+                // External-route items (e.g. Design Studio → /design) are
+                // rendered as Link, not button — they navigate away from /admin.
+                if ('to' in item && item.to) {
+                  return (
+                    <Link
+                      key={key}
+                      to={item.to}
+                      onClick={() => setSidebarOpen(false)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="flex-1 text-left">{label}</span>
+                      <ArrowLeft className="w-3 h-3 rotate-180 opacity-50" />
+                    </Link>
+                  );
+                }
                 // Pipeline shows the badge for *both* pending quotes AND active
                 // orders, since Orders is now a status filter inside Pipeline.
                 const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
@@ -1697,7 +1719,7 @@ export default function AdminPage() {
                 return (
                   <button
                     key={key}
-                    onClick={() => { setActiveSection(key); setSidebarOpen(false); }}
+                    onClick={() => { setActiveSection(key as Section); setSidebarOpen(false); }}
                     className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       activeSection === key
                         ? 'bg-red-600 text-white'
