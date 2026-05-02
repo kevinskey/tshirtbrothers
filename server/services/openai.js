@@ -106,17 +106,19 @@ function framePrompt(prompt, style = 'dtf', colorCount = 1) {
 
   if (style === 'vinyl') {
     if (colorCount > 1) {
-      // Concrete vibrant palette suggestions help the model commit to N
-      // *distinct* colors instead of producing a monochromatic illustration.
+      // The image is JUST the subject illustration, rendered with N colors.
+      // DALL-E will otherwise interpret a palette suggestion as "show me
+      // these colors as swatches", which clutters the canvas with palette
+      // dots / color examples / sample circles.
       const palettes = {
-        2: 'such as bright red and bright yellow',
-        3: 'such as bright red, royal blue, and bright yellow',
-        4: 'such as bright red, royal blue, bright yellow, and emerald green',
+        2: 'red and yellow',
+        3: 'red, blue, and yellow',
+        4: 'red, blue, yellow, and green',
       };
       const palette = palettes[colorCount] || palettes[3];
-      return `Bold flat illustration of: ${cleaned}. CRITICAL: use exactly ${colorCount} distinct vibrant flat solid colors (${palette}) with hard sharp edges between them. No gradients, no shading, no shadows, no outlines, no 3D, no monochrome. Each color region is one solid hue clearly separated from the others. Isolated on plain white background. Vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
+      return `A single illustration of: ${cleaned}. The illustration uses exactly ${colorCount} flat solid colors total — ${palette}, or similar bold vinyl-friendly hues. Hard sharp edges between color regions, no gradients, no shading, no shadows, no outlines, no 3D, no monochrome. Isolated on a plain white background. The artwork is one composed scene — DO NOT include color swatches, color samples, palette dots, color circles, color squares, or any examples of the colors used. DO NOT include text, letters, words, or typography unless explicitly part of the subject. Just the illustrated subject, nothing else.`;
     }
-    return `Bold flat single-color silhouette icon of: ${cleaned}. Pure black on pure white background, no gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
+    return `A single illustration of: ${cleaned}. Bold flat single-color silhouette icon, pure black on pure white background. No gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. The artwork is one subject — DO NOT include color swatches, palette samples, dots, circles, or any extra design elements. DO NOT include text, letters, words, or typography unless explicitly part of the subject.`;
   }
 
   if (style === 'print') {
