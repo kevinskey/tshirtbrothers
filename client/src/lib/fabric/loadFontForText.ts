@@ -20,6 +20,7 @@
 import * as opentype from 'opentype.js';
 import wawoff2 from 'wawoff2';
 import { fontCacheKey, getCachedFont, putCachedFont } from './fontPathCache';
+import { reportClientError } from './reportClientError';
 
 const parsedCache = new Map<string, opentype.Font>();
 
@@ -54,6 +55,7 @@ export async function loadFontForText(
     return font;
   } catch (err) {
     console.warn('[loadFontForText] failed for', family, weight, err);
+    reportClientError('fabric.font', err);
     return null;
   }
 }

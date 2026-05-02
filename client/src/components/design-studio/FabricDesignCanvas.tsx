@@ -6,6 +6,7 @@ import { serializeCanvas, deserializeCanvas } from '@/lib/fabric/serializeJson';
 import { loadFabricImage } from '@/lib/fabric/loadImage';
 import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
 import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
+import { reportClientError } from '@/lib/fabric/reportClientError';
 import type { FabricObjectWithMeta } from '@/lib/fabric/types';
 import { FabricCanvasContext } from './FabricCanvasContext';
 import type {
@@ -48,17 +49,23 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
     useEffect(() => {
       if (!canvasElRef.current) return;
 
-      const canvas = new FabricCanvas(canvasElRef.current, {
-        width: LOGICAL_CANVAS_SIZE,
-        height: LOGICAL_CANVAS_SIZE,
-        backgroundColor: '#ffffff',
-        preserveObjectStacking: true,
-        enableRetinaScaling: true,
-        // Touch-friendly handle sizes for customer mode; tighter for admin.
-        ...(props.userRole === 'customer'
-          ? { allowTouchScrolling: false }
-          : {}),
-      });
+      let canvas: FabricCanvas;
+      try {
+        canvas = new FabricCanvas(canvasElRef.current, {
+          width: LOGICAL_CANVAS_SIZE,
+          height: LOGICAL_CANVAS_SIZE,
+          backgroundColor: '#ffffff',
+          preserveObjectStacking: true,
+          enableRetinaScaling: true,
+          // Touch-friendly handle sizes for customer mode; tighter for admin.
+          ...(props.userRole === 'customer'
+            ? { allowTouchScrolling: false }
+            : {}),
+        });
+      } catch (err) {
+        reportClientError('fabric.init', err);
+        throw err;
+      }
 
       // Per-object defaults applied via prototype on first construction.
       // Customer mode: bigger handles so dragging on a phone is forgiving.
@@ -90,12 +97,17 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
       props.onReady?.();
 
       return () => {
-        canvas.off('selection:created', onSel);
-        canvas.off('selection:updated', onSel);
-        canvas.off('selection:cleared', onSel);
-        canvas.dispose();
-        fabricRef.current = null;
-        setReady(false);
+        try {
+          canvas.off('selection:created', onSel);
+          canvas.off('selection:updated', onSel);
+          canvas.off('selection:cleared', onSel);
+          canvas.dispose();
+        } catch (err) {
+          reportClientError('fabric.dispose', err, { canvas });
+        } finally {
+          fabricRef.current = null;
+          setReady(false);
+        }
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.userRole]);
@@ -180,11 +192,16 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
           // v2 (Fabric serialized object) → loadFromJSON. Both branches
           // already awaited document.fonts.ready above; the hydrator
           // additionally injects any required Google Fonts.
-          if (Array.isArray(stored)) {
-            await hydrateLegacyElements(canvas, stored);
-            return;
+          try {
+            if (Array.isArray(stored)) {
+              await hydrateLegacyElements(canvas, stored);
+              return;
+            }
+            await deserializeCanvas(canvas, stored);
+          } catch (err) {
+            reportClientError('fabric.hydrate', err, { canvas });
+            throw err;
           }
-          await deserializeCanvas(canvas, stored);
         },
         getDesignJSON() {
           const canvas = fabricRef.current;
@@ -204,12 +221,22 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
         exportPNG(opts) {
           const canvas = fabricRef.current;
           if (!canvas) throw new Error('canvas not initialized');
-          return exportPng(canvas, opts);
+          try {
+            return exportPng(canvas, opts);
+          } catch (err) {
+            reportClientError('fabric.export', err, { canvas });
+            throw err;
+          }
         },
         async exportSVG(opts) {
           const canvas = fabricRef.current;
           if (!canvas) throw new Error('canvas not initialized');
-          return exportSvg(canvas, opts);
+          try {
+            return await exportSvg(canvas, opts);
+          } catch (err) {
+            reportClientError('fabric.export', err, { canvas });
+            throw err;
+          }
         },
         setSide,
         setBackgroundProduct,
