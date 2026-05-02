@@ -89,6 +89,8 @@ import {
   deleteEmbroideryJob,
   type EmbroideryJob,
   fetchMockups,
+  fetchStudioMockups,
+  type StudioMockup,
   createMockup,
   updateMockup,
   sendMockupForApproval,
@@ -885,6 +887,11 @@ export default function AdminPage() {
   const mockupsQuery = useQuery({
     queryKey: ['mockups'],
     queryFn: () => fetchMockups(),
+    enabled: activeSection === 'mockups',
+  });
+  const studioMockupsQuery = useQuery({
+    queryKey: ['admin', 'studio-mockups'],
+    queryFn: () => fetchStudioMockups(),
     enabled: activeSection === 'mockups',
   });
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
@@ -5232,6 +5239,60 @@ export default function AdminPage() {
                   })}
                 </div>
               )}
+
+              {/* Studio Mockups — every product+graphic mockup the customers
+                  generated when they hit Save in the Design Studio. Read-only
+                  here; admin actions live on Pipeline / Customer Designs. */}
+              {(() => {
+                const studio: StudioMockup[] = studioMockupsQuery.data ?? [];
+                if (studio.length === 0) return null;
+                return (
+                  <div className="mt-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-display font-bold text-gray-900">From Design Studio</h3>
+                        <p className="text-xs text-gray-500">Mockups generated when customers saved a design</p>
+                      </div>
+                      <span className="text-xs text-gray-400">{studio.length} {studio.length === 1 ? 'mockup' : 'mockups'}</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                      {studio.map((sm) => {
+                        const img = sm.mockup_url || sm.thumbnail || sm.product_image || '';
+                        return (
+                          <div key={sm.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                            <div className="aspect-square bg-gray-50 relative overflow-hidden">
+                              {img ? (
+                                <img
+                                  src={img}
+                                  alt={sm.name}
+                                  className="w-full h-full object-contain p-2"
+                                  loading="lazy"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Eye className="w-8 h-8 text-gray-300" />
+                                </div>
+                              )}
+                              <div className="absolute top-1 left-1 bg-purple-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                                STUDIO
+                              </div>
+                            </div>
+                            <div className="p-3">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{sm.name}</p>
+                              <p className="text-[11px] text-gray-500 truncate">{sm.customer_name || sm.customer_email || '—'}</p>
+                              {sm.product_name && (
+                                <p className="text-[11px] text-gray-400 truncate">{sm.product_name}</p>
+                              )}
+                              <p className="text-[10px] text-gray-400 mt-1">{new Date(sm.created_at).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {mockupModalOpen && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
