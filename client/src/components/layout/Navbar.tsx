@@ -98,8 +98,8 @@ export default function Navbar() {
                 </button>
                 {phoneMenu && (
                   <>
-                    <div className="fixed inset-0 z-40" onClick={() => setPhoneMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-50">
+                    <div className="fixed inset-0 z-[90]" onClick={() => setPhoneMenu(false)} />
+                    <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[100]">
                       <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
                       <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
                     </div>
