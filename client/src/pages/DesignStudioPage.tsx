@@ -5,6 +5,7 @@ import { useFabricRendererFlag } from '@/components/design-studio/useFabricRende
 import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
 import { LayersPanel } from '@/components/design-studio/LayersPanel';
 import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
+import { FontPicker } from '@/components/design-studio/FontPicker';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -2519,40 +2520,17 @@ export default function DesignStudioPage() {
           Aa<span>Font</span>
         </button>
         {textPop === 'fn' && (
-          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-56 z-50">
-            <input
-              type="text"
-              placeholder="Search fonts..."
-              className="w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              onChange={e => {
-                const container = document.getElementById('font-list');
-                if (!container) return;
-                const query = e.target.value.toLowerCase();
-                Array.from(container.children).forEach(child => {
-                  const name = child.getAttribute('data-font') ?? '';
-                  (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
-                });
+          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl w-72 z-50 overflow-hidden">
+            <FontPicker
+              selectedFont={selectedEl.fontFamily ?? 'Inter'}
+              onSelect={(name) => {
+                updateElement(selectedEl.id, { fontFamily: name });
+                setTextPop(null);
               }}
+              loadFont={loadGoogleFont}
+              onFontReady={() => setFontsReady((n) => n + 1)}
+              autoFocus
             />
-            <div id="font-list" className="max-h-56 overflow-y-auto rounded-lg border border-gray-200">
-              {FONT_OPTIONS.map(f => (
-                <button
-                  key={f}
-                  type="button"
-                  data-font={f}
-                  onMouseEnter={() => loadGoogleFont(f)}
-                  onClick={() => {
-                    loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
-                    updateElement(selectedEl.id, { fontFamily: f });
-                    setTextPop(null);
-                  }}
-                  className={`w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 transition ${(selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'}`}
-                  style={{ fontFamily: f }}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
           </div>
         )}
       </div>
@@ -2740,37 +2718,13 @@ export default function DesignStudioPage() {
 
         <div>
           <span className="text-sm text-gray-600 mb-2 block">Font</span>
-          <input
-            type="text"
-            placeholder="Search fonts..."
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            onChange={e => {
-              const container = document.getElementById('font-list-desktop');
-              if (!container) return;
-              const query = e.target.value.toLowerCase();
-              Array.from(container.children).forEach(child => {
-                const name = child.getAttribute('data-font') ?? '';
-                (child as HTMLElement).style.display = name.toLowerCase().includes(query) ? '' : 'none';
-              });
-            }}
-          />
-          <div id="font-list-desktop" className="max-h-40 overflow-y-auto rounded-lg border border-gray-200">
-            {FONT_OPTIONS.map(f => (
-              <button
-                key={f}
-                type="button"
-                data-font={f}
-                onMouseEnter={() => loadGoogleFont(f)}
-                onClick={() => {
-                  loadGoogleFont(f).then(() => setFontsReady(n => n + 1));
-                  updateElement(selectedEl.id, { fontFamily: f });
-                }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition ${(selectedEl.fontFamily ?? 'Inter') === f ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'}`}
-                style={{ fontFamily: f }}
-              >
-                {f}
-              </button>
-            ))}
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <FontPicker
+              selectedFont={selectedEl.fontFamily ?? 'Inter'}
+              onSelect={(name) => updateElement(selectedEl.id, { fontFamily: name })}
+              loadFont={loadGoogleFont}
+              onFontReady={() => setFontsReady((n) => n + 1)}
+            />
           </div>
         </div>
 
