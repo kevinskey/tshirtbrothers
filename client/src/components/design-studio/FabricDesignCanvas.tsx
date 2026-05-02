@@ -4,6 +4,8 @@ import { exportPng } from '@/lib/fabric/exportPng';
 import { exportSvg } from '@/lib/fabric/exportSvg';
 import { serializeCanvas, deserializeCanvas } from '@/lib/fabric/serializeJson';
 import { loadFabricImage } from '@/lib/fabric/loadImage';
+import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
+import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
 import type { FabricObjectWithMeta } from '@/lib/fabric/types';
 import { FabricCanvasContext } from './FabricCanvasContext';
 import type {
@@ -174,12 +176,12 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
           // webfont finishes loading later.
           await document.fonts.ready;
 
-          // Phase 1 scope: only v2 (Fabric) shape. Legacy v1 hydration
-          // arrives in PR #4 with the converter + sidecar save-back.
+          // v1 (legacy positioned-div array) → hydrate via converter.
+          // v2 (Fabric serialized object) → loadFromJSON. Both branches
+          // already awaited document.fonts.ready above; the hydrator
+          // additionally injects any required Google Fonts.
           if (Array.isArray(stored)) {
-            console.warn(
-              '[FabricDesignCanvas] received legacy v1 design array; hydrator lands in PR #4. Skipping.',
-            );
+            await hydrateLegacyElements(canvas, stored);
             return;
           }
           await deserializeCanvas(canvas, stored);
@@ -195,8 +197,9 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
           };
         },
         getLegacyElements() {
-          // Stub for PR #3. Reverse converter lands in PR #4.
-          return [];
+          const canvas = fabricRef.current;
+          if (!canvas) return [];
+          return extractLegacyElements(canvas);
         },
         exportPNG(opts) {
           const canvas = fabricRef.current;
