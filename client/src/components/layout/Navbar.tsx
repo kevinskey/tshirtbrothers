@@ -144,20 +144,26 @@ export default function Navbar() {
           <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-visible">
             {subNavEntries.map((entry) => {
               if (isGroup(entry)) {
+                // Catalogue is a real link (clicking goes to /shop) AND a
+                // hover-open dropdown for sub-categories. Avoids the "click
+                // does nothing" feel when admins expect it to navigate.
                 return (
-                  <div key={entry.label} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setDesktopCatalogueOpen((v) => !v)}
+                  <div
+                    key={entry.label}
+                    className="relative"
+                    onMouseEnter={() => setDesktopCatalogueOpen(true)}
+                    onMouseLeave={() => setDesktopCatalogueOpen(false)}
+                  >
+                    <Link
+                      to="/shop"
                       className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
                     >
                       {entry.label}
                       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
-                    </button>
+                    </Link>
                     {desktopCatalogueOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setDesktopCatalogueOpen(false)} />
-                        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56 z-50">
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50">
+                        <div className="bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56">
                           {entry.children.map((c) => (
                             <Link
                               key={c.label}
@@ -169,7 +175,7 @@ export default function Navbar() {
                             </Link>
                           ))}
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 );
