@@ -105,15 +105,17 @@ function framePrompt(prompt, style = 'dtf') {
   const cleaned = cleanPrompt(prompt);
 
   if (style === 'vinyl') {
-    return `Bold typography design: ${cleaned}. Single solid flat color, pure black on pure white background. No shadows, no gradients, no outlines, no 3D effects, no drop shadows, no glow, no texture, no bevels. Perfectly clean flat vector-style shapes only. High contrast, sharp clean edges. The design must be one single color with no shading or variation.`;
+    // Don't say "typography" here — it primes the model to render the prompt
+    // as text. We want a single-color silhouette/icon for vinyl cutting.
+    return `Bold flat single-color silhouette icon of: ${cleaned}. Pure black on pure white background, no gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
   }
 
   if (style === 'print') {
-    return `Screen print ready graphic: ${cleaned}. Bold clean separated colors, flat artwork, no gradients, high contrast. Isolated on plain white background. Print-ready graphic design.`;
+    return `Screen print graphic of: ${cleaned}. Bold flat separated colors, ~4 spot colors max, no gradients, high contrast. Isolated on plain white background. NO extra text or letters added — render only the described subject.`;
   }
 
   // Default: DTF / full color sticker
-  return `A single die-cut sticker of: ${cleaned}. Placed flat on plain white surface, photographed from above. Vibrant colors, thick white border, glossy finish. Only the sticker visible, no other objects.`;
+  return `A die-cut sticker of: ${cleaned}. Placed flat on plain white surface, photographed from above. Vibrant full colors, glossy finish. Only the sticker visible. NO extra text, words, or labels added — render only the described subject.`;
 }
 
 function framePromptIdeogram(prompt, style = 'dtf') {
