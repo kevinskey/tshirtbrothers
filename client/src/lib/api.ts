@@ -534,6 +534,22 @@ export async function fetchMockups(opts: { status?: string; search?: string } = 
   return authRequest<Mockup[]>(`/admin/mockups${qs}`);
 }
 
+export interface StudioMockup {
+  id: number;
+  name: string;
+  product_name: string;
+  product_image: string | null;
+  mockup_url: string | null;
+  thumbnail: string | null;
+  created_at: string;
+  customer_name: string | null;
+  customer_email: string | null;
+}
+
+export async function fetchStudioMockups() {
+  return authRequest<StudioMockup[]>(`/admin/studio-mockups`);
+}
+
 export async function createMockup(input: Partial<Mockup>) {
   return authRequest<Mockup>('/admin/mockups', {
     method: 'POST',
