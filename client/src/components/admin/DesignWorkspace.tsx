@@ -501,19 +501,49 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     setGeneratedImage(newHistory[newHistory.length - 1] ?? null);
   }
 
+  // Rasterize a data: URL (SVG or otherwise) to a transparent-PNG data URL.
+  // Returns the input untouched if it's already a PNG. We do this before
+  // upload because the storage layer keys files as .png with content-type
+  // image/png — sending raw SVG bytes there produces broken downloads.
+  async function asTransparentPngDataUrl(dataUrl: string, minSize = 1024): Promise<string> {
+    if (!dataUrl.startsWith('data:')) return dataUrl;
+    if (dataUrl.startsWith('data:image/png')) return dataUrl;
+    const img = document.createElement('img');
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = dataUrl;
+    });
+    // SVGs have no inherent pixel size — give them at least minSize so the
+    // exported PNG isn't tiny when the SVG was 300x300 (default for AI gen).
+    const w = Math.max(img.naturalWidth || minSize, minSize);
+    const h = Math.max(img.naturalHeight || minSize, minSize);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/png');
+  }
+
   async function handleSave() {
     if (!generatedImage || !saveName.trim()) return;
     setSaving(true);
     try {
       // Step 1: get a hosted URL. If the current image is already hosted
-      // (not a data: URL), use it directly. Otherwise upload to Spaces.
+      // (not a data: URL), use it directly. Otherwise rasterize-if-needed,
+      // then upload to Spaces as a true transparent PNG.
       let imageUrl = generatedImage;
       if (generatedImage.startsWith('data:')) {
+        const pngDataUrl = await asTransparentPngDataUrl(generatedImage);
         const uploadRes = await fetch('/api/quotes/upload-design', {
           method: 'POST',
           headers: headers(),
           body: JSON.stringify({
-            imageBase64: generatedImage,
+            imageBase64: pngDataUrl,
             filename: saveName.replace(/\s+/g, '-').toLowerCase() + '.png',
             customerEmail: 'admin-workspace',
           }),
