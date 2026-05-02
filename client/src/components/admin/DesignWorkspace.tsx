@@ -942,7 +942,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
 
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h3 className="font-semibold text-gray-900 mb-3">AI Image Generator</h3>
-              <p className="text-xs text-gray-500 mb-3">Describe the graphic you want. Output: transparent background. <strong>DTF / Full Color</strong> and <strong>Screen Print</strong> return 1024×1024 PNG (colors preserved). <strong>Vinyl Cut</strong> returns a scalable SVG cut-ready — pick 1–4 colors below for the number of cut layers.</p>
+              <p className="text-xs text-gray-500 mb-3">Describe the graphic you want. Output: transparent background. <strong>DTF</strong>, <strong>Screen Print</strong>, and <strong>multi-color Vinyl</strong> return 1024×1024 PNG — open in your cutting software (Cricut, Silhouette) for per-color separation. <strong>Vinyl Cut at 1 color</strong> returns a scalable SVG silhouette ready to cut directly.</p>
               {/* Output Style */}
               <div className="mb-3">
                 <label className="text-xs font-medium text-gray-500 block mb-1.5">Output Style</label>

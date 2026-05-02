@@ -280,20 +280,23 @@ router.post('/generate', async (req, res, next) => {
       return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
     }
 
-    // Decide vectorization based on style:
-    //   - dtf (full-color print) → transparent PNG. 1-color trace would
-    //     posterize a colorful image down to a black silhouette.
-    //   - vinyl (cut layers) → 1-color SVG (clean cut paths).
-    //   - print (screen print) → transparent PNG. Multi-color tracing was
-    //     unreliable (occasional empty output) and screen printers color-
-    //     separate from raster themselves anyway.
+    // Decide vectorization:
+    //   - dtf (full-color print) → transparent PNG.
+    //   - vinyl + 1 color → 1-color SVG silhouette (reliable potrace path).
+    //   - vinyl + 2-4 colors → transparent PNG. Multi-color tracing in
+    //     potrace was unreliable; cut software (Cricut, Silhouette) does
+    //     its own per-color separation from PNG, which is the standard
+    //     workflow for multi-color HTV anyway.
+    //   - print (screen print) → transparent PNG (printers separate
+    //     themselves from raster).
     // Explicit `vectorize` / `vectorizeColors` body params override.
-    const shouldVectorize = vectorize !== undefined
-      ? vectorize
-      : (style === 'vinyl');
-    const colorsForTrace = vectorizeColors !== undefined
+    const requestedColors = vectorizeColors !== undefined
       ? Math.min(4, Math.max(1, Number(vectorizeColors) || 1))
       : 1;
+    const shouldVectorize = vectorize !== undefined
+      ? vectorize
+      : (style === 'vinyl' && requestedColors === 1);
+    const colorsForTrace = requestedColors;
 
     if (!shouldVectorize) {
       return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, style });

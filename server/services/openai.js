@@ -309,7 +309,9 @@ async function generateWithIdeogram(prompt, style) {
 // ── DALL-E 3 ($0.040/image) — last resort ───────────────────────────────────
 
 async function generateWithDalle(prompt, style, colorCount = 1) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
   const fullPrompt = framePrompt(prompt, style, colorCount);
+  console.log('[DALL-E] generating with colorCount=' + colorCount + ', prompt=' + fullPrompt.slice(0, 120));
 
   const response = await openai.images.generate({
     model: 'dall-e-3',
