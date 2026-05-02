@@ -503,6 +503,39 @@ export default function AdminPage() {
   const confirmDestructive = (message: string): Promise<boolean> =>
     new Promise((resolve) => setConfirmRequest({ message, danger: true, resolve }));
 
+  // Reassign owner modal — used to correct ownership when a design was saved
+  // on a shared/wrong login. Works for both saved_designs (Customer Designs
+  // tiles) and the same rows surfaced via studio-mockups (Mockups page).
+  const [reassignDesign, setReassignDesign] = useState<{ id: number; currentOwner: string } | null>(null);
+  const [reassignEmail, setReassignEmail] = useState('');
+  const [reassignBusy, setReassignBusy] = useState(false);
+  async function submitReassign() {
+    if (!reassignDesign || !reassignEmail.trim()) return;
+    setReassignBusy(true);
+    try {
+      const res = await fetch(`/api/admin/customer-designs/${reassignDesign.id}/owner`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ email: reassignEmail.trim() }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast(j.error || 'Reassign failed', 'error');
+        return;
+      }
+      const data = await res.json();
+      toast(`Reassigned to ${data.new_owner?.name || data.new_owner?.email}`);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'studio-mockups'] });
+      setReassignDesign(null);
+      setReassignEmail('');
+    } catch {
+      toast('Network error', 'error');
+    } finally {
+      setReassignBusy(false);
+    }
+  }
+
   // "Fix in Art Library" hand-off: when the admin clicks Fix on a Customer
   // Designs tile, we stash the source image + target here, switch to the
   // workspace section, and DesignWorkspace consumes these via props.
@@ -2575,6 +2608,15 @@ export default function AdminPage() {
                           >
                             <Download className="w-3 h-3" />
                             Design Only
+                          </button>
+                        )}
+                        {d.source === 'design' && (
+                          <button
+                            onClick={() => { setReassignDesign({ id: d.source_id, currentOwner: d.user_name || d.user_email || '—' }); setReassignEmail(''); }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Users className="w-3 h-3" />
+                            Reassign
                           </button>
                         )}
                         {d.source === 'design' && (
@@ -5285,6 +5327,13 @@ export default function AdminPage() {
                                 <p className="text-[11px] text-gray-400 truncate">{sm.product_name}</p>
                               )}
                               <p className="text-[10px] text-gray-400 mt-1">{new Date(sm.created_at).toLocaleDateString()}</p>
+                              <button
+                                onClick={() => { setReassignDesign({ id: sm.id, currentOwner: sm.customer_name || sm.customer_email || '—' }); setReassignEmail(''); }}
+                                className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] font-medium text-amber-700 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded-md transition-colors"
+                              >
+                                <Users className="w-3 h-3" />
+                                Reassign owner
+                              </button>
                             </div>
                           </div>
                         );
@@ -6510,6 +6559,45 @@ export default function AdminPage() {
               <button type="submit" disabled={addProductSaving} className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
                 {addProductSaving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {addProductSaving ? 'Saving…' : 'Add Product'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Reassign owner modal */}
+      {reassignDesign && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <form
+            onSubmit={(e) => { e.preventDefault(); submitReassign(); }}
+            className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-display font-semibold text-gray-900">Reassign owner</h3>
+              <button type="button" onClick={() => setReassignDesign(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Currently owned by <strong className="text-gray-900">{reassignDesign.currentOwner}</strong>. Enter the email of the customer this design should belong to.
+            </p>
+            <input
+              type="email" required autoFocus
+              value={reassignEmail}
+              onChange={(e) => setReassignEmail(e.target.value)}
+              placeholder="customer@example.com"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 focus:outline-none"
+            />
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setReassignDesign(null)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                Cancel
+              </button>
+              <button
+                type="submit" disabled={reassignBusy || !reassignEmail.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                {reassignBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+                {reassignBusy ? 'Saving…' : 'Reassign'}
               </button>
             </div>
           </form>
