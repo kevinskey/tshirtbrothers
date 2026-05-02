@@ -305,6 +305,8 @@ export interface CustomerDetail extends Customer {
 
 export interface CustomerDesign {
   id: string;
+  source: 'design' | 'quote';
+  source_id: number;
   name: string;
   product_name: string;
   product_ss_id?: string;
@@ -317,6 +319,7 @@ export interface CustomerDesign {
   created_at: string;
   user_name: string;
   user_email: string;
+  quote_status?: string;
 }
 
 export interface CustomerQuote {
