@@ -7,7 +7,7 @@ import TestimonialsSection from '@/components/home/TestimonialsSection';
 import BottomCTA from '@/components/home/BottomCTA';
 import HowItWorksSection from '@/components/home/HowItWorksSection';
 import PricingHint from '@/components/home/PricingHint';
-import QuickQuoteForm from '@/components/home/QuickQuoteForm';
+import QuoteCTA from '@/components/home/QuoteCTA';
 import SalesPopup from '@/components/home/SalesPopup';
 
 export default function HomePage() {
@@ -17,7 +17,7 @@ export default function HomePage() {
       <SalesPopup />
       
       <ServicesGrid />
-      <QuickQuoteForm />
+      <QuoteCTA />
       <HowItWorksSection />
       <PricingHint />
       <FeaturedBrands />
