@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { fetchProducts } from '../services/ssActivewear.js';
+import { fetchProducts, fetchStyleSizes } from '../services/ssActivewear.js';
 import pool from '../db.js';
 
 const router = Router();
@@ -16,6 +16,33 @@ router.post('/sync-products', async (req, res, next) => {
     const result = await fetchProducts({ limit: 10000 });
     const products = result.products || [];
     console.log(`Syncing ${products.length} products...`);
+
+    // Backfill sizes per-style with bounded concurrency. The /styles/
+    // endpoint S&S exposes doesn't include per-size SKUs, so we fetch
+    // them via /products/?styleid=X&fields=sizeName for each style.
+    // 8 in-flight requests keeps the sync ~3-5x faster than serial
+    // without overwhelming the S&S API.
+    const CONCURRENCY = 8;
+    let nextIdx = 0;
+    let sizesFilled = 0;
+    async function worker() {
+      while (true) {
+        const i = nextIdx++;
+        if (i >= products.length) return;
+        const p = products[i];
+        try {
+          const sizes = await fetchStyleSizes(p.ss_id);
+          if (sizes.length > 0) {
+            p.sizes = sizes;
+            sizesFilled++;
+          }
+        } catch (err) {
+          console.error(`[sync] sizes fetch failed for style ${p.ss_id}:`, err.message);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    console.log(`Sizes backfilled for ${sizesFilled}/${products.length} styles`);
 
     let upserted = 0;
     for (const product of products) {
@@ -51,7 +78,7 @@ router.post('/sync-products', async (req, res, next) => {
       upserted++;
     }
 
-    res.json({ message: 'Product sync complete', upserted });
+    res.json({ message: 'Product sync complete', upserted, sizesFilled });
   } catch (err) {
     next(err);
   }

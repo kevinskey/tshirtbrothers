@@ -43,6 +43,39 @@ export async function fetchProducts(options = {}) {
   };
 }
 
+// Fetch the unique size list for a style. The /styles/ endpoint returns
+// metadata only — per-size SKUs live on /products/. Used by the sync to
+// backfill sizes so admins can search the catalog by size (e.g. "4XLT").
+export async function fetchStyleSizes(styleId) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=sizeName`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) return [];
+  const data = await response.json().catch(() => []);
+  const items = Array.isArray(data) ? data : [];
+  const seen = new Set();
+  for (const p of items) {
+    const sz = (p.sizeName || '').trim();
+    if (sz) seen.add(sz);
+  }
+  // Sort: numeric/alpha sizes first (S, M, L, XL, 2XL, 3XL, …), tall
+  // variants right after their base (4XL, 4XLT), then anything else.
+  const ORDER = ['XS','S','M','L','XL','2XL','3XL','4XL','4XLT','5XL','5XLT','6XL','6XLT','7XL'];
+  return [...seen].sort((a, b) => {
+    const ai = ORDER.indexOf(a.toUpperCase());
+    const bi = ORDER.indexOf(b.toUpperCase());
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 // Fetch a single style by ID
 export async function fetchStyle(styleId) {
   const credentials = getCredentials();
