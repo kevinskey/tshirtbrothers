@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [phoneMenu, setPhoneMenu] = useState(false);
+  const phoneBtnRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -91,20 +92,32 @@ export default function Navbar() {
             {/* Right side */}
             <div className="flex items-center gap-3 flex-shrink-0 ml-auto md:ml-0">
               {/* Phone - desktop only */}
-              <div className="relative hidden md:block">
+              <div className="relative hidden md:block" ref={phoneBtnRef}>
                 <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm sm:text-base font-bold text-orange-600 hover:text-orange-700 transition-colors">
                   <Phone className="h-4 w-4" />
                   (470) 622-4845
                 </button>
-                {phoneMenu && (
-                  <>
-                    <div className="fixed inset-0 z-[90]" onClick={() => setPhoneMenu(false)} />
-                    <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[100]">
-                      <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
-                      <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
-                    </div>
-                  </>
-                )}
+                {phoneMenu && (() => {
+                  // Render the dropdown in fixed position so it escapes any
+                  // ancestor's overflow clipping (the nav uses
+                  // overflow-x-hidden, which CSS spec forces overflow-y to
+                  // auto — that was chopping off the second link).
+                  const r = phoneBtnRef.current?.getBoundingClientRect();
+                  const top = r ? r.bottom + 8 : 64;
+                  const right = r ? window.innerWidth - r.right : 16;
+                  return (
+                    <>
+                      <div className="fixed inset-0 z-[90]" onClick={() => setPhoneMenu(false)} />
+                      <div
+                        className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[100]"
+                        style={{ top, right }}
+                      >
+                        <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
+                        <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Admin + Logout - desktop only when logged in */}
