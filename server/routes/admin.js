@@ -84,6 +84,39 @@ router.post('/sync-products', async (req, res, next) => {
   }
 });
 
+// GET /debug-sizes/:styleId — diagnostic for the size-backfill sync.
+// Returns the raw S&S response so we can verify field names and data
+// shape on prod without SSH access.
+router.get('/debug-sizes/:styleId', async (req, res, next) => {
+  try {
+    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
+    const apiKey = process.env.SS_API_KEY;
+    if (!accountNumber || !apiKey) {
+      return res.json({ error: 'S&S credentials not configured', accountSet: !!accountNumber, keySet: !!apiKey });
+    }
+    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
+    const url = `https://api.ssactivewear.com/v2/products/?styleid=${req.params.styleId}&fields=sizeName,colorName`;
+    const r = await fetch(url, {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+    });
+    const text = await r.text();
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = null; }
+    const sample = Array.isArray(parsed) ? parsed.slice(0, 3) : null;
+    return res.json({
+      url,
+      status: r.status,
+      ok: r.ok,
+      isArray: Array.isArray(parsed),
+      itemCount: Array.isArray(parsed) ? parsed.length : null,
+      sample,
+      rawFirst300: text.slice(0, 300),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /upload-url - Generate presigned upload URL for DO Spaces
 router.post('/upload-url', async (req, res, next) => {
   try {
