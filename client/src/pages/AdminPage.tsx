@@ -2525,6 +2525,7 @@ export default function AdminPage() {
                             to={`/design?product=${d.product_ss_id || ''}`}
                             state={{
                               loadDesign: true,
+                              designId: d.source_id,
                               designName: d.name,
                               elements: d.elements || [],
                               productImage: d.product_image,
@@ -5327,13 +5328,30 @@ export default function AdminPage() {
                                 <p className="text-[11px] text-gray-400 truncate">{sm.product_name}</p>
                               )}
                               <p className="text-[10px] text-gray-400 mt-1">{new Date(sm.created_at).toLocaleDateString()}</p>
-                              <button
-                                onClick={() => { setReassignDesign({ id: sm.id, currentOwner: sm.customer_name || sm.customer_email || '—' }); setReassignEmail(''); }}
-                                className="mt-2 w-full flex items-center justify-center gap-1 text-[10px] font-medium text-amber-700 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded-md transition-colors"
-                              >
-                                <Users className="w-3 h-3" />
-                                Reassign owner
-                              </button>
+                              <div className="mt-2 flex gap-1">
+                                <Link
+                                  to={`/design?product=${sm.product_ss_id || ''}`}
+                                  state={{
+                                    loadDesign: true,
+                                    designId: sm.id,
+                                    designName: sm.name,
+                                    elements: Array.isArray(sm.elements) ? sm.elements : [],
+                                    productImage: sm.product_image,
+                                    colorIndex: sm.color_index || 0,
+                                  }}
+                                  className="flex-1 flex items-center justify-center gap-1 text-[10px] font-medium text-blue-700 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded-md transition-colors"
+                                >
+                                  <Edit3 className="w-3 h-3" />
+                                  Edit in Studio
+                                </Link>
+                                <button
+                                  onClick={() => { setReassignDesign({ id: sm.id, currentOwner: sm.customer_name || sm.customer_email || '—' }); setReassignEmail(''); }}
+                                  className="flex-1 flex items-center justify-center gap-1 text-[10px] font-medium text-amber-700 hover:text-amber-800 bg-amber-50 px-2 py-1 rounded-md transition-colors"
+                                >
+                                  <Users className="w-3 h-3" />
+                                  Reassign
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );

@@ -490,8 +490,8 @@ router.get('/studio-mockups', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT
-         sd.id, sd.name, sd.product_name, sd.product_image, sd.mockup_url,
-         sd.thumbnail, sd.created_at,
+         sd.id, sd.name, sd.product_name, sd.product_ss_id, sd.product_image,
+         sd.color_index, sd.elements, sd.mockup_url, sd.thumbnail, sd.created_at,
          u.name AS customer_name, u.email AS customer_email
        FROM saved_designs sd
        JOIN users u ON u.id = sd.user_id

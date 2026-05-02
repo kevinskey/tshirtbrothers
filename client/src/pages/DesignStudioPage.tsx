@@ -255,7 +255,7 @@ export default function DesignStudioPage() {
 
 
   const location = useLocation();
-  const loadState = location.state as { loadDesign?: boolean; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -286,7 +286,7 @@ export default function DesignStudioPage() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [designName, setDesignName] = useState(loadState?.designName || 'Untitled design');
   const [isEditingName, setIsEditingName] = useState(false);
-  const [savedDesignId, setSavedDesignId] = useState<number | null>(null);
+  const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
