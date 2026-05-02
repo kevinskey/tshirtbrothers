@@ -61,12 +61,10 @@ router.post('/sync-products', async (req, res, next) => {
     const products = result.products || [];
     console.log(`Syncing ${products.length} products...`);
 
-    // Backfill sizes per-style with bounded concurrency. The /styles/
-    // endpoint S&S exposes doesn't include per-size SKUs, so we fetch
-    // them via /products/?styleid=X&fields=sizeName for each style.
-    // 8 in-flight requests keeps the sync ~3-5x faster than serial
-    // without overwhelming the S&S API.
-    const CONCURRENCY = 8;
+    // Backfill sizes per-style with bounded concurrency. S&S rate-limits
+    // aggressively if you go too parallel — 3 in flight is the sweet spot
+    // we've found that keeps the sync moving without 429s.
+    const CONCURRENCY = 3;
     let nextIdx = 0;
     let sizesFilled = 0;
     async function worker() {
