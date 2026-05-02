@@ -376,6 +376,24 @@ router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, 
   }
 });
 
+// DELETE /admin/:id/artwork — strip the customer-uploaded artwork from a
+// quote without touching anything else (line items, status, payments). Used
+// when the admin wants to remove a graphic that came in via a quote — e.g.
+// it was uploaded to the wrong account or was test data.
+router.delete('/admin/:id/artwork', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      'UPDATE quotes SET design_url = NULL, mockup_image_url = NULL WHERE id = $1 RETURNING id',
+      [id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /admin/send-balance - Admin sends balance payment request to customer
 router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, next) => {
   try {
