@@ -708,6 +708,129 @@ router.delete('/designs/:id', async (req, res, next) => {
   }
 });
 
+// ─── Fabric port — admin restore-legacy + audit log ─────────────────────
+//
+// These endpoints exist because the Fabric (?canvas=fabric) renderer can
+// silently overwrite a customer's saved v1 design with a v2 payload, and
+// when the soak window catches a hydrator bug we need a way to roll back
+// without losing the v2 attempt (it might be partially correct, or there
+// might be other admin actions interleaved we'd miss otherwise).
+//
+//   GET  /admin/designs/:id/legacy-snapshot   — read elements_legacy
+//   GET  /admin/designs/:id/audit-log         — read design_audit_log rows
+//   POST /admin/designs/:id/restore-legacy    — swap elements ← elements_legacy,
+//                                               write before/after to audit log
+
+// GET /designs/:id/legacy-snapshot - Read the archived v1 payload, if any
+router.get('/designs/:id/legacy-snapshot', async (req, res, next) => {
+  try {
+    const designId = parseInt(req.params.id, 10);
+    if (isNaN(designId)) return res.status(400).json({ error: 'Invalid design ID' });
+    const result = await pool.query(
+      `SELECT id, elements_legacy, legacy_archived_at, schema_version
+       FROM saved_designs WHERE id = $1`,
+      [designId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Design not found' });
+    const row = result.rows[0];
+    if (!row.elements_legacy) return res.status(404).json({ error: 'No legacy snapshot exists for this design' });
+    res.json({
+      design_id: row.id,
+      legacy_archived_at: row.legacy_archived_at,
+      current_schema_version: row.schema_version,
+      elements_legacy: row.elements_legacy,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /designs/:id/audit-log - Read the audit trail for a design
+router.get('/designs/:id/audit-log', async (req, res, next) => {
+  try {
+    const designId = parseInt(req.params.id, 10);
+    if (isNaN(designId)) return res.status(400).json({ error: 'Invalid design ID' });
+    const result = await pool.query(
+      `SELECT id, design_id, admin_user_id, action, before_payload, after_payload, notes, created_at
+       FROM design_audit_log
+       WHERE design_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 100`,
+      [designId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /designs/:id/restore-legacy - Roll a design back to its archived v1 payload.
+// Writes an audit row with before_payload = the v2 we're throwing away,
+// after_payload = the v1 we're restoring. The before_payload is the
+// critical piece: it's the state we lose visibility into otherwise.
+router.post('/designs/:id/restore-legacy', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const designId = parseInt(req.params.id, 10);
+    if (isNaN(designId)) return res.status(400).json({ error: 'Invalid design ID' });
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes.slice(0, 1000) : null;
+
+    await client.query('BEGIN');
+
+    const cur = await client.query(
+      `SELECT id, elements, elements_legacy, schema_version
+       FROM saved_designs WHERE id = $1 FOR UPDATE`,
+      [designId]
+    );
+    if (cur.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Design not found' });
+    }
+    const row = cur.rows[0];
+    if (!row.elements_legacy) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'No legacy snapshot exists for this design' });
+    }
+
+    // The current `elements` is what we're about to throw away. Capture it
+    // in before_payload before the UPDATE so we don't lose it forever.
+    await client.query(
+      `INSERT INTO design_audit_log
+        (design_id, admin_user_id, action, before_payload, after_payload, notes)
+       VALUES ($1, $2, 'restore-legacy', $3, $4, $5)`,
+      [
+        designId,
+        req.user?.id ?? null,
+        JSON.stringify(row.elements),
+        JSON.stringify(row.elements_legacy),
+        notes,
+      ]
+    );
+
+    // Restore. Note: we deliberately leave elements_legacy in place — the
+    // 90-day cleanup job is what removes it. A re-restore is therefore
+    // idempotent (same legacy payload restored a second time) and audit
+    // history accumulates one row per restore call.
+    const updated = await client.query(
+      `UPDATE saved_designs SET
+        elements = $1,
+        schema_version = 1,
+        updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, name, schema_version, updated_at`,
+      [JSON.stringify(row.elements_legacy), designId]
+    );
+
+    await client.query('COMMIT');
+    res.json(updated.rows[0]);
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 // PUT /products/:id/pricing - Update product pricing
 router.put('/products/:id/pricing', async (req, res, next) => {
   try {

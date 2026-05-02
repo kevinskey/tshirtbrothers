@@ -124,6 +124,38 @@ function isV2Elements(elements) {
   );
 }
 
+// Walk the Fabric v2 `objects` array and upload any FabricImage with a
+// data: src to Spaces, replacing src with the hosted URL. Mirrors the v1
+// pass that runs in POST/PUT for legacy DesignElement[] payloads.
+//
+// Reasoning: without this, the saved_designs.elements column accumulates
+// embedded base64 PNGs — a single shirt mockup is several hundred KB
+// inline. Spaces hosts the image; we store a URL.
+//
+// The `src` field is what FabricImage.toObject emits for image source.
+// Type matching is loose ("type" or "Image" in some Fabric versions) so
+// we match either.
+async function uploadV2DataImages(v2, userId) {
+  if (!isV2Elements(v2)) return v2;
+  const objects = Array.isArray(v2.objects) ? v2.objects : [];
+  for (const obj of objects) {
+    const isImage = obj && (obj.type === 'image' || obj.type === 'Image' || obj.type === 'FabricImage');
+    if (!isImage) continue;
+    if (typeof obj.src !== 'string' || !obj.src.startsWith('data:')) continue;
+    try {
+      const url = await uploadToSpaces(
+        obj.src,
+        `customers/${userId}/design-elements`,
+        `element-${Date.now()}-${Math.random().toString(36).slice(2)}.png`
+      );
+      if (url) obj.src = url;
+    } catch {
+      // Leave src as-is on failure — the design still renders, just bloated.
+    }
+  }
+  return v2;
+}
+
 // POST / - Save a new design
 router.post('/', async (req, res, next) => {
   try {
@@ -154,8 +186,9 @@ router.post('/', async (req, res, next) => {
         }
       }
     } else {
-      // v2 (Fabric) — store the toJSON payload as-is.
-      savedElements = elements || [];
+      // v2 (Fabric): mirror the v1 image-upload pass so we don't store
+      // base64-inline images that bloat the saved_designs.elements column.
+      savedElements = await uploadV2DataImages(elements, req.user.id);
     }
 
     // Upload thumbnail snapshot to Spaces if it's a data URL
@@ -205,6 +238,12 @@ router.put('/:id', async (req, res, next) => {
         );
         if (url) thumbnailUrl = url;
       } catch { /* keep as-is */ }
+    }
+
+    // v2 image upload pass — same reasoning as POST. Mutates `elements`
+    // in place so the JSON.stringify below picks up the hosted URLs.
+    if (isV2Elements(elements)) {
+      await uploadV2DataImages(elements, req.user.id);
     }
 
     // First-time v1 → v2 transition: persist the original legacy payload
