@@ -2395,9 +2395,25 @@ export default function AdminPage() {
                         </div>
                       )}
                       <div className="absolute top-1 right-1 flex gap-1">
-                        {Array.isArray(d.elements) && d.elements.length > 0 && (
-                          <div className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">DESIGNED</div>
-                        )}
+                        {Array.isArray(d.elements) && d.elements.length > 0 && (() => {
+                          // Group by side so the admin can see which sides have artwork.
+                          // Legacy elements with no `side` are treated as 'front'.
+                          const sides = new Set(
+                            (d.elements as { side?: string }[]).map((e) => e?.side || 'front'),
+                          );
+                          const chip = (label: string) => (
+                            <div key={label} className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">
+                              {label}
+                            </div>
+                          );
+                          return (
+                            <>
+                              {sides.has('front') && chip('FRONT')}
+                              {sides.has('back') && chip('BACK')}
+                              {sides.has('sleeve') && chip('SLEEVE')}
+                            </>
+                          );
+                        })()}
                         {d.source === 'quote' && (
                           <div className="bg-blue-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded">FROM QUOTE</div>
                         )}

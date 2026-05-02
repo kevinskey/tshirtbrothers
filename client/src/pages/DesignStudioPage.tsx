@@ -24,6 +24,10 @@ import {
 interface DesignElement {
   id: string;
   type: 'image' | 'text';
+  // Which side of the garment this element belongs to. Optional for
+  // backwards-compat: any saved design from before this field existed has
+  // no side stored, and we treat that as 'front'.
+  side?: 'front' | 'back' | 'sleeve';
   x: number; // percent
   y: number; // percent
   width: number; // percent
@@ -537,13 +541,16 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const addDesignElement = useCallback((el: Omit<DesignElement, 'id'>) => {
-    const newEl: DesignElement = { ...el, id: Date.now().toString() + Math.random().toString(36).slice(2) };
+    // Tag the new element with whichever side the user is currently viewing.
+    // Front/back/sleeve elements live in the same flat array but we filter
+    // by `el.side` at render and print time so each side has its own design.
+    const newEl: DesignElement = { ...el, side: el.side ?? currentView, id: Date.now().toString() + Math.random().toString(36).slice(2) };
     setDesignElements(prev => [...prev, newEl]);
     setSelectedElementId(newEl.id);
     // Auto-close whichever tool panel is open so the user immediately sees
     // the result on the canvas instead of having to close the panel manually.
     setActiveTool(null);
-  }, []);
+  }, [currentView]);
 
   const removeElement = useCallback((id: string) => {
     setDesignElements(prev => prev.filter(e => e.id !== id));
@@ -1798,8 +1805,10 @@ export default function DesignStudioPage() {
             </div>
           )}
 
-          {/* Design elements on canvas */}
-          {designElements.map(el => {
+          {/* Design elements on canvas — only render the ones belonging to
+              the current view (front/back/sleeve). Legacy elements with no
+              `side` are treated as 'front'. */}
+          {designElements.filter(el => (el.side ?? 'front') === currentView).map(el => {
             const isSelected = selectedElementId === el.id;
             if (el.type === 'text' && el.fontFamily) loadGoogleFont(el.fontFamily);
             return (
@@ -1914,8 +1923,8 @@ export default function DesignStudioPage() {
             );
           })}
 
-          {/* Placeholder when no elements */}
-          {designElements.length === 0 && displayImage && (
+          {/* Placeholder when no elements on the current side */}
+          {designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="border-2 border-dashed border-gray-300 rounded-lg px-8 py-6 flex flex-col items-center gap-1">
                 <Move className="h-5 w-5 text-gray-400" />
