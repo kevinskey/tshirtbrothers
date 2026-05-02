@@ -271,17 +271,19 @@ router.post('/generate', async (req, res, next) => {
     }
 
     // Decide vectorization based on style:
-    //   - dtf (full-color print) → return transparent PNG. A 1-color trace
-    //     posterizes a colorful image down to a black silhouette.
-    //   - vinyl (cut layers) → 1-color SVG.
-    //   - print (screen print, ~4 spot colors) → 4-color SVG.
+    //   - dtf (full-color print) → transparent PNG. 1-color trace would
+    //     posterize a colorful image down to a black silhouette.
+    //   - vinyl (cut layers) → 1-color SVG (clean cut paths).
+    //   - print (screen print) → transparent PNG. Multi-color tracing was
+    //     unreliable (occasional empty output) and screen printers color-
+    //     separate from raster themselves anyway.
     // Explicit `vectorize` / `vectorizeColors` body params override.
     const shouldVectorize = vectorize !== undefined
       ? vectorize
-      : (style === 'vinyl' || style === 'print');
+      : (style === 'vinyl');
     const colorsForTrace = vectorizeColors !== undefined
       ? vectorizeColors
-      : (style === 'print' ? 4 : 1);
+      : 1;
 
     if (!shouldVectorize) {
       return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, style });
