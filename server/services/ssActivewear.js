@@ -55,7 +55,10 @@ export async function fetchStyleSizes(styleId) {
       signal: AbortSignal.timeout(20000),
     }
   );
-  if (!response.ok) return [];
+  if (!response.ok) {
+    console.error(`[fetchStyleSizes] style ${styleId}: HTTP ${response.status}`);
+    return [];
+  }
   const data = await response.json().catch(() => []);
   const items = Array.isArray(data) ? data : [];
   const seen = new Set();
