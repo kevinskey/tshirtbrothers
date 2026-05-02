@@ -32,6 +32,7 @@ import {
   Receipt,
   PenSquare,
   Sparkles,
+  Type,
   Edit3,
   Upload,
 } from 'lucide-react';
@@ -102,9 +103,10 @@ import {
 } from '@/lib/api';
 import PromoManager from '@/components/admin/PromoManager';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
+import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -134,6 +136,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'mockups',   label: 'Mockups',          icon: Eye },
     { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
+    { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
   ]},
   { label: 'Marketing', items: [
     { key: 'blog',      label: 'Blog',         icon: PenSquare },
@@ -587,7 +590,7 @@ export default function AdminPage() {
     const params = new URLSearchParams(window.location.search);
     const section = params.get('section');
     const id = params.get('id');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'settings'];
     if (section && validSections.includes(section as Section)) {
       setActiveSection(section as Section);
     }
@@ -5441,6 +5444,8 @@ export default function AdminPage() {
             </div>
           );
         })()}
+
+        {activeSection === 'fonts' && <CustomFontsAdmin />}
 
         {activeSection === 'settings' && (
           <div>

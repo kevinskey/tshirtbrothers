@@ -23,7 +23,8 @@ export type FontCategory =
   | 'script'
   | 'gothic'
   | 'mono'
-  | 'system';
+  | 'system'
+  | 'custom';
 
 export interface CategorizedFont {
   name: string;
@@ -31,6 +32,8 @@ export interface CategorizedFont {
 }
 
 export const FONT_CATEGORIES: { id: FontCategory; label: string }[] = [
+  // Custom first when present — admins want their uploads top-of-list.
+  { id: 'custom', label: 'Custom' },
   { id: 'sans', label: 'Sans' },
   { id: 'display', label: 'Display' },
   { id: 'serif', label: 'Serif' },
