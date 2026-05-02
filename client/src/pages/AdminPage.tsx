@@ -501,6 +501,12 @@ export default function AdminPage() {
   const confirmDestructive = (message: string): Promise<boolean> =>
     new Promise((resolve) => setConfirmRequest({ message, danger: true, resolve }));
 
+  // "Fix in Art Library" hand-off: when the admin clicks Fix on a Customer
+  // Designs tile, we stash the source image + target here, switch to the
+  // workspace section, and DesignWorkspace consumes these via props.
+  const [artLibraryImage, setArtLibraryImage] = useState<string | null>(null);
+  const [artLibraryTarget, setArtLibraryTarget] = useState<{ type: 'quote' | 'design'; id: number; label: string } | null>(null);
+
   // Add-product modal state.
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [addProductForm, setAddProductForm] = useState({
@@ -2497,6 +2503,27 @@ export default function AdminPage() {
                           >
                             <FileText className="w-3 h-3" />
                             Open Quote
+                          </button>
+                        )}
+                        {/* Fix in Art Library — pre-loads this image into the
+                            workspace so admin can vectorize / remove BG / etc.
+                            and (for quote uploads) save back to the quote. */}
+                        {(d.print_url || d.mockup_url) && (
+                          <button
+                            onClick={() => {
+                              const img = d.print_url || d.mockup_url || '';
+                              setArtLibraryImage(img);
+                              setArtLibraryTarget(
+                                d.source === 'quote'
+                                  ? { type: 'quote', id: d.source_id, label: `Quote #${d.source_id}` }
+                                  : null,
+                              );
+                              setActiveSection('workspace');
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-orange-700 hover:text-orange-800 bg-orange-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Fix in Art Library
                           </button>
                         )}
                         {Array.isArray(d.elements) && d.elements.length > 0 && (
@@ -4597,7 +4624,33 @@ export default function AdminPage() {
         )}
 
         {activeSection === 'workspace' && (
-          <DesignWorkspace />
+          <DesignWorkspace
+            initialImage={artLibraryImage}
+            saveBackTarget={artLibraryTarget}
+            onConsumed={() => setArtLibraryImage(null)}
+            onSaveBack={async (cleanedUrl) => {
+              if (!artLibraryTarget) return;
+              try {
+                if (artLibraryTarget.type === 'quote') {
+                  const res = await fetch(`/api/quotes/admin/${artLibraryTarget.id}/design-url`, {
+                    method: 'PATCH',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                    body: JSON.stringify({ design_url: cleanedUrl }),
+                  });
+                  if (!res.ok) { toast('Save back failed', 'error'); return; }
+                  toast(`Cleaned image attached to ${artLibraryTarget.label}`);
+                  queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
+                  queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                  setArtLibraryTarget(null);
+                  setActiveSection('quotes');
+                  setHighlightedQuoteId(String(artLibraryTarget.id));
+                }
+              } catch {
+                toast('Network error saving back', 'error');
+              }
+            }}
+          />
         )}
 
         {activeSection === 'promotions' && (

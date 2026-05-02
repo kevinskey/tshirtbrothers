@@ -354,6 +354,28 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   }
 });
 
+// PATCH /admin/:id/design-url — replace the artwork file on a quote.
+// Used by the "Fix in Art Library" workflow: admin opens a customer's
+// uploaded graphic in DesignWorkspace, vectorizes / removes BG / cleans
+// it up, then saves the cleaned version back to the quote.
+router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { design_url } = req.body;
+    if (!design_url || typeof design_url !== 'string') {
+      return res.status(400).json({ error: 'design_url is required' });
+    }
+    const result = await pool.query(
+      'UPDATE quotes SET design_url = $1 WHERE id = $2 RETURNING id, design_url',
+      [design_url, id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /admin/send-balance - Admin sends balance payment request to customer
 router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, next) => {
   try {

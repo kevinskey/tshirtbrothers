@@ -18,11 +18,34 @@ const headers = () => ({ 'Content-Type': 'application/json', Authorization: `Bea
 
 const CATEGORIES = ['general', 'logos', 'typography', 'illustrations', 'backgrounds', 'badges', 'icons', 'patterns'];
 
-export default function DesignWorkspace() {
+interface DesignWorkspaceProps {
+  // Optional: pre-load an image (e.g. when admin clicks "Fix in Art Library"
+  // on a customer's quote upload).
+  initialImage?: string | null;
+  // Optional: when set, show a "Save & attach to <X>" button after the
+  // admin has cleaned up the image. The handler fires with the current
+  // image URL.
+  saveBackTarget?: { type: 'quote' | 'design'; id: number; label: string } | null;
+  onSaveBack?: (imageUrl: string) => Promise<void> | void;
+  onConsumed?: () => void;
+}
+
+export default function DesignWorkspace({ initialImage = null, saveBackTarget = null, onSaveBack, onConsumed }: DesignWorkspaceProps = {}) {
   // AI Generation
   const [prompt, setPrompt] = useState('');
   const [generating, setGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [savingBack, setSavingBack] = useState(false);
+
+  // Pre-load the image passed in via props on mount, then notify parent so
+  // it can clear its hand-off state and we don't reload on every re-mount.
+  useEffect(() => {
+    if (initialImage) {
+      setGeneratedImage(initialImage);
+      onConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [removingBg, setRemovingBg] = useState(false);
   const [upscaling, setUpscaling] = useState(false);
   const [removingColor, setRemovingColor] = useState(false);
@@ -719,6 +742,32 @@ export default function DesignWorkspace() {
                     <Save className="w-3 h-3" /> Save to Library
                   </button>
                 </div>
+
+                {/* Save back to source — when admin came in via "Fix in Art
+                    Library" from a quote / customer design, surface a one-
+                    click button to push the cleaned image back. */}
+                {saveBackTarget && onSaveBack && generatedImage && (
+                  <button
+                    onClick={async () => {
+                      if (!generatedImage || savingBack) return;
+                      setSavingBack(true);
+                      try {
+                        // Make sure we have a hosted URL (not a data: URL)
+                        // before sending it to the source — quotes etc. store
+                        // a URL, not raw bytes.
+                        const { newValue } = await uploadDataUrlIfNeeded(generatedImage, `cleaned-${Date.now()}.png`);
+                        await onSaveBack(newValue);
+                      } finally {
+                        setSavingBack(false);
+                      }
+                    }}
+                    disabled={savingBack}
+                    className="w-full px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {savingBack ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    {savingBack ? 'Saving…' : `Save & attach to ${saveBackTarget.label}`}
+                  </button>
+                )}
 
                 {/* Color-based removal — for when AI leaves drop shadows / solid fills */}
                 <div className="border-t border-gray-200 pt-2 mt-2">
