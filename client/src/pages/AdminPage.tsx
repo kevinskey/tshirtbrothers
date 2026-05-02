@@ -6602,7 +6602,55 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
         img?: HTMLImageElement;
         // bbox in percent space (0..100), in the same coords as element.x/y
         bx: number; by: number; bw: number; bh: number;
+        // Optional source-rect in [0..1] fractions of the image's natural
+        // size. When set, we use the 9-arg drawImage to draw only this
+        // sub-region — that way the trimmed bbox isn't filled with the
+        // image's transparent padding.
+        srcRect?: { x: number; y: number; w: number; h: number };
       };
+      // Detect the bbox of non-transparent pixels in an image so we can
+      // ignore the whitespace customers' source PNGs often have around the
+      // actual artwork. Returns fractions in [0..1] of the image's natural
+      // dimensions, or null if the canvas read is blocked (CORS) or the
+      // image is fully transparent.
+      function detectVisibleBbox(img: HTMLImageElement): { x: number; y: number; w: number; h: number } | null {
+        try {
+          const tc = document.createElement('canvas');
+          tc.width = img.naturalWidth;
+          tc.height = img.naturalHeight;
+          const tctx = tc.getContext('2d');
+          if (!tctx) return null;
+          tctx.drawImage(img, 0, 0);
+          const data = tctx.getImageData(0, 0, tc.width, tc.height).data;
+          // Sample every 4th pixel for speed; threshold alpha at 10 to ignore
+          // antialiased fringes that read as nearly-transparent.
+          const step = 4;
+          let minX = tc.width, minY = tc.height, maxX = 0, maxY = 0;
+          let hit = false;
+          for (let y = 0; y < tc.height; y += step) {
+            for (let x = 0; x < tc.width; x += step) {
+              const a = data[(y * tc.width + x) * 4 + 3] ?? 0;
+              if (a > 10) {
+                hit = true;
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          if (!hit) return null;
+          return {
+            x: minX / tc.width,
+            y: minY / tc.height,
+            w: Math.max(1, maxX - minX) / tc.width,
+            h: Math.max(1, maxY - minY) / tc.height,
+          };
+        } catch {
+          return null; // CORS-tainted canvas or other read error
+        }
+      }
+
       const resolved: Resolved[] = [];
       for (const el of frontEls) {
         const bx = el.x ?? 0;
@@ -6618,11 +6666,22 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
               img.src = el.content!;
             });
             const aspect = img.naturalHeight / img.naturalWidth;
-            resolved.push({ el, img, bx, by, bw, bh: bw * aspect });
+            const fullW = bw;
+            const fullH = bw * aspect;
+            const trim = detectVisibleBbox(img);
+            if (trim) {
+              const visibleBx = bx + trim.x * fullW;
+              const visibleBy = by + trim.y * fullH;
+              const visibleBw = trim.w * fullW;
+              const visibleBh = trim.h * fullH;
+              resolved.push({ el, img, bx: visibleBx, by: visibleBy, bw: visibleBw, bh: visibleBh, srcRect: trim });
+            } else {
+              resolved.push({ el, img, bx, by, bw: fullW, bh: fullH });
+            }
           } catch { /* skip element on load failure */ }
         } else if (el.type === 'text' && el.content) {
-          // approximate height from fontSize (which is in studio canvas units;
-          // canvas was 800px there, so ~el.fontSize / 800 * 100 in percent)
+          // approximate height from fontSize (studio canvas was 800px, so
+          // fontSize/800 * 100 ≈ height in percent space)
           const bh = ((el.fontSize ?? 24) / 800) * 100;
           resolved.push({ el, bx, by, bw, bh });
         }
@@ -6653,7 +6712,15 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
         const y = px(r.by, offsetY);
         const w = r.bw * scale;
         if (el.type === 'image' && r.img) {
-          ctx.drawImage(r.img, x, y, w, r.bh * scale);
+          if (r.srcRect) {
+            const sx = r.srcRect.x * r.img.naturalWidth;
+            const sy = r.srcRect.y * r.img.naturalHeight;
+            const sw = r.srcRect.w * r.img.naturalWidth;
+            const sh = r.srcRect.h * r.img.naturalHeight;
+            ctx.drawImage(r.img, sx, sy, sw, sh, x, y, w, r.bh * scale);
+          } else {
+            ctx.drawImage(r.img, x, y, w, r.bh * scale);
+          }
         } else if (el.type === 'text' && el.content) {
           const fontSize = r.bh * scale; // text height in px
           ctx.save();
