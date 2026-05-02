@@ -538,7 +538,10 @@ export interface StudioMockup {
   id: number;
   name: string;
   product_name: string;
+  product_ss_id: string | null;
   product_image: string | null;
+  color_index: number | null;
+  elements: unknown[];
   mockup_url: string | null;
   thumbnail: string | null;
   created_at: string;

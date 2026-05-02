@@ -185,6 +185,10 @@ router.put('/:id', async (req, res, next) => {
       } catch { /* keep as-is */ }
     }
 
+    // Admins can edit any design; customers can only edit their own. The
+    // ownership filter stays in place for non-admin roles to prevent one
+    // customer from modifying another's saved work.
+    const isAdmin = req.user?.role === 'admin';
     const result = await pool.query(
       `UPDATE saved_designs SET
         name = COALESCE($1, name),
@@ -195,9 +199,11 @@ router.put('/:id', async (req, res, next) => {
         elements = COALESCE($6, elements),
         thumbnail = COALESCE($7, thumbnail),
         updated_at = NOW()
-       WHERE id = $8 AND user_id = $9
+       WHERE id = $8 ${isAdmin ? '' : 'AND user_id = $9'}
        RETURNING id, name, updated_at`,
-      [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, designId, req.user.id]
+      isAdmin
+        ? [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, designId]
+        : [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, designId, req.user.id],
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Design not found' });
