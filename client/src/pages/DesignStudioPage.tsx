@@ -2664,6 +2664,9 @@ export default function DesignStudioPage() {
           { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
           { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
           { label: 'Change\nProducts', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
+          // Blank Canvas — admin entry, lets them compose art with no
+          // product backdrop so it can be saved straight to the Library.
+          ...(isAdmin ? [{ label: 'Blank\nCanvas', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setActiveTool('text'); } }] : []),
         ].map(item => (
           <button
             key={item.label}
