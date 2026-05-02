@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
 import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
 import { LayersPanel } from '@/components/design-studio/LayersPanel';
+import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -28,6 +29,8 @@ import {
   Move,
   Sparkles,
   FolderOpen,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -374,6 +377,48 @@ export default function DesignStudioPage() {
   // imperative handle (exportPNG, getDesignJSON) for save handlers.
   const useFabricRenderer = useFabricRendererFlag();
   const fabricBridgeRef = useRef<FabricRendererBridgeHandle | null>(null);
+
+  // ─── Undo / redo (Phase 2 PR #11) ──────────────────────────────────────
+  // Auto-snapshot designElements via a useEffect below. Stack is shared
+  // across renderer modes — undo is part of the surrounding page, not
+  // gated on ?canvas=fabric. (Fabric users will use it more because they
+  // can see what's happening, but legacy users get the keyboard shortcuts
+  // too.)
+  const undoRedo = useUndoRedo<DesignElement[]>(designElements);
+
+  // Auto-snapshot every change to designElements onto the undo stack.
+  // Skipped during replay — undo() / redo() set isReplaying.current = true,
+  // call setDesignElements, then we land here, see the flag, and don't
+  // re-push (which would erase the redo history).
+  useEffect(() => {
+    if (undoRedo.isReplaying.current) {
+      undoRedo.isReplaying.current = false;
+      return;
+    }
+    undoRedo.push(designElements);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [designElements]);
+
+  // Keyboard shortcuts: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z = redo. Don't
+  // intercept while typing in an input (font name, design name field, etc.).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement | null)?.isContentEditable) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key !== 'z' && e.key !== 'Z') return;
+      e.preventDefault();
+      const snapshot = e.shiftKey ? undoRedo.redo() : undoRedo.undo();
+      if (snapshot !== null) {
+        undoRedo.isReplaying.current = true;
+        setDesignElements(snapshot);
+        setSelectedElementId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undoRedo]);
+
   // Captured at first load when loadState.elements is a v1 array. Persists
   // for the page session so the save handler can ship it as the sidecar
   // (elements_legacy) the first time we overwrite the row with v2.
@@ -1295,6 +1340,42 @@ export default function DesignStudioPage() {
             Save to Library
           </button>
         )}
+        {/* Undo / redo (Phase 2 PR #11). Lives next to Save so users find
+            them where they expect. Disabled when the stack is empty.
+            Keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z) work
+            regardless. */}
+        <button
+          type="button"
+          onClick={() => {
+            const snap = undoRedo.undo();
+            if (snap !== null) {
+              undoRedo.isReplaying.current = true;
+              setDesignElements(snap);
+              setSelectedElementId(null);
+            }
+          }}
+          disabled={!undoRedo.canUndo}
+          title="Undo (⌘Z)"
+          className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <Undo2 className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const snap = undoRedo.redo();
+            if (snap !== null) {
+              undoRedo.isReplaying.current = true;
+              setDesignElements(snap);
+              setSelectedElementId(null);
+            }
+          }}
+          disabled={!undoRedo.canRedo}
+          title="Redo (⇧⌘Z)"
+          className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <Redo2 className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={handleSave}
