@@ -101,12 +101,15 @@ function cleanPrompt(prompt) {
     .trim();
 }
 
-function framePrompt(prompt, style = 'dtf') {
+function framePrompt(prompt, style = 'dtf', colorCount = 1) {
   const cleaned = cleanPrompt(prompt);
 
   if (style === 'vinyl') {
-    // Don't say "typography" here — it primes the model to render the prompt
-    // as text. We want a single-color silhouette/icon for vinyl cutting.
+    if (colorCount > 1) {
+      // Multi-color vinyl: instruct the model to use exactly N flat distinct
+      // colors, no gradients. Each color becomes a separate cut layer.
+      return `Bold flat illustration of: ${cleaned}. Use exactly ${colorCount} distinct flat solid colors with hard edges between them — no gradients, no shading, no shadows, no outlines, no 3D. Each color region is solid and clearly separated. Isolated on plain white background. Vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
+    }
     return `Bold flat single-color silhouette icon of: ${cleaned}. Pure black on pure white background, no gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
   }
 
@@ -139,11 +142,11 @@ function framePromptIdeogram(prompt, style = 'dtf') {
 
 // ── Flux Schnell ($0.003/image) ─────────────────────────────────────────────
 
-async function generateWithFluxSchnell(prompt, style) {
+async function generateWithFluxSchnell(prompt, style, colorCount = 1) {
   const apiKey = process.env.REPLICATE_API_KEY;
   if (!apiKey) throw new Error('Replicate not configured');
 
-  const fullPrompt = framePrompt(prompt, style);
+  const fullPrompt = framePrompt(prompt, style, colorCount);
 
   const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions', {
     method: 'POST',
@@ -180,11 +183,11 @@ async function generateWithFluxSchnell(prompt, style) {
 
 // ── Flux Dev ($0.030/image) ─────────────────────────────────────────────────
 
-async function generateWithFluxDev(prompt, style) {
+async function generateWithFluxDev(prompt, style, colorCount = 1) {
   const apiKey = process.env.REPLICATE_API_KEY;
   if (!apiKey) throw new Error('Replicate not configured');
 
-  const fullPrompt = framePrompt(prompt, style);
+  const fullPrompt = framePrompt(prompt, style, colorCount);
   // Flux Dev exposes a guidance knob — bump it for vinyl/print so the
   // 'no text' / 'flat single-color' instructions get heavier weight.
   const guidance = (style === 'vinyl' || style === 'print') ? 6.5 : 3.5;
@@ -225,11 +228,11 @@ async function generateWithFluxDev(prompt, style) {
 
 // ── Flux Pro ($0.055/image) ─────────────────────────────────────────────────
 
-async function generateWithFluxPro(prompt, style) {
+async function generateWithFluxPro(prompt, style, colorCount = 1) {
   const apiKey = process.env.REPLICATE_API_KEY;
   if (!apiKey) throw new Error('Replicate not configured');
 
-  const fullPrompt = framePrompt(prompt, style);
+  const fullPrompt = framePrompt(prompt, style, colorCount);
 
   const res = await fetch('https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro/predictions', {
     method: 'POST',
@@ -299,8 +302,8 @@ async function generateWithIdeogram(prompt, style) {
 
 // ── DALL-E 3 ($0.040/image) — last resort ───────────────────────────────────
 
-async function generateWithDalle(prompt, style) {
-  const fullPrompt = framePrompt(prompt, style);
+async function generateWithDalle(prompt, style, colorCount = 1) {
+  const fullPrompt = framePrompt(prompt, style, colorCount);
 
   const response = await openai.images.generate({
     model: 'dall-e-3',
@@ -346,7 +349,7 @@ async function pollPrediction(prediction, apiKey, modelName) {
 // style: 'dtf' (default), 'vinyl', 'print'
 //
 
-export async function generateDesign(prompt, color, garmentType, style = 'dtf') {
+export async function generateDesign(prompt, color, garmentType, style = 'dtf', colorCount = 1) {
   // Auto-detect vinyl if not explicitly set
   if (style === 'dtf' && isVinylIntent(prompt)) {
     style = 'vinyl';
@@ -367,10 +370,10 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
       }
     }
     if (process.env.REPLICATE_API_KEY) {
-      try { return await generateWithFluxDev(prompt, style); } catch {}
-      try { return await generateWithFluxSchnell(prompt, style); } catch {}
+      try { return await generateWithFluxDev(prompt, style, colorCount); } catch {}
+      try { return await generateWithFluxSchnell(prompt, style, colorCount); } catch {}
     }
-    try { return await generateWithDalle(prompt, style); } catch {}
+    try { return await generateWithDalle(prompt, style, colorCount); } catch {}
     if (process.env.IDEOGRAM_API_KEY) {
       try { return await generateWithIdeogram(prompt, style); } catch {}
     }
@@ -386,8 +389,8 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
         console.error('[Smart Router] Ideogram failed:', err.message);
       }
     }
-    try { return await generateWithFluxPro(prompt, style); } catch {}
-    try { return await generateWithDalle(prompt, style); } catch {}
+    try { return await generateWithFluxPro(prompt, style, colorCount); } catch {}
+    try { return await generateWithDalle(prompt, style, colorCount); } catch {}
     throw new Error('All text-rendering models failed');
   }
 
@@ -395,16 +398,16 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
   if (classification.tier === 'simple') {
     if (process.env.REPLICATE_API_KEY) {
       try {
-        return await generateWithFluxSchnell(prompt, style);
+        return await generateWithFluxSchnell(prompt, style, colorCount);
       } catch (err) {
         console.error('[Smart Router] Flux Schnell failed:', err.message);
       }
-      try { return await generateWithFluxDev(prompt, style); } catch {}
+      try { return await generateWithFluxDev(prompt, style, colorCount); } catch {}
     }
     if (process.env.IDEOGRAM_API_KEY) {
       try { return await generateWithIdeogram(prompt, style); } catch {}
     }
-    try { return await generateWithDalle(prompt, style); } catch {}
+    try { return await generateWithDalle(prompt, style, colorCount); } catch {}
     throw new Error('All generation models failed');
   }
 
@@ -412,23 +415,23 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
   if (classification.tier === 'medium') {
     if (process.env.REPLICATE_API_KEY) {
       try {
-        return await generateWithFluxDev(prompt, style);
+        return await generateWithFluxDev(prompt, style, colorCount);
       } catch (err) {
         console.error('[Smart Router] Flux Dev failed:', err.message);
       }
-      try { return await generateWithFluxPro(prompt, style); } catch {}
+      try { return await generateWithFluxPro(prompt, style, colorCount); } catch {}
     }
     if (process.env.IDEOGRAM_API_KEY) {
       try { return await generateWithIdeogram(prompt, style); } catch {}
     }
-    try { return await generateWithDalle(prompt, style); } catch {}
+    try { return await generateWithDalle(prompt, style, colorCount); } catch {}
     throw new Error('All generation models failed');
   }
 
   // ── TIER: COMPLEX — use Flux Pro ($0.055) ─────────────────────────────
   if (process.env.REPLICATE_API_KEY) {
     try {
-      return await generateWithFluxPro(prompt, style);
+      return await generateWithFluxPro(prompt, style, colorCount);
     } catch (err) {
       console.error('[Smart Router] Flux Pro failed:', err.message);
     }
@@ -436,6 +439,6 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf') 
   if (process.env.IDEOGRAM_API_KEY) {
     try { return await generateWithIdeogram(prompt, style); } catch {}
   }
-  try { return await generateWithDalle(prompt, style); } catch {}
+  try { return await generateWithDalle(prompt, style, colorCount); } catch {}
   throw new Error('All generation models failed');
 }

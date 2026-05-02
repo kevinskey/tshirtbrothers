@@ -148,13 +148,15 @@ async function vectorizePNG(pngBase64, colors = 1) {
         'histogram:info:-',
       ]);
 
-      // Parse hex colors from histogram output
+      // Parse hex colors from histogram output. We KEEP black/white because
+      // they're valid vinyl cut colors — earlier code excluded them and so
+      // monochrome output produced an empty palette.
       const hexColors = [];
       const colorRegex = /#([0-9A-Fa-f]{6})/g;
       let match;
       while ((match = colorRegex.exec(colorList)) !== null) {
-        const hex = '#' + match[1];
-        if (!hexColors.includes(hex) && hex !== '#000000' && hex !== '#FFFFFF' && hex !== '#ffffff') {
+        const hex = '#' + match[1].toUpperCase();
+        if (!hexColors.includes(hex)) {
           hexColors.push(hex);
         }
       }
@@ -259,7 +261,15 @@ router.post('/generate', async (req, res, next) => {
       return res.status(400).json({ error: 'prompt is required' });
     }
 
-    const rasterUrl = await generateDesign(prompt, color, garmentType, style);
+    // Resolve colorCount up-front: if the admin asked for 2-color vinyl, the
+    // raster needs to actually contain 2 distinct colors for potrace to find
+    // them. We pass colorCount into generateDesign so the framePrompt nudges
+    // the model accordingly.
+    const colorCount = (style === 'vinyl' && Number(vectorizeColors) > 1)
+      ? Math.min(4, Math.max(2, Number(vectorizeColors)))
+      : 1;
+
+    const rasterUrl = await generateDesign(prompt, color, garmentType, style, colorCount);
 
     if (!removeBackground) {
       return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
@@ -282,7 +292,7 @@ router.post('/generate', async (req, res, next) => {
       ? vectorize
       : (style === 'vinyl');
     const colorsForTrace = vectorizeColors !== undefined
-      ? vectorizeColors
+      ? Math.min(4, Math.max(1, Number(vectorizeColors) || 1))
       : 1;
 
     if (!shouldVectorize) {
