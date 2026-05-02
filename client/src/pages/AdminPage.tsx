@@ -455,6 +455,24 @@ export default function AdminPage() {
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Deep-link from notification emails: /admin?section=quotes&id=123 lands on
+  // the Quotes section so the admin doesn't have to navigate from Dashboard.
+  // The matching row is scrolled into view + briefly highlighted via the
+  // `id="quote-<n>"` attribute on each row.
+  const [highlightedQuoteId, setHighlightedQuoteId] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const section = params.get('section');
+    const id = params.get('id');
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'settings'];
+    if (section && validSections.includes(section as Section)) {
+      setActiveSection(section as Section);
+    }
+    if (id && /^\d+$/.test(id)) {
+      setHighlightedQuoteId(id);
+    }
+  }, []);
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [quoteSearch, setQuoteSearch] = useState('');
   const [quoteSort, setQuoteSort] = useState<'newest' | 'date_needed'>('newest');
@@ -1514,6 +1532,18 @@ export default function AdminPage() {
 
   const stats = statsQuery.data;
   const quotes = quotesQuery.data ?? [];
+
+  // When deep-linked to a specific quote (?id=X), scroll the row into view
+  // and clear the highlight after a few seconds so it doesn't stick forever.
+  useEffect(() => {
+    if (highlightedQuoteId === null || activeSection !== 'quotes') return;
+    if (!quotes.some((q: Quote) => String(q.id) === highlightedQuoteId)) return;
+    const el = document.getElementById(`quote-${highlightedQuoteId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => setHighlightedQuoteId(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightedQuoteId, activeSection, quotes]);
   const products = productsQuery.data?.products ?? [];
   const productTotal = productsQuery.data?.total ?? 0;
   const productTotalPages = productsQuery.data?.totalPages ?? 1;
@@ -1736,8 +1766,9 @@ export default function AdminPage() {
                 return (
                 <div
                   key={q.id}
+                  id={`quote-${q.id}`}
                   onClick={() => setDetailQuote(q)}
-                  className={`bg-white rounded-xl border p-4 space-y-3 cursor-pointer active:bg-gray-50 ${isRush ? 'border-orange-300 ring-1 ring-orange-200' : 'border-gray-200'}`}
+                  className={`bg-white rounded-xl border p-4 space-y-3 cursor-pointer active:bg-gray-50 ${highlightedQuoteId === String(q.id) ? 'border-orange-400 ring-2 ring-orange-300 bg-orange-50' : isRush ? 'border-orange-300 ring-1 ring-orange-200' : 'border-gray-200'}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -1851,7 +1882,7 @@ export default function AdminPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {quotes.map((q: Quote) => (
-                      <tr key={q.id} onClick={() => setDetailQuote(q)} className="hover:bg-gray-50 cursor-pointer">
+                      <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
                         <td className="px-6 py-3 text-gray-600">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
                         </td>
