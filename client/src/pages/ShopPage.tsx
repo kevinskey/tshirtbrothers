@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { Search, Loader2 } from 'lucide-react';
+import { Search, Loader2, X } from 'lucide-react';
 
 interface ColorInfo {
   name: string;
@@ -23,6 +23,10 @@ interface Product {
   sizeRange?: string;
   imageUrl?: string;
   image_url?: string;
+  back_image_url?: string;
+  base_price?: number | string;
+  specifications?: { description?: string; material?: string; weight?: string };
+  price_breaks?: { qty?: number; minQty?: number; price?: number }[];
 }
 
 interface ProductsResponse {
@@ -213,6 +217,7 @@ export default function ShopPage() {
   const urlCategory = searchParams.get('category') || '';
   const urlBrand = searchParams.get('brand') || '';
   const urlSearch = searchParams.get('search') || '';
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [search, setSearch] = useState(urlSearch);
   const [brand, setBrand] = useState(urlBrand);
   const [category, setCategory] = useState(urlCategory);
@@ -366,9 +371,11 @@ export default function ShopPage() {
                 const sizeRange = getProductSizeRange(product);
                 const pid = getProductId(product);
                 return (
-                <div
+                <button
                   key={pid}
-                  className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group"
+                  type="button"
+                  onClick={() => setDetailProduct(product)}
+                  className="text-left border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group cursor-pointer bg-white"
                 >
                   {/* Image */}
                   <div className="bg-gray-100 aspect-square flex items-center justify-center overflow-hidden">
@@ -376,7 +383,7 @@ export default function ShopPage() {
                       <img
                         src={imgUrl}
                         alt={product.name}
-                        className="w-full h-full object-contain p-4"
+                        className="w-full h-full object-contain p-4 group-hover:scale-105 transition-transform duration-300"
                         loading="lazy"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
@@ -417,25 +424,8 @@ export default function ShopPage() {
                       )}
                     </div>
                     )}
-
-                    {/* CTAs — quote is the primary path; design is for
-                        customers who want to lay out artwork themselves. */}
-                    <div className="mt-4 flex flex-col gap-1.5">
-                      <Link
-                        to={`/quote?product=${pid}`}
-                        className="block w-full bg-orange-500 hover:bg-orange-600 text-white text-center rounded-lg text-xs font-semibold py-2.5 transition-colors"
-                      >
-                        Get a Quote
-                      </Link>
-                      <Link
-                        to={`/design?product=${pid}`}
-                        className="block w-full bg-white hover:bg-gray-50 text-gray-700 text-center rounded-lg text-xs font-medium py-2 border border-gray-200 transition-colors"
-                      >
-                        Design Online
-                      </Link>
-                    </div>
                   </div>
-                </div>
+                </button>
                 );
               })}
             </div>
@@ -456,6 +446,117 @@ export default function ShopPage() {
           </div>
         </div>
       </section>
+
+      {/* Product detail modal */}
+      {detailProduct && (() => {
+        const p = detailProduct;
+        const img = getProductImage(p);
+        const colors = getProductColors(p);
+        const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+        const description = (p.specifications?.description || '').trim();
+        const priceBreaks = Array.isArray(p.price_breaks) ? p.price_breaks : [];
+        const styleNum = getProductStyleNumber(p);
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
+            onClick={() => setDetailProduct(null)}
+          >
+            <div
+              className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <div className="min-w-0 pr-4">
+                  <p className="text-xs uppercase tracking-wider text-gray-400 font-medium">{p.brand}</p>
+                  <h2 className="font-display font-bold text-gray-900 text-lg truncate">{p.name}</h2>
+                </div>
+                <button
+                  onClick={() => setDetailProduct(null)}
+                  className="text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-xl aspect-square flex items-center justify-center overflow-hidden">
+                  {img ? (
+                    <img src={img} alt={p.name} className="w-full h-full object-contain p-6" />
+                  ) : (
+                    <span className="text-gray-400 text-sm">{p.category}</span>
+                  )}
+                </div>
+
+                <div className="space-y-4 text-sm">
+                  {styleNum && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1">Style</p>
+                      <p className="text-gray-900">{styleNum}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1">Category</p>
+                    <p className="text-gray-900">{p.category}</p>
+                  </div>
+                  {sizes.length > 0 && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1.5">Sizes ({sizes.length})</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {sizes.map((s) => (
+                          <span key={s} className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {colors.length > 0 && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1.5">Colors ({colors.length})</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {colors.map((c, i) => (
+                          <span
+                            key={i}
+                            className="w-6 h-6 rounded-full border border-gray-200"
+                            style={{ backgroundColor: c.hex || '#ccc' }}
+                            title={c.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {priceBreaks.length > 0 && (
+                    <div>
+                      <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1.5">Quantity pricing</p>
+                      <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                        {priceBreaks.map((b, i) => {
+                          const qty = b.qty ?? b.minQty;
+                          const price = typeof b.price === 'number' ? b.price.toFixed(2) : b.price;
+                          if (qty == null || price == null) return null;
+                          return (
+                            <div key={i} className="flex justify-between px-3 py-1.5 text-xs">
+                              <span className="text-gray-600">{qty}+</span>
+                              <span className="text-gray-900 font-medium">${price}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {description && (
+                <div className="px-6 pb-6">
+                  <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-2">Description</p>
+                  <div
+                    className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: description }}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </Layout>
   );
 }
