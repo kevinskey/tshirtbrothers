@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
-import { FabricImage, IText, Group } from 'fabric';
+import { FabricImage, IText, Group, Shadow, Gradient } from 'fabric';
 import { FabricDesignCanvas, LOGICAL_CANVAS_SIZE } from './FabricDesignCanvas';
 import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
 import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
@@ -202,6 +202,28 @@ async function syncElements(
   canvas.renderAll();
 }
 
+function buildLinearGradient(
+  colorA: string,
+  colorB: string,
+  angleDeg: number,
+): Gradient<'linear'> {
+  const rad = (angleDeg * Math.PI) / 180;
+  const dx = Math.cos(rad) * 0.5;
+  const dy = Math.sin(rad) * 0.5;
+  return new Gradient({
+    type: 'linear',
+    gradientUnits: 'percentage',
+    coords: {
+      x1: 0.5 - dx, y1: 0.5 - dy,
+      x2: 0.5 + dx, y2: 0.5 + dy,
+    },
+    colorStops: [
+      { offset: 0, color: colorA },
+      { offset: 1, color: colorB },
+    ],
+  });
+}
+
 function applyLegacyToObject(obj: FabricObjectWithMeta, el: DesignElement): void {
   const COORD_SCALE = LOGICAL_CANVAS_SIZE / 100;
   const FONT_SCALE = LOGICAL_CANVAS_SIZE / 800;
@@ -224,20 +246,40 @@ function applyLegacyToObject(obj: FabricObjectWithMeta, el: DesignElement): void
   }
   if (obj instanceof IText) {
     const fontSize = (el.fontSize ?? 24) * FONT_SCALE;
+    // Phase 2 PR #14: real stroke + gradient fill + drop shadow.
+    // Mirrors the math in hydrateLegacy.ts so panel updates produce the
+    // same visual result as a fresh hydrate.
+    const useRealStroke =
+      typeof el.strokeWidth === 'number' && el.strokeWidth > 0 && !!el.strokeColor;
+    const strokeColor = useRealStroke
+      ? el.strokeColor
+      : el.outline ? 'rgba(0,0,0,0.5)' : undefined;
+    const strokeWidth = useRealStroke
+      ? (el.strokeWidth as number) * FONT_SCALE
+      : el.outline ? 1 : 0;
+    const fill = el.gradient
+      ? buildLinearGradient(el.gradient.colorA, el.gradient.colorB, el.gradient.angle)
+      : (el.color ?? '#000000');
     obj.set({
       left: leftPx + widthPx / 2,
       top: topPx + (fontSize * (el.lineHeight ?? 1.2)) / 2,
       angle: el.rotation ?? 0,
       opacity: el.opacity ?? 1,
       fontSize,
-      fill: el.color ?? '#000000',
+      fill,
       fontFamily: el.fontFamily ?? 'Inter',
       textAlign: el.textAlign ?? 'center',
       charSpacing: (el.letterSpacing ?? 0) * 1000,
       lineHeight: el.lineHeight ?? 1.2,
-      stroke: el.outline ? 'rgba(0,0,0,0.5)' : undefined,
-      strokeWidth: el.outline ? 1 : 0,
-      paintFirst: el.outline ? 'stroke' : 'fill',
+      stroke: strokeColor,
+      strokeWidth,
+      paintFirst: strokeWidth > 0 ? 'stroke' : 'fill',
+      shadow: el.shadow ? new Shadow({
+        offsetX: el.shadow.offsetX * FONT_SCALE,
+        offsetY: el.shadow.offsetY * FONT_SCALE,
+        blur: el.shadow.blur * FONT_SCALE,
+        color: el.shadow.color,
+      }) : null,
       text: el.content,
     });
     return;
