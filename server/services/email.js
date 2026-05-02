@@ -100,7 +100,7 @@ export async function sendQuoteRequestNotification(quote) {
       detailRow('Notes', quote.notes || 'None')
     )}
 
-    ${primaryButton('View in Admin Dashboard', `${DOMAIN}/admin`)}
+    ${primaryButton('View in Admin Dashboard', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
 
   try {
@@ -229,7 +229,7 @@ export async function sendQuoteAcceptedNotification(quote) {
       detailRow('Deposit Amount', deposit)
     )}
 
-    ${primaryButton('View in Admin Dashboard', `${DOMAIN}/admin`)}
+    ${primaryButton('View in Admin Dashboard', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
 
   try {
