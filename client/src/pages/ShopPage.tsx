@@ -418,13 +418,22 @@ export default function ShopPage() {
                     </div>
                     )}
 
-                    {/* CTA */}
-                    <Link
-                      to={`/design?product=${pid}`}
-                      className="mt-4 block w-full bg-gray-900 hover:bg-gray-800 text-white text-center rounded-lg text-xs font-medium py-2.5 transition-colors"
-                    >
-                      View Details
-                    </Link>
+                    {/* CTAs — quote is the primary path; design is for
+                        customers who want to lay out artwork themselves. */}
+                    <div className="mt-4 flex flex-col gap-1.5">
+                      <Link
+                        to={`/quote?product=${pid}`}
+                        className="block w-full bg-orange-500 hover:bg-orange-600 text-white text-center rounded-lg text-xs font-semibold py-2.5 transition-colors"
+                      >
+                        Get a Quote
+                      </Link>
+                      <Link
+                        to={`/design?product=${pid}`}
+                        className="block w-full bg-white hover:bg-gray-50 text-gray-700 text-center rounded-lg text-xs font-medium py-2 border border-gray-200 transition-colors"
+                      >
+                        Design Online
+                      </Link>
+                    </div>
                   </div>
                 </div>
                 );
