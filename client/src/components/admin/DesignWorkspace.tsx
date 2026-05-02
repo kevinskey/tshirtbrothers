@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Crop, Check } from 'lucide-react';
 
 interface DesignAsset {
   id: number;
@@ -80,6 +80,106 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
 
   // History for undo
   const [imageHistory, setImageHistory] = useState<string[]>([]);
+
+  // Crop mode — admin drags a rectangle over the current image to keep
+  // only that region. Coordinates are stored as fractions of the image
+  // (0..1) so the actual pixel crop is computed against natural dimensions.
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+  const [cropApplying, setCropApplying] = useState(false);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropDragRef = useRef<null | {
+    mode: 'move' | 'nw' | 'ne' | 'sw' | 'se';
+    startX: number; startY: number;
+    rectW: number; rectH: number;
+    startRect: { x: number; y: number; w: number; h: number };
+  }>(null);
+
+  function startCropDrag(mode: 'move' | 'nw' | 'ne' | 'sw' | 'se', e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!cropImgRef.current) return;
+    const rect = cropImgRef.current.getBoundingClientRect();
+    cropDragRef.current = {
+      mode, startX: e.clientX, startY: e.clientY,
+      rectW: rect.width, rectH: rect.height,
+      startRect: { ...cropRect },
+    };
+    window.addEventListener('mousemove', onCropDrag);
+    window.addEventListener('mouseup', endCropDrag);
+  }
+
+  function onCropDrag(e: MouseEvent) {
+    const drag = cropDragRef.current;
+    if (!drag) return;
+    const dx = (e.clientX - drag.startX) / drag.rectW;
+    const dy = (e.clientY - drag.startY) / drag.rectH;
+    const r = { ...drag.startRect };
+    if (drag.mode === 'move') {
+      r.x = Math.max(0, Math.min(1 - drag.startRect.w, drag.startRect.x + dx));
+      r.y = Math.max(0, Math.min(1 - drag.startRect.h, drag.startRect.y + dy));
+    } else if (drag.mode === 'se') {
+      r.w = Math.max(0.05, Math.min(1 - drag.startRect.x, drag.startRect.w + dx));
+      r.h = Math.max(0.05, Math.min(1 - drag.startRect.y, drag.startRect.h + dy));
+    } else if (drag.mode === 'nw') {
+      const newX = Math.max(0, Math.min(drag.startRect.x + drag.startRect.w - 0.05, drag.startRect.x + dx));
+      const newY = Math.max(0, Math.min(drag.startRect.y + drag.startRect.h - 0.05, drag.startRect.y + dy));
+      r.w = drag.startRect.w + (drag.startRect.x - newX);
+      r.h = drag.startRect.h + (drag.startRect.y - newY);
+      r.x = newX;
+      r.y = newY;
+    } else if (drag.mode === 'ne') {
+      const newY = Math.max(0, Math.min(drag.startRect.y + drag.startRect.h - 0.05, drag.startRect.y + dy));
+      r.w = Math.max(0.05, Math.min(1 - drag.startRect.x, drag.startRect.w + dx));
+      r.h = drag.startRect.h + (drag.startRect.y - newY);
+      r.y = newY;
+    } else if (drag.mode === 'sw') {
+      const newX = Math.max(0, Math.min(drag.startRect.x + drag.startRect.w - 0.05, drag.startRect.x + dx));
+      r.w = drag.startRect.w + (drag.startRect.x - newX);
+      r.h = Math.max(0.05, Math.min(1 - drag.startRect.y, drag.startRect.h + dy));
+      r.x = newX;
+    }
+    setCropRect(r);
+  }
+
+  function endCropDrag() {
+    cropDragRef.current = null;
+    window.removeEventListener('mousemove', onCropDrag);
+    window.removeEventListener('mouseup', endCropDrag);
+  }
+
+  async function applyCrop() {
+    if (!generatedImage) return;
+    setCropApplying(true);
+    try {
+      const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('image load failed'));
+        img.src = generatedImage;
+      });
+      const sx = Math.round(img.naturalWidth * cropRect.x);
+      const sy = Math.round(img.naturalHeight * cropRect.y);
+      const sw = Math.max(1, Math.round(img.naturalWidth * cropRect.w));
+      const sh = Math.max(1, Math.round(img.naturalHeight * cropRect.h));
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas context unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const dataUrl = canvas.toDataURL('image/png');
+      setImageHistory((prev) => [...prev, dataUrl]);
+      setGeneratedImage(dataUrl);
+      setCropMode(false);
+      setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+    } catch (e) {
+      alert(`Crop failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setCropApplying(false);
+    }
+  }
   // URL paste + customer graphics picker for the Upload & Fix section
   const [pasteUrl, setPasteUrl] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -744,6 +844,11 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                     className="px-3 py-2 bg-gray-50 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-100 disabled:opacity-50 flex items-center justify-center gap-1">
                     <RotateCcw className="w-3 h-3" /> Undo
                   </button>
+                  <button onClick={() => { setCropMode(true); setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }); }}
+                    disabled={cropMode || cropApplying}
+                    className="px-3 py-2 bg-amber-50 text-amber-700 text-xs font-medium rounded-lg hover:bg-amber-100 disabled:opacity-50 flex items-center justify-center gap-1">
+                    <Crop className="w-3 h-3" /> Crop
+                  </button>
                   <button onClick={() => generatedImage && handleDownload(generatedImage, 'design-' + Date.now())}
                     className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1">
                     <Download className="w-3 h-3" /> Download
@@ -815,10 +920,82 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
               </div>
             ) : generatedImage ? (
               <div className="w-full">
-                <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center" style={{ backgroundImage: 'linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%), linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%)', backgroundSize: '20px 20px', backgroundPosition: '0 0, 10px 10px' }}>
-                  <img src={generatedImage} alt="Generated design" className="max-w-full max-h-[500px] object-contain" />
+                <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center relative" style={{ backgroundImage: 'linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%), linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%)', backgroundSize: '20px 20px', backgroundPosition: '0 0, 10px 10px' }}>
+                  <div className="relative inline-block">
+                    <img
+                      ref={cropImgRef}
+                      src={generatedImage}
+                      alt="Generated design"
+                      className="max-w-full max-h-[500px] object-contain block select-none"
+                      draggable={false}
+                    />
+                    {cropMode && (
+                      <>
+                        {/* Dimmed overlay outside the crop rect */}
+                        <div className="absolute inset-0 pointer-events-none" style={{
+                          background: `linear-gradient(transparent ${cropRect.y * 100}%, rgba(0,0,0,0.45) ${cropRect.y * 100}%, rgba(0,0,0,0.45) ${(cropRect.y + cropRect.h) * 100}%, transparent ${(cropRect.y + cropRect.h) * 100}%)`,
+                        }} />
+                        <div className="absolute pointer-events-none" style={{
+                          left: 0, top: `${cropRect.y * 100}%`, width: `${cropRect.x * 100}%`, height: `${cropRect.h * 100}%`,
+                          background: 'rgba(0,0,0,0.45)',
+                        }} />
+                        <div className="absolute pointer-events-none" style={{
+                          left: `${(cropRect.x + cropRect.w) * 100}%`, top: `${cropRect.y * 100}%`, right: 0, height: `${cropRect.h * 100}%`,
+                          background: 'rgba(0,0,0,0.45)',
+                        }} />
+                        {/* The draggable crop rectangle */}
+                        <div
+                          className="absolute border-2 border-amber-500 cursor-move"
+                          style={{
+                            left: `${cropRect.x * 100}%`,
+                            top: `${cropRect.y * 100}%`,
+                            width: `${cropRect.w * 100}%`,
+                            height: `${cropRect.h * 100}%`,
+                            boxShadow: '0 0 0 1px rgba(0,0,0,0.3)',
+                          }}
+                          onMouseDown={(e) => startCropDrag('move', e)}
+                        >
+                          {/* Corner handles */}
+                          {(['nw', 'ne', 'sw', 'se'] as const).map((corner) => (
+                            <div
+                              key={corner}
+                              onMouseDown={(e) => startCropDrag(corner, e)}
+                              className="absolute w-3 h-3 bg-amber-500 border border-white"
+                              style={{
+                                left: corner.endsWith('w') ? -6 : 'auto',
+                                right: corner.endsWith('e') ? -6 : 'auto',
+                                top: corner.startsWith('n') ? -6 : 'auto',
+                                bottom: corner.startsWith('s') ? -6 : 'auto',
+                                cursor: corner === 'nw' || corner === 'se' ? 'nwse-resize' : 'nesw-resize',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <p className="text-[10px] text-gray-400 text-center mt-2">Checkerboard = transparent background</p>
+                {cropMode ? (
+                  <div className="flex gap-2 mt-3 justify-center">
+                    <button
+                      onClick={applyCrop}
+                      disabled={cropApplying}
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {cropApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {cropApplying ? 'Applying…' : 'Apply Crop'}
+                    </button>
+                    <button
+                      onClick={() => { setCropMode(false); setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }); }}
+                      disabled={cropApplying}
+                      className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-gray-400 text-center mt-2">Checkerboard = transparent background</p>
+                )}
               </div>
             ) : (
               <div className="text-center text-gray-400">
