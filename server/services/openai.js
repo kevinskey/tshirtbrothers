@@ -106,9 +106,15 @@ function framePrompt(prompt, style = 'dtf', colorCount = 1) {
 
   if (style === 'vinyl') {
     if (colorCount > 1) {
-      // Multi-color vinyl: instruct the model to use exactly N flat distinct
-      // colors, no gradients. Each color becomes a separate cut layer.
-      return `Bold flat illustration of: ${cleaned}. Use exactly ${colorCount} distinct flat solid colors with hard edges between them — no gradients, no shading, no shadows, no outlines, no 3D. Each color region is solid and clearly separated. Isolated on plain white background. Vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
+      // Concrete vibrant palette suggestions help the model commit to N
+      // *distinct* colors instead of producing a monochromatic illustration.
+      const palettes = {
+        2: 'such as bright red and bright yellow',
+        3: 'such as bright red, royal blue, and bright yellow',
+        4: 'such as bright red, royal blue, bright yellow, and emerald green',
+      };
+      const palette = palettes[colorCount] || palettes[3];
+      return `Bold flat illustration of: ${cleaned}. CRITICAL: use exactly ${colorCount} distinct vibrant flat solid colors (${palette}) with hard sharp edges between them. No gradients, no shading, no shadows, no outlines, no 3D, no monochrome. Each color region is one solid hue clearly separated from the others. Isolated on plain white background. Vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
     }
     return `Bold flat single-color silhouette icon of: ${cleaned}. Pure black on pure white background, no gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. NO text, NO letters, NO words, NO typography unless explicitly part of the subject.`;
   }
@@ -358,9 +364,12 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf', 
   const classification = classifyPrompt(prompt, style);
   console.log(`[Smart Router] "${prompt.slice(0, 60)}..." → ${classification.tier} (${classification.reason}) [style=${style}]`);
 
-  // ── VINYL — Flux Dev primary (better instruction-following than Schnell;
-  // Schnell still hallucinates fake text on graphics even when explicitly
-  // told not to). DALL-E is best for hard "no text" requirements.
+  // ── VINYL — pick model by need.
+  //   - Real text rendering → Ideogram.
+  //   - Multi-color vinyl (colorCount > 1) → DALL-E first; it follows
+  //     "use exactly N distinct colors" much better than Flux. Flux Dev
+  //     consistently produces monochromatic output regardless of prompt.
+  //   - Single-color silhouette → Flux Dev (fast, clean shapes).
   if (style === 'vinyl') {
     if (classification.tier === 'text' && process.env.IDEOGRAM_API_KEY) {
       try {
@@ -369,14 +378,21 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf', 
         console.error('[Smart Router] Ideogram failed for vinyl text:', err.message);
       }
     }
+    if (colorCount > 1) {
+      try { return await generateWithDalle(prompt, style, colorCount); } catch (err) {
+        console.error('[Smart Router] DALL-E failed for multi-color vinyl:', err.message);
+      }
+      if (process.env.REPLICATE_API_KEY) {
+        try { return await generateWithFluxDev(prompt, style, colorCount); } catch {}
+        try { return await generateWithFluxSchnell(prompt, style, colorCount); } catch {}
+      }
+      throw new Error('All multi-color vinyl models failed');
+    }
     if (process.env.REPLICATE_API_KEY) {
       try { return await generateWithFluxDev(prompt, style, colorCount); } catch {}
       try { return await generateWithFluxSchnell(prompt, style, colorCount); } catch {}
     }
     try { return await generateWithDalle(prompt, style, colorCount); } catch {}
-    if (process.env.IDEOGRAM_API_KEY) {
-      try { return await generateWithIdeogram(prompt, style); } catch {}
-    }
     throw new Error('All vinyl generation models failed');
   }
 
