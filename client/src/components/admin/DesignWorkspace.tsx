@@ -325,24 +325,29 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     if (!generatedImage || !saveName.trim()) return;
     setSaving(true);
     try {
-      // Upload to DO Spaces first
-      const uploadRes = await fetch('/api/quotes/upload-design', {
-        method: 'POST',
-        headers: headers(),
-        body: JSON.stringify({
-          imageBase64: generatedImage.startsWith('data:') ? generatedImage : undefined,
-          filename: saveName.replace(/\s+/g, '-').toLowerCase() + '.png',
-          customerEmail: 'admin-workspace',
-        }),
-      });
-
+      // Step 1: get a hosted URL. If the current image is already hosted
+      // (not a data: URL), use it directly. Otherwise upload to Spaces.
       let imageUrl = generatedImage;
-      if (uploadRes.ok) {
+      if (generatedImage.startsWith('data:')) {
+        const uploadRes = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            imageBase64: generatedImage,
+            filename: saveName.replace(/\s+/g, '-').toLowerCase() + '.png',
+            customerEmail: 'admin-workspace',
+          }),
+        });
+        if (!uploadRes.ok) {
+          const errBody = await uploadRes.json().catch(() => ({}));
+          alert(`Upload failed: ${errBody.error || uploadRes.status}`);
+          return;
+        }
         const uploadData = await uploadRes.json();
         imageUrl = uploadData.url;
       }
 
-      // Save to library
+      // Step 2: save the hosted URL to the design library.
       const res = await fetch('/api/admin/designs-library', {
         method: 'POST',
         headers: headers(),
@@ -354,15 +359,21 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
           category: saveCategory,
         }),
       });
-      if (res.ok) {
-        setSaveDialog(false);
-        setGeneratedImage(null); setImageHistory([]); setPrompt(''); setQrText('');
-        setSaveName(''); setSaveDesc(''); setSaveTags('');
-        setView('library');
-        fetchDesigns();
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        alert(`Save failed: ${errBody.error || res.status}`);
+        return;
       }
-    } catch { alert('Save failed'); }
-    finally { setSaving(false); }
+      setSaveDialog(false);
+      setGeneratedImage(null); setImageHistory([]); setPrompt(''); setQrText('');
+      setSaveName(''); setSaveDesc(''); setSaveTags('');
+      setView('library');
+      fetchDesigns();
+    } catch (e) {
+      alert(`Save failed: ${e instanceof Error ? e.message : 'network error'}`);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete(id: number) {
