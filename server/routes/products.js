@@ -80,10 +80,32 @@ router.get('/', async (req, res, next) => {
           .replace(/\bhoodies?\b/gi, 'hood')
           .replace(/\bpolos?\b/gi, 'polo');
         const terms = normalized.split(/\s+/).filter(Boolean);
+        // A "size token" is anything that looks like a garment size — XS,
+        // S, M, L, XL, 2XL, 3XL, 4XL, 4XLT, 5XL, 6XL, 7XL, plus S/M, L/XL,
+        // 2X, 3X, etc. When a term matches, we additionally check whether
+        // the product's `sizes` JSONB array contains that token.
+        const isSizeToken = (t) => /^([0-9]?xl?t?|[0-9]?xs|s|m|l|xl|sm|md|lg|xs|ot|s\/m|m\/l|l\/xl|xl\/2xl)$/i.test(t);
         for (const term of terms) {
-          conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
-          params.push(`%${term}%`);
-          paramIndex++;
+          const upperTerm = term.toUpperCase();
+          if (isSizeToken(term)) {
+            // Match name/brand/category OR a size in the sizes array (case-
+            // insensitive containment via a generated text comparison).
+            conditions.push(
+              `(name ILIKE $${paramIndex}
+                OR brand ILIKE $${paramIndex}
+                OR category ILIKE $${paramIndex}
+                OR EXISTS (
+                  SELECT 1 FROM jsonb_array_elements_text(sizes) sz
+                  WHERE UPPER(sz) = $${paramIndex + 1}
+                ))`
+            );
+            params.push(`%${term}%`, upperTerm);
+            paramIndex += 2;
+          } else {
+            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
+            params.push(`%${term}%`);
+            paramIndex++;
+          }
         }
       }
       if (category) {
