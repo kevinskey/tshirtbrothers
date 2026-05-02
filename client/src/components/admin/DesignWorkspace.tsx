@@ -581,14 +581,51 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     setView('create');
   }
 
-  function handleDownload(url: string, name: string) {
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name + '.png';
-    a.target = '_blank';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  // Re-encode whatever's at `url` as a transparent PNG before triggering the
+  // download, so a graphic with transparency always saves as a true PNG with
+  // its alpha channel preserved (instead of being served as the original JPG
+  // / re-named to .png with no alpha). Falls back to a plain direct download
+  // if canvas reads are blocked by CORS.
+  async function handleDownload(url: string, name: string) {
+    const fileName = name.replace(/[^a-zA-Z0-9.-]/g, '-') + '.png';
+    try {
+      const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('image load failed'));
+        img.src = url;
+      });
+      const w = img.naturalWidth || 1024;
+      const h = img.naturalHeight || 1024;
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas context unavailable');
+      ctx.clearRect(0, 0, w, h); // start fully transparent
+      ctx.drawImage(img, 0, 0, w, h);
+      const blob: Blob | null = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+      if (!blob) throw new Error('toBlob returned null');
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+    } catch {
+      // CORS-tainted canvas or load failure — fall back to opening the URL
+      // directly. The browser may keep the original extension here.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
   }
 
   return (
