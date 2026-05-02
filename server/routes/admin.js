@@ -310,10 +310,37 @@ router.get('/customers/:id', async (req, res, next) => {
       [id]
     );
 
+    // Customer 360°: also pull invoices for this customer's email so the
+    // detail modal shows the full revenue picture, not just open quotes.
+    // Invoices link by email (no FK to users), so we match on the lowered email.
+    const invoicesResult = await pool.query(
+      `SELECT id, invoice_number, total, amount_paid, amount_due, status, payments,
+              created_at, due_date, sent_at
+       FROM invoices WHERE LOWER(customer_email) = LOWER($1) ORDER BY created_at DESC`,
+      [customer.email]
+    );
+
+    // Lifetime revenue summary (paid only) + outstanding balance.
+    const totalsRow = await pool.query(
+      `SELECT
+         COALESCE(SUM(amount_paid), 0)::numeric AS lifetime_paid,
+         COALESCE(SUM(amount_due), 0)::numeric AS outstanding_balance,
+         COUNT(*) FILTER (WHERE status = 'paid') AS paid_invoice_count
+       FROM invoices WHERE LOWER(customer_email) = LOWER($1)`,
+      [customer.email]
+    );
+    const totals = totalsRow.rows[0] || { lifetime_paid: 0, outstanding_balance: 0, paid_invoice_count: 0 };
+
     res.json({
       ...customer,
       designs: designsResult.rows,
       quotes: quotesResult.rows,
+      invoices: invoicesResult.rows,
+      totals: {
+        lifetime_paid: Number(totals.lifetime_paid),
+        outstanding_balance: Number(totals.outstanding_balance),
+        paid_invoice_count: Number(totals.paid_invoice_count),
+      },
     });
   } catch (err) {
     next(err);
