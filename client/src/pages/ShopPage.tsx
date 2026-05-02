@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { Search, Loader2, X } from 'lucide-react';
 
@@ -553,6 +553,24 @@ export default function ShopPage() {
                   />
                 </div>
               )}
+
+              {/* CTAs at the bottom of the modal */}
+              <div className="px-6 pb-6 pt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-gray-100">
+                <Link
+                  to={`/quote?product=${getProductId(p)}`}
+                  onClick={() => setDetailProduct(null)}
+                  className="block w-full bg-orange-500 hover:bg-orange-600 text-white text-center rounded-lg text-sm font-semibold py-3 transition-colors"
+                >
+                  Get a Quote
+                </Link>
+                <Link
+                  to={`/design?product=${getProductId(p)}`}
+                  onClick={() => setDetailProduct(null)}
+                  className="block w-full bg-white hover:bg-gray-50 text-gray-900 text-center rounded-lg text-sm font-semibold py-3 border border-gray-300 transition-colors"
+                >
+                  Design Online
+                </Link>
+              </div>
             </div>
           </div>
         );
