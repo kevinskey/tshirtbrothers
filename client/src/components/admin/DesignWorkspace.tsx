@@ -53,7 +53,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
   const [colorFuzz, setColorFuzz] = useState(25);
   const [preppingVinyl, setPreppingVinyl] = useState(false);
   const [vectorizing, setVectorizing] = useState(false);
-  const [vinylColors, _setVinylColors] = useState(1);
+  const [vinylColors, setVinylColors] = useState(1);
   const [qrText, setQrText] = useState('');
   const [qrColor, setQrColor] = useState('#000000');
   const [qrTransparent, setQrTransparent] = useState(true);
@@ -294,7 +294,14 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
       const res = await fetch('/api/design/generate', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ prompt, removeBackground: true, style: designStyle }),
+        body: JSON.stringify({
+          prompt,
+          removeBackground: true,
+          style: designStyle,
+          // Tell the backend how many cut layers we want when in vinyl mode
+          // (1 = single-color silhouette; 2-4 = multi-color separated trace).
+          ...(designStyle === 'vinyl' ? { vectorizeColors: vinylColors } : {}),
+        }),
       });
       if (!res.ok) throw new Error('Generation failed');
       const data = await res.json();
@@ -957,6 +964,26 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                   </button>
                 </div>
               </div>
+
+              {/* Vinyl color count — each selected color becomes its own
+                  cut layer (separate path/fill in the SVG). 1 = a single
+                  silhouette; 2-4 = multi-color layered cut. */}
+              {designStyle === 'vinyl' && (
+                <div className="mb-3">
+                  <label className="text-xs font-medium text-gray-500 block mb-1.5">Vinyl Colors (each color = one cut layer)</label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[1, 2, 3, 4].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setVinylColors(n)}
+                        className={`px-2 py-1.5 rounded-lg text-xs font-medium transition text-center ${vinylColors === n ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                      >
+                        {n} {n === 1 ? 'color' : 'colors'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <textarea
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
