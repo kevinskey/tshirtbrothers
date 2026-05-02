@@ -277,9 +277,30 @@ export interface Customer {
   quote_count: number;
 }
 
+export interface CustomerInvoiceSummary {
+  id: number;
+  invoice_number: string;
+  total: number | string;
+  amount_paid: number | string;
+  amount_due: number | string;
+  status: string;
+  payments: unknown;
+  created_at: string;
+  due_date: string | null;
+  sent_at: string | null;
+}
+
+export interface CustomerTotals {
+  lifetime_paid: number;
+  outstanding_balance: number;
+  paid_invoice_count: number;
+}
+
 export interface CustomerDetail extends Customer {
   designs: CustomerDesign[];
   quotes: CustomerQuote[];
+  invoices: CustomerInvoiceSummary[];
+  totals: CustomerTotals;
 }
 
 export interface CustomerDesign {

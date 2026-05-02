@@ -23,7 +23,6 @@ import {
   Trash2,
   Palette,
   Users,
-  ShoppingBag,
   ExternalLink,
   Download,
   Eye,
@@ -109,23 +108,35 @@ type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
-const NAV_ITEMS: { key: Section; label: string; icon: typeof LayoutDashboard }[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { key: 'quotes', label: 'Quotes', icon: FileText },
-  { key: 'orders', label: 'Orders', icon: ShoppingBag },
-  { key: 'invoices', label: 'Invoices', icon: Receipt },
-  { key: 'designs', label: 'Designs', icon: Palette },
-  { key: 'customers', label: 'Customers', icon: Users },
-  { key: 'products', label: 'Products', icon: Package },
-  { key: 'categories', label: 'Categories', icon: FolderTree },
-  { key: 'blog', label: 'Blog', icon: PenSquare },
-  { key: 'pricing', label: 'AI Pricing', icon: DollarSign },
-  { key: 'workspace', label: 'Design Lab', icon: Palette },
-  { key: 'promotions', label: 'Promotions', icon: Sparkles },
-  { key: 'gangsheet', label: 'Gang Sheets', icon: Layers },
-  { key: 'embroidery', label: 'Embroidery', icon: Sparkles },
-  { key: 'mockups', label: 'Mockups', icon: Eye },
-  { key: 'settings', label: 'Settings', icon: Settings },
+// Sidebar nav, grouped. Categories, Orders, and Promotions are deliberately
+// NOT in the sidebar — they're routable via ?section= deep-links and reachable
+// as sub-tabs inside Products / Pipeline / Settings respectively. Keeps the
+// sidebar manageable (was 16 flat items; now 11 in 4 groups).
+type NavItem = { key: Section; label: string; icon: typeof LayoutDashboard };
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  { label: 'Workflow', items: [
+    { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard },
+    { key: 'quotes',    label: 'Pipeline',   icon: FileText },
+    { key: 'invoices',  label: 'Invoices',   icon: Receipt },
+    { key: 'customers', label: 'Customers',  icon: Users },
+  ]},
+  { label: 'Catalog', items: [
+    { key: 'products',  label: 'Products',   icon: Package },
+  ]},
+  { label: 'Production', items: [
+    { key: 'designs',   label: 'Customer Designs', icon: Palette },
+    { key: 'workspace', label: 'Art Library',      icon: FolderOpen },
+    { key: 'mockups',   label: 'Mockups',          icon: Eye },
+    { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
+    { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
+  ]},
+  { label: 'Marketing', items: [
+    { key: 'blog',      label: 'Blog',         icon: PenSquare },
+    { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
+  ]},
+  { label: '', items: [
+    { key: 'settings',  label: 'Settings',     icon: Settings },
+  ]},
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -450,11 +461,78 @@ function GangSheetList() {
   );
 }
 
+// Lightweight toast + confirm helpers. Defined inline in this file because
+// every admin action that needs them lives here, and keeping them local
+// avoids spinning up a new shared module just for an admin-page concern.
+type Toast = { id: number; message: string; tone: 'success' | 'error' };
+type ConfirmRequest = { message: string; danger?: boolean; resolve: (ok: boolean) => void };
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Convert an accepted/completed quote into a draft invoice. Pre-fills the
+  // invoice form from the quote and jumps to the invoice editor so the admin
+  // doesn't have to retype customer/product info. (`toast` and the form state
+  // are referenced below — function declaration is hoisted so callers above it
+  // still see it.)
+  // (Defined later via const, so do not move this above the toast helper.)
+
+  // Toasts: short status messages that fade out after 3.5s.
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
+  const toast = (message: string, tone: Toast['tone'] = 'success') => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+  };
+
+  // confirmDestructive: promise-based confirm dialog. Returns true if the
+  // admin clicks the danger-styled confirm, false on cancel/dismiss. Replaces
+  // window.confirm() so destructive actions get a consistent UI.
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const confirmDestructive = (message: string): Promise<boolean> =>
+    new Promise((resolve) => setConfirmRequest({ message, danger: true, resolve }));
+
+  // Add-product modal state.
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [addProductForm, setAddProductForm] = useState({
+    name: '', category: 'Custom', price: '', description: '', image_url: '',
+  });
+  const [addProductSaving, setAddProductSaving] = useState(false);
+  async function submitAddProduct(e: FormEvent) {
+    e.preventDefault();
+    if (!addProductForm.name.trim()) { toast('Name is required', 'error'); return; }
+    setAddProductSaving(true);
+    try {
+      const res = await fetch('/api/admin/custom-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({
+          name: addProductForm.name.trim(),
+          category: addProductForm.category.trim() || 'Custom',
+          price: addProductForm.price ? parseFloat(addProductForm.price) : null,
+          description: addProductForm.description.trim() || null,
+          image_url: addProductForm.image_url.trim() || null,
+        }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast(j.error || 'Failed to add product', 'error');
+        return;
+      }
+      toast('Product added');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'products'] });
+      setShowAddProduct(false);
+      setAddProductForm({ name: '', category: 'Custom', price: '', description: '', image_url: '' });
+    } catch {
+      toast('Network error', 'error');
+    } finally {
+      setAddProductSaving(false);
+    }
+  }
 
   // Deep-link from notification emails: /admin?section=quotes&id=123 lands on
   // the Quotes section so the admin doesn't have to navigate from Dashboard.
@@ -550,6 +628,29 @@ export default function AdminPage() {
     items: [{ description: '', quantity: 1, unit_price: 0 }],
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
   });
+  function convertQuoteToInvoice(q: Quote) {
+    const total = Number(q.estimated_price || 0);
+    const qty = Number(q.quantity || 1);
+    const unit = qty > 0 ? +(total / qty).toFixed(2) : 0;
+    setInvoiceForm({
+      customer_name: q.customer_name || q.customerName || '',
+      customer_email: q.customer_email || q.customerEmail || '',
+      customer_phone: q.customer_phone || q.customerPhone || '',
+      customer_address: '',
+      items: [{
+        description: q.product_name || q.productName || 'Custom printing order',
+        quantity: qty,
+        unit_price: unit,
+      }],
+      tax: '0', shipping: '0', discount: '0',
+      notes: q.notes || '',
+      due_date: '',
+    });
+    setActiveSection('invoices');
+    setInvoiceView('create');
+    toast(`Quote #${q.id} loaded — review and Save & Send`);
+  }
+
   const [invoiceTaxRate, setInvoiceTaxRate] = useState('8');
   const [invoiceRequireDeposit, setInvoiceRequireDeposit] = useState(true);
   const [invoiceDepositPercent, setInvoiceDepositPercent] = useState('50');
@@ -1579,35 +1680,46 @@ export default function AdminPage() {
           </Link>
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-1">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-            const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
-            const activeOrdersCount = key === 'orders' ? Number(countsQuery.data?.active_orders || 0) : 0;
-            const badgeCount = pendingCount || activeOrdersCount;
-            return (
-              <button
-                key={key}
-                onClick={() => { setActiveSection(key); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeSection === key
-                    ? 'bg-red-600 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span className="flex-1 text-left">{label}</span>
-                {badgeCount > 0 && (
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    activeSection === key
-                      ? 'bg-white text-red-600'
-                      : key === 'quotes' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
-                  }`}>
-                    {badgeCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 space-y-4">
+          {NAV_GROUPS.map((group, gi) => (
+            <div key={gi} className="space-y-1">
+              {group.label && (
+                <div className="px-3 pt-1 pb-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                  {group.label}
+                </div>
+              )}
+              {group.items.map(({ key, label, icon: Icon }) => {
+                // Pipeline shows the badge for *both* pending quotes AND active
+                // orders, since Orders is now a status filter inside Pipeline.
+                const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
+                const activeOrdersCount = key === 'quotes' ? Number(countsQuery.data?.active_orders || 0) : 0;
+                const badgeCount = pendingCount + activeOrdersCount;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => { setActiveSection(key); setSidebarOpen(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      activeSection === key
+                        ? 'bg-red-600 text-white'
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span className="flex-1 text-left">{label}</span>
+                    {badgeCount > 0 && (
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                        activeSection === key
+                          ? 'bg-white text-red-600'
+                          : 'bg-red-600 text-white'
+                      }`}>
+                        {badgeCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
 
         <div className="p-4 border-t border-gray-800 space-y-2">
@@ -1707,10 +1819,13 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Quotes Section */}
+        {/* Pipeline (was Quotes + Orders, now one section with status filter) */}
         {activeSection === 'quotes' && (
           <div>
-            <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-4 md:mb-6">Quotes</h2>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Pipeline</h2>
+              <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
+            </div>
 
             {/* Search + Sort */}
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
@@ -1836,23 +1951,34 @@ export default function AdminPage() {
                         {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                       </button>
                     )}
+                    {(q.status === 'accepted' || q.status === 'completed') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); convertQuoteToInvoice(q); }}
+                        className="text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                      >
+                        <Receipt className="w-3 h-3" />
+                        Invoice
+                      </button>
+                    )}
                     {q.status !== 'rejected' && q.status !== 'completed' && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: q.id, status: 'rejected' }); }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (await confirmDestructive(`Reject quote from ${q.customer_name || q.customerName || 'this customer'}? They will not be billed.`)) {
+                            statusMutation.mutate({ id: q.id, status: 'rejected' });
+                          }
+                        }}
                         className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg"
                       >
                         Reject
                       </button>
                     )}
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        const quoteId = String(q.id);
-                        setTimeout(() => {
-                          if (confirm('Delete this quote?')) {
-                            deleteQuoteMutation.mutate(quoteId);
-                          }
-                        }, 50);
+                        if (await confirmDestructive('Delete this quote? This cannot be undone.')) {
+                          deleteQuoteMutation.mutate(String(q.id));
+                        }
                       }}
                       className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
                     >
@@ -1913,14 +2039,27 @@ export default function AdminPage() {
                                   {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                                 </button>
                               )}
+                              {(q.status === 'accepted' || q.status === 'completed') && (
+                                <button
+                                  onClick={() => { setOpenActionMenu(null); convertQuoteToInvoice(q); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-emerald-700 font-medium"
+                                >
+                                  <Receipt className="w-3.5 h-3.5" />
+                                  Convert to Invoice
+                                </button>
+                              )}
                               {['completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
                                   <button
                                     key={s}
-                                    onClick={() =>
-                                      statusMutation.mutate({ id: q.id, status: s })
-                                    }
+                                    onClick={async () => {
+                                      setOpenActionMenu(null);
+                                      if (s === 'rejected') {
+                                        if (!(await confirmDestructive(`Reject quote from ${q.customer_name || q.customerName || 'this customer'}? They will not be billed.`))) return;
+                                      }
+                                      statusMutation.mutate({ id: q.id, status: s });
+                                    }}
                                     className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 capitalize"
                                   >
                                     {s === 'completed' ? 'Complete' : 'Reject'}
@@ -1928,14 +2067,11 @@ export default function AdminPage() {
                                 ))}
                               <div className="border-t border-gray-100 mt-1 pt-1">
                                 <button
-                                  onClick={() => {
-                                    const quoteId = String(q.id);
+                                  onClick={async () => {
                                     setOpenActionMenu(null);
-                                    setTimeout(() => {
-                                      if (confirm('Delete this quote? This cannot be undone.')) {
-                                        deleteQuoteMutation.mutate(quoteId);
-                                      }
-                                    }, 50);
+                                    if (await confirmDestructive('Delete this quote? This cannot be undone.')) {
+                                      deleteQuoteMutation.mutate(String(q.id));
+                                    }
                                   }}
                                   className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-medium"
                                 >
@@ -1969,22 +2105,13 @@ export default function AdminPage() {
               <h2 className="text-2xl font-display font-bold text-gray-900">Products</h2>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    const name = prompt('Product name:');
-                    if (!name) return;
-                    const category = prompt('Category (e.g. Stickers, Transfers, Custom):') || 'Custom';
-                    const price = prompt('Price per item:') || '0';
-                    const description = prompt('Description (optional):') || '';
-                    const imageUrl = prompt('Image URL (optional, or leave blank):') || '';
-                    fetch('/api/admin/custom-products', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-                      body: JSON.stringify({ name, category, price: parseFloat(price), description, image_url: imageUrl || null }),
-                    }).then(r => {
-                      if (r.ok) { alert('Custom product added!'); queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }); }
-                      else r.json().then(d => alert(d.error || 'Failed'));
-                    });
-                  }}
+                  onClick={() => setActiveSection('categories')}
+                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <FolderTree className="w-4 h-4" /> Categories
+                </button>
+                <button
+                  onClick={() => setShowAddProduct(true)}
                   className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                 >
                   <Plus className="w-4 h-4" /> Add Product
@@ -2058,14 +2185,23 @@ export default function AdminPage() {
                             min="0"
                             placeholder="$0.00"
                             defaultValue={hasCustom ? Number(customPrice).toFixed(2) : ''}
-                            onBlur={(e) => {
+                            onBlur={async (e) => {
                               const val = parseFloat(e.target.value);
-                              if (!isNaN(val) && val > 0) {
-                                fetch(`/api/admin/products/${p.id}/pricing`, {
+                              if (!(val > 0)) return; // ignore empty/invalid; no toast — let admin clear & retry
+                              try {
+                                const res = await fetch(`/api/admin/products/${p.id}/pricing`, {
                                   method: 'PUT',
                                   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
                                   body: JSON.stringify({ custom_price: val }),
-                                }).then(() => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }));
+                                });
+                                if (res.ok) {
+                                  queryClient.invalidateQueries({ queryKey: ['admin', 'products'] });
+                                  toast(`Saved $${val.toFixed(2)} for ${p.name?.slice(0, 40) || 'product'}`);
+                                } else {
+                                  toast('Price save failed', 'error');
+                                }
+                              } catch {
+                                toast('Network error saving price', 'error');
                               }
                             }}
                             className="w-24 pl-2 pr-1 py-1 rounded border border-gray-200 text-xs focus:border-red-500 focus:outline-none"
@@ -2188,7 +2324,11 @@ export default function AdminPage() {
                         <td className="px-6 py-3 text-gray-600">{c.description || '--'}</td>
                         <td className="px-6 py-3">
                           <button
-                            onClick={() => deleteCatMutation.mutate(c.id)}
+                            onClick={async () => {
+                              if (await confirmDestructive(`Delete category "${c.name}"? Products in this category will keep the category text but it will no longer appear in the list.`)) {
+                                deleteCatMutation.mutate(c.id);
+                              }
+                            }}
                             disabled={deleteCatMutation.isPending}
                             className="text-red-600 hover:text-red-700 transition-colors"
                             title="Delete category"
@@ -2601,6 +2741,60 @@ export default function AdminPage() {
                                     </td>
                                     <td className="px-4 py-2 text-gray-400">
                                       {new Date(q.created_at).toLocaleDateString()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Invoice History — added for Customer 360°. Joined by
+                          email since invoices are not FK'd to users. */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium text-gray-900">
+                            Invoices ({customerDetail.invoices.length})
+                          </h4>
+                          {customerDetail.totals && (customerDetail.totals.lifetime_paid > 0 || customerDetail.totals.outstanding_balance > 0) && (
+                            <div className="flex gap-3 text-xs">
+                              <span className="text-green-700">
+                                Paid: <strong>${customerDetail.totals.lifetime_paid.toFixed(2)}</strong>
+                              </span>
+                              {customerDetail.totals.outstanding_balance > 0 && (
+                                <span className="text-orange-600">
+                                  Open: <strong>${customerDetail.totals.outstanding_balance.toFixed(2)}</strong>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        {customerDetail.invoices.length === 0 ? (
+                          <p className="text-sm text-gray-400">No invoices yet</p>
+                        ) : (
+                          <div className="border border-gray-200 rounded-lg overflow-hidden">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 text-left text-gray-500">
+                                  <th className="px-4 py-2 font-medium">Invoice</th>
+                                  <th className="px-4 py-2 font-medium">Total</th>
+                                  <th className="px-4 py-2 font-medium">Paid</th>
+                                  <th className="px-4 py-2 font-medium">Status</th>
+                                  <th className="px-4 py-2 font-medium">Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {customerDetail.invoices.map((inv) => (
+                                  <tr key={inv.id}>
+                                    <td className="px-4 py-2 text-gray-900 font-mono text-xs">{inv.invoice_number}</td>
+                                    <td className="px-4 py-2 text-gray-600">${Number(inv.total).toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-gray-600">${Number(inv.amount_paid).toFixed(2)}</td>
+                                    <td className="px-4 py-2">
+                                      <StatusBadge status={inv.status} />
+                                    </td>
+                                    <td className="px-4 py-2 text-gray-400">
+                                      {new Date(inv.created_at).toLocaleDateString()}
                                     </td>
                                   </tr>
                                 ))}
@@ -5072,6 +5266,14 @@ export default function AdminPage() {
                   {tab === 'business' ? 'Business Info' : tab === 'notifications' ? 'Notifications' : 'Payment & Pricing'}
                 </button>
               ))}
+              {/* Promotions used to be a top-level sidebar item; now it lives
+                  here as a tab that swaps the whole section render. */}
+              <button
+                onClick={() => setActiveSection('promotions')}
+                className="px-4 py-2 text-sm font-medium rounded-md text-gray-500 hover:text-gray-700 transition"
+              >
+                Promotions
+              </button>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
@@ -6050,6 +6252,125 @@ export default function AdminPage() {
           </div>
         )}
       </main>
+
+      {/* Toast container */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-2 max-w-sm">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={`px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+                t.tone === 'success'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-red-600 text-white'
+              }`}
+            >
+              {t.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Product modal */}
+      {showAddProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <form onSubmit={submitAddProduct} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-display font-semibold text-gray-900">Add Custom Product</h3>
+              <button type="button" onClick={() => setShowAddProduct(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Name *</label>
+              <input
+                type="text" required autoFocus
+                value={addProductForm.name}
+                onChange={(e) => setAddProductForm((p) => ({ ...p, name: e.target.value }))}
+                placeholder="e.g. Vinyl Stickers — 3in"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Category</label>
+                <input
+                  type="text"
+                  value={addProductForm.category}
+                  onChange={(e) => setAddProductForm((p) => ({ ...p, category: e.target.value }))}
+                  placeholder="Custom"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">Price per item</label>
+                <input
+                  type="number" step="0.01" min="0"
+                  value={addProductForm.price}
+                  onChange={(e) => setAddProductForm((p) => ({ ...p, price: e.target.value }))}
+                  placeholder="0.00"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Description (optional)</label>
+              <textarea
+                rows={2}
+                value={addProductForm.description}
+                onChange={(e) => setAddProductForm((p) => ({ ...p, description: e.target.value }))}
+                placeholder="Short description shown to customers"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-700 block mb-1">Image URL (optional)</label>
+              <input
+                type="url"
+                value={addProductForm.image_url}
+                onChange={(e) => setAddProductForm((p) => ({ ...p, image_url: e.target.value }))}
+                placeholder="https://..."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setShowAddProduct(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                Cancel
+              </button>
+              <button type="submit" disabled={addProductSaving} className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2">
+                {addProductSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+                {addProductSaving ? 'Saving…' : 'Add Product'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Destructive confirm modal */}
+      {confirmRequest && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl">
+            <p className="text-sm text-gray-900 mb-5 whitespace-pre-line">{confirmRequest.message}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { confirmRequest.resolve(false); setConfirmRequest(null); }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { confirmRequest.resolve(true); setConfirmRequest(null); }}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
+                  confirmRequest.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-900 hover:bg-gray-800'
+                }`}
+                autoFocus
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
