@@ -7,6 +7,7 @@ import { loadFabricImage } from '@/lib/fabric/loadImage';
 import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
 import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
 import { reportClientError } from '@/lib/fabric/reportClientError';
+import { attachSmartGuides } from '@/lib/fabric/smartGuides';
 import type { FabricObjectWithMeta } from '@/lib/fabric/types';
 import { FabricCanvasContext } from './FabricCanvasContext';
 import type {
@@ -92,6 +93,11 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
       canvas.on('selection:updated', onSel);
       canvas.on('selection:cleared', onSel);
 
+      // Phase 2 PR #13: smart guides + snapping. Draws guide lines on the
+      // overlay context, snaps the moving object to canvas / sibling
+      // alignment lines within an 8px threshold. Hold Alt/Option to disable.
+      const detachGuides = attachSmartGuides(canvas);
+
       fabricRef.current = canvas;
       setReady(true);
       props.onReady?.();
@@ -101,6 +107,7 @@ export const FabricDesignCanvas = forwardRef<CanvasHandle, FabricDesignCanvasPro
           canvas.off('selection:created', onSel);
           canvas.off('selection:updated', onSel);
           canvas.off('selection:cleared', onSel);
+          detachGuides();
           canvas.dispose();
         } catch (err) {
           reportClientError('fabric.dispose', err, { canvas });
