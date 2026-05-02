@@ -106,19 +106,13 @@ function framePrompt(prompt, style = 'dtf', colorCount = 1) {
 
   if (style === 'vinyl') {
     if (colorCount > 1) {
-      // The image is JUST the subject illustration, rendered with N colors.
-      // DALL-E will otherwise interpret a palette suggestion as "show me
-      // these colors as swatches", which clutters the canvas with palette
-      // dots / color examples / sample circles.
-      const palettes = {
-        2: 'red and yellow',
-        3: 'red, blue, and yellow',
-        4: 'red, blue, yellow, and green',
-      };
-      const palette = palettes[colorCount] || palettes[3];
-      return `A single illustration of: ${cleaned}. The illustration uses exactly ${colorCount} flat solid colors total — ${palette}, or similar bold vinyl-friendly hues. Hard sharp edges between color regions, no gradients, no shading, no shadows, no outlines, no 3D, no monochrome. Isolated on a plain white background. The artwork is one composed scene — DO NOT include color swatches, color samples, palette dots, color circles, color squares, or any examples of the colors used. DO NOT include text, letters, words, or typography unless explicitly part of the subject. Just the illustrated subject, nothing else.`;
+      // Don't name colors in the prompt — naming them triggers DALL-E to
+      // render swatches/palette samples as part of the design. Instead:
+      // describe the goal, demand the subject fills the frame, and forbid
+      // every kind of extra element we've seen leak through.
+      return `A bold flat vector-style illustration of: ${cleaned}. The subject fills the entire frame, centered, on a fully transparent background. Use a limited palette of about ${colorCount} bold flat solid colors with hard sharp edges between color regions — no gradients, no shading, no shadows, no outlines, no 3D, no monochrome. The composition is ONLY the subject — absolutely nothing else on the canvas: no color swatches, no color samples, no palette dots, no color circles, no color squares, no annotations, no labels, no borders, no banners, no captions, no decorations, no separator bars, no row of colored shapes. No text, no letters, no words. Just the illustrated subject, framed clean with empty space around it.`;
     }
-    return `A single illustration of: ${cleaned}. Bold flat single-color silhouette icon, pure black on pure white background. No gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. The artwork is one subject — DO NOT include color swatches, palette samples, dots, circles, or any extra design elements. DO NOT include text, letters, words, or typography unless explicitly part of the subject.`;
+    return `A bold flat single-color silhouette icon of: ${cleaned}. The subject fills the entire frame on a fully transparent background. Pure black on pure white. No gradients, no shadows, no outlines, no 3D, no glow, no texture. Clean sharp shapes only, vector-cut ready. ONLY the subject — no swatches, no palette samples, no dots, no circles, no annotations, no labels, no banners, no captions, no decorations, no text or letters.`;
   }
 
   if (style === 'print') {
