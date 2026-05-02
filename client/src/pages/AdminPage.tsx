@@ -2530,6 +2530,7 @@ export default function AdminPage() {
                               elements: d.elements || [],
                               productImage: d.product_image,
                               colorIndex: d.color_index || 0,
+                              backTo: '/admin?section=designs',
                             }}
                             className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
                           >
@@ -5338,6 +5339,7 @@ export default function AdminPage() {
                                     elements: Array.isArray(sm.elements) ? sm.elements : [],
                                     productImage: sm.product_image,
                                     colorIndex: sm.color_index || 0,
+                                    backTo: '/admin?section=mockups',
                                   }}
                                   className="flex-1 flex items-center justify-center gap-1 text-[10px] font-medium text-blue-700 hover:text-blue-800 bg-blue-50 px-2 py-1 rounded-md transition-colors"
                                 >

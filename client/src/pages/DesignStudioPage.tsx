@@ -255,7 +255,7 @@ export default function DesignStudioPage() {
 
 
   const location = useLocation();
-  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[]; colorIndex?: number } | null;
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[]; colorIndex?: number; backTo?: string } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -1027,7 +1027,7 @@ export default function DesignStudioPage() {
     <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
       {/* Left */}
       <div className="flex items-center gap-3">
-        <Link to="/" className="text-gray-500 hover:text-gray-900 transition">
+        <Link to={loadState?.backTo || '/'} className="text-gray-500 hover:text-gray-900 transition" title="Back">
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
