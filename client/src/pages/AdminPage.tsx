@@ -2621,6 +2621,52 @@ export default function AdminPage() {
                             Delete
                           </button>
                         )}
+                        {d.source === 'quote' && (
+                          <button
+                            onClick={async () => {
+                              if (!(await confirmDestructive(`Remove the artwork from Quote #${d.source_id}? The quote itself stays — just the customer-uploaded graphic gets unattached.`))) return;
+                              try {
+                                const res = await fetch(`/api/quotes/admin/${d.source_id}/artwork`, {
+                                  method: 'DELETE',
+                                  headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                });
+                                if (!res.ok) { toast('Remove failed', 'error'); return; }
+                                toast('Artwork removed from quote');
+                                queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
+                                queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                              } catch {
+                                toast('Network error', 'error');
+                              }
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete
+                          </button>
+                        )}
+                        {d.source === 'mockup' && (
+                          <button
+                            onClick={async () => {
+                              if (!(await confirmDestructive('Delete this mockup record? This removes the row from the mockups table.'))) return;
+                              try {
+                                const res = await fetch(`/api/admin/mockups/${d.source_id}`, {
+                                  method: 'DELETE',
+                                  headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                });
+                                if (!res.ok) { toast('Delete failed', 'error'); return; }
+                                toast('Mockup deleted');
+                                queryClient.invalidateQueries({ queryKey: ['admin', 'customer-designs'] });
+                                queryClient.invalidateQueries({ queryKey: ['mockups'] });
+                              } catch {
+                                toast('Network error', 'error');
+                              }
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
