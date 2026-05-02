@@ -8,6 +8,18 @@ import pool from '../db.js';
 
 const router = Router();
 
+// Public diagnostic — calls the same fetchStyleSizes the sync uses.
+// Lets us isolate whether the function itself is broken vs the worker
+// pool / upsert step.
+router.get('/debug-fetchsizes-public/:styleId', async (req, res, next) => {
+  try {
+    const sizes = await fetchStyleSizes(req.params.styleId);
+    return res.json({ styleId: req.params.styleId, sizes, count: sizes.length });
+  } catch (err) {
+    return res.json({ error: err.message, styleId: req.params.styleId });
+  }
+});
+
 // Public diagnostic — temporary, see comment in handler. Revealed data is
 // public product info (S&S styles + sizes), not a secret.
 router.get('/debug-sizes-public/:styleId', async (req, res, next) => {
