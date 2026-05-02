@@ -7,6 +7,7 @@ import { LayersPanel } from '@/components/design-studio/LayersPanel';
 import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 import { FontPicker } from '@/components/design-studio/FontPicker';
 import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
+import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -2306,6 +2307,14 @@ export default function DesignStudioPage() {
               </div>
             </div>
           )}
+
+          {/* Dimension readout — bottom-left of the design surface. Shows
+              the selected element's width / height in % of canvas + inches
+              (assuming a 12" t-shirt print area). Hidden when nothing is
+              selected. */}
+          <DimensionReadout
+            element={selectedEl ?? null}
+          />
         </div>
       </div>
 
