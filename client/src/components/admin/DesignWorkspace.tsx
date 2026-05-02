@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Crop, Check } from 'lucide-react';
+import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Crop, Check, Eraser } from 'lucide-react';
 
 interface DesignAsset {
   id: number;
@@ -146,6 +146,86 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     cropDragRef.current = null;
     window.removeEventListener('mousemove', onCropDrag);
     window.removeEventListener('mouseup', endCropDrag);
+  }
+
+  // Erase mode — admin paints transparency onto the current image with a
+  // round brush. We work on a canvas at the image's natural resolution so
+  // erase strokes preserve full quality; the canvas is sized via CSS to fit
+  // the preview pane.
+  const [eraseMode, setEraseMode] = useState(false);
+  const [eraseBrushSize, setEraseBrushSize] = useState(40);
+  const [eraseApplying, setEraseApplying] = useState(false);
+  const [eraseCursorPos, setEraseCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const eraseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const erasingRef = useRef(false);
+
+  // When entering erase mode, paint the current image onto the canvas so
+  // strokes have something to erase. Image must be loaded with CORS so
+  // toDataURL works after.
+  useEffect(() => {
+    if (!eraseMode || !generatedImage) return;
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const img = document.createElement('img');
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
+    };
+    img.onerror = () => alert('Failed to load image for erasing.');
+    img.src = generatedImage;
+  }, [eraseMode, generatedImage]);
+
+  function getEraseCoords(e: React.MouseEvent): { sx: number; sy: number; cx: number; cy: number } | null {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const sx = cx * (canvas.width / rect.width);
+    const sy = cy * (canvas.height / rect.height);
+    return { sx, sy, cx, cy };
+  }
+
+  function paintErase(e: React.MouseEvent) {
+    const c = getEraseCoords(e);
+    if (!c) return;
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(c.sx, c.sy, eraseBrushSize, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function onEraseMove(e: React.MouseEvent) {
+    const c = getEraseCoords(e);
+    if (c) setEraseCursorPos({ x: c.cx, y: c.cy });
+    if (erasingRef.current) paintErase(e);
+  }
+
+  async function applyErase() {
+    const canvas = eraseCanvasRef.current;
+    if (!canvas) return;
+    setEraseApplying(true);
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      setImageHistory((prev) => [...prev, dataUrl]);
+      setGeneratedImage(dataUrl);
+      setEraseMode(false);
+    } catch (e) {
+      alert(`Erase failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setEraseApplying(false);
+    }
   }
 
   async function applyCrop() {
@@ -845,9 +925,14 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                     <RotateCcw className="w-3 h-3" /> Undo
                   </button>
                   <button onClick={() => { setCropMode(true); setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }); }}
-                    disabled={cropMode || cropApplying}
+                    disabled={cropMode || cropApplying || eraseMode}
                     className="px-3 py-2 bg-amber-50 text-amber-700 text-xs font-medium rounded-lg hover:bg-amber-100 disabled:opacity-50 flex items-center justify-center gap-1">
                     <Crop className="w-3 h-3" /> Crop
+                  </button>
+                  <button onClick={() => setEraseMode(true)}
+                    disabled={eraseMode || eraseApplying || cropMode}
+                    className="px-3 py-2 bg-rose-50 text-rose-700 text-xs font-medium rounded-lg hover:bg-rose-100 disabled:opacity-50 flex items-center justify-center gap-1">
+                    <Eraser className="w-3 h-3" /> Eraser
                   </button>
                   <button onClick={() => generatedImage && handleDownload(generatedImage, 'design-' + Date.now())}
                     className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1">
@@ -922,13 +1007,39 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
               <div className="w-full">
                 <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-center relative" style={{ backgroundImage: 'linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%), linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%)', backgroundSize: '20px 20px', backgroundPosition: '0 0, 10px 10px' }}>
                   <div className="relative inline-block">
-                    <img
-                      ref={cropImgRef}
-                      src={generatedImage}
-                      alt="Generated design"
-                      className="max-w-full max-h-[500px] object-contain block select-none"
-                      draggable={false}
-                    />
+                    {eraseMode ? (
+                      <canvas
+                        ref={eraseCanvasRef}
+                        className="max-w-full max-h-[500px] object-contain block select-none"
+                        style={{ cursor: 'none', touchAction: 'none' }}
+                        onMouseDown={(e) => { erasingRef.current = true; paintErase(e); }}
+                        onMouseMove={onEraseMove}
+                        onMouseUp={() => { erasingRef.current = false; }}
+                        onMouseLeave={() => { erasingRef.current = false; setEraseCursorPos(null); }}
+                      />
+                    ) : (
+                      <img
+                        ref={cropImgRef}
+                        src={generatedImage}
+                        alt="Generated design"
+                        className="max-w-full max-h-[500px] object-contain block select-none"
+                        draggable={false}
+                      />
+                    )}
+                    {/* Custom brush cursor that scales with brush size */}
+                    {eraseMode && eraseCursorPos && eraseCanvasRef.current && (() => {
+                      const rect = eraseCanvasRef.current.getBoundingClientRect();
+                      const displayBrush = eraseBrushSize * (rect.width / eraseCanvasRef.current.width);
+                      return (
+                        <div className="pointer-events-none absolute border-2 border-rose-500 rounded-full" style={{
+                          left: eraseCursorPos.x - displayBrush,
+                          top: eraseCursorPos.y - displayBrush,
+                          width: displayBrush * 2,
+                          height: displayBrush * 2,
+                          mixBlendMode: 'difference',
+                        }} />
+                      );
+                    })()}
                     {cropMode && (
                       <>
                         {/* Dimmed overlay outside the crop rect */}
@@ -992,6 +1103,36 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                     >
                       Cancel
                     </button>
+                  </div>
+                ) : eraseMode ? (
+                  <div className="mt-3 space-y-2">
+                    <label className="flex items-center gap-3 text-xs text-gray-600 max-w-md mx-auto">
+                      <span className="whitespace-nowrap">Brush size: <strong className="text-gray-900">{eraseBrushSize}px</strong></span>
+                      <input
+                        type="range" min={5} max={200}
+                        value={eraseBrushSize}
+                        onChange={(e) => setEraseBrushSize(Number(e.target.value))}
+                        className="flex-1"
+                      />
+                    </label>
+                    <div className="flex gap-2 justify-center">
+                      <button
+                        onClick={applyErase}
+                        disabled={eraseApplying}
+                        className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {eraseApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                        {eraseApplying ? 'Applying…' : 'Apply Erase'}
+                      </button>
+                      <button
+                        onClick={() => { setEraseMode(false); erasingRef.current = false; }}
+                        disabled={eraseApplying}
+                        className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-gray-400 text-center">Click and drag to erase. The pink ring is your brush.</p>
                   </div>
                 ) : (
                   <p className="text-[10px] text-gray-400 text-center mt-2">Checkerboard = transparent background</p>
