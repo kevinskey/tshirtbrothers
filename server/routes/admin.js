@@ -370,8 +370,11 @@ router.get('/customer-designs', async (req, res, next) => {
       quoteSearch.push(`(q.product_name ILIKE $${quoteParams.length} OR q.customer_name ILIKE $${quoteParams.length} OR q.customer_email ILIKE $${quoteParams.length})`);
     }
 
-    // Studio designs — only rows with non-empty elements. Cast to jsonb so the
-    // query works whether `elements` is stored as jsonb or text.
+    // Studio designs — only rows where the customer actually placed at least
+    // one element with real content (text string or image data). Earlier
+    // jsonb_array_length > 0 still let through rows like `[{}]` or rows with
+    // placeholder elements where `content` was empty, which rendered as blank
+    // tiles titled with the customer's name.
     const designsQ = await pool.query(
       `SELECT
          sd.id, sd.name, sd.product_name, sd.product_ss_id, sd.product_image, sd.color_index,
@@ -381,7 +384,10 @@ router.get('/customer-designs', async (req, res, next) => {
        JOIN users u ON u.id = sd.user_id
        WHERE sd.elements IS NOT NULL
          AND jsonb_typeof((sd.elements)::jsonb) = 'array'
-         AND jsonb_array_length((sd.elements)::jsonb) > 0
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements((sd.elements)::jsonb) e
+           WHERE COALESCE(e ->> 'content', '') <> ''
+         )
          ${designSearch.length ? 'AND ' + designSearch.join(' AND ') : ''}
        ORDER BY sd.created_at DESC`,
       designParams,
