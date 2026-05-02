@@ -1,6 +1,17 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
+import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
+
+// Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
+// main bundle. The full Fabric chunk only downloads when ?canvas=fabric
+// is set in the URL — every other visitor pays nothing for it.
+const FabricRendererBridge = lazy(() =>
+  import('@/components/design-studio/FabricRendererBridge').then((m) => ({
+    default: m.FabricRendererBridge,
+  })),
+);
 import {
   ArrowLeft,
   Upload,
@@ -318,7 +329,9 @@ export default function DesignStudioPage() {
 
 
   const location = useLocation();
-  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[]; colorIndex?: number; backTo?: string } | null;
+  // `elements` widened to DesignElement[] | object — a row saved through
+  // the Fabric renderer arrives as an object with `schemaVersion: 2`.
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -345,12 +358,34 @@ export default function DesignStudioPage() {
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
   const [viewSwitcherOpen, setViewSwitcherOpen] = useState(true);
-  const [designElements, setDesignElements] = useState<DesignElement[]>(loadState?.elements || []);
+  const [designElements, setDesignElements] = useState<DesignElement[]>(
+    Array.isArray(loadState?.elements) ? (loadState!.elements as DesignElement[]) : [],
+  );
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [designName, setDesignName] = useState(loadState?.designName || 'Untitled design');
   const [isEditingName, setIsEditingName] = useState(false);
   const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ─── Fabric renderer toggle ────────────────────────────────────────────
+  // ?canvas=fabric on the URL turns on the new renderer. Existence-only flag —
+  // see useFabricRendererFlag for the policy. The bridge ref exposes the
+  // imperative handle (exportPNG, getDesignJSON) for save handlers.
+  const useFabricRenderer = useFabricRendererFlag();
+  const fabricBridgeRef = useRef<FabricRendererBridgeHandle | null>(null);
+  // Captured at first load when loadState.elements is a v1 array. Persists
+  // for the page session so the save handler can ship it as the sidecar
+  // (elements_legacy) the first time we overwrite the row with v2.
+  const [originalLegacyPayload] = useState<DesignElement[] | null>(() =>
+    Array.isArray(loadState?.elements) ? (loadState!.elements as DesignElement[]) : null,
+  );
+  // Detect "this row is already v2" — a legacy-mode user trying to open a
+  // design previously saved through Fabric mode. Show the cross-over guard
+  // instead of attempting to render.
+  const incomingIsV2 =
+    !!loadState?.elements &&
+    !Array.isArray(loadState.elements) &&
+    (loadState.elements as { schemaVersion?: number }).schemaVersion === 2;
 
   // Admin "Save to Art Library" — composes whatever elements are currently
   // on the front side into a transparent PNG and uploads it as a design
@@ -374,47 +409,60 @@ export default function DesignStudioPage() {
     if (els.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
     setLibrarySaving(true);
     try {
-      // Render front-side elements to a 2048x2048 transparent canvas. Bigger
-      // than the on-screen design surface so the saved asset is print-quality.
-      const SIZE = 2048;
-      const canvas = document.createElement('canvas');
-      canvas.width = SIZE;
-      canvas.height = SIZE;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('canvas context unavailable');
-      ctx.clearRect(0, 0, SIZE, SIZE);
-      for (const el of els) {
-        const x = ((el.x ?? 0) / 100) * SIZE;
-        const y = ((el.y ?? 0) / 100) * SIZE;
-        const w = ((el.width ?? 30) / 100) * SIZE;
-        if (el.type === 'image' && el.content) {
-          try {
-            const img = document.createElement('img');
-            img.crossOrigin = 'anonymous';
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve();
-              img.onerror = () => reject(new Error('img load failed'));
-              img.src = el.content;
-            });
-            const aspect = img.naturalHeight / img.naturalWidth;
-            ctx.drawImage(img, x, y, w, w * aspect);
-          } catch { /* skip on load failure */ }
-        } else if (el.type === 'text' && el.content) {
-          const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
-          ctx.save();
-          if (el.rotation) {
-            ctx.translate(x + w / 2, y + fontSize / 2);
-            ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
-            ctx.translate(-(x + w / 2), -(y + fontSize / 2));
+      // Fabric mode: defer to the canvas's native exportPNG. Avoids a
+      // second 2D-canvas codepath that would drift from the renderer
+      // (the legacy block below uses by-hand drawImage / fillText math
+      // that doesn't match how Fabric paints). Pixel-equivalence with
+      // the legacy path is one of the toggle exit criteria.
+      let dataUrl: string;
+      if (useFabricRenderer && fabricBridgeRef.current) {
+        const png = fabricBridgeRef.current.exportPNG({ transparent: true });
+        if (!png) throw new Error('canvas not initialized');
+        dataUrl = png;
+      } else {
+        // Legacy renderer: render front-side elements to a 2048x2048
+        // transparent canvas by hand. Larger than the on-screen design
+        // surface so the saved asset is print-quality.
+        const SIZE = 2048;
+        const canvas = document.createElement('canvas');
+        canvas.width = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('canvas context unavailable');
+        ctx.clearRect(0, 0, SIZE, SIZE);
+        for (const el of els) {
+          const x = ((el.x ?? 0) / 100) * SIZE;
+          const y = ((el.y ?? 0) / 100) * SIZE;
+          const w = ((el.width ?? 30) / 100) * SIZE;
+          if (el.type === 'image' && el.content) {
+            try {
+              const img = document.createElement('img');
+              img.crossOrigin = 'anonymous';
+              await new Promise<void>((resolve, reject) => {
+                img.onload = () => resolve();
+                img.onerror = () => reject(new Error('img load failed'));
+                img.src = el.content;
+              });
+              const aspect = img.naturalHeight / img.naturalWidth;
+              ctx.drawImage(img, x, y, w, w * aspect);
+            } catch { /* skip on load failure */ }
+          } else if (el.type === 'text' && el.content) {
+            const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
+            ctx.save();
+            if (el.rotation) {
+              ctx.translate(x + w / 2, y + fontSize / 2);
+              ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+              ctx.translate(-(x + w / 2), -(y + fontSize / 2));
+            }
+            ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
+            ctx.fillStyle = el.color ?? '#000000';
+            ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+            ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
+            ctx.restore();
           }
-          ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
-          ctx.fillStyle = el.color ?? '#000000';
-          ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-          ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
-          ctx.restore();
         }
+        dataUrl = canvas.toDataURL('image/png');
       }
-      const dataUrl = canvas.toDataURL('image/png');
 
       // Upload PNG to Spaces, get hosted URL
       const token = getAuthToken();
@@ -490,15 +538,28 @@ export default function DesignStudioPage() {
 
       const designData = getDesignData();
 
-      const body = {
+      // Fabric-mode save: ship the v2 (Fabric) serialized form and, on the
+      // FIRST overwrite of a v1 row, the original v1 array so the server
+      // can populate elements_legacy as a rollback snapshot. The server
+      // only writes elements_legacy when it's currently NULL — see PR #7
+      // for the matching server logic.
+      const elementsPayload: unknown =
+        useFabricRenderer && fabricBridgeRef.current
+          ? fabricBridgeRef.current.getDesignJSON()
+          : designElements;
+
+      const body: Record<string, unknown> = {
         name: designName,
         product_ss_id: selectedProduct?.ss_id,
         product_name: selectedProduct?.name,
         product_image: displayImage,
         color_index: selectedColorIdx,
-        elements: designElements,
+        elements: elementsPayload,
         design_data: designData,
       };
+      if (useFabricRenderer && originalLegacyPayload) {
+        body.original_legacy_payload = originalLegacyPayload;
+      }
       const url = savedDesignId ? `/api/designs/${savedDesignId}` : '/api/designs';
       const method = savedDesignId ? 'PUT' : 'POST';
       const res = await fetch(url, {
@@ -1986,10 +2047,44 @@ export default function DesignStudioPage() {
             </div>
           )}
 
+          {/* Fabric renderer (gated on ?canvas=fabric). Sibling of the legacy
+              element loop below — never both at once. The bridge owns its
+              own <canvas> element which fills the parent via CSS. */}
+          {useFabricRenderer && (
+            <div className="absolute inset-0">
+              {/* Suspense fallback shows a small spinner during the lazy chunk
+                  load. The page's local DesignElement is stricter than the
+                  design-studio module's (page narrows textShape to a union;
+                  module accepts any string). Cast through unknown at the
+                  boundary — both shapes are layout-compatible at runtime.
+                  The duplicate type goes away when DesignStudioPage stops
+                  declaring its own DesignElement. */}
+              <Suspense
+                fallback={
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <Loader2 className="h-6 w-6 text-gray-400 animate-spin" />
+                  </div>
+                }
+              >
+                <FabricRendererBridge
+                  ref={fabricBridgeRef}
+                  userRole={isAdmin ? 'admin' : 'customer'}
+                  designElements={designElements as unknown as Parameters<typeof FabricRendererBridge>[0]['designElements']}
+                  selectedElementId={selectedElementId}
+                  currentView={currentView}
+                  displayImage={displayImage}
+                  onElementsChange={(next) => setDesignElements(next as unknown as DesignElement[])}
+                  onSelectElement={setSelectedElementId}
+                />
+              </Suspense>
+            </div>
+          )}
+
           {/* Design elements on canvas — only render the ones belonging to
               the current view (front/back/sleeve). Legacy elements with no
-              `side` are treated as 'front'. */}
-          {designElements.filter(el => (el.side ?? 'front') === currentView).map(el => {
+              `side` are treated as 'front'. Hidden when ?canvas=fabric is
+              active so the renderers don't double up. */}
+          {!useFabricRenderer && designElements.filter(el => (el.side ?? 'front') === currentView).map(el => {
             const isSelected = selectedElementId === el.id;
             if (el.type === 'text' && el.fontFamily) loadGoogleFont(el.fontFamily);
             return (
@@ -2104,8 +2199,10 @@ export default function DesignStudioPage() {
             );
           })}
 
-          {/* Placeholder when no elements on the current side */}
-          {designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
+          {/* Placeholder when no elements on the current side. Suppressed
+              under ?canvas=fabric — the Fabric canvas paints its own
+              background and we don't want a stray overlay catching clicks. */}
+          {!useFabricRenderer && designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="border-2 border-dashed border-gray-300 rounded-lg px-8 py-6 flex flex-col items-center gap-1">
                 <Move className="h-5 w-5 text-gray-400" />
@@ -2774,6 +2871,40 @@ export default function DesignStudioPage() {
       </div>
     </div>
   ) : null;
+
+  // Cross-renderer guard: a row saved through the Fabric (?canvas=fabric)
+  // renderer can't be displayed by the legacy positioned-div code (the
+  // shapes are incompatible). When that happens, show a small panel
+  // pointing the user to the same URL with the flag flipped on, instead
+  // of attempting to render and producing a blank canvas. Only triggers
+  // when the flag is OFF and the loaded design is a v2 object.
+  if (!useFabricRenderer && incomingIsV2) {
+    const here = location.pathname + location.search;
+    const flagged = here + (location.search ? '&' : '?') + 'canvas=fabric';
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-gray-100 flex items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
+          <Sparkles className="h-10 w-10 mx-auto mb-3 text-blue-600" />
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Saved in the new editor</h2>
+          <p className="text-sm text-gray-600 mb-6">
+            This design was last saved using our new design editor. Open it
+            there to make further changes.
+          </p>
+          <a
+            href={flagged}
+            className="inline-block px-5 py-2.5 rounded-lg bg-blue-600 text-white font-semibold text-sm hover:bg-blue-700"
+          >
+            Open in new editor
+          </a>
+          <div className="mt-4">
+            <Link to="/account" className="text-xs text-gray-500 hover:underline">
+              Back to my designs
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-gray-100">

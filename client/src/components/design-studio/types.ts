@@ -83,6 +83,13 @@ export interface CanvasHandle {
   exportSVG(opts?: ExportSvgOpts): Promise<string>;
   setSide(side: ViewSide): void;
   setBackgroundProduct(url: string | null): Promise<void>;
+  /**
+   * Direct access to the live Fabric canvas. Page-level wiring (the bridge
+   * component that mirrors React state into Fabric) needs to attach
+   * `object:modified` listeners and call `add` / `remove` directly. Returns
+   * null between mount and onReady firing.
+   */
+  getCanvas(): import('fabric').Canvas | null;
 }
 
 export interface FabricDesignCanvasProps {
