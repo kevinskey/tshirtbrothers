@@ -305,7 +305,7 @@ export interface CustomerDetail extends Customer {
 
 export interface CustomerDesign {
   id: string;
-  source: 'design' | 'quote';
+  source: 'design' | 'quote' | 'mockup';
   source_id: number;
   name: string;
   product_name: string;
