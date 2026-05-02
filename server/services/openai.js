@@ -123,11 +123,14 @@ function framePrompt(prompt, style = 'dtf', colorCount = 1) {
   return `A die-cut sticker of: ${cleaned}. Placed flat on plain white surface, photographed from above. Vibrant full colors, glossy finish. Only the sticker visible. NO extra text, words, or labels added — render only the described subject.`;
 }
 
-function framePromptIdeogram(prompt, style = 'dtf') {
+function framePromptIdeogram(prompt, style = 'dtf', colorCount = 1) {
   const cleaned = cleanPrompt(prompt);
 
   if (style === 'vinyl') {
-    return `Typography design: ${cleaned}. Single solid flat color text on pure white background. Bold clean letterforms. No shadows, no outlines, no gradients, no 3D effects, no bevels, no glow, no texture. One flat solid color only. Sharp clean edges, vector-style flat shapes. High contrast black on white.`;
+    if (colorCount > 1) {
+      return `A bold flat vector-style illustration of: ${cleaned}. The subject fills the frame on a transparent white background. Use a limited palette of about ${colorCount} bold flat solid colors with hard edges between regions. No gradients, no shading, no shadows, no outlines, no 3D, no monochrome. ONLY the subject — no color swatches, no palette samples, no dots, no circles, no annotations, no labels, no banners, no decorations, no text or letters.`;
+    }
+    return `A bold flat single-color silhouette icon of: ${cleaned}. Pure black on plain white background. No shadows, no outlines, no gradients, no 3D, no bevels, no glow, no texture. Sharp clean edges, vector-style flat shape. ONLY the subject — no swatches, no annotations, no text, no letters, no labels.`;
   }
 
   if (style === 'print') {
@@ -270,11 +273,12 @@ async function generateWithFluxPro(prompt, style, colorCount = 1) {
 
 // ── Ideogram ($0.030/image) — best for text rendering ───────────────────────
 
-async function generateWithIdeogram(prompt, style) {
+async function generateWithIdeogram(prompt, style, colorCount = 1) {
   const apiKey = process.env.IDEOGRAM_API_KEY;
   if (!apiKey) throw new Error('Ideogram not configured');
 
-  const fullPrompt = framePromptIdeogram(prompt, style);
+  const fullPrompt = framePromptIdeogram(prompt, style, colorCount);
+  console.log('[Ideogram] colorCount=' + colorCount + ', prompt=' + fullPrompt.slice(0, 120));
 
   const res = await fetch('https://api.ideogram.ai/generate', {
     method: 'POST',
@@ -377,13 +381,19 @@ export async function generateDesign(prompt, color, garmentType, style = 'dtf', 
       }
     }
     if (colorCount > 1) {
-      try { return await generateWithDalle(prompt, style, colorCount); } catch (err) {
-        console.error('[Smart Router] DALL-E failed for multi-color vinyl:', err.message);
+      // Ideogram is built for design work and produces clean flat-color
+      // illustrations without DALL-E's swatch-row habit. Fall back to
+      // Flux Pro (best Flux quality), then Dev, then DALL-E as last resort.
+      if (process.env.IDEOGRAM_API_KEY) {
+        try { return await generateWithIdeogram(prompt, style, colorCount); } catch (err) {
+          console.error('[Smart Router] Ideogram failed for multi-color vinyl:', err.message);
+        }
       }
       if (process.env.REPLICATE_API_KEY) {
+        try { return await generateWithFluxPro(prompt, style, colorCount); } catch {}
         try { return await generateWithFluxDev(prompt, style, colorCount); } catch {}
-        try { return await generateWithFluxSchnell(prompt, style, colorCount); } catch {}
       }
+      try { return await generateWithDalle(prompt, style, colorCount); } catch {}
       throw new Error('All multi-color vinyl models failed');
     }
     if (process.env.REPLICATE_API_KEY) {
