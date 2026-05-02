@@ -211,12 +211,49 @@ const FONT_OPTIONS = [
 const loadedFonts = new Set<string>();
 const SYSTEM_FONTS = ['Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Verdana', 'Comic Sans MS', 'Inter'];
 
+// Fonts that only ship in a single weight on Google Fonts (display fonts,
+// the Rubik distressed family, etc). Requesting :wght@400;700 for these
+// makes the CSS API silently 400 the whole request — they need a name-only
+// or :wght@400 URL.
+const SINGLE_WEIGHT_FONTS = new Set([
+  'Bungee Outline', 'Bungee Inline', 'Bungee Spice', 'Bungee Shade',
+  'Rubik Mono One', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Iso',
+  'Rubik Vinyl', 'Rubik Marker Hatched', 'Rubik Beastly',
+  'Rubik Spray Paint', 'Rubik Wet Paint', 'Rubik Puddles',
+  'Rubik Burned', 'Rubik 80s Fade', 'Rubik Lines', 'Rubik Maze', 'Rubik Pixels',
+  'Press Start 2P', 'VT323', 'Wallpoet', 'Codystar', 'Modak',
+  'Frijole', 'Limelight', 'Shrikhand', 'Nosifer', 'Eater', 'Pirata One',
+  'Rampart One', 'Sigmar One', 'Titan One', 'Ultra', 'Bowlby One',
+  'Concert One', 'Knewave', 'Faster One', 'Squada One', 'Saira Stencil One',
+  'Staatliches', 'Alfa Slab One', 'Russo One', 'Audiowide', 'Black Ops One',
+  'Creepster', 'Fascinate Inline', 'Monoton', 'Special Elite',
+  'Bangers', 'Fredoka One', 'Lobster', 'Pacifico', 'Permanent Marker',
+  'Anton', 'Bebas Neue', 'Righteous', 'Passion One', 'Bungee', 'Racing Sans One',
+  'Yeseva One', 'Abril Fatface', 'Sansita',
+  'Stalemate', 'Henny Penny', 'Yellowtail', 'Allura', 'Tangerine',
+  'Marck Script', 'Zeyada', 'Homemade Apple', 'Great Vibes', 'Sacramento',
+  'Satisfy', 'Dancing Script', 'Kaushan Script', 'Gochi Hand', 'Oleo Script',
+  'Pinyon Script', 'Indie Flower', 'Shadows Into Light', 'Rock Salt',
+  'Amatic SC', 'Gloria Hallelujah', 'Covered By Your Grace',
+  'UnifrakturMaguntia', 'UnifrakturCook', 'MedievalSharp',
+]);
+
+function googleFontUrl(fontName: string): string {
+  const family = fontName.replace(/ /g, '+');
+  // Single-weight display fonts: omit the wght axis entirely so the CSS
+  // API serves whatever weights the font actually has.
+  if (SINGLE_WEIGHT_FONTS.has(fontName)) {
+    return `https://fonts.googleapis.com/css2?family=${family}&display=swap`;
+  }
+  return `https://fonts.googleapis.com/css2?family=${family}:wght@400;700&display=swap`;
+}
+
 function loadGoogleFont(fontName: string): Promise<void> {
   if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return Promise.resolve();
   loadedFonts.add(fontName);
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = `https://fonts.googleapis.com/css2?family=${fontName.replace(/ /g, '+')}:wght@400;700&display=swap`;
+  link.href = googleFontUrl(fontName);
   document.head.appendChild(link);
   // Wait for the font to actually load
   return document.fonts.ready.then(() => {});
@@ -227,9 +264,13 @@ let fontsPreloaded = false;
 function preloadAllFonts() {
   if (fontsPreloaded) return;
   fontsPreloaded = true;
-  // Load all fonts in one request using Google Fonts API
+  // Load all fonts in one request using Google Fonts API. Use the per-font
+  // weight specifier so single-weight families work alongside multi-weight.
   const googleFonts = FONT_OPTIONS.filter(f => !SYSTEM_FONTS.includes(f));
-  const families = googleFonts.map(f => `family=${f.replace(/ /g, '+')}:wght@700`).join('&');
+  const families = googleFonts.map((f) => {
+    const family = f.replace(/ /g, '+');
+    return SINGLE_WEIGHT_FONTS.has(f) ? `family=${family}` : `family=${family}:wght@700`;
+  }).join('&');
   const link = document.createElement('link');
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
