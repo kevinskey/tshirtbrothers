@@ -234,28 +234,68 @@ ${svgLayers.join('\n')}
 }
 
 // ── POST /generate — AI image generation with smart cost routing ────────────
-
+//
+// Output contract for design library use: a 300×300 SVG (vector) with a
+// transparent background. Pipeline:
+//   1. Generate raster via the cost-routed model picker
+//   2. Remove background (Replicate BiRefNet)
+//   3. Vectorize the transparent PNG (potrace) to SVG
+//   4. Force the SVG's outer dims to 300×300 so the library has a uniform
+//      preview size; the underlying viewBox preserves trace fidelity
+//
+// `vectorize=false` returns the transparent PNG instead — useful when an
+// admin specifically wants raster (e.g. for photography-like prompts that
+// don't trace well).
 router.post('/generate', async (req, res, next) => {
   try {
-    const { prompt, color, garmentType, removeBackground = false, style = 'dtf' } = req.body;
+    const {
+      prompt, color, garmentType,
+      removeBackground = true,         // transparent bg by default
+      vectorize: shouldVectorize = true,
+      style = 'dtf',
+    } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
     }
 
-    const imageUrl = await generateDesign(prompt, color, garmentType, style);
+    const rasterUrl = await generateDesign(prompt, color, garmentType, style);
 
     if (!removeBackground) {
-      return res.json({ imageUrl });
+      return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
     }
 
-    // Remove background
-    const transparent = await removeBackgroundReplicate(imageUrl);
-    if (transparent) {
-      return res.json({ imageUrl: transparent, backgroundRemoved: true });
+    // Background removal
+    const transparent = await removeBackgroundReplicate(rasterUrl);
+    if (!transparent) {
+      // bg removal failed — return the raw raster so the workflow isn't blocked
+      return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
     }
 
-    res.json({ imageUrl, backgroundRemoved: false });
+    if (!shouldVectorize) {
+      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true });
+    }
+
+    // Vectorize → SVG
+    try {
+      const svgRaw = await vectorizePNG(transparent, 1);
+      // Normalize the outer dimensions to 300×300; keep the original viewBox
+      // so the trace stays faithful to the source.
+      const svg300 = svgRaw
+        .replace(/\swidth="[^"]*"/, ' width="300"')
+        .replace(/\sheight="[^"]*"/, ' height="300"');
+      const svgDataUrl = 'data:image/svg+xml;base64,' + Buffer.from(svg300, 'utf8').toString('base64');
+      return res.json({
+        imageUrl: svgDataUrl,
+        rasterUrl: transparent,
+        format: 'svg',
+        backgroundRemoved: true,
+        vectorized: true,
+      });
+    } catch (vecErr) {
+      console.error('[generate] vectorize step failed, returning PNG:', vecErr.message);
+      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, vectorized: false });
+    }
   } catch (err) {
     next(err);
   }
