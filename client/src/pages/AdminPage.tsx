@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import { useGooglePlacesAutocomplete } from '@/lib/googlePlaces';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -2442,19 +2442,10 @@ export default function AdminPage() {
                 {designs.map((d: CustomerDesign) => (
                   <div key={d.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="aspect-square bg-gray-50 relative overflow-hidden">
-                      {/* Use thumbnail (design snapshot) if available, otherwise product image */}
-                      {(d.thumbnail || d.product_image || d.mockup_url) ? (
-                        <img
-                          src={d.thumbnail || d.product_image || d.mockup_url || ''}
-                          alt={d.name}
-                          className="w-full h-full object-contain p-2"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Palette className="w-10 h-10 text-gray-300" />
-                        </div>
-                      )}
+                      {/* Graphics-only thumbnail — renders elements client-side
+                          if no hosted graphic URL is available. Never shows
+                          a product backdrop. */}
+                      <DesignThumbnail design={d} alt={d.name} />
                       <div className="absolute top-1 right-1 flex gap-1">
                         {Array.isArray(d.elements) && d.elements.length > 0 && (() => {
                           // Group by side so the admin can see which sides have artwork.
@@ -6571,6 +6562,93 @@ export default function AdminPage() {
 }
 
 /* ---------- Sub-components ---------- */
+
+// Renders a bare-graphic preview for a Customer Design tile by drawing the
+// design elements onto a transparent canvas. Falls back to a hosted graphic
+// URL if one is set. Falls back to a Palette icon if there's no graphic data
+// at all. NEVER renders the product backdrop — that's by design (Customer
+// Designs is graphics-only).
+function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string }) {
+  const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
+  const elementsKey = useMemo(
+    () => JSON.stringify(design.elements ?? []),
+    [design.elements],
+  );
+  const directUrl = design.thumbnail || (design.source === 'quote' || design.source === 'mockup' ? design.print_url : null);
+
+  useEffect(() => {
+    if (directUrl) return; // No need to render — we have a hosted graphic.
+    const els = (design.elements || []) as { type?: string; x?: number; y?: number; width?: number; content?: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string; side?: string }[];
+    if (!Array.isArray(els) || els.length === 0) return;
+
+    let cancelled = false;
+    const run = async () => {
+      const SIZE = 480;
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      // Render only the 'front' side (or untagged elements) — keeps the
+      // tile preview consistent. Admin can switch to back/sleeve via Edit.
+      const frontEls = els.filter((e) => (e.side ?? 'front') === 'front');
+      for (const el of frontEls) {
+        const x = ((el.x ?? 0) / 100) * SIZE;
+        const y = ((el.y ?? 0) / 100) * SIZE;
+        const w = ((el.width ?? 30) / 100) * SIZE;
+        if (el.type === 'image' && el.content) {
+          try {
+            const img = document.createElement('img');
+            img.crossOrigin = 'anonymous';
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error('img load failed'));
+              img.src = el.content!;
+            });
+            const aspect = img.naturalHeight / img.naturalWidth;
+            ctx.drawImage(img, x, y, w, w * aspect);
+          } catch { /* skip element on load failure */ }
+        } else if (el.type === 'text' && el.content) {
+          const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
+          ctx.save();
+          if (el.rotation) {
+            ctx.translate(x + w / 2, y + fontSize / 2);
+            ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+            ctx.translate(-(x + w / 2), -(y + fontSize / 2));
+          }
+          ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
+          ctx.fillStyle = el.color ?? '#000000';
+          ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+          ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
+          ctx.restore();
+        }
+      }
+      if (!cancelled) setRenderedUrl(canvas.toDataURL('image/png'));
+    };
+    run();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elementsKey, directUrl]);
+
+  const src = directUrl || renderedUrl;
+  if (!src) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <Palette className="w-10 h-10 text-gray-300" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-contain p-2"
+      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+    />
+  );
+}
+
 
 function StatCard({
   icon: Icon,
