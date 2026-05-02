@@ -316,6 +316,9 @@ export default function DesignStudioPage() {
   // asset (no product needed). Visible only when an admin Bearer token is
   // present in localStorage (customers use cookie auth, not tsb_token).
   const [librarySaveOpen, setLibrarySaveOpen] = useState(false);
+  // Set when admin chose 'Blank Canvas' from the welcome panel. Suppresses
+  // the customer-facing 'Select a product to start designing' empty state.
+  const [blankCanvasMode, setBlankCanvasMode] = useState(false);
   const [librarySaveName, setLibrarySaveName] = useState('');
   const [librarySaveCategory, setLibrarySaveCategory] = useState('general');
   const [librarySaving, setLibrarySaving] = useState(false);
@@ -1919,6 +1922,12 @@ export default function DesignStudioPage() {
               className="w-full h-full object-contain p-4 pointer-events-none"
               draggable={false}
             />
+          ) : blankCanvasMode ? (
+            // Admin chose Blank Canvas — show a transparent design surface
+            // with a subtle hint instead of the product picker prompt.
+            <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center pointer-events-none">
+              <p className="text-sm text-gray-400 font-medium">Blank canvas — add text, art, or AI designs</p>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center text-gray-400">
               <Shirt className="h-16 w-16 mb-2" />
@@ -2666,7 +2675,7 @@ export default function DesignStudioPage() {
           { label: 'Change\nProducts', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
           // Blank Canvas — admin entry, lets them compose art with no
           // product backdrop so it can be saved straight to the Library.
-          ...(isAdmin ? [{ label: 'Blank\nCanvas', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setActiveTool('text'); } }] : []),
+          ...(isAdmin ? [{ label: 'Blank\nCanvas', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setBlankCanvasMode(true); setActiveTool('text'); } }] : []),
         ].map(item => (
           <button
             key={item.label}
