@@ -294,7 +294,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
       const res = await fetch('/api/design/generate', {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ prompt, removeBackground: designStyle !== 'vinyl', style: designStyle }),
+        body: JSON.stringify({ prompt, removeBackground: true, style: designStyle }),
       });
       if (!res.ok) throw new Error('Generation failed');
       const data = await res.json();
@@ -935,7 +935,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
 
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <h3 className="font-semibold text-gray-900 mb-3">AI Image Generator</h3>
-              <p className="text-xs text-gray-500 mb-3">Describe the graphic you want. Images are generated at print quality (1024×1024) with transparent backgrounds.</p>
+              <p className="text-xs text-gray-500 mb-3">Describe the graphic you want. Output: transparent background. <strong>DTF / Full Color</strong> returns a 1024×1024 PNG so colors are preserved. <strong>Vinyl Cut</strong> and <strong>Screen Print</strong> return scalable SVG (1-color and 4-color trace respectively).</p>
               {/* Output Style */}
               <div className="mb-3">
                 <label className="text-xs font-medium text-gray-500 block mb-1.5">Output Style</label>

@@ -250,9 +250,9 @@ router.post('/generate', async (req, res, next) => {
   try {
     const {
       prompt, color, garmentType,
-      removeBackground = true,         // transparent bg by default
-      vectorize: shouldVectorize = true,
+      removeBackground = true,
       style = 'dtf',
+      vectorize, vectorizeColors,
     } = req.body;
 
     if (!prompt) {
@@ -265,22 +265,30 @@ router.post('/generate', async (req, res, next) => {
       return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
     }
 
-    // Background removal
     const transparent = await removeBackgroundReplicate(rasterUrl);
     if (!transparent) {
-      // bg removal failed — return the raw raster so the workflow isn't blocked
       return res.json({ imageUrl: rasterUrl, format: 'png', backgroundRemoved: false });
     }
 
+    // Decide vectorization based on style:
+    //   - dtf (full-color print) → return transparent PNG. A 1-color trace
+    //     posterizes a colorful image down to a black silhouette.
+    //   - vinyl (cut layers) → 1-color SVG.
+    //   - print (screen print, ~4 spot colors) → 4-color SVG.
+    // Explicit `vectorize` / `vectorizeColors` body params override.
+    const shouldVectorize = vectorize !== undefined
+      ? vectorize
+      : (style === 'vinyl' || style === 'print');
+    const colorsForTrace = vectorizeColors !== undefined
+      ? vectorizeColors
+      : (style === 'print' ? 4 : 1);
+
     if (!shouldVectorize) {
-      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true });
+      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, style });
     }
 
-    // Vectorize → SVG
     try {
-      const svgRaw = await vectorizePNG(transparent, 1);
-      // Normalize the outer dimensions to 300×300; keep the original viewBox
-      // so the trace stays faithful to the source.
+      const svgRaw = await vectorizePNG(transparent, colorsForTrace);
       const svg300 = svgRaw
         .replace(/\swidth="[^"]*"/, ' width="300"')
         .replace(/\sheight="[^"]*"/, ' height="300"');
@@ -291,10 +299,12 @@ router.post('/generate', async (req, res, next) => {
         format: 'svg',
         backgroundRemoved: true,
         vectorized: true,
+        traceColors: colorsForTrace,
+        style,
       });
     } catch (vecErr) {
       console.error('[generate] vectorize step failed, returning PNG:', vecErr.message);
-      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, vectorized: false });
+      return res.json({ imageUrl: transparent, format: 'png', backgroundRemoved: true, vectorized: false, style });
     }
   } catch (err) {
     next(err);
