@@ -154,13 +154,14 @@ export default function Navbar() {
                     onMouseEnter={() => setDesktopCatalogueOpen(true)}
                     onMouseLeave={() => setDesktopCatalogueOpen(false)}
                   >
-                    <Link
-                      to="/shop"
-                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
+                    <button
+                      type="button"
+                      onClick={() => { setDesktopCatalogueOpen(false); navigate('/shop'); }}
+                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap cursor-pointer bg-transparent border-0 p-0"
                     >
                       {entry.label}
                       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
-                    </Link>
+                    </button>
                     {desktopCatalogueOpen && (
                       <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50">
                         <div className="bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56">
