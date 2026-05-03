@@ -1957,23 +1957,24 @@ export default function DesignStudioPage() {
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    // Grid (1fr auto) is more reliable than flex+min-w-0 on iOS Safari for
-    // "shrink-left / fixed-right" rows — the input was still spilling past
-    // the viewport in flex mode, pushing the Add button mostly off-screen.
-    <div className="p-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+    // Stack vertically on every viewport — the horizontal flex / grid
+    // versions both spilled past the viewport on iOS Chrome and pushed
+    // the Add button off-screen. Stacking is bulletproof and gives both
+    // controls a full-width tap target on mobile.
+    <div className="p-3 flex flex-col gap-2">
       <input
         placeholder="Enter your text..."
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        className="w-full min-w-0 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         autoFocus
       />
       <button
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Add
       </button>
