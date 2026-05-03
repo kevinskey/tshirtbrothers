@@ -455,19 +455,29 @@ export default function DesignStudioPage() {
   // visual viewport is than the layout viewport and lift the panel by that
   // amount.
   const [kbInset, setKbInset] = useState(0);
+  // Track the actual visible viewport width so we can pin the mobile
+  // tool-panel to it. iOS Chrome was rendering the panel slightly wider
+  // than the visual viewport even with inset-x-0 + max-w-[100vw], which
+  // pushed the input/button past the right edge.
+  const [vpWidth, setVpWidth] = useState<number>(() =>
+    typeof document !== 'undefined' ? document.documentElement.clientWidth : 0,
+  );
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) return;
     const update = () => {
+      setVpWidth(document.documentElement.clientWidth);
+      if (!vv) return;
       const inset = window.innerHeight - vv.height - vv.offsetTop;
       setKbInset(inset > 80 ? inset : 0);
     };
     update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
+    window.addEventListener('resize', update);
+    vv?.addEventListener('resize', update);
+    vv?.addEventListener('scroll', update);
     return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      vv?.removeEventListener('resize', update);
+      vv?.removeEventListener('scroll', update);
     };
   }, []);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -2451,7 +2461,11 @@ export default function DesignStudioPage() {
       {/* Mobile panel */}
       <div
         className={mobilePanel}
-        style={{ bottom: `calc(3rem + ${kbInset}px)` }}
+        style={{
+          bottom: `calc(3rem + ${kbInset}px)`,
+          width: vpWidth ? `${vpWidth}px` : undefined,
+          maxWidth: vpWidth ? `${vpWidth}px` : undefined,
+        }}
       >
         {panelHeader(activePanel.title, activePanel.action)}
         {activePanel.content}
