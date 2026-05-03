@@ -8,7 +8,7 @@
 interface DimensionReadoutProps {
   /** The selected element, or null. */
   element: {
-    type: 'image' | 'text';
+    type: 'image' | 'text' | 'shape';
     width: number;        // legacy percent (0-100)
     fontSize?: number;    // text only — used to estimate height
     lineHeight?: number;

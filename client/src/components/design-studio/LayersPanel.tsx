@@ -32,7 +32,8 @@ import { Trash2, ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Type, Image a
 
 interface DesignElement {
   id: string;
-  type: 'image' | 'text';
+  type: 'image' | 'text' | 'shape';
+  shapeType?: string;
   side?: 'front' | 'back' | 'sleeve';
   content: string;
   fontFamily?: string;
@@ -180,7 +181,12 @@ function Thumbnail({ el }: { el: DesignElement }) {
   );
 }
 
+function shapeLabel(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function deriveName(el: DesignElement): string {
+  if (el.type === 'shape') return shapeLabel(el.shapeType ?? 'Shape');
   if (el.type === 'text') {
     const trimmed = (el.content ?? '').trim();
     if (!trimmed) return 'Text';

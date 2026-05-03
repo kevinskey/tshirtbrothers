@@ -36,6 +36,12 @@ import {
   FolderOpen,
   Undo2,
   Redo2,
+  Square,
+  Circle,
+  Triangle,
+  Minus,
+  Star,
+  Heart,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -44,7 +50,11 @@ import {
 
 interface DesignElement {
   id: string;
-  type: 'image' | 'text';
+  // 'shape' added for geometric primitives (rect, circle, triangle, line,
+  // star, heart). Reuses `color` for fill, `strokeColor`/`strokeWidth` for
+  // outline. shapeType picks which SVG primitive to render.
+  type: 'image' | 'text' | 'shape';
+  shapeType?: ShapeType;
   // Which side of the garment this element belongs to. Optional for
   // backwards-compat: any saved design from before this field existed has
   // no side stored, and we treat that as 'front'.
@@ -180,6 +190,67 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
           })}
         </textPath>
       </text>
+    </svg>
+  );
+}
+
+/**
+ * SVG primitives for the geometric Shapes feature. All use a 0 0 100 100
+ * viewBox so they fill whatever bounding box the parent absolute-div
+ * provides — same scaling story as <img w-full> for image elements.
+ *
+ * Shape paths are defined here once and consumed by the on-canvas SVG
+ * renderer below; the handleSaveToLibrary export uses an equivalent
+ * Canvas-2D path (kept in sync by hand — small enough that abstracting
+ * isn't worth it).
+ */
+const SHAPE_VIEWBOX_STAR = '50,5 61.3,38.4 96.4,38.4 67.6,60.5 78.5,93.9 50,73.6 21.5,93.9 32.4,60.5 3.6,38.4 38.7,38.4';
+const SHAPE_VIEWBOX_TRIANGLE = '50,5 95,95 5,95';
+const SHAPE_PATH_HEART = 'M 50,82 C 22,60 5,42 5,28 C 5,12 18,5 30,5 C 38,5 45,9 50,15 C 55,9 62,5 70,5 C 82,5 95,12 95,28 C 95,42 78,60 50,82 Z';
+
+function ShapeSvg({ shape, fill, stroke, strokeWidth, opacity }: {
+  shape: 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
+  fill: string;
+  stroke?: string;
+  strokeWidth?: number;
+  opacity?: number;
+}) {
+  const sw = strokeWidth ?? 0;
+  const fillProp = shape === 'line' ? 'none' : fill;
+  // Inset the geometry by half the stroke so the outline doesn't get
+  // clipped at the SVG edges. Tiny but visible at thicker strokes.
+  const inset = sw / 2;
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      className="w-full h-full block pointer-events-none"
+      style={{ opacity: opacity != null ? opacity : undefined, overflow: 'visible' }}
+      preserveAspectRatio="none"
+    >
+      {shape === 'rect' && (
+        <rect x={inset} y={inset} width={100 - sw} height={100 - sw}
+          fill={fillProp} stroke={stroke} strokeWidth={sw} />
+      )}
+      {shape === 'circle' && (
+        <circle cx={50} cy={50} r={50 - inset}
+          fill={fillProp} stroke={stroke} strokeWidth={sw} />
+      )}
+      {shape === 'triangle' && (
+        <polygon points={SHAPE_VIEWBOX_TRIANGLE}
+          fill={fillProp} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+      )}
+      {shape === 'line' && (
+        <line x1={5} y1={50} x2={95} y2={50}
+          stroke={stroke || fill} strokeWidth={sw || 6} strokeLinecap="round" />
+      )}
+      {shape === 'star' && (
+        <polygon points={SHAPE_VIEWBOX_STAR}
+          fill={fillProp} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+      )}
+      {shape === 'heart' && (
+        <path d={SHAPE_PATH_HEART}
+          fill={fillProp} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+      )}
     </svg>
   );
 }
@@ -320,7 +391,9 @@ interface Product {
   category: string;
 }
 
-type ToolName = 'upload' | 'text' | 'art' | 'products' | 'details' | 'names' | null;
+type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 'names' | null;
+// Geometric shape types renderable as SVG inside a positioned div.
+type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
 type ViewName = 'front' | 'back' | 'sleeve';
 
 // const DEFAULT_PRODUCT_ID = '39'; // Gildan Unisex Ultra Cotton T-Shirt
@@ -534,7 +607,88 @@ export default function DesignStudioPage() {
           const x = ((el.x ?? 0) / 100) * widthPx;
           const y = ((el.y ?? 0) / 100) * heightPx;
           const w = ((el.width ?? 30) / 100) * widthPx;
-          if (el.type === 'image' && el.content) {
+          if (el.type === 'shape') {
+            // Mirror ShapeSvg's geometry into Canvas-2D paths. Same square
+            // bounding box (height = width) the on-screen renderer assumes.
+            const h = w;
+            const fill = el.color ?? '#ec4899';
+            const stroke = el.strokeColor;
+            const sw = (el.strokeWidth ?? 0) * (widthPx / 100);
+            ctx.save();
+            if (el.rotation) {
+              ctx.translate(x + w / 2, y + h / 2);
+              ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+              ctx.translate(-(x + w / 2), -(y + h / 2));
+            }
+            if (el.opacity != null) ctx.globalAlpha = el.opacity;
+            const drawShape = () => {
+              ctx.beginPath();
+              switch (el.shapeType) {
+                case 'circle':
+                  ctx.ellipse(x + w / 2, y + h / 2, w / 2 - sw / 2, h / 2 - sw / 2, 0, 0, Math.PI * 2);
+                  break;
+                case 'triangle':
+                  ctx.moveTo(x + w * 0.5, y + h * 0.05);
+                  ctx.lineTo(x + w * 0.95, y + h * 0.95);
+                  ctx.lineTo(x + w * 0.05, y + h * 0.95);
+                  ctx.closePath();
+                  break;
+                case 'line':
+                  ctx.moveTo(x + w * 0.05, y + h * 0.5);
+                  ctx.lineTo(x + w * 0.95, y + h * 0.5);
+                  break;
+                case 'star': {
+                  // Same 5-point coords as SHAPE_VIEWBOX_STAR, scaled to box.
+                  const pts: [number, number][] = [
+                    [50, 5], [61.3, 38.4], [96.4, 38.4], [67.6, 60.5], [78.5, 93.9],
+                    [50, 73.6], [21.5, 93.9], [32.4, 60.5], [3.6, 38.4], [38.7, 38.4],
+                  ];
+                  pts.forEach(([px, py], i) => {
+                    const cx = x + (px / 100) * w;
+                    const cy = y + (py / 100) * h;
+                    if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+                  });
+                  ctx.closePath();
+                  break;
+                }
+                case 'heart': {
+                  // Same Bezier curve as SHAPE_PATH_HEART.
+                  const sx = (px: number) => x + (px / 100) * w;
+                  const sy = (py: number) => y + (py / 100) * h;
+                  ctx.moveTo(sx(50), sy(82));
+                  ctx.bezierCurveTo(sx(22), sy(60), sx(5), sy(42), sx(5), sy(28));
+                  ctx.bezierCurveTo(sx(5), sy(12), sx(18), sy(5), sx(30), sy(5));
+                  ctx.bezierCurveTo(sx(38), sy(5), sx(45), sy(9), sx(50), sy(15));
+                  ctx.bezierCurveTo(sx(55), sy(9), sx(62), sy(5), sx(70), sy(5));
+                  ctx.bezierCurveTo(sx(82), sy(5), sx(95), sy(12), sx(95), sy(28));
+                  ctx.bezierCurveTo(sx(95), sy(42), sx(78), sy(60), sx(50), sy(82));
+                  ctx.closePath();
+                  break;
+                }
+                case 'rect':
+                default:
+                  ctx.rect(x + sw / 2, y + sw / 2, w - sw, h - sw);
+                  break;
+              }
+            };
+            drawShape();
+            if (el.shapeType === 'line') {
+              ctx.strokeStyle = stroke || fill;
+              ctx.lineWidth = sw || (w * 0.06);
+              ctx.lineCap = 'round';
+              ctx.stroke();
+            } else {
+              ctx.fillStyle = fill;
+              ctx.fill();
+              if (stroke && sw > 0) {
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = sw;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+              }
+            }
+            ctx.restore();
+          } else if (el.type === 'image' && el.content) {
             try {
               const img = document.createElement('img');
               img.crossOrigin = 'anonymous';
@@ -1365,6 +1519,7 @@ export default function DesignStudioPage() {
     { name: 'upload', icon: Upload, label: 'Upload' },
     { name: 'text', icon: Type, label: 'Add Text' },
     { name: 'art', icon: Image, label: 'Add Art' },
+    { name: 'shapes', icon: Square, label: 'Shapes' },
     { name: 'ai', icon: Sparkles, label: 'AI\nDesign' },
     { name: 'details', icon: Shirt, label: 'Product\nDetails' },
     { name: 'products', icon: Move, label: 'Change\nProducts' },
@@ -2065,10 +2220,53 @@ export default function DesignStudioPage() {
     </div>
   );
 
+  // Shapes panel (Phase 2 — geometric primitives). Each click drops a
+  // square-aspect shape on the current side at sensible defaults; the
+  // user can resize / recolor / restroke via the existing image-style
+  // floating toolbar (the shape uses the same x/y/width/rotation/opacity
+  // wiring images do, plus shapeType/color/strokeColor/strokeWidth).
+  const shapesPanelContent = (
+    <div className="p-4">
+      <p className="text-xs text-gray-500 mb-3">Tap a shape to add it to the canvas.</p>
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          { type: 'rect',     label: 'Rectangle', icon: Square },
+          { type: 'circle',   label: 'Circle',    icon: Circle },
+          { type: 'triangle', label: 'Triangle',  icon: Triangle },
+          { type: 'line',     label: 'Line',      icon: Minus },
+          { type: 'star',     label: 'Star',      icon: Star },
+          { type: 'heart',    label: 'Heart',     icon: Heart },
+        ] as const).map(s => (
+          <button
+            key={s.type}
+            type="button"
+            onClick={() => {
+              addDesignElement({
+                type: 'shape',
+                shapeType: s.type,
+                x: 35,
+                y: 35,
+                width: 30,
+                content: '',
+                color: '#ec4899',
+                rotation: 0,
+              });
+            }}
+            className="flex flex-col items-center gap-1 p-3 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition"
+          >
+            <s.icon className="h-7 w-7 text-gray-700" />
+            <span className="text-[10px] font-medium text-gray-700">{s.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const panelContentMap: Record<string, { title: string; content: React.ReactNode }> = {
     upload: { title: 'Upload Design', content: uploadPanelContent },
     text: { title: 'Add Text', content: textPanelContent },
     art: { title: 'Add Art', content: artPanelContent },
+    shapes: { title: 'Add Shape', content: shapesPanelContent },
     details: { title: 'Product Details', content: detailsPanelContent },
     products: { title: 'Change Products', content: productsPanelContent },
   };
@@ -2318,7 +2516,15 @@ export default function DesignStudioPage() {
                   transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
                 }}
               >
-                {el.type === 'image' ? (
+                {el.type === 'shape' ? (
+                  <ShapeSvg
+                    shape={el.shapeType ?? 'rect'}
+                    fill={el.color ?? '#ec4899'}
+                    stroke={el.strokeColor}
+                    strokeWidth={el.strokeWidth}
+                    opacity={el.opacity}
+                  />
+                ) : el.type === 'image' ? (
                   <img
                     src={el.content}
                     alt="Design element"
