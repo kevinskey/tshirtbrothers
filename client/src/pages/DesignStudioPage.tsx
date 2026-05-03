@@ -345,7 +345,7 @@ export default function DesignStudioPage() {
   const location = useLocation();
   // `elements` widened to DesignElement[] | object — a row saved through
   // the Fabric renderer arrives as an object with `schemaVersion: 2`.
-  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string; canvasInches?: number } | null;
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string; canvasInches?: number; canvasInchesH?: number } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -381,12 +381,17 @@ export default function DesignStudioPage() {
   const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Per-design print-area width in inches. Default 12 (standard adult-tee
-  // chest). Hydrated from loadState if a saved design was opened. Drives
-  // the DimensionReadout and the text-size-in-inches conversions.
+  // Per-design print-area W × H in inches. Default 12 × 12. Hydrated from
+  // loadState if a saved design was opened. Drives the DimensionReadout,
+  // text-size-in-inches conversions, and the canvas's CSS aspect ratio.
   const [canvasInches, setCanvasInches] = useState<number>(
     typeof loadState?.canvasInches === 'number' && loadState.canvasInches > 0
       ? loadState.canvasInches
+      : 12,
+  );
+  const [canvasInchesH, setCanvasInchesH] = useState<number>(
+    typeof loadState?.canvasInchesH === 'number' && loadState.canvasInchesH > 0
+      ? loadState.canvasInchesH
       : 12,
   );
   // Conversion factor: legacy fontSize is in 800-px reference units, where
@@ -629,6 +634,7 @@ export default function DesignStudioPage() {
         elements: elementsPayload,
         design_data: designData,
         canvas_inches: canvasInches,
+        canvas_inches_h: canvasInchesH,
       };
       if (useFabricRenderer && originalLegacyPayload) {
         body.original_legacy_payload = originalLegacyPayload;
@@ -1361,7 +1367,12 @@ export default function DesignStudioPage() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
-        <CanvasSizeControl value={canvasInches} onChange={setCanvasInches} />
+        <CanvasSizeControl
+          width={canvasInches}
+          height={canvasInchesH}
+          onChangeWidth={setCanvasInches}
+          onChangeHeight={setCanvasInchesH}
+        />
         {isAdmin && (
           <button
             type="button"
@@ -2126,16 +2137,15 @@ export default function DesignStudioPage() {
         setSelectedElementId(null);
       }}
     >
-      {/* Product image + overlay area. The inner container uses an
-          aspect-square box so the shirt renders at its natural size and
-          any bottom panel (or mobile toolbar) that covers the lower part
-          of the viewport can be scrolled past — the generous pb-64 on
-          main gives the scroll container enough runway to bring the full
-          canvas into view. */}
+      {/* Product image + overlay area. Aspect ratio mirrors the per-design
+          canvasInches × canvasInchesH so the surface visually matches the
+          print rectangle. Generous pb-64 on main gives the scroll container
+          enough runway to bring the full canvas into view past any bottom
+          panel / mobile toolbar. */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-1 md:px-6" ref={canvasRef}>
         <div
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none aspect-square"
-          style={{ touchAction: 'pinch-zoom' }}
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none"
+          style={{ touchAction: 'pinch-zoom', aspectRatio: `${canvasInches} / ${canvasInchesH}` }}
         >
           {displayImage ? (
             <img
@@ -2340,6 +2350,7 @@ export default function DesignStudioPage() {
           <DimensionReadout
             element={selectedEl ?? null}
             canvasInches={canvasInches}
+            canvasInchesH={canvasInchesH}
           />
         </div>
       </div>
