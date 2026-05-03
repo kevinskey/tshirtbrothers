@@ -8,6 +8,7 @@ import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 import { FontPicker } from '@/components/design-studio/FontPicker';
 import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
+import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -2607,9 +2608,9 @@ export default function DesignStudioPage() {
         {textPop === 'sz' && (
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
+              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
               <span className="flex-1 text-center text-sm font-semibold">{selectedEl.fontSize ?? 24}</span>
-              <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
+              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
             </div>
           </div>
         )}
@@ -2746,9 +2747,9 @@ export default function DesignStudioPage() {
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">Size</span>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</button>
+            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
             <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
-            <button type="button" onClick={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</button>
+            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
           </div>
         </div>
 
