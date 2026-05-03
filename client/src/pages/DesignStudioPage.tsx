@@ -560,7 +560,23 @@ export default function DesignStudioPage() {
             ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
             ctx.fillStyle = el.color ?? '#000000';
             ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-            ctx.fillText(el.content, el.textAlign === 'left' ? x : x + w / 2, y + fontSize);
+            const textX = el.textAlign === 'left' ? x : x + w / 2;
+            const textY = y + fontSize;
+            // Match the studio's CSS text rendering: outline=true paints a
+            // 4-direction stroke, otherwise a soft drop shadow. Without this
+            // the saved PNG looked "naked" compared to the on-screen text.
+            if (el.outline) {
+              ctx.lineWidth = Math.max(1, fontSize * 0.04);
+              ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+              ctx.lineJoin = 'round';
+              ctx.miterLimit = 2;
+              ctx.strokeText(el.content, textX, textY);
+            } else {
+              ctx.shadowColor = 'rgba(0,0,0,0.3)';
+              ctx.shadowBlur = Math.max(2, fontSize * 0.06);
+              ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
+            }
+            ctx.fillText(el.content, textX, textY);
             ctx.restore();
           }
         }
