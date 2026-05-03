@@ -42,6 +42,7 @@ import {
   Minus,
   Star,
   Heart,
+  AlignCenter,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -1160,6 +1161,40 @@ export default function DesignStudioPage() {
     });
   }, []);
 
+  // Center every element on the current side around the canvas midpoint.
+  // Computes the collective bounding box, finds its center, shifts all
+  // elements by the delta needed to land that center at (50, 50). Preserves
+  // RELATIVE positioning between elements.
+  //
+  // Per-type height for the bounding box:
+  //   - shape: el.height (explicit, set by free-resize)
+  //   - image / text: el.width (assume square — close enough for a
+  //     "center this" gesture; users tweak after if needed)
+  const centerAllOnCanvas = useCallback(() => {
+    setDesignElements(prev => {
+      const onSide = prev.filter(e => (e.side ?? 'front') === currentView);
+      if (onSide.length === 0) return prev;
+      const heightOf = (el: DesignElement) =>
+        el.type === 'shape' ? (el.height ?? el.width) : el.width;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const el of onSide) {
+        minX = Math.min(minX, el.x);
+        maxX = Math.max(maxX, el.x + el.width);
+        minY = Math.min(minY, el.y);
+        maxY = Math.max(maxY, el.y + heightOf(el));
+      }
+      const dx = 50 - (minX + maxX) / 2;
+      const dy = 50 - (minY + maxY) / 2;
+      // No-op if everything's already centered (within 0.5%).
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return prev;
+      return prev.map(el =>
+        (el.side ?? 'front') === currentView
+          ? { ...el, x: el.x + dx, y: el.y + dy }
+          : el,
+      );
+    });
+  }, [currentView]);
+
   /* ---------------------------------------------------------------- */
   /*  File upload handler                                              */
   /* ---------------------------------------------------------------- */
@@ -1669,6 +1704,20 @@ export default function DesignStudioPage() {
             title="Reset to 100%"
           >Fit</button>
         </div>
+        {/* Center all elements on canvas — single click recenters the
+            collective bounding box at (50, 50). Preserves relative
+            positioning between elements. Disabled when nothing's on
+            the current side. */}
+        <button
+          type="button"
+          onClick={centerAllOnCanvas}
+          disabled={designElements.filter(e => (e.side ?? 'front') === currentView).length === 0}
+          title="Center all on canvas"
+          className="hidden md:flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <AlignCenter className="h-3.5 w-3.5" />
+          <span>Center</span>
+        </button>
         {isAdmin && (
           <button
             type="button"
