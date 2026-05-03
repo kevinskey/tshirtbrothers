@@ -1904,7 +1904,9 @@ export default function DesignStudioPage() {
   // Mobile sheet: width is pinned via inline style (vpWidth) so we only
   // need left-0 here, not inset-x-0. overflow-x-hidden clips any wide
   // content (the Shapes 3-card grid, etc.) at the panel edge.
-  const mobilePanel = `${panelBase} overflow-x-hidden bottom-12 left-0 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
+  // bottom anchor is set inline to clear the mobile bottom nav (the
+  // Product Details label wraps to two lines so the nav is ~64px tall).
+  const mobilePanel = `${panelBase} overflow-x-hidden left-0 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
 
   const panelHeader = (title: string, action?: React.ReactNode) => (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 gap-2">
@@ -2464,7 +2466,9 @@ export default function DesignStudioPage() {
       <div
         className={mobilePanel}
         style={{
-          bottom: `calc(3rem + ${kbInset}px)`,
+          // 4.5rem clears the mobile bottom toolbar (~64px because
+          // "Product Details" wraps to two lines). Plus keyboard inset.
+          bottom: `calc(4.5rem + ${kbInset}px)`,
           width: vpWidth ? `${vpWidth}px` : undefined,
           maxWidth: vpWidth ? `${vpWidth}px` : undefined,
         }}
