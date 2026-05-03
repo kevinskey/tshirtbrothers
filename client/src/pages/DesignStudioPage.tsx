@@ -2183,6 +2183,12 @@ export default function DesignStudioPage() {
             // horizontal + vertical scrollbars appear. mx-auto centers the
             // canvas while it still fits.
             width: `${100 * canvasZoom}%`,
+            // containerType: text inside this surface uses cqw units so
+            // font size scales with the canvas width — independent of the
+            // canvas's literal pixel size on screen. Without this, a 1"
+            // text on a 3"-wide canvas would render at the same pixel size
+            // as on a 12" canvas (i.e. 4x too large visually).
+            containerType: 'inline-size',
           }}
         >
           {displayImage ? (
@@ -2311,7 +2317,13 @@ export default function DesignStudioPage() {
                   <span
                     className="block whitespace-pre-wrap pointer-events-none"
                     style={{
-                      fontSize: `${(el.fontSize ?? 24) * 0.5}px`,
+                      // cqw = 1% of the canvas surface width. fontSize is
+                      // stored in legacy 800-unit reference space; divide by 8
+                      // to get %-of-canvas-width directly. Replaces the old
+                      // hardcoded `* 0.5` px math which assumed a fixed canvas
+                      // display size and broke as soon as canvasInches went
+                      // away from its 12" default (e.g., 3"-wide tall designs).
+                      fontSize: `${(el.fontSize ?? 24) / 8}cqw`,
                       color: el.color ?? '#fff',
                       fontFamily: el.fontFamily ?? 'Inter',
                       fontWeight: 700,
