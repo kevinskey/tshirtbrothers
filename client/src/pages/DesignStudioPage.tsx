@@ -1957,24 +1957,24 @@ export default function DesignStudioPage() {
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    // Center-aligned content-sized Add button: w-full on a sibling
-    // <button> kept overflowing the viewport on iOS Chrome no matter what
-    // we did to the wrapper. A centered, padded button is content-sized
-    // so overflow becomes impossible.
-    <div className="p-3 flex flex-col items-center gap-2">
+    // Single-row input + Add button. w-0 + grow + min-w-0 forces the
+    // input to start at zero width and only grow into leftover space —
+    // without that combo, iOS Chrome let the input keep its intrinsic
+    // min-content width and pushed the button off the right edge.
+    <div className="p-3 flex items-center gap-2">
       <input
         placeholder="Enter your text..."
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        className="w-0 grow min-w-0 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         autoFocus
       />
       <button
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="rounded-lg bg-red-600 px-12 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="shrink-0 rounded-lg bg-red-600 px-5 py-1.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Add
       </button>
