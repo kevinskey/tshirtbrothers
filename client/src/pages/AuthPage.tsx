@@ -91,12 +91,15 @@ export default function AuthPage() {
 
   return (
     <Layout>
-      <div className="bg-white min-h-[80vh]">
-      <div className="max-w-md sm:max-w-lg lg:max-w-5xl mx-auto pt-8 sm:pt-12 pb-16 px-4 lg:px-8">
+      <div className="bg-white min-h-[80vh] overflow-x-hidden">
+      <div className="w-full max-w-md sm:max-w-lg lg:max-w-5xl mx-auto pt-8 sm:pt-12 pb-16 px-4 lg:px-8">
         {/* Mobile only: small bot + speech bubble above form */}
         <div className="flex flex-col items-center mb-6 lg:hidden">
           <BotMascot size={80} />
-          <div className="bg-white border border-orange-200 rounded-2xl px-5 py-3 shadow-md -mt-2 relative">
+          {/* max-w-full forces the bubble to wrap inside the parent column
+              instead of letting its single-line content expand wider than
+              the viewport (which was clipping the right edge on iOS). */}
+          <div className="max-w-full bg-white border border-orange-200 rounded-2xl px-5 py-3 shadow-md -mt-2 relative">
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-l border-t border-orange-200 rotate-45" />
             <p className="text-sm font-semibold text-gray-900 text-center relative">
               {botMessage}
