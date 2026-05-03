@@ -14,8 +14,10 @@ interface DimensionReadoutProps {
     lineHeight?: number;
     content?: string;     // text only — used to count newlines
   } | null;
-  /** Print-area width in inches. Drives the inches readout. */
+  /** Print-area width in inches. */
   canvasInches: number;
+  /** Print-area height in inches. */
+  canvasInchesH: number;
   /**
    * Optional: the selected element's actual rendered aspect ratio
    * (height/width). When provided, the readout shows real height in
@@ -25,7 +27,7 @@ interface DimensionReadoutProps {
   imageAspect?: number;
 }
 
-export function DimensionReadout({ element, canvasInches, imageAspect }: DimensionReadoutProps) {
+export function DimensionReadout({ element, canvasInches, canvasInchesH, imageAspect }: DimensionReadoutProps) {
   if (!element) return null;
 
   const widthPct = element.width;
@@ -33,13 +35,15 @@ export function DimensionReadout({ element, canvasInches, imageAspect }: Dimensi
 
   let heightLine: string | null = null;
   if (element.type === 'image' && imageAspect && imageAspect > 0) {
+    // Image's pixel height = pixel width × imageAspect. In inches that's
+    // widthInches × imageAspect. Heightpercent is the inches/canvasInchesH.
     const heightInches = widthInches * imageAspect;
-    const heightPct = (heightInches / canvasInches) * 100;
+    const heightPct = (heightInches / canvasInchesH) * 100;
     heightLine = `H: ${heightPct.toFixed(0)}% (${heightInches.toFixed(1)}″)`;
   } else if (element.type === 'text') {
     // Estimate text-box height from fontSize × lineHeight × line count.
-    // fontSize is in legacy 800-px reference space; convert via the live
-    // canvas size (inches per reference unit = canvasInches / 800).
+    // fontSize is in legacy 800-px reference (mapped to canvas WIDTH);
+    // convert via canvasInches / 800 = inches per reference unit.
     const fontPx = (element.fontSize ?? 24) * (canvasInches / 800);
     const lh = element.lineHeight ?? 1.2;
     const lines = (element.content ?? '').split('\n').length || 1;
@@ -51,7 +55,7 @@ export function DimensionReadout({ element, canvasInches, imageAspect }: Dimensi
     <div className="pointer-events-none absolute bottom-3 left-3 z-30 rounded-md bg-black/70 backdrop-blur-sm px-2.5 py-1.5 text-[11px] font-mono text-white shadow-lg">
       <div>W: {widthPct.toFixed(0)}% ({widthInches.toFixed(1)}″)</div>
       {heightLine && <div className="text-white/80">{heightLine}</div>}
-      <div className="text-white/40 text-[9px] mt-0.5">at {canvasInches}″ print</div>
+      <div className="text-white/40 text-[9px] mt-0.5">at {canvasInches}×{canvasInchesH}″ print</div>
     </div>
   );
 }

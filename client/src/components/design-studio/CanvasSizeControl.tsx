@@ -1,14 +1,13 @@
 /**
- * Header bar widget: per-design print-area width in inches.
+ * Header bar widget: per-design print-area W × H in inches.
  *
- * Renders as `Print: [12.0]″` with hold-to-repeat steppers. Editable
- * directly via the numeric input. Clamped 1″-48″ — anything below 1″ is
- * unrealistic; above 48″ is bigger than any blank we sell.
+ * Renders as `Print: [12.0] × [16.0]″` with hold-to-repeat steppers on
+ * each axis. Editable directly via the numeric inputs. Each axis clamped
+ * to 1″-48″.
  *
- * The studio's inches readout (DimensionReadout) and text-size-in-inches
- * conversions both consume this value, so changing it cascades through
- * the UI without saving — the inches you see WILL match what prints, as
- * long as production prints at this width.
+ * Both values feed the studio's inches readout (DimensionReadout), the
+ * text-size-in-inches conversion, AND the canvas's CSS aspect-ratio so
+ * the design surface visually reflects the print rectangle.
  */
 
 import { Maximize2 } from 'lucide-react';
@@ -19,8 +18,10 @@ const MIN = 1;
 const MAX = 48;
 
 interface CanvasSizeControlProps {
-  value: number;
-  onChange: (next: number) => void;
+  width: number;
+  height: number;
+  onChangeWidth: (next: number) => void;
+  onChangeHeight: (next: number) => void;
 }
 
 function clamp(n: number): number {
@@ -28,15 +29,28 @@ function clamp(n: number): number {
   return Math.max(MIN, Math.min(MAX, Math.round(n * 10) / 10));
 }
 
-export function CanvasSizeControl({ value, onChange }: CanvasSizeControlProps) {
+export function CanvasSizeControl({ width, height, onChangeWidth, onChangeHeight }: CanvasSizeControlProps) {
   return (
     <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700">
       <Maximize2 className="h-3.5 w-3.5 text-gray-500" />
       <span className="font-medium">Print:</span>
+
+      <Stepper value={width} onChange={onChangeWidth} label="width" />
+      <span className="text-gray-400 px-0.5">×</span>
+      <Stepper value={height} onChange={onChangeHeight} label="height" />
+
+      <span className="text-gray-500">″</span>
+    </div>
+  );
+}
+
+function Stepper({ value, onChange, label }: { value: number; onChange: (n: number) => void; label: string }) {
+  return (
+    <div className="flex items-center">
       <HoldRepeatButton
         onPress={() => onChange(clamp(value - STEP))}
         className="px-1 text-gray-500 hover:text-gray-900"
-        aria-label="Decrease print width"
+        aria-label={`Decrease ${label}`}
       >
         −
       </HoldRepeatButton>
@@ -48,12 +62,12 @@ export function CanvasSizeControl({ value, onChange }: CanvasSizeControlProps) {
         value={value}
         onChange={(e) => onChange(clamp(Number(e.target.value)))}
         className="w-12 text-center border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
+        aria-label={label}
       />
-      <span className="text-gray-500">″</span>
       <HoldRepeatButton
         onPress={() => onChange(clamp(value + STEP))}
         className="px-1 text-gray-500 hover:text-gray-900"
-        aria-label="Increase print width"
+        aria-label={`Increase ${label}`}
       >
         +
       </HoldRepeatButton>
