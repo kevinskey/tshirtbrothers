@@ -1957,11 +1957,11 @@ export default function DesignStudioPage() {
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    // Stack vertically on every viewport — the horizontal flex / grid
-    // versions both spilled past the viewport on iOS Chrome and pushed
-    // the Add button off-screen. Stacking is bulletproof and gives both
-    // controls a full-width tap target on mobile.
-    <div className="p-3 flex flex-col gap-2">
+    // Center-aligned content-sized Add button: w-full on a sibling
+    // <button> kept overflowing the viewport on iOS Chrome no matter what
+    // we did to the wrapper. A centered, padded button is content-sized
+    // so overflow becomes impossible.
+    <div className="p-3 flex flex-col items-center gap-2">
       <input
         placeholder="Enter your text..."
         value={textInput}
@@ -1974,7 +1974,7 @@ export default function DesignStudioPage() {
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="w-full rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="rounded-lg bg-red-600 px-12 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Add
       </button>
