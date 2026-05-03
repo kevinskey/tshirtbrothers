@@ -1894,12 +1894,15 @@ export default function DesignStudioPage() {
   // push past the viewport edge.
   const mobilePanel = `${panelBase} overflow-x-hidden bottom-12 inset-x-0 max-w-[100vw] mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
 
-  const panelHeader = (title: string) => (
-    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+  const panelHeader = (title: string, action?: React.ReactNode) => (
+    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 gap-2">
       <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      <button type="button" onClick={() => setActiveTool(null)} className="text-gray-400 hover:text-gray-600">
-        <X className="h-4 w-4" />
-      </button>
+      <div className="flex items-center gap-2">
+        {action}
+        <button type="button" onClick={() => setActiveTool(null)} className="text-gray-400 hover:text-gray-600">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 
@@ -1956,29 +1959,30 @@ export default function DesignStudioPage() {
   // font etc. are tweakable in the Edit Text drawer *after* the text is
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
+  // The Add button lives in the panel header (see textPanelAction below)
+  // so the input gets the full panel width to itself.
   const textPanelContent = (
-    // Single-row input + Add button. w-0 + grow + min-w-0 forces the
-    // input to start at zero width and only grow into leftover space —
-    // without that combo, iOS Chrome let the input keep its intrinsic
-    // min-content width and pushed the button off the right edge.
-    <div className="p-3 flex items-center gap-2">
+    <div className="p-3">
       <input
         placeholder="Enter your text..."
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        className="w-0 grow min-w-0 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         autoFocus
       />
-      <button
-        type="button"
-        onClick={addTextToCanvas}
-        disabled={!textInput.trim()}
-        className="shrink-0 rounded-lg bg-red-600 px-5 py-1.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Add
-      </button>
     </div>
+  );
+
+  const textPanelAction = (
+    <button
+      type="button"
+      onClick={addTextToCanvas}
+      disabled={!textInput.trim()}
+      className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      Add
+    </button>
   );
 
   // --- Art Panel ---
@@ -2426,9 +2430,9 @@ export default function DesignStudioPage() {
     </div>
   );
 
-  const panelContentMap: Record<string, { title: string; content: React.ReactNode }> = {
+  const panelContentMap: Record<string, { title: string; content: React.ReactNode; action?: React.ReactNode }> = {
     upload: { title: 'Upload Design', content: uploadPanelContent },
-    text: { title: 'Add Text', content: textPanelContent },
+    text: { title: 'Add Text', content: textPanelContent, action: textPanelAction },
     art: { title: 'Add Art', content: artPanelContent },
     shapes: { title: 'Add Shape', content: shapesPanelContent },
     details: { title: 'Product Details', content: detailsPanelContent },
@@ -2441,7 +2445,7 @@ export default function DesignStudioPage() {
     <>
       {/* Desktop panel */}
       <div className={desktopPanel}>
-        {panelHeader(activePanel.title)}
+        {panelHeader(activePanel.title, activePanel.action)}
         {activePanel.content}
       </div>
       {/* Mobile panel */}
@@ -2449,7 +2453,7 @@ export default function DesignStudioPage() {
         className={mobilePanel}
         style={{ bottom: `calc(3rem + ${kbInset}px)` }}
       >
-        {panelHeader(activePanel.title)}
+        {panelHeader(activePanel.title, activePanel.action)}
         {activePanel.content}
       </div>
     </>
