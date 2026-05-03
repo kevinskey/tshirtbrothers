@@ -3062,7 +3062,7 @@ export default function DesignStudioPage() {
   // Desktop gets the full side panel below (textSidePanel).
   const textToolbar = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="md:hidden fixed top-16 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
+      className="md:hidden fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
@@ -3074,7 +3074,7 @@ export default function DesignStudioPage() {
           <Type className="h-4 w-4" /><span>Text</span>
         </button>
         {textPop === 'tx' && (
-          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-64 z-50">
+          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-lg shadow-xl p-2 w-64 z-50">
             <input
               type="text"
               value={selectedEl.content}
@@ -3092,7 +3092,7 @@ export default function DesignStudioPage() {
           Aa<span>Font</span>
         </button>
         {textPop === 'fn' && (
-          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl w-72 z-50 overflow-hidden">
+          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-lg shadow-xl w-72 z-50 overflow-hidden">
             <FontPicker
               selectedFont={selectedEl.fontFamily ?? 'Inter'}
               onSelect={(name) => {
@@ -3125,7 +3125,7 @@ export default function DesignStudioPage() {
           ⌒<span>Shape</span>
         </button>
         {textPop === 'sh' && (
-          <div className="absolute top-full left-0 mt-2 bg-white border rounded-lg shadow-xl p-2 w-60 z-50">
+          <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-lg shadow-xl p-2 w-60 z-50">
             <div className="grid grid-cols-3 gap-1.5">
               {TEXT_SHAPES.map(shape => (
                 <button
@@ -3162,7 +3162,7 @@ export default function DesignStudioPage() {
       <div className="relative">
         <button type="button" onClick={() => setTextPop(textPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
         {textPop === 'sz' && (
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
             <div className="flex items-center gap-2">
               <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: inchesToFontSize(Math.max(0.1, fontSizeInches(selectedEl.fontSize ?? 24) - 0.1)) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
               <span className="flex-1 text-center text-sm font-semibold tabular-nums">{fontSizeInches(selectedEl.fontSize ?? 24).toFixed(1)}″</span>
@@ -3176,7 +3176,7 @@ export default function DesignStudioPage() {
       <div className="relative">
         <button type="button" onClick={() => setTextPop(textPop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
         {textPop === 'rt' && (
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
             <div className="flex items-center gap-2">
               <input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" />
               <span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span>
@@ -3189,7 +3189,7 @@ export default function DesignStudioPage() {
       <div className="relative">
         <button type="button" onClick={() => setTextPop(textPop === 'sp' ? null : 'sp')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'sp' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↔<span>Space</span></button>
         {textPop === 'sp' && (
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-60 z-50 space-y-3">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-white border rounded-lg shadow-xl p-3 w-60 z-50 space-y-3">
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] text-gray-500">Letters</span>
@@ -3219,7 +3219,7 @@ export default function DesignStudioPage() {
       <div className="relative">
         <button type="button" onClick={() => setTextPop(textPop === 'al' ? null : 'al')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'al' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>≡<span>Align</span></button>
         {textPop === 'al' && (
-          <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">
+          <div className="absolute bottom-full right-0 mb-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">
             {(['left', 'center', 'right'] as const).map(align => (
               <button
                 key={align}
