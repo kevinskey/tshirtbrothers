@@ -504,20 +504,36 @@ export default function DesignStudioPage() {
         if (!png) throw new Error('canvas not initialized');
         dataUrl = png;
       } else {
-        // Legacy renderer: render front-side elements to a 2048x2048
-        // transparent canvas by hand. Larger than the on-screen design
-        // surface so the saved asset is print-quality.
-        const SIZE = 2048;
+        // Legacy renderer: render front-side elements to a print-resolution
+        // PNG. The output canvas matches the design's per-design aspect
+        // ratio (canvasInches × canvasInchesH) — without this, a 3" × 19"
+        // design got squished into a 2048 × 2048 square, blowing text
+        // proportions and shrinking images. Target ~200 DPI, capped to
+        // 4096px on the longest side so encoded PNGs stay under the
+        // server's 10mb body limit.
+        const TARGET_DPI = 200;
+        const MAX_DIM = 4096;
+        let widthPx = Math.round(canvasInches * TARGET_DPI);
+        let heightPx = Math.round(canvasInchesH * TARGET_DPI);
+        const longest = Math.max(widthPx, heightPx);
+        if (longest > MAX_DIM) {
+          const scale = MAX_DIM / longest;
+          widthPx = Math.round(widthPx * scale);
+          heightPx = Math.round(heightPx * scale);
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = SIZE;
-        canvas.height = SIZE;
+        canvas.width = widthPx;
+        canvas.height = heightPx;
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('canvas context unavailable');
-        ctx.clearRect(0, 0, SIZE, SIZE);
+        ctx.clearRect(0, 0, widthPx, heightPx);
         for (const el of els) {
-          const x = ((el.x ?? 0) / 100) * SIZE;
-          const y = ((el.y ?? 0) / 100) * SIZE;
-          const w = ((el.width ?? 30) / 100) * SIZE;
+          // Element x / y are percent of CANVAS WIDTH / HEIGHT respectively;
+          // width is percent of canvas WIDTH (height tracks naturally for
+          // images, derived from fontSize for text).
+          const x = ((el.x ?? 0) / 100) * widthPx;
+          const y = ((el.y ?? 0) / 100) * heightPx;
+          const w = ((el.width ?? 30) / 100) * widthPx;
           if (el.type === 'image' && el.content) {
             try {
               const img = document.createElement('img');
@@ -531,7 +547,10 @@ export default function DesignStudioPage() {
               ctx.drawImage(img, x, y, w, w * aspect);
             } catch { /* skip on load failure */ }
           } else if (el.type === 'text' && el.content) {
-            const fontSize = ((el.fontSize ?? 24) * SIZE) / 800;
+            // fontSize stored in legacy 800-unit reference WIDTH space.
+            // Convert to pixels via widthPx (NOT a SIZE constant — that
+            // was the bug for non-square canvases).
+            const fontSize = ((el.fontSize ?? 24) * widthPx) / 800;
             ctx.save();
             if (el.rotation) {
               ctx.translate(x + w / 2, y + fontSize / 2);
