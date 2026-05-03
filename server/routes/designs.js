@@ -208,11 +208,14 @@ router.post('/', async (req, res, next) => {
     }
 
     const schemaVersion = isV2Elements(savedElements) ? 2 : 1;
+    // canvas_inches: per-design print-area width in inches. Defaults to 12
+    // (standard adult-tee chest) when client doesn't send it. Clamped 1-48.
+    const canvasInches = Math.max(1, Math.min(48, Number(req.body.canvas_inches) || 12));
     const result = await pool.query(
-      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail, schema_version)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO saved_designs (user_id, name, product_ss_id, product_name, product_image, color_index, elements, thumbnail, schema_version, canvas_inches)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING id, name, updated_at`,
-      [req.user.id, designName, product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(savedElements), thumbnailUrl, schemaVersion]
+      [req.user.id, designName, product_ss_id, product_name, product_image, color_index || 0, JSON.stringify(savedElements), thumbnailUrl, schemaVersion, canvasInches]
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -272,6 +275,12 @@ router.put('/:id', async (req, res, next) => {
     // Admins can edit any design; customers can only edit their own.
     const isAdmin = req.user?.role === 'admin';
     const newSchemaVersion = v2Save ? 2 : null;
+    // canvas_inches passes through if the client sends a value; otherwise
+    // COALESCE keeps the existing column. Clamp before write.
+    const canvasInchesIn = req.body.canvas_inches;
+    const canvasInches = canvasInchesIn != null
+      ? Math.max(1, Math.min(48, Number(canvasInchesIn) || 12))
+      : null;
     const result = await pool.query(
       `UPDATE saved_designs SET
         name = COALESCE($1, name),
@@ -282,12 +291,13 @@ router.put('/:id', async (req, res, next) => {
         elements = COALESCE($6, elements),
         thumbnail = COALESCE($7, thumbnail),
         schema_version = COALESCE($8, schema_version),
+        canvas_inches = COALESCE($9, canvas_inches),
         updated_at = NOW()
-       WHERE id = $9 ${isAdmin ? '' : 'AND user_id = $10'}
+       WHERE id = $10 ${isAdmin ? '' : 'AND user_id = $11'}
        RETURNING id, name, updated_at`,
       isAdmin
-        ? [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, designId]
-        : [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, designId, req.user.id],
+        ? [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, designId]
+        : [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, designId, req.user.id],
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Design not found' });
