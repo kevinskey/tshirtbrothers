@@ -1608,7 +1608,12 @@ export default function DesignStudioPage() {
 
     const handleTouchMove = (e: TouchEvent) => {
       const touch = e.touches[0];
-      if (touch) handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
+      if (!touch) return;
+      // Block the browser's default pan/scroll while we're dragging an
+      // element. Without this, single-finger drags both moved the element
+      // and scrolled the page on mobile, making the canvas unusable.
+      e.preventDefault();
+      handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
     };
     const handleTouchEnd = () => setDragState(null);
 
@@ -2530,6 +2535,10 @@ export default function DesignStudioPage() {
   // Mobile uses a floating top toolbar (no offset). Desktop uses the
   // textSidePanel in the left flyout, so add the 320px offset there.
   const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
+  // On mobile, reserve room only when a bottom sheet (tool / welcome / text
+  // panels) is actually open. Otherwise just clear the bottom nav (h-12).
+  // The old static `pb-64` ate ~30% of the viewport on phones for nothing.
+  const mobileBottomPad = (activeTool || showWelcome || showTextEditor) ? 'pb-[42vh]' : 'pb-14';
   // Phase 2 PR #10: layers panel takes 18rem of the right edge in Fabric
   // mode. Add a matching margin so the canvas isn't covered. Legacy mode
   // pays nothing for this — the panel doesn't render and the class isn't
@@ -2538,7 +2547,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 ${mobileBottomPad} md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -2667,6 +2676,10 @@ export default function DesignStudioPage() {
                   // fontSize, same as before.
                   height: el.type === 'shape' ? `${el.height ?? el.width}%` : undefined,
                   transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+                  // Without this the browser steals single-finger touches
+                  // for page scrolling, so dragging an element on mobile
+                  // both moved the element and scrolled the canvas.
+                  touchAction: 'none',
                 }}
               >
                 {el.type === 'shape' ? (
@@ -2744,16 +2757,23 @@ export default function DesignStudioPage() {
                         key={corner}
                         onMouseDown={e => handleElementMouseDown(e, el.id, 'resize')}
                         onTouchStart={e => handleElementTouchStart(e, el.id, 'resize')}
-                        className={`absolute w-3 h-3 bg-white border-2 border-blue-500 cursor-se-resize z-10 ${
+                        // Visible handle is small on desktop, larger on
+                        // mobile. The wrapping div has a 24px touch hit-area
+                        // (-inset-3) so corner grabs land on a finger-sized
+                        // target without making the visible handle huge.
+                        style={{ touchAction: 'none' }}
+                        className={`absolute z-10 cursor-se-resize flex items-center justify-center -m-3 p-3 ${
                           corner === 'top-left'
-                            ? '-top-1.5 -left-1.5'
+                            ? '-top-3 -left-3'
                             : corner === 'top-right'
-                              ? '-top-1.5 -right-1.5'
+                              ? '-top-3 -right-3'
                               : corner === 'bottom-left'
-                                ? '-bottom-1.5 -left-1.5'
-                                : '-bottom-1.5 -right-1.5'
+                                ? '-bottom-3 -left-3'
+                                : '-bottom-3 -right-3'
                         }`}
-                      />
+                      >
+                        <span className="block w-4 h-4 md:w-3 md:h-3 bg-white border-2 border-blue-500 rounded-sm" />
+                      </div>
                     ))}
                     {/* Delete button */}
                     <button
@@ -3463,7 +3483,7 @@ export default function DesignStudioPage() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-100 flex flex-col">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-gray-100 flex flex-col">
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
