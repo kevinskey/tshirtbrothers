@@ -838,16 +838,18 @@ export default function DesignStudioPage() {
   /*  Design element helpers                                           */
   /* ---------------------------------------------------------------- */
 
-  const addDesignElement = useCallback((el: Omit<DesignElement, 'id'>) => {
+  const addDesignElement = useCallback((el: Omit<DesignElement, 'id'>, opts?: { keepPanelOpen?: boolean }) => {
     // Tag the new element with whichever side the user is currently viewing.
     // Front/back/sleeve elements live in the same flat array but we filter
     // by `el.side` at render and print time so each side has its own design.
     const newEl: DesignElement = { ...el, side: el.side ?? currentView, id: Date.now().toString() + Math.random().toString(36).slice(2) };
     setDesignElements(prev => [...prev, newEl]);
     setSelectedElementId(newEl.id);
-    // Auto-close whichever tool panel is open so the user immediately sees
-    // the result on the canvas instead of having to close the panel manually.
-    setActiveTool(null);
+    // Auto-close the tool panel after add — except when the caller opts out.
+    // Text wants to stay open so users can keep adding lines without
+    // re-opening the panel; uploads and AI/library inserts close because
+    // each one represents "I'm done with that tool."
+    if (!opts?.keepPanelOpen) setActiveTool(null);
   }, [currentView]);
 
   const removeElement = useCallback((id: string) => {
@@ -1197,6 +1199,9 @@ export default function DesignStudioPage() {
 
   const addTextToCanvas = useCallback(() => {
     if (!textInput.trim()) return;
+    // keepPanelOpen: true so the user can keep typing the next line without
+    // re-opening the Add Text tool. Per Kevin's UX request — typing five
+    // text elements in a row was clicking "Add Text" five times before.
     addDesignElement({
       type: 'text',
       x: 30,
@@ -1209,7 +1214,7 @@ export default function DesignStudioPage() {
       rotation: 0,
       textAlign: 'center',
       outline: false,
-    });
+    }, { keepPanelOpen: true });
     setTextInput('');
     // Deselect so the full-screen Edit Text panel doesn't immediately pop
     // up — the user just wanted to add text, not open another editor.
