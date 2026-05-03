@@ -1199,9 +1199,11 @@ export default function DesignStudioPage() {
 
   const addTextToCanvas = useCallback(() => {
     if (!textInput.trim()) return;
-    // keepPanelOpen: true so the user can keep typing the next line without
-    // re-opening the Add Text tool. Per Kevin's UX request — typing five
-    // text elements in a row was clicking "Add Text" five times before.
+    // After add, leave the new element SELECTED so the Edit Text side
+    // panel opens automatically — that's where the user goes next 95% of
+    // the time to set font / color / shape / size. addDesignElement
+    // closes the Add Text panel; selecting the new element flips the
+    // showTextEditor flag and the Edit Text panel takes its place.
     addDesignElement({
       type: 'text',
       x: 30,
@@ -1214,12 +1216,10 @@ export default function DesignStudioPage() {
       rotation: 0,
       textAlign: 'center',
       outline: false,
-    }, { keepPanelOpen: true });
+    });
     setTextInput('');
-    // Deselect so the full-screen Edit Text panel doesn't immediately pop
-    // up — the user just wanted to add text, not open another editor.
-    // Blur any focused input so the mobile keyboard dismisses too.
-    setSelectedElementId(null);
+    // Blur the focused input so the mobile keyboard dismisses — without
+    // this, the Edit Text panel opens behind a still-up keyboard.
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
