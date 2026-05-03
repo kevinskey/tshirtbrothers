@@ -1887,9 +1887,12 @@ export default function DesignStudioPage() {
   /*  Render: Tool Panels                                              */
   /* ---------------------------------------------------------------- */
 
-  const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
-  const desktopPanel = `${panelBase} top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
-  const mobilePanel = `${panelBase} bottom-12 left-0 right-0 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
+  const panelBase = 'fixed z-30 bg-white shadow-xl';
+  const desktopPanel = `${panelBase} overflow-y-auto top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
+  // Mobile sheet: clip both axes so panel content can never push past the
+  // viewport edge (iOS was letting the inner grid extend off-screen even
+  // with left-0 right-0). max-w-[100vw] + overflow-hidden enforces it.
+  const mobilePanel = `${panelBase} inset-x-0 max-w-[100vw] overflow-hidden bottom-12 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden flex flex-col`;
 
   const panelHeader = (title: string) => (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -1954,23 +1957,23 @@ export default function DesignStudioPage() {
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    <div className="p-3 flex items-center gap-2 w-full">
+    // Grid (1fr auto) is more reliable than flex+min-w-0 on iOS Safari for
+    // "shrink-left / fixed-right" rows — the input was still spilling past
+    // the viewport in flex mode, pushing the Add button mostly off-screen.
+    <div className="p-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
       <input
         placeholder="Enter your text..."
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        // min-w-0 lets the input actually shrink inside the flex row;
-        // without it the input's intrinsic min-content width pushed the
-        // Add button off the right edge on narrow phones.
-        className="flex-1 min-w-0 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        className="w-full min-w-0 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         autoFocus
       />
       <button
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="shrink-0 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Add
       </button>
@@ -2446,7 +2449,9 @@ export default function DesignStudioPage() {
         style={{ bottom: `calc(3rem + ${kbInset}px)` }}
       >
         {panelHeader(activePanel.title)}
-        {activePanel.content}
+        <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0">
+          {activePanel.content}
+        </div>
       </div>
     </>
   ) : null;
