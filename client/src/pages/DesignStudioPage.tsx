@@ -455,17 +455,19 @@ export default function DesignStudioPage() {
   // visual viewport is than the layout viewport and lift the panel by that
   // amount.
   const [kbInset, setKbInset] = useState(0);
-  // Track the actual visible viewport width so we can pin the mobile
-  // tool-panel to it. iOS Chrome was rendering the panel slightly wider
-  // than the visual viewport even with inset-x-0 + max-w-[100vw], which
-  // pushed the input/button past the right edge.
-  const [vpWidth, setVpWidth] = useState<number>(() =>
-    typeof document !== 'undefined' ? document.documentElement.clientWidth : 0,
-  );
+  // Track the actual *visual* viewport width so we can pin the mobile
+  // tool-panel to it. document.documentElement.clientWidth returns the
+  // layout viewport, which on iOS Chrome can be wider than what's
+  // actually visible — that's why even a JS-set width was leaking past
+  // the right edge.
+  const [vpWidth, setVpWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    return window.visualViewport?.width ?? document.documentElement.clientWidth;
+  });
   useEffect(() => {
     const vv = window.visualViewport;
     const update = () => {
-      setVpWidth(document.documentElement.clientWidth);
+      setVpWidth(vv?.width ?? document.documentElement.clientWidth);
       if (!vv) return;
       const inset = window.innerHeight - vv.height - vv.offsetTop;
       setKbInset(inset > 80 ? inset : 0);
@@ -1899,10 +1901,10 @@ export default function DesignStudioPage() {
 
   const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
   const desktopPanel = `${panelBase} top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
-  // Mobile sheet: scroll vertically inside the panel, clip horizontally so
-  // wide content (the Shapes 3-card grid, the Add Text input row) can't
-  // push past the viewport edge.
-  const mobilePanel = `${panelBase} overflow-x-hidden bottom-12 inset-x-0 max-w-[100vw] mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
+  // Mobile sheet: width is pinned via inline style (vpWidth) so we only
+  // need left-0 here, not inset-x-0. overflow-x-hidden clips any wide
+  // content (the Shapes 3-card grid, etc.) at the panel edge.
+  const mobilePanel = `${panelBase} overflow-x-hidden bottom-12 left-0 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
 
   const panelHeader = (title: string, action?: React.ReactNode) => (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 gap-2">
