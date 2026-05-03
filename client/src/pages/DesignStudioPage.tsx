@@ -1887,12 +1887,12 @@ export default function DesignStudioPage() {
   /*  Render: Tool Panels                                              */
   /* ---------------------------------------------------------------- */
 
-  const panelBase = 'fixed z-30 bg-white shadow-xl';
-  const desktopPanel = `${panelBase} overflow-y-auto top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
-  // Mobile sheet: clip both axes so panel content can never push past the
-  // viewport edge (iOS was letting the inner grid extend off-screen even
-  // with left-0 right-0). max-w-[100vw] + overflow-hidden enforces it.
-  const mobilePanel = `${panelBase} inset-x-0 max-w-[100vw] overflow-hidden bottom-12 mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden flex flex-col`;
+  const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
+  const desktopPanel = `${panelBase} top-14 bottom-0 left-16 w-80 border-r border-gray-200 hidden md:block`;
+  // Mobile sheet: scroll vertically inside the panel, clip horizontally so
+  // wide content (the Shapes 3-card grid, the Add Text input row) can't
+  // push past the viewport edge.
+  const mobilePanel = `${panelBase} overflow-x-hidden bottom-12 inset-x-0 max-w-[100vw] mobile-max-35vh rounded-t-2xl border-t border-gray-200 md:hidden`;
 
   const panelHeader = (title: string) => (
     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
@@ -2449,9 +2449,7 @@ export default function DesignStudioPage() {
         style={{ bottom: `calc(3rem + ${kbInset}px)` }}
       >
         {panelHeader(activePanel.title)}
-        <div className="overflow-y-auto overflow-x-hidden flex-1 min-h-0">
-          {activePanel.content}
-        </div>
+        {activePanel.content}
       </div>
     </>
   ) : null;
