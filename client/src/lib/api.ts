@@ -313,6 +313,11 @@ export interface CustomerDesign {
   product_image?: string;
   color_index?: number;
   elements?: unknown[];
+  // Per-design canvas dimensions in inches. Null on rows from before the
+  // canvas-size feature shipped (PRs #19/#22). Server defaults the column
+  // to 12 so reads should be numeric, but we tolerate null for safety.
+  canvas_inches?: number | string | null;
+  canvas_inches_h?: number | string | null;
   thumbnail?: string;
   mockup_url: string | null;
   print_url: string | null;

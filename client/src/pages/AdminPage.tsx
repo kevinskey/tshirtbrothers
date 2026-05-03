@@ -2520,6 +2520,12 @@ export default function AdminPage() {
                               elements: d.elements || [],
                               productImage: d.product_image,
                               colorIndex: d.color_index || 0,
+                              // Pass the saved canvas size so DesignStudioPage
+                              // hydrates with the same W × H — without these
+                              // it falls back to 12 × 12 and percentage-based
+                              // text positions render at wrong screen coords.
+                              canvasInches: d.canvas_inches != null ? Number(d.canvas_inches) : undefined,
+                              canvasInchesH: d.canvas_inches_h != null ? Number(d.canvas_inches_h) : undefined,
                               backTo: '/admin?section=designs',
                             }}
                             className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
