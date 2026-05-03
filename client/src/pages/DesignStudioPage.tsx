@@ -571,6 +571,12 @@ export default function DesignStudioPage() {
     if (els.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
     setLibrarySaving(true);
     try {
+      // Dynamic import — opentype.js + wawoff2 are 1+ MB. Loading them
+      // eagerly into the page bundle would slow first paint for every
+      // visitor; loading them at click-time (admin-only Save to Library)
+      // keeps the main bundle lean and the cost lands where the user
+      // already expects a wait (the Saving spinner).
+      const { loadFontForText } = await import('@/lib/fabric/loadFontForText');
       // Fabric mode: defer to the canvas's native exportPNG. Avoids a
       // second 2D-canvas codepath that would drift from the renderer
       // (the legacy block below uses by-hand drawImage / fillText math
@@ -708,36 +714,80 @@ export default function DesignStudioPage() {
               ctx.drawImage(img, x, y, w, w * aspect);
             } catch { /* skip on load failure */ }
           } else if (el.type === 'text' && el.content) {
-            // fontSize stored in legacy 800-unit reference WIDTH space.
-            // Convert to pixels via widthPx (NOT a SIZE constant — that
-            // was the bug for non-square canvases).
+            // Text → vectors (Illustrator "Create Outlines"). We load the
+            // actual Google Font binary via opentype.js and render the
+            // glyph paths into the Canvas 2D context. This avoids the
+            // browser-default-font fallback that ctx.fillText hits when
+            // the webfont isn't registered against the export canvas —
+            // that was the source of the "saved text is the wrong size"
+            // bug. Outline (el.outline=true) becomes a real stroke on the
+            // path; the soft drop shadow stays.
             const fontSize = ((el.fontSize ?? 24) * widthPx) / 800;
+            const family = el.fontFamily ?? 'Inter';
+            const lineHeight = el.lineHeight ?? 1.2;
+            const lines = el.content.split('\n');
+            const font = await loadFontForText(family, 700, el.content);
+
             ctx.save();
             if (el.rotation) {
               ctx.translate(x + w / 2, y + fontSize / 2);
               ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
               ctx.translate(-(x + w / 2), -(y + fontSize / 2));
             }
-            ctx.font = `bold ${fontSize}px ${el.fontFamily ?? 'Inter'}`;
-            ctx.fillStyle = el.color ?? '#000000';
-            ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-            const textX = el.textAlign === 'left' ? x : x + w / 2;
-            const textY = y + fontSize;
-            // Match the studio's CSS text rendering: outline=true paints a
-            // 4-direction stroke, otherwise a soft drop shadow. Without this
-            // the saved PNG looked "naked" compared to the on-screen text.
-            if (el.outline) {
-              ctx.lineWidth = Math.max(1, fontSize * 0.04);
-              ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-              ctx.lineJoin = 'round';
-              ctx.miterLimit = 2;
-              ctx.strokeText(el.content, textX, textY);
-            } else {
+            // Drop shadow for non-outline text. Match the studio's CSS
+            // textShadow values, scaled with fontSize.
+            if (!el.outline) {
               ctx.shadowColor = 'rgba(0,0,0,0.3)';
               ctx.shadowBlur = Math.max(2, fontSize * 0.06);
               ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
             }
-            ctx.fillText(el.content, textX, textY);
+
+            if (font) {
+              // Vector path. opentype.js places the BASELINE at y; ascender
+              // ratio gives us the right top-of-glyphs offset.
+              const ascend = (font.ascender / font.unitsPerEm) * fontSize;
+              lines.forEach((line, i) => {
+                if (!line) return;
+                // Horizontal alignment: opentype draws starting at the
+                // given x, so for center / right we need to offset by
+                // measured advance width.
+                const advance = font.getAdvanceWidth(line, fontSize);
+                let lineX = x;
+                if (el.textAlign === 'center' || el.textAlign === undefined) {
+                  lineX = x + w / 2 - advance / 2;
+                } else if (el.textAlign === 'right') {
+                  lineX = x + w - advance;
+                }
+                const lineY = y + ascend + i * fontSize * lineHeight;
+                const path = font.getPath(line, lineX, lineY, fontSize);
+                const path2d = new Path2D(path.toPathData(2));
+                ctx.fillStyle = el.color ?? '#000000';
+                ctx.fill(path2d);
+                if (el.outline) {
+                  // Re-stroke with shadow disabled — we don't want the
+                  // shadow on the outline strokes.
+                  const sb = ctx.shadowBlur;
+                  ctx.shadowBlur = 0;
+                  ctx.lineWidth = Math.max(1, fontSize * 0.04);
+                  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+                  ctx.lineJoin = 'round';
+                  ctx.stroke(path2d);
+                  ctx.shadowBlur = sb;
+                }
+              });
+            } else {
+              // Font load failed (network, unsupported family, etc.) —
+              // fall back to the previous fillText path so we still emit
+              // SOMETHING readable. Tagged so we can grep for it later.
+              console.warn('[saveToLibrary] font load failed, falling back to fillText for', family);
+              ctx.font = `bold ${fontSize}px ${family}`;
+              ctx.fillStyle = el.color ?? '#000000';
+              ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+              const textX = el.textAlign === 'left' ? x : x + w / 2;
+              lines.forEach((line, i) => {
+                ctx.fillText(line, textX, y + fontSize + i * fontSize * lineHeight);
+              });
+            }
             ctx.restore();
           }
         }
