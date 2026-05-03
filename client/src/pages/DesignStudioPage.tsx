@@ -55,6 +55,11 @@ interface DesignElement {
   // outline. shapeType picks which SVG primitive to render.
   type: 'image' | 'text' | 'shape';
   shapeType?: ShapeType;
+  // Optional explicit height (% of canvas height). Currently used only by
+  // shape elements so a circle / rect / etc can be sized non-square via
+  // free corner-drag. Image/text elements ignore this — their height is
+  // derived from natural aspect (image) or fontSize × lineHeight (text).
+  height?: number;
   // Which side of the garment this element belongs to. Optional for
   // backwards-compat: any saved design from before this field existed has
   // no side stored, and we treat that as 'front'.
@@ -608,9 +613,11 @@ export default function DesignStudioPage() {
           const y = ((el.y ?? 0) / 100) * heightPx;
           const w = ((el.width ?? 30) / 100) * widthPx;
           if (el.type === 'shape') {
-            // Mirror ShapeSvg's geometry into Canvas-2D paths. Same square
-            // bounding box (height = width) the on-screen renderer assumes.
-            const h = w;
+            // Mirror ShapeSvg's geometry into Canvas-2D paths. Bounding
+            // box uses the shape's own height (% of canvas height) when
+            // present — falls back to width-as-height for older saves
+            // that pre-date the free-resize change.
+            const h = ((el.height ?? el.width) / 100) * heightPx;
             const fill = el.color ?? '#ec4899';
             const stroke = el.strokeColor;
             const sw = (el.strokeWidth ?? 0) * (widthPx / 100);
@@ -967,6 +974,7 @@ export default function DesignStudioPage() {
     startX: number;
     startY: number;
     startWidth: number;
+    startHeight: number;
   } | null>(null);
 
   /* ---------------------------------------------------------------- */
@@ -1448,6 +1456,10 @@ export default function DesignStudioPage() {
       startX: el.x,
       startY: el.y,
       startWidth: el.width,
+      // Shape elements track height independently. Image / text default
+      // height to width — they ignore it but the resize math wants a real
+      // number to subtract from.
+      startHeight: el.height ?? el.width,
     });
   }, [designElements]);
 
@@ -1469,7 +1481,7 @@ export default function DesignStudioPage() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
-      const { elementId, mode, startMx, startMy, startX, startY, startWidth } = dragState;
+      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight } = dragState;
 
       if (mode === 'move') {
         const dx = ((e.clientX - startMx) / rect.width) * 100;
@@ -1483,10 +1495,24 @@ export default function DesignStudioPage() {
         );
       } else {
         const dx = ((e.clientX - startMx) / rect.width) * 100;
+        const dy = ((e.clientY - startMy) / rect.height) * 100;
+        const shiftHeld = e.shiftKey;
         setDesignElements(prev =>
-          prev.map(el =>
-            el.id === elementId ? { ...el, width: Math.max(5, Math.min(80, startWidth + dx)) } : el,
-          ),
+          prev.map(el => {
+            if (el.id !== elementId) return el;
+            // Shapes resize on both axes by default — Shift preserves the
+            // ORIGINAL aspect ratio (Photoshop convention). Non-shape
+            // elements still resize on width only; their height is derived
+            // (image: natural aspect, text: fontSize × lineHeight).
+            if (el.type === 'shape') {
+              const newW = Math.max(5, Math.min(100, startWidth + dx));
+              const newH = shiftHeld
+                ? newW * (startHeight / startWidth)
+                : Math.max(5, Math.min(100, startHeight + dy));
+              return { ...el, width: newW, height: newH };
+            }
+            return { ...el, width: Math.max(5, Math.min(80, startWidth + dx)) };
+          }),
         );
       }
     };
@@ -2247,6 +2273,9 @@ export default function DesignStudioPage() {
                 x: 35,
                 y: 35,
                 width: 30,
+                // Default height = width (square aspect). User changes by
+                // dragging a corner; Shift preserves the original ratio.
+                height: 30,
                 content: '',
                 color: '#ec4899',
                 rotation: 0,
@@ -2513,6 +2542,11 @@ export default function DesignStudioPage() {
                   left: `${el.x}%`,
                   top: `${el.y}%`,
                   width: `${el.width}%`,
+                  // Shapes get an explicit height so they can be sized
+                  // non-square via free corner drag. Image / text leave
+                  // height unset and derive it from natural aspect /
+                  // fontSize, same as before.
+                  height: el.type === 'shape' ? `${el.height ?? el.width}%` : undefined,
                   transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
                 }}
               >
