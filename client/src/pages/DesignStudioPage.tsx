@@ -3062,7 +3062,12 @@ export default function DesignStudioPage() {
   // Desktop gets the full side panel below (textSidePanel).
   const textToolbar = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="md:hidden fixed bottom-[5.5rem] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)]"
+      // Horizontal scrolling palette pinned just above the main bottom
+      // toolbar. Children get shrink-0 so they keep their tap-target width
+      // when the row gets crowded; overflow-x-auto lets the user swipe to
+      // reach the trailing buttons (Outline / Copy / Delete) on small
+      // screens.
+      className="md:hidden fixed bottom-[5.5rem] left-2 right-2 z-40 flex flex-nowrap items-center gap-0.5 overflow-x-auto bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 [&>*]:shrink-0"
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
