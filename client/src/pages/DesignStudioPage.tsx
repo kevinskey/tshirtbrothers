@@ -9,6 +9,7 @@ import { FontPicker } from '@/components/design-studio/FontPicker';
 import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
 import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
+import { CanvasSizeControl } from '@/components/design-studio/CanvasSizeControl';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -344,7 +345,7 @@ export default function DesignStudioPage() {
   const location = useLocation();
   // `elements` widened to DesignElement[] | object — a row saved through
   // the Fabric renderer arrives as an object with `schemaVersion: 2`.
-  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string } | null;
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string; canvasInches?: number } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -379,6 +380,22 @@ export default function DesignStudioPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Per-design print-area width in inches. Default 12 (standard adult-tee
+  // chest). Hydrated from loadState if a saved design was opened. Drives
+  // the DimensionReadout and the text-size-in-inches conversions.
+  const [canvasInches, setCanvasInches] = useState<number>(
+    typeof loadState?.canvasInches === 'number' && loadState.canvasInches > 0
+      ? loadState.canvasInches
+      : 12,
+  );
+  // Conversion factor: legacy fontSize is in 800-px reference units, where
+  // the full canvas width = 800px. canvas_inches inches map to those 800
+  // units, so 1 inch = 800 / canvasInches reference units.
+  const fontInchesPerUnit = canvasInches / 800;
+  const fontUnitsPerInch = 800 / canvasInches;
+  const fontSizeInches = (px: number) => px * fontInchesPerUnit;
+  const inchesToFontSize = (inches: number) => Math.max(1, Math.round(inches * fontUnitsPerInch));
 
   // ─── Fabric renderer toggle ────────────────────────────────────────────
   // ?canvas=fabric on the URL turns on the new renderer. Existence-only flag —
@@ -611,6 +628,7 @@ export default function DesignStudioPage() {
         color_index: selectedColorIdx,
         elements: elementsPayload,
         design_data: designData,
+        canvas_inches: canvasInches,
       };
       if (useFabricRenderer && originalLegacyPayload) {
         body.original_legacy_payload = originalLegacyPayload;
@@ -1338,6 +1356,7 @@ export default function DesignStudioPage() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
+        <CanvasSizeControl value={canvasInches} onChange={setCanvasInches} />
         {isAdmin && (
           <button
             type="button"
@@ -2315,6 +2334,7 @@ export default function DesignStudioPage() {
               selected. */}
           <DimensionReadout
             element={selectedEl ?? null}
+            canvasInches={canvasInches}
           />
         </div>
       </div>
@@ -2608,9 +2628,9 @@ export default function DesignStudioPage() {
         {textPop === 'sz' && (
           <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
             <div className="flex items-center gap-2">
-              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
-              <span className="flex-1 text-center text-sm font-semibold">{selectedEl.fontSize ?? 24}</span>
-              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
+              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: inchesToFontSize(Math.max(0.1, fontSizeInches(selectedEl.fontSize ?? 24) - 0.1)) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
+              <span className="flex-1 text-center text-sm font-semibold tabular-nums">{fontSizeInches(selectedEl.fontSize ?? 24).toFixed(1)}″</span>
+              <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: inchesToFontSize(Math.min(canvasInches, fontSizeInches(selectedEl.fontSize ?? 24) + 0.1)) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
             </div>
           </div>
         )}
@@ -2747,9 +2767,9 @@ export default function DesignStudioPage() {
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">Size</span>
           <div className="flex items-center gap-2">
-            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.max(12, (selectedEl.fontSize ?? 24) - 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
-            <span className="text-sm font-semibold w-8 text-center">{selectedEl.fontSize ?? 24}</span>
-            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: Math.min(120, (selectedEl.fontSize ?? 24) + 2) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
+            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: inchesToFontSize(Math.max(0.1, fontSizeInches(selectedEl.fontSize ?? 24) - 0.1)) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">-</HoldRepeatButton>
+            <span className="text-sm font-semibold w-12 text-center tabular-nums">{fontSizeInches(selectedEl.fontSize ?? 24).toFixed(1)}″</span>
+            <HoldRepeatButton onPress={() => updateElement(selectedEl.id, { fontSize: inchesToFontSize(Math.min(canvasInches, fontSizeInches(selectedEl.fontSize ?? 24) + 0.1)) })} className="w-8 h-8 rounded border border-gray-200 text-gray-600 font-bold">+</HoldRepeatButton>
           </div>
         </div>
 
