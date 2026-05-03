@@ -3057,7 +3057,7 @@ export default function DesignStudioPage() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-gray-100">
+    <div className="h-screen w-screen overflow-hidden bg-gray-100 flex flex-col">
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
