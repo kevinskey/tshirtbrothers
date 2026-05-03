@@ -7,6 +7,7 @@ import { LayersPanel } from '@/components/design-studio/LayersPanel';
 import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 import { FontPicker } from '@/components/design-studio/FontPicker';
 import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
+import { CropModal } from '@/components/design-studio/CropModal';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
 import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
 import { CanvasSizeControl } from '@/components/design-studio/CanvasSizeControl';
@@ -43,6 +44,7 @@ import {
   Star,
   Heart,
   AlignCenter,
+  Crop as CropIcon,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -2440,6 +2442,11 @@ export default function DesignStudioPage() {
   useEffect(() => { setImgPop(null); }, [selectedElementId]);
   const [textPop, setTextPop] = useState<string | null>(null);
   useEffect(() => { setTextPop(null); }, [selectedElementId]);
+  // Crop modal: id of the image element being cropped, null = closed.
+  const [croppingElementId, setCroppingElementId] = useState<string | null>(null);
+  const croppingElement = croppingElementId
+    ? designElements.find(e => e.id === croppingElementId) ?? null
+    : null;
 
   const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
     <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
@@ -2449,6 +2456,19 @@ export default function DesignStudioPage() {
         <button type="button" onClick={() => setImgPop(imgPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
         {imgPop === 'sz' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
       </div>
+
+      {/* Crop — opens the visual crop modal. Replaces el.content with the
+          cropped data URL on Apply; the new image's natural aspect drives
+          the bounding box height automatically. */}
+      <button
+        type="button"
+        onClick={() => setCroppingElementId(selectedEl.id)}
+        title="Crop image"
+        className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100"
+      >
+        <CropIcon className="h-3.5 w-3.5" />
+        <span>Crop</span>
+      </button>
 
       {/* Rotate */}
       <div className="relative">
@@ -3468,6 +3488,20 @@ export default function DesignStudioPage() {
       )}
       {bottomBar}
       {loginPromptModal}
+
+      {/* Visual image cropper. Mounts only when an image is being cropped;
+          Apply replaces el.content with the cropped data URL. Save flow
+          will then upload the new image to Spaces on the next save. */}
+      {croppingElement && croppingElement.type === 'image' && (
+        <CropModal
+          src={croppingElement.content}
+          onCancel={() => setCroppingElementId(null)}
+          onApply={(dataUrl) => {
+            updateElement(croppingElement.id, { content: dataUrl });
+            setCroppingElementId(null);
+          }}
+        />
+      )}
 
       {/* Remove Background Prompt */}
       {pendingUpload && (
