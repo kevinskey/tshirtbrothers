@@ -394,6 +394,13 @@ export default function DesignStudioPage() {
       ? loadState.canvasInchesH
       : 12,
   );
+
+  // Display zoom — multiplier on the canvas surface's width. 1.0 = fit
+  // viewport (the legacy responsive behavior). > 1 makes the canvas
+  // overflow the main, which has overflow-auto so horizontal + vertical
+  // scrollbars appear. UX-only: doesn't change saved coords or print
+  // size, just the on-screen working area.
+  const [canvasZoom, setCanvasZoom] = useState<number>(1);
   // Conversion factor: legacy fontSize is in 800-px reference units, where
   // the full canvas width = 800px. canvas_inches inches map to those 800
   // units, so 1 inch = 800 / canvasInches reference units.
@@ -1373,6 +1380,29 @@ export default function DesignStudioPage() {
           onChangeWidth={setCanvasInches}
           onChangeHeight={setCanvasInchesH}
         />
+        {/* Zoom — multiplies the canvas surface width. > 100% overflows
+            the canvas main and triggers horizontal + vertical scroll.
+            UX-only, doesn't affect saved geometry. */}
+        <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700">
+          <span className="font-medium">Zoom:</span>
+          <HoldRepeatButton
+            onPress={() => setCanvasZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
+            className="px-1 text-gray-500 hover:text-gray-900"
+            aria-label="Zoom out"
+          >−</HoldRepeatButton>
+          <span className="w-10 text-center tabular-nums">{Math.round(canvasZoom * 100)}%</span>
+          <HoldRepeatButton
+            onPress={() => setCanvasZoom(z => Math.min(4, Math.round((z + 0.1) * 10) / 10))}
+            className="px-1 text-gray-500 hover:text-gray-900"
+            aria-label="Zoom in"
+          >+</HoldRepeatButton>
+          <button
+            type="button"
+            onClick={() => setCanvasZoom(1)}
+            className="ml-1 px-1.5 py-0.5 rounded text-[10px] text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+            title="Reset to 100%"
+          >Fit</button>
+        </div>
         {isAdmin && (
           <button
             type="button"
@@ -2127,7 +2157,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-y-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center bg-gray-100 pt-16 pb-64 md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -2144,8 +2174,16 @@ export default function DesignStudioPage() {
           panel / mobile toolbar. */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-1 md:px-6" ref={canvasRef}>
         <div
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none"
-          style={{ touchAction: 'pinch-zoom', aspectRatio: `${canvasInches} / ${canvasInchesH}` }}
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none mx-auto"
+          style={{
+            touchAction: 'pinch-zoom',
+            aspectRatio: `${canvasInches} / ${canvasInchesH}`,
+            // Zoom multiplies width — height tracks via aspect-ratio. > 100%
+            // overflows the parent main (which has overflow-auto), so
+            // horizontal + vertical scrollbars appear. mx-auto centers the
+            // canvas while it still fits.
+            width: `${100 * canvasZoom}%`,
+          }}
         >
           {displayImage ? (
             <img
