@@ -448,6 +448,28 @@ export default function DesignStudioPage() {
       setAiChatOpen(false);
     }
   }, [aiChatOpen]);
+
+  // Tracks the iOS / Android soft-keyboard height. fixed-position elements
+  // are anchored to the layout viewport, so without this the bottom Add-Text
+  // panel sits *behind* the open keyboard. We measure how much shorter the
+  // visual viewport is than the layout viewport and lift the panel by that
+  // amount.
+  const [kbInset, setKbInset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const inset = window.innerHeight - vv.height - vv.offsetTop;
+      setKbInset(inset > 80 ? inset : 0);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+    };
+  }, []);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
@@ -1932,20 +1954,23 @@ export default function DesignStudioPage() {
   // placed, so they don't need to clutter the Add panel (which otherwise
   // covered most of the t-shirt preview on mobile).
   const textPanelContent = (
-    <div className="p-3 flex items-center gap-2">
+    <div className="p-3 flex items-center gap-2 w-full">
       <input
         placeholder="Enter your text..."
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        className="flex-1 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        // min-w-0 lets the input actually shrink inside the flex row;
+        // without it the input's intrinsic min-content width pushed the
+        // Add button off the right edge on narrow phones.
+        className="flex-1 min-w-0 rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         autoFocus
       />
       <button
         type="button"
         onClick={addTextToCanvas}
         disabled={!textInput.trim()}
-        className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        className="shrink-0 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Add
       </button>
@@ -2416,7 +2441,10 @@ export default function DesignStudioPage() {
         {activePanel.content}
       </div>
       {/* Mobile panel */}
-      <div className={mobilePanel}>
+      <div
+        className={mobilePanel}
+        style={{ bottom: `calc(3rem + ${kbInset}px)` }}
+      >
         {panelHeader(activePanel.title)}
         {activePanel.content}
       </div>
