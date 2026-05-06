@@ -88,18 +88,19 @@ router.get('/', async (req, res, next) => {
         for (const term of terms) {
           const upperTerm = term.toUpperCase();
           if (isSizeToken(term)) {
-            // Match name/brand/category OR a size in the sizes array (case-
-            // insensitive containment via a generated text comparison).
+            // Match name/brand/category OR a size in the sizes array.
+            // Use containment so "5x" matches "5XL"/"5XLT", "xl" matches
+            // "XL"/"2XL"/"3XL"/etc., "s/m" matches "S/M".
             conditions.push(
               `(name ILIKE $${paramIndex}
                 OR brand ILIKE $${paramIndex}
                 OR category ILIKE $${paramIndex}
                 OR EXISTS (
                   SELECT 1 FROM jsonb_array_elements_text(sizes) sz
-                  WHERE UPPER(sz) = $${paramIndex + 1}
+                  WHERE UPPER(sz) LIKE $${paramIndex + 1}
                 ))`
             );
-            params.push(`%${term}%`, upperTerm);
+            params.push(`%${term}%`, `%${upperTerm}%`);
             paramIndex += 2;
           } else {
             conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
