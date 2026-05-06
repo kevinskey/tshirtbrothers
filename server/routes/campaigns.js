@@ -1,23 +1,71 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { sendCampaignEmail, unsubscribeToken } from '../services/email.js';
+import { sendCampaignEmail, unsubscribeToken, trackingToken } from '../services/email.js';
 
 const router = Router();
 
-// Public unsubscribe — must NOT require auth. Mounted at /api/email.
+// Public tracking + unsubscribe routes — must NOT require auth.
+// Mounted at /api/email.
 export const publicRouter = Router();
+
+// 1×1 transparent PNG bytes used for the open-tracking pixel.
+const PIXEL = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkAAIAAAoAAv/lxKUAAAAASUVORK5CYII=',
+  'base64'
+);
+
+publicRouter.get('/track/open', async (req, res) => {
+  const { c: campaignId, e: email, t: token } = req.query;
+  // Always 200 with the pixel — never reveal validation failures, since
+  // the email client just needs an image to load.
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.set('Content-Type', 'image/png');
+  if (campaignId && email && token === trackingToken(String(email), 'open')) {
+    pool.query(
+      `INSERT INTO email_events (campaign_id, recipient_email, event_type, ip, user_agent)
+       VALUES ($1, LOWER($2), 'open', $3, $4)`,
+      [Number(campaignId), String(email), req.ip || null, req.get('user-agent') || null]
+    ).catch((err) => console.error('[track/open]', err.message));
+  }
+  res.send(PIXEL);
+});
+
+publicRouter.get('/track/click', async (req, res) => {
+  const { c: campaignId, e: email, t: token, u: url } = req.query;
+  if (!url) return res.status(400).send('Missing url');
+  // Verify token before logging — but ALWAYS redirect so the recipient
+  // gets to their destination even if the token is wrong (better UX
+  // than a hostile-feeling 403).
+  if (campaignId && email && token === trackingToken(String(email), 'click')) {
+    pool.query(
+      `INSERT INTO email_events (campaign_id, recipient_email, event_type, url, ip, user_agent)
+       VALUES ($1, LOWER($2), 'click', $3, $4, $5)`,
+      [Number(campaignId), String(email), String(url), req.ip || null, req.get('user-agent') || null]
+    ).catch((err) => console.error('[track/click]', err.message));
+  }
+  res.redirect(302, String(url));
+});
+
 publicRouter.get('/unsubscribe', async (req, res) => {
-  const { e: email, t: token } = req.query;
+  const { e: email, t: token, c: campaignId } = req.query;
   if (!email || !token) return res.status(400).send('Missing parameters');
   const expected = unsubscribeToken(String(email));
   if (expected !== token) return res.status(403).send('Invalid unsubscribe link');
+  const sourceCampaignId = campaignId ? Number(campaignId) : null;
   try {
     await pool.query(
-      `INSERT INTO email_unsubscribes (email) VALUES (LOWER($1))
+      `INSERT INTO email_unsubscribes (email, source_campaign_id) VALUES (LOWER($1), $2)
        ON CONFLICT (email) DO NOTHING`,
-      [String(email)]
+      [String(email), sourceCampaignId]
     );
+    if (sourceCampaignId) {
+      await pool.query(
+        `INSERT INTO email_events (campaign_id, recipient_email, event_type, ip, user_agent)
+         VALUES ($1, LOWER($2), 'unsubscribe', $3, $4)`,
+        [sourceCampaignId, String(email), req.ip || null, req.get('user-agent') || null]
+      );
+    }
   } catch (err) {
     console.error('[unsubscribe] db error:', err);
   }
@@ -56,12 +104,65 @@ async function resolveRecipients(filter) {
   return rows;
 }
 
-// GET list of campaigns (history).
+// GET list of campaigns (history) with engagement metrics joined in.
+// open_count is distinct recipients who opened (one open per recipient
+// regardless of how many times the email client refetches the pixel).
 router.get('/', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, subject, recipient_filter, recipient_count, sent_count, failed_count, status, created_at, sent_at
-       FROM email_campaigns ORDER BY created_at DESC LIMIT 50`
+      `SELECT
+         c.id, c.subject, c.recipient_filter, c.recipient_count,
+         c.sent_count, c.failed_count, c.status, c.created_at, c.sent_at,
+         COALESCE(opens.n, 0)::int  AS open_count,
+         COALESCE(clicks.n, 0)::int AS click_count,
+         COALESCE(unsubs.n, 0)::int AS unsub_count
+       FROM email_campaigns c
+       LEFT JOIN (
+         SELECT campaign_id, COUNT(DISTINCT LOWER(recipient_email)) n
+         FROM email_events WHERE event_type='open' GROUP BY campaign_id
+       ) opens ON opens.campaign_id = c.id
+       LEFT JOIN (
+         SELECT campaign_id, COUNT(DISTINCT LOWER(recipient_email)) n
+         FROM email_events WHERE event_type='click' GROUP BY campaign_id
+       ) clicks ON clicks.campaign_id = c.id
+       LEFT JOIN (
+         SELECT campaign_id, COUNT(*) n
+         FROM email_events WHERE event_type='unsubscribe' GROUP BY campaign_id
+       ) unsubs ON unsubs.campaign_id = c.id
+       ORDER BY c.created_at DESC LIMIT 50`
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// GET aggregate marketing metrics across every campaign — for the
+// dashboard cards. Rates are computed against sent_count, not
+// recipient_count, so a campaign that was only half-sent doesn't
+// pull the open rate down artificially.
+router.get('/overview', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM email_campaigns WHERE status='sent')::int AS campaigns_sent,
+         (SELECT COALESCE(SUM(sent_count),0) FROM email_campaigns)::int AS total_sent,
+         (SELECT COALESCE(SUM(failed_count),0) FROM email_campaigns)::int AS total_failed,
+         (SELECT COUNT(DISTINCT (campaign_id, LOWER(recipient_email))) FROM email_events WHERE event_type='open')::int AS unique_opens,
+         (SELECT COUNT(DISTINCT (campaign_id, LOWER(recipient_email))) FROM email_events WHERE event_type='click')::int AS unique_clicks,
+         (SELECT COUNT(*) FROM email_unsubscribes)::int AS total_unsubscribed`
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// Recent unsubscribes for the dashboard list view.
+router.get('/unsubscribes', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT u.email, u.unsubscribed_at, u.source_campaign_id, c.subject AS campaign_subject
+       FROM email_unsubscribes u
+       LEFT JOIN email_campaigns c ON c.id = u.source_campaign_id
+       ORDER BY u.unsubscribed_at DESC
+       LIMIT 100`
     );
     res.json(rows);
   } catch (err) { next(err); }
@@ -108,6 +209,7 @@ router.post('/send', async (req, res, next) => {
             subject,
             bodyHtml: body_html,
             exampleImageUrls: example_image_urls,
+            campaignId,
           });
           sent++;
         } catch (err) {

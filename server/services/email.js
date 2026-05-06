@@ -448,12 +448,32 @@ export function unsubscribeToken(email) {
   return crypto.createHmac('sha256', UNSUB_SECRET).update(email.toLowerCase()).digest('hex').slice(0, 24);
 }
 
+// Tokens for open/click tracking — same pattern, separate purpose so a
+// leaked unsubscribe token can't fake a click.
+export function trackingToken(email, kind) {
+  return crypto.createHmac('sha256', UNSUB_SECRET).update(`${kind}:${email.toLowerCase()}`).digest('hex').slice(0, 16);
+}
+
+// Rewrite every <a href="X"> in HTML to route through our click-tracking
+// proxy. Skips mailto:, tel:, and the unsubscribe link itself (already
+// signed and we don't want to inflate click counts on opt-outs).
+function wrapLinksForTracking(html, campaignId, recipientEmail) {
+  const tok = trackingToken(recipientEmail, 'click');
+  const proxy = `${DOMAIN}/api/email/track/click?c=${campaignId}&e=${encodeURIComponent(recipientEmail)}&t=${tok}&u=`;
+  return html.replace(/href="([^"]+)"/g, (match, url) => {
+    if (/^(mailto:|tel:|#)/i.test(url)) return match;
+    if (url.includes('/api/email/unsubscribe')) return match;
+    if (url.includes('/api/email/track/')) return match;
+    return `href="${proxy}${encodeURIComponent(url)}"`;
+  });
+}
+
 /**
  * Wraps a campaign body in the standard brand layout, appends a row of
  * example images, and adds the legally-required unsubscribe footer.
  * bodyHtml is the admin-edited HTML (already drafted/edited by the user).
  */
-export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], recipientEmail }) {
+export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], recipientEmail, campaignId = 0 }) {
   const examplesHtml = exampleImageUrls.length
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
          <tr>${exampleImageUrls.slice(0, 6).map((u) => `
@@ -465,12 +485,19 @@ export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], re
     : '';
 
   const token = unsubscribeToken(recipientEmail);
-  const unsubUrl = `${DOMAIN}/api/email/unsubscribe?e=${encodeURIComponent(recipientEmail)}&t=${token}`;
+  const unsubUrl = `${DOMAIN}/api/email/unsubscribe?e=${encodeURIComponent(recipientEmail)}&t=${token}${campaignId ? `&c=${campaignId}` : ''}`;
   const unsubHtml = `
     <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;text-align:center;">
       You're getting this because you've worked with T-Shirt Brothers before.
       <a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a>.
     </p>`;
+
+  // 1×1 invisible pixel for open tracking. Uses a tracking token to
+  // discourage someone from spoofing opens by hitting the URL directly.
+  const openTok = trackingToken(recipientEmail, 'open');
+  const openPixel = campaignId
+    ? `<img src="${DOMAIN}/api/email/track/open?c=${campaignId}&e=${encodeURIComponent(recipientEmail)}&t=${openTok}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" />`
+    : '';
 
   const inner = `
     <h1 style="margin:0 0 16px;font-size:24px;color:${BRAND_DARK};">${subject}</h1>
@@ -478,16 +505,20 @@ export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], re
     ${examplesHtml}
     ${primaryButton('Get a Free Quote', `${DOMAIN}/quote`)}
     ${unsubHtml}
+    ${openPixel}
   `;
-  return baseLayout(subject, inner);
+  // Rewrite links AFTER assembling the full layout so anchors inside
+  // bodyHtml AND in the standard CTA button both go through tracking.
+  const layout = baseLayout(subject, inner);
+  return campaignId ? wrapLinksForTracking(layout, campaignId, recipientEmail) : layout;
 }
 
 /**
  * Sends a single campaign email. The caller is responsible for batching
  * and respecting Resend's per-second rate limit.
  */
-export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [] }) {
-  const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to });
+export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [], campaignId = 0 }) {
+  const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to, campaignId });
   return resend.emails.send({
     from: FROM_EMAIL,
     to: [to],

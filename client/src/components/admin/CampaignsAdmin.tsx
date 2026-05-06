@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Send, Sparkles, X, Check } from 'lucide-react';
+import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye } from 'lucide-react';
 
 type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30';
 
@@ -12,6 +12,25 @@ interface CampaignRow {
   status: string;
   created_at: string;
   sent_at: string | null;
+  open_count: number;
+  click_count: number;
+  unsub_count: number;
+}
+
+interface Overview {
+  campaigns_sent: number;
+  total_sent: number;
+  total_failed: number;
+  unique_opens: number;
+  unique_clicks: number;
+  total_unsubscribed: number;
+}
+
+interface UnsubscribeRow {
+  email: string;
+  unsubscribed_at: string;
+  source_campaign_id: number | null;
+  campaign_subject: string | null;
 }
 
 interface ArtLibraryItem {
@@ -45,6 +64,8 @@ export default function CampaignsAdmin() {
   const [sample, setSample] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState<CampaignRow[]>([]);
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [unsubs, setUnsubs] = useState<UnsubscribeRow[]>([]);
 
   // Load art library once on mount.
   useEffect(() => {
@@ -54,17 +75,23 @@ export default function CampaignsAdmin() {
       .catch(() => {});
   }, []);
 
-  // Poll campaign history. Refresh fast while any campaign is still sending
-  // (the worker runs in the background and updates sent_count/failed_count
-  // as it goes); slow once everything is settled.
+  // Poll campaign history + overview + unsubscribes. Refresh fast while any
+  // campaign is still sending (the worker runs in the background and
+  // updates sent_count/failed_count + opens/clicks live); slow once
+  // everything is settled.
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch('/api/admin/campaigns', { headers: authHeaders() });
-        if (!res.ok || cancelled) return;
-        const data: CampaignRow[] = await res.json();
-        if (!cancelled) setHistory(data);
+        const [hRes, oRes, uRes] = await Promise.all([
+          fetch('/api/admin/campaigns', { headers: authHeaders() }),
+          fetch('/api/admin/campaigns/overview', { headers: authHeaders() }),
+          fetch('/api/admin/campaigns/unsubscribes', { headers: authHeaders() }),
+        ]);
+        if (cancelled) return;
+        if (hRes.ok) setHistory(await hRes.json());
+        if (oRes.ok) setOverview(await oRes.json());
+        if (uRes.ok) setUnsubs(await uRes.json());
       } catch {
         // ignore — next tick will try again
       }
@@ -151,11 +178,39 @@ export default function CampaignsAdmin() {
     }
   }
 
+  const openRate = overview && overview.total_sent > 0 ? (overview.unique_opens / overview.total_sent) * 100 : 0;
+  const clickRate = overview && overview.total_sent > 0 ? (overview.unique_clicks / overview.total_sent) * 100 : 0;
+  const unsubRate = overview && overview.total_sent > 0 ? (overview.total_unsubscribed / overview.total_sent) * 100 : 0;
+
   return (
     <div className="pt-6 space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-lg md:text-xl font-display font-bold text-gray-900">Email Blasts</h2>
-        <p className="text-sm text-gray-500 mt-1">Draft a marketing email with AI, attach examples from the Art Library, and send to a customer segment.</p>
+        <h2 className="text-lg md:text-xl font-display font-bold text-gray-900">Email & Marketing</h2>
+        <p className="text-sm text-gray-500 mt-1">Draft a marketing email with AI, attach examples from the Art Library, and send to a customer segment. Live performance metrics below.</p>
+      </div>
+
+      {/* Overview cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-xs font-medium"><Mail className="w-3.5 h-3.5" /> Sent</div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{overview?.total_sent ?? '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{overview?.campaigns_sent ?? 0} campaign{overview?.campaigns_sent === 1 ? '' : 's'}{overview && overview.total_failed > 0 ? ` · ${overview.total_failed} failed` : ''}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-xs font-medium"><Eye className="w-3.5 h-3.5" /> Opens</div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{overview?.unique_opens ?? '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{overview ? `${openRate.toFixed(1)}% open rate` : ''}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-xs font-medium"><MousePointerClick className="w-3.5 h-3.5" /> Clicks</div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{overview?.unique_clicks ?? '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{overview ? `${clickRate.toFixed(1)}% click rate` : ''}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-gray-500 text-xs font-medium"><UserMinus className="w-3.5 h-3.5" /> Unsubscribed</div>
+          <p className="text-2xl font-bold text-gray-900 mt-1">{overview?.total_unsubscribed ?? '—'}</p>
+          <p className="text-[11px] text-gray-400 mt-0.5">{overview ? `${unsubRate.toFixed(2)}% of sent` : ''}</p>
+        </div>
       </div>
 
       {/* Step 1: AI draft */}
@@ -280,7 +335,7 @@ export default function CampaignsAdmin() {
 
       {/* History */}
       {history.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 text-sm">Recent campaigns</h3>
           </div>
@@ -288,22 +343,69 @@ export default function CampaignsAdmin() {
             <thead>
               <tr className="bg-gray-50 text-left text-gray-500 text-xs">
                 <th className="px-3 py-2 font-medium">Subject</th>
-                <th className="px-3 py-2 font-medium text-right">Sent / Failed</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Date</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Sent</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Opens</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Clicks</th>
+                <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Unsubs</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {history.map((c) => (
-                <tr key={c.id}>
-                  <td className="px-3 py-2"><div className="max-w-[400px] truncate">{c.subject}</div></td>
-                  <td className="px-3 py-2 text-right text-xs">
-                    <span className="text-green-700">{c.sent_count}</span>
-                    {c.failed_count > 0 && <span className="text-red-600 ml-1">/ {c.failed_count} failed</span>}
-                    <span className="text-gray-400 ml-1">of {c.recipient_count}</span>
-                  </td>
-                  <td className="px-3 py-2 text-xs capitalize">{c.status}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{new Date(c.sent_at || c.created_at).toLocaleString()}</td>
+              {history.map((c) => {
+                const oRate = c.sent_count > 0 ? (c.open_count / c.sent_count) * 100 : 0;
+                const cRate = c.sent_count > 0 ? (c.click_count / c.sent_count) * 100 : 0;
+                return (
+                  <tr key={c.id}>
+                    <td className="px-3 py-2"><div className="max-w-[320px] truncate" title={c.subject}>{c.subject}</div></td>
+                    <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                      <span className="text-green-700 font-medium">{c.sent_count}</span>
+                      {c.failed_count > 0 && <span className="text-red-600 ml-1">/{c.failed_count}f</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                      <span className="font-medium">{c.open_count}</span>
+                      <span className="text-gray-400 ml-1">{oRate.toFixed(0)}%</span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                      <span className="font-medium">{c.click_count}</span>
+                      <span className="text-gray-400 ml-1">{cRate.toFixed(0)}%</span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
+                      <span className={c.unsub_count > 0 ? 'text-orange-600 font-medium' : 'text-gray-400'}>{c.unsub_count}</span>
+                    </td>
+                    <td className="px-3 py-2 text-xs capitalize whitespace-nowrap">
+                      {c.status === 'sending' ? <span className="text-blue-600 inline-flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Sending</span> : c.status}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(c.sent_at || c.created_at).toLocaleDateString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Recent unsubscribes */}
+      {unsubs.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-200">
+            <h3 className="font-semibold text-gray-900 text-sm">Recent unsubscribes</h3>
+            <p className="text-xs text-gray-500 mt-0.5">These addresses are excluded from all future campaigns automatically.</p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-left text-gray-500 text-xs">
+                <th className="px-3 py-2 font-medium">Email</th>
+                <th className="px-3 py-2 font-medium">Source campaign</th>
+                <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {unsubs.map((u) => (
+                <tr key={u.email}>
+                  <td className="px-3 py-2"><div className="max-w-[260px] truncate">{u.email}</div></td>
+                  <td className="px-3 py-2 text-xs text-gray-600"><div className="max-w-[320px] truncate" title={u.campaign_subject || ''}>{u.campaign_subject || <span className="text-gray-400">—</span>}</div></td>
+                  <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{new Date(u.unsubscribed_at).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
