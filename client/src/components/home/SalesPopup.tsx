@@ -57,7 +57,7 @@ export default function SalesPopup() {
   return (
     <div
       className="fixed bottom-4 right-4 z-50 w-64 max-w-[calc(100vw-2rem)]"
-      style={{ animation: 'fadeIn 0.3s ease-out' }}
+      style={{ animation: 'fadeIn 0.3s ease-out', transform: 'scale(1.2)', transformOrigin: 'bottom right' }}
     >
       <div
         className="relative bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200"
