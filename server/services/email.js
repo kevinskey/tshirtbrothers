@@ -1,7 +1,12 @@
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
+// Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
+// show "T-Shirt Brothers" instead of the bare noreply@ address. If the
+// env already includes a display name (contains "<"), pass it through.
+const FROM_NAME_RAW = process.env.FROM_NAME || 'T-Shirt Brothers';
+const FROM_EMAIL_RAW = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
+const FROM_EMAIL = FROM_EMAIL_RAW.includes('<') ? FROM_EMAIL_RAW : `${FROM_NAME_RAW} <${FROM_EMAIL_RAW}>`;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'kevin@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
