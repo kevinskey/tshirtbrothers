@@ -5801,6 +5801,22 @@ export default function AdminPage() {
                       <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
                         <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                       </a>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => sendQuoteToArtLibrary(q)}
+                          className="flex-1 text-xs font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          <FolderOpen className="w-3.5 h-3.5" />
+                          Send to Art Library
+                        </button>
+                        <button
+                          onClick={() => downloadQuoteGraphic(q)}
+                          className="flex-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Download
+                        </button>
+                      </div>
                     </div>
                   )}
 
