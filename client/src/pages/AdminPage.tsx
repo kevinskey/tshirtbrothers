@@ -3462,7 +3462,7 @@ export default function AdminPage() {
                 </div>
 
                 {/* Invoice Table */}
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
                   {/* Mobile card view */}
                   <div className="divide-y divide-gray-100 lg:hidden">
                     {invoicesQuery.isLoading ? (
@@ -3523,15 +3523,16 @@ export default function AdminPage() {
                           <tr key={inv.id} className="hover:bg-gray-50">
                             <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
-                            <td className="px-3 py-2 text-gray-900 whitespace-nowrap max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</td>
-                            <td className="px-3 py-2 text-gray-500 whitespace-nowrap max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</td>
+                            <td className="px-3 py-2 text-gray-900"><div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div></td>
+                            <td className="px-3 py-2 text-gray-500"><div className="max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
                             <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap">${Number(inv.total).toFixed(2)}</td>
                             <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">${Number(inv.amount_paid).toFixed(2)}</td>
                             <td className="px-3 py-2 text-right font-medium text-red-600 whitespace-nowrap">${Number(inv.amount_due).toFixed(2)}</td>
                             <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
                             <td className="px-3 py-2 whitespace-nowrap">
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex items-center gap-1">
                                 <button
+                                  title="Edit"
                                   onClick={() => {
                                     setEditingInvoiceId(inv.id);
                                     setEditingInvoiceFull(inv);
@@ -3549,43 +3550,36 @@ export default function AdminPage() {
                                     });
                                     setInvoiceView('create');
                                   }}
-                                  className="text-xs font-medium text-gray-600 hover:text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg transition-colors"
+                                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
                                 >
-                                  <Eye className="w-3 h-3 inline mr-1" />Edit
+                                  <Eye className="w-4 h-4" />
                                 </button>
-                                {inv.status === 'draft' && (
+                                {((inv.status === 'draft') || (inv.status !== 'paid' && Number(inv.amount_due) > 0)) && (
                                   <button
+                                    title={inv.status === 'draft' ? 'Send' : Number(inv.amount_paid) > 0 ? 'Send balance' : 'Resend'}
                                     onClick={() => sendInvoiceMutation.mutate(inv.id)}
                                     disabled={sendInvoiceMutation.isPending}
-                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                                    className="p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                                   >
-                                    <Send className="w-3 h-3 inline mr-1" />Send
-                                  </button>
-                                )}
-                                {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
-                                  <button
-                                    onClick={() => sendInvoiceMutation.mutate(inv.id)}
-                                    disabled={sendInvoiceMutation.isPending}
-                                    className="text-xs font-medium text-blue-600 hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-                                  >
-                                    <Send className="w-3 h-3 inline mr-1" />
-                                    {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
+                                    <Send className="w-4 h-4" />
                                   </button>
                                 )}
                                 {inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
                                   <button
+                                    title="Record payment"
                                     onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }}
-                                    className="text-xs font-medium text-green-600 hover:text-green-700 bg-green-50 px-3 py-1.5 rounded-lg transition-colors"
+                                    className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
                                   >
-                                    <DollarSign className="w-3 h-3 inline mr-1" />Payment
+                                    <DollarSign className="w-4 h-4" />
                                   </button>
                                 )}
                                 <button
-                                    onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
-                                    className="text-xs font-medium text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
-                                  >
-                                    <Trash2 className="w-3 h-3 inline mr-1" />Delete
-                                  </button>
+                                  title="Delete"
+                                  onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
+                                  className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             </td>
                           </tr>
