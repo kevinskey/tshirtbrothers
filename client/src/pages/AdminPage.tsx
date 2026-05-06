@@ -3437,30 +3437,28 @@ export default function AdminPage() {
           <div>
             {invoiceView === 'list' && (
               <>
-                <div className="flex items-center justify-between mb-4 gap-3">
-                  <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Invoices</h2>
-                  <button
-                    onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    New Invoice
-                  </button>
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
-                  {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
+                <div className="flex items-center justify-between mb-3 gap-3">
+                  <h2 className="text-lg md:text-xl font-display font-bold text-gray-900">Invoices</h2>
+                  <div className="flex items-center gap-2 overflow-x-auto">
+                    {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setInvoiceFilter(f)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors whitespace-nowrap ${
+                          invoiceFilter === f ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
                     <button
-                      key={f}
-                      onClick={() => setInvoiceFilter(f)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${
-                        invoiceFilter === f ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
-                      }`}
+                      onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
+                      className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
                     >
-                      {f}
+                      <Plus className="w-3.5 h-3.5" />
+                      New
                     </button>
-                  ))}
+                  </div>
                 </div>
 
                 {/* Invoice Table */}
@@ -3504,34 +3502,34 @@ export default function AdminPage() {
                   {/* Desktop table */}
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="bg-gray-50 text-left text-gray-500">
-                          <th className="px-6 py-3 font-medium">Invoice #</th>
-                          <th className="px-6 py-3 font-medium">Date</th>
-                          <th className="px-6 py-3 font-medium">Customer</th>
-                          <th className="px-6 py-3 font-medium">Email</th>
-                          <th className="px-6 py-3 font-medium text-right">Total</th>
-                          <th className="px-6 py-3 font-medium text-right">Paid</th>
-                          <th className="px-6 py-3 font-medium text-right">Due</th>
-                          <th className="px-6 py-3 font-medium">Status</th>
-                          <th className="px-6 py-3 font-medium">Actions</th>
+                        <tr className="bg-gray-50 text-left text-gray-500 text-xs">
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Invoice #</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Customer</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
+                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Total</th>
+                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Paid</th>
+                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Due</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {invoicesQuery.isLoading ? (
-                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+                          <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
                         ) : invoices.length === 0 ? (
-                          <tr><td colSpan={9} className="px-6 py-12 text-center text-gray-400">No invoices found</td></tr>
+                          <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400">No invoices found</td></tr>
                         ) : invoices.map((inv: Invoice) => (
                           <tr key={inv.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 font-medium text-gray-900">{inv.invoice_number}</td>
-                            <td className="px-6 py-4 text-gray-500">{new Date(inv.created_at).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 text-gray-900">{inv.customer_name}</td>
-                            <td className="px-6 py-4 text-gray-500">{inv.customer_email}</td>
-                            <td className="px-6 py-4 text-right font-medium text-gray-900">${Number(inv.total).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-green-600">${Number(inv.amount_paid).toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right font-medium text-red-600">${Number(inv.amount_due).toFixed(2)}</td>
-                            <td className="px-6 py-4"><StatusBadge status={inv.status} /></td>
-                            <td className="px-6 py-4">
+                            <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</td>
+                            <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
+                            <td className="px-3 py-2 text-gray-900 whitespace-nowrap max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</td>
+                            <td className="px-3 py-2 text-gray-500 whitespace-nowrap max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</td>
+                            <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap">${Number(inv.total).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">${Number(inv.amount_paid).toFixed(2)}</td>
+                            <td className="px-3 py-2 text-right font-medium text-red-600 whitespace-nowrap">${Number(inv.amount_due).toFixed(2)}</td>
+                            <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
+                            <td className="px-3 py-2 whitespace-nowrap">
                               <div className="flex flex-wrap items-center gap-2">
                                 <button
                                   onClick={() => {
