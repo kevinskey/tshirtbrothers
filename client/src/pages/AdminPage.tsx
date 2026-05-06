@@ -409,7 +409,9 @@ function SSPricingInfo({ productName, quantity, printAreas }: { productName: str
 // ─── Gang Sheet List ─────────────────────────────────────────────────────────
 
 function GangSheetList() {
-  const [sheets, setSheets] = useState<{ id: number; name: string; sheet_length_ft: number; pricing_tier: string; total_cost: number; status: string; design_count: number; created_at: string; updated_at: string }[]>([]);
+  // total_cost is a Postgres NUMERIC, which node-postgres returns as a string.
+  // Type it as `number | string` so we don't accidentally call number methods on it.
+  const [sheets, setSheets] = useState<{ id: number; name: string; sheet_length_ft: number; pricing_tier: string; total_cost: number | string; status: string; design_count: number; created_at: string; updated_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -452,7 +454,7 @@ function GangSheetList() {
             <p className="text-xs text-gray-500">{s.design_count || 0} designs · {s.sheet_length_ft || 1}ft · {s.pricing_tier || 'standard'}</p>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="font-bold text-green-700">${(s.total_cost || 0).toFixed(2)}</p>
+            <p className="font-bold text-green-700">${Number(s.total_cost || 0).toFixed(2)}</p>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.status === 'exported' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
               {s.status || 'draft'}
             </span>
