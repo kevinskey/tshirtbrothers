@@ -1067,7 +1067,11 @@ export default function GangSheetBuilder() {
     fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
       .then((quotes: { id: number; customer_name: string; design_url: string | null; product_name: string; status: string }[]) => {
-        setQuoteDesigns(quotes.filter(q => q.design_url && (q.status === 'accepted' || q.status === 'quoted')).map(q => ({
+        // Show every quote that has uploaded artwork, regardless of status.
+        // The previous filter (accepted/quoted only) hid customer designs as
+        // soon as the quote moved to 'completed' — making them unavailable
+        // for re-prints and reorders from the gangsheet builder.
+        setQuoteDesigns(quotes.filter(q => q.design_url).map(q => ({
           id: q.id,
           customer_name: q.customer_name,
           design_url: q.design_url!,
