@@ -182,18 +182,29 @@ router.post('/preview', async (req, res, next) => {
 
 // POST send — fires the campaign. Returns 202 immediately and processes
 // in the background so the admin's request doesn't time out on big lists.
+// If `test_email` is provided, the filter is ignored and we send to just
+// that address — useful for previewing the rendered email and verifying
+// open/click tracking before a real blast.
 router.post('/send', async (req, res, next) => {
   try {
-    const { subject, body_html, example_image_urls = [], filter = 'all' } = req.body;
+    const { subject, body_html, example_image_urls = [], filter = 'all', test_email } = req.body;
     if (!subject || !body_html) return res.status(400).json({ error: 'subject and body_html required' });
 
-    const recipients = await resolveRecipients(filter);
-    if (recipients.length === 0) return res.status(400).json({ error: 'No recipients match this filter' });
+    let recipients;
+    let recipientFilterRecord;
+    if (test_email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(test_email)) {
+      recipients = [{ email: String(test_email).toLowerCase(), name: null }];
+      recipientFilterRecord = { test_email };
+    } else {
+      recipients = await resolveRecipients(filter);
+      recipientFilterRecord = { filter };
+      if (recipients.length === 0) return res.status(400).json({ error: 'No recipients match this filter' });
+    }
 
     const { rows } = await pool.query(
       `INSERT INTO email_campaigns (subject, body_html, example_image_urls, recipient_filter, recipient_count, status, created_by)
        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, 'sending', $6) RETURNING id`,
-      [subject, body_html, JSON.stringify(example_image_urls), JSON.stringify({ filter }), recipients.length, req.user?.id || null]
+      [subject, body_html, JSON.stringify(example_image_urls), JSON.stringify(recipientFilterRecord), recipients.length, req.user?.id || null]
     );
     const campaignId = rows[0].id;
 

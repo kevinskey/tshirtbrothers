@@ -63,6 +63,8 @@ export default function CampaignsAdmin() {
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [sample, setSample] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
   const [history, setHistory] = useState<CampaignRow[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [unsubs, setUnsubs] = useState<UnsubscribeRow[]>([]);
@@ -133,6 +135,38 @@ export default function CampaignsAdmin() {
       setBodyHtml(data.body_html || '');
     } finally {
       setDrafting(false);
+    }
+  }
+
+  async function handleTestSend() {
+    if (!subject.trim() || !bodyHtml.trim()) {
+      alert('Subject and body are required');
+      return;
+    }
+    if (!testEmail.trim() || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(testEmail)) {
+      alert('Enter a valid email');
+      return;
+    }
+    setSendingTest(true);
+    try {
+      const res = await fetch('/api/admin/campaigns/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          subject,
+          body_html: bodyHtml,
+          example_image_urls: examples.map((e) => e.image_url),
+          test_email: testEmail.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Test send failed');
+        return;
+      }
+      alert(`Test email queued — check ${testEmail.trim()} in a moment.`);
+    } finally {
+      setSendingTest(false);
     }
   }
 
@@ -321,7 +355,31 @@ export default function CampaignsAdmin() {
         </div>
       </div>
 
-      {/* Send */}
+      {/* Send a test to a single email */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+        <h3 className="font-semibold text-gray-900 text-sm">Send a test first (optional)</h3>
+        <p className="text-xs text-gray-500">Send the campaign to a single address to preview rendering and verify tracking. Counts as its own campaign in the dashboard.</p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email"
+            value={testEmail}
+            onChange={(e) => setTestEmail(e.target.value)}
+            placeholder="you@example.com"
+            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            style={{ fontSize: '16px' }}
+          />
+          <button
+            onClick={handleTestSend}
+            disabled={sendingTest || !subject || !bodyHtml || !testEmail.trim()}
+            className="flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+          >
+            {sendingTest ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {sendingTest ? 'Sending…' : 'Send test'}
+          </button>
+        </div>
+      </div>
+
+      {/* Send to the full filter */}
       <div className="flex justify-end">
         <button
           onClick={handleSend}
