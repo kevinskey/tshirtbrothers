@@ -213,17 +213,23 @@ export function CropModal({ src, onCancel, onApply }: CropModalProps) {
           </div>
         </div>
 
-        <footer className="px-5 py-3 border-t border-gray-200 flex items-center justify-between">
-          <p className="text-xs text-gray-500">
+        <footer className="px-5 py-3 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p className="hidden sm:block text-xs text-gray-500">
             Drag the corners to resize · drag the box to move
           </p>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={onCancel} className="px-3 py-1.5 rounded-md text-sm text-gray-600 hover:bg-gray-100">Cancel</button>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 sm:flex-none px-4 py-2 rounded-md border border-gray-300 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Cancel
+            </button>
             <button
               type="button"
               onClick={handleApply}
               disabled={!imgLoaded}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
             >
               <Check className="h-4 w-4" /> Apply Crop
             </button>
