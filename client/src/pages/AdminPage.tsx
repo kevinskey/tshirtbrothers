@@ -2844,6 +2844,30 @@ export default function AdminPage() {
                             >
                               <PenSquare className="w-4 h-4" />
                             </button>
+                            <button
+                              title="Delete"
+                              onClick={async () => {
+                                if (!(await confirmDestructive(`Delete ${c.name || 'this customer'}? Their quotes and designs will be unlinked. This cannot be undone.`))) return;
+                                try {
+                                  const res = await fetch(`/api/admin/customers/${c.id}`, {
+                                    method: 'DELETE',
+                                    headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                  });
+                                  if (!res.ok) {
+                                    const body = await res.json().catch(() => ({}));
+                                    toast(body.error || 'Failed to delete customer', 'error');
+                                    return;
+                                  }
+                                  toast('Customer deleted');
+                                  queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] });
+                                } catch {
+                                  toast('Network error deleting customer', 'error');
+                                }
+                              }}
+                              className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
