@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
 function ScrollToTop() {
@@ -41,6 +41,11 @@ const queryClient = new QueryClient({
   },
 });
 
+function GangSheetIdRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/admin/gangsheet/${id}`} replace />;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -60,6 +65,10 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/gangsheet" element={<GangSheetPage />} />
           <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />
+          <Route path="/gangsheet" element={<Navigate to="/admin/gangsheet" replace />} />
+          <Route path="/gangsheets" element={<Navigate to="/admin/gangsheet" replace />} />
+          <Route path="/gangsheet/:id" element={<GangSheetIdRedirect />} />
+          <Route path="/gangsheets/:id" element={<GangSheetIdRedirect />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/mockup/:token" element={<MockupApprovalPage />} />
           <Route path="/invoice/view/:id" element={<InvoiceViewPage />} />
