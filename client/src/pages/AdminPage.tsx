@@ -843,7 +843,7 @@ export default function AdminPage() {
   const productsQuery = useQuery({
     queryKey: ['admin', 'products', productSearch, productPage],
     queryFn: () => fetchAdminProducts(productSearch, productPage),
-    enabled: activeSection === 'products',
+    enabled: activeSection === 'products' || activeSection === 'mockups',
   });
 
   const categoriesQuery = useQuery({
@@ -861,7 +861,7 @@ export default function AdminPage() {
   const customersQuery = useQuery({
     queryKey: ['admin', 'customers', customerSearch],
     queryFn: () => fetchCustomers(customerSearch),
-    enabled: activeSection === 'customers' || activeSection === 'invoices',
+    enabled: activeSection === 'customers' || activeSection === 'invoices' || activeSection === 'mockups',
   });
 
   const customerDetailQuery = useQuery({
