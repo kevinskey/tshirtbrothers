@@ -32,7 +32,6 @@ const config: Config = {
             900: '#171717',
           },
         },
-        amber: '#f59e0b',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
