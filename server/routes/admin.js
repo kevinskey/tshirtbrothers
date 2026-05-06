@@ -371,7 +371,13 @@ router.get('/customers', async (req, res, next) => {
          SELECT user_id, COUNT(*) AS design_count FROM saved_designs GROUP BY user_id
        ) d ON d.user_id = u.id
        LEFT JOIN (
-         SELECT user_id, COUNT(*) AS quote_count FROM quotes GROUP BY user_id
+         SELECT
+           COALESCE(qu.user_id, eu.id) AS user_id,
+           COUNT(DISTINCT qu.id) AS quote_count
+         FROM quotes qu
+         LEFT JOIN users eu ON LOWER(eu.email) = LOWER(qu.customer_email)
+         WHERE qu.user_id IS NOT NULL OR eu.id IS NOT NULL
+         GROUP BY COALESCE(qu.user_id, eu.id)
        ) q ON q.user_id = u.id
        ${whereClause}
        ORDER BY u.created_at DESC`,
@@ -408,8 +414,8 @@ router.get('/customers/:id', async (req, res, next) => {
 
     const quotesResult = await pool.query(
       `SELECT id, product_name, quantity, status, estimated_price, created_at
-       FROM quotes WHERE user_id = $1 ORDER BY created_at DESC`,
-      [id]
+       FROM quotes WHERE user_id = $1 OR LOWER(customer_email) = LOWER($2) ORDER BY created_at DESC`,
+      [id, customer.email]
     );
 
     // Customer 360°: also pull invoices for this customer's email so the
