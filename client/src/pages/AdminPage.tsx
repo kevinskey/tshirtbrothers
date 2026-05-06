@@ -1072,6 +1072,46 @@ export default function AdminPage() {
     },
   });
 
+  async function sendQuoteToArtLibrary(q: Quote) {
+    const url = q.design_url || q.mockup_image_url;
+    if (!url) { toast('No graphic on this quote', 'error'); return; }
+    const name = `Quote #${q.id} — ${q.customer_name || q.customerName || 'customer'}`;
+    try {
+      const res = await fetch('/api/admin/designs-library', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ name, image_url: url, thumbnail_url: url, category: 'general', tags: ['from-quote', `quote-${q.id}`] }),
+      });
+      if (!res.ok) { toast('Send to Art Library failed', 'error'); return; }
+      toast('Added to Art Library');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'designs-library'] });
+    } catch {
+      toast('Network error sending to Art Library', 'error');
+    }
+  }
+
+  async function downloadQuoteGraphic(q: Quote) {
+    const url = q.design_url || q.mockup_image_url;
+    if (!url) { toast('No graphic on this quote', 'error'); return; }
+    try {
+      const res = await fetch(url, { credentials: 'omit' });
+      if (!res.ok) throw new Error('fetch failed');
+      const blob = await res.blob();
+      const ext = (blob.type.split('/')[1] || 'png').split(';')[0];
+      const safeName = (q.customer_name || q.customerName || 'customer').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `quote-${q.id}-${safeName}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch {
+      window.open(url, '_blank', 'noopener');
+    }
+  }
+
   const createBlogMutation = useMutation({
     mutationFn: (data: Partial<BlogPost>) => createBlogPost(data),
     onSuccess: () => {
@@ -2015,6 +2055,24 @@ export default function AdminPage() {
                         {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                       </button>
                     )}
+                    {(q.design_url || q.mockup_image_url) && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); sendQuoteToArtLibrary(q); }}
+                          className="text-xs font-medium text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                        >
+                          <FolderOpen className="w-3 h-3" />
+                          Art Library
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); downloadQuoteGraphic(q); }}
+                          className="text-xs font-medium text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" />
+                          Download
+                        </button>
+                      </>
+                    )}
                     {(q.status === 'accepted' || q.status === 'completed') && (
                       <button
                         onClick={(e) => { e.stopPropagation(); convertQuoteToInvoice(q); }}
@@ -2102,6 +2160,24 @@ export default function AdminPage() {
                                   <DollarSign className="w-3.5 h-3.5" />
                                   {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
                                 </button>
+                              )}
+                              {(q.design_url || q.mockup_image_url) && (
+                                <>
+                                  <button
+                                    onClick={() => { setOpenActionMenu(null); sendQuoteToArtLibrary(q); }}
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-orange-700 font-medium"
+                                  >
+                                    <FolderOpen className="w-3.5 h-3.5" />
+                                    Send to Art Library
+                                  </button>
+                                  <button
+                                    onClick={() => { setOpenActionMenu(null); downloadQuoteGraphic(q); }}
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Download
+                                  </button>
+                                </>
                               )}
                               {(q.status === 'accepted' || q.status === 'completed') && (
                                 <button
