@@ -104,9 +104,10 @@ import {
 import PromoManager from '@/components/admin/PromoManager';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
+import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -140,6 +141,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   ]},
   { label: 'Marketing', items: [
     { key: 'blog',      label: 'Blog',         icon: PenSquare },
+    { key: 'campaigns', label: 'Email Blasts', icon: Send },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
   ]},
   { label: '', items: [
@@ -590,7 +592,7 @@ export default function AdminPage() {
     const params = new URLSearchParams(window.location.search);
     const section = params.get('section');
     const id = params.get('id');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
     if (section && validSections.includes(section as Section)) {
       setActiveSection(section as Section);
     }
@@ -5541,6 +5543,8 @@ export default function AdminPage() {
         })()}
 
         {activeSection === 'fonts' && <CustomFontsAdmin />}
+
+        {activeSection === 'campaigns' && <CampaignsAdmin />}
 
         {activeSection === 'settings' && (
           <div>
