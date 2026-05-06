@@ -891,6 +891,39 @@ Create an Instagram post for this.`;
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// EMAIL CAMPAIGN DRAFT
+// Returns subject + body_html for a marketing email blast. Body is plain
+// HTML (paragraphs, bold, light formatting) — admin can edit before send.
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/draft-campaign', authenticate, adminOnly, adminLimiter, async (req, res, next) => {
+  try {
+    const { prompt } = req.body;
+    if (!prompt || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' });
+
+    const system = `You are the marketing voice of T-Shirt Brothers, a custom apparel and screen printing shop in Fairburn, GA. Tone: friendly, helpful, lightly enthusiastic. Never pushy. Always concrete (mention a deadline, a service, or what's included). Avoid clichés.
+
+Output STRICT JSON:
+{
+  "subject": "concise email subject line, under 60 chars, no emoji unless the topic clearly calls for one",
+  "body_html": "the email body as simple HTML — 2-4 short paragraphs in <p> tags, optional <ul>/<li> for lists, <strong> for emphasis. No <html>/<head>/<body> wrapper, no inline styles, no images (those will be appended automatically). Keep total length under 180 words."
+}`;
+
+    const user = `Marketing email prompt: ${prompt.trim()}
+
+Draft a friendly, on-brand email blast.`;
+
+    const raw = await callDeepSeek({ system, user, responseFormat: 'json', temperature: 0.7, maxTokens: 700 });
+
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return res.status(500).json({ error: 'Failed to generate draft' }); }
+
+    if (!parsed.subject || !parsed.body_html) return res.status(500).json({ error: 'Incomplete draft' });
+
+    res.json({ subject: parsed.subject, body_html: parsed.body_html });
+  } catch (err) { next(err); }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PROMO CODE VALIDATION (public)
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/validate-promo', publicLimiter, async (req, res) => {

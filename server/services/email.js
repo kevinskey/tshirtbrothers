@@ -437,3 +437,61 @@ export async function sendMockupForApproval(mockup, approveUrl) {
     throw err;
   }
 }
+
+// ── Marketing campaigns ──────────────────────────────────────────────────────
+
+import crypto from 'crypto';
+
+const UNSUB_SECRET = process.env.UNSUB_SECRET || process.env.JWT_SECRET || 'tsb-unsub-fallback';
+
+export function unsubscribeToken(email) {
+  return crypto.createHmac('sha256', UNSUB_SECRET).update(email.toLowerCase()).digest('hex').slice(0, 24);
+}
+
+/**
+ * Wraps a campaign body in the standard brand layout, appends a row of
+ * example images, and adds the legally-required unsubscribe footer.
+ * bodyHtml is the admin-edited HTML (already drafted/edited by the user).
+ */
+export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], recipientEmail }) {
+  const examplesHtml = exampleImageUrls.length
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+         <tr>${exampleImageUrls.slice(0, 6).map((u) => `
+           <td width="33%" style="padding:4px;">
+             <img src="${u}" alt="" style="width:100%;border-radius:8px;border:1px solid #e5e7eb;display:block;" />
+           </td>`).join('')}
+         </tr>
+       </table>`
+    : '';
+
+  const token = unsubscribeToken(recipientEmail);
+  const unsubUrl = `${DOMAIN}/api/email/unsubscribe?e=${encodeURIComponent(recipientEmail)}&t=${token}`;
+  const unsubHtml = `
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;text-align:center;">
+      You're getting this because you've worked with T-Shirt Brothers before.
+      <a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a>.
+    </p>`;
+
+  const inner = `
+    <h1 style="margin:0 0 16px;font-size:24px;color:${BRAND_DARK};">${subject}</h1>
+    <div style="font-size:15px;line-height:1.6;color:#374151;">${bodyHtml}</div>
+    ${examplesHtml}
+    ${primaryButton('Get a Free Quote', `${DOMAIN}/quote`)}
+    ${unsubHtml}
+  `;
+  return baseLayout(subject, inner);
+}
+
+/**
+ * Sends a single campaign email. The caller is responsible for batching
+ * and respecting Resend's per-second rate limit.
+ */
+export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [] }) {
+  const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to });
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [to],
+    subject,
+    html,
+  });
+}
