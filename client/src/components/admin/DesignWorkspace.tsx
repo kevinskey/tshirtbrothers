@@ -1181,11 +1181,11 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                   </div>
                 </div>
                 {cropMode ? (
-                  <div className="flex gap-2 mt-3 justify-center">
+                  <div className="flex flex-wrap gap-2 mt-3 justify-center w-full">
                     <button
                       onClick={applyCrop}
                       disabled={cropApplying}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center gap-2"
+                      className="flex-1 sm:flex-none min-w-[140px] px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {cropApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                       {cropApplying ? 'Applying…' : 'Apply Crop'}
@@ -1193,7 +1193,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                     <button
                       onClick={() => { setCropMode(false); setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }); }}
                       disabled={cropApplying}
-                      className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg disabled:opacity-50"
+                      className="flex-1 sm:flex-none min-w-[100px] px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg disabled:opacity-50"
                     >
                       Cancel
                     </button>
