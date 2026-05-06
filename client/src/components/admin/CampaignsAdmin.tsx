@@ -46,17 +46,35 @@ export default function CampaignsAdmin() {
   const [sending, setSending] = useState(false);
   const [history, setHistory] = useState<CampaignRow[]>([]);
 
-  // Load campaign history + art library on mount.
+  // Load art library once on mount.
   useEffect(() => {
-    fetch('/api/admin/campaigns', { headers: authHeaders() })
-      .then((r) => r.ok ? r.json() : [])
-      .then(setHistory)
-      .catch(() => {});
     fetch('/api/admin/designs-library', { headers: authHeaders() })
       .then((r) => r.ok ? r.json() : [])
       .then(setLibrary)
       .catch(() => {});
   }, []);
+
+  // Poll campaign history. Refresh fast while any campaign is still sending
+  // (the worker runs in the background and updates sent_count/failed_count
+  // as it goes); slow once everything is settled.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/campaigns', { headers: authHeaders() });
+        if (!res.ok || cancelled) return;
+        const data: CampaignRow[] = await res.json();
+        if (!cancelled) setHistory(data);
+      } catch {
+        // ignore — next tick will try again
+      }
+    }
+    load();
+    const anySending = history.some((c) => c.status === 'sending');
+    const intervalMs = anySending ? 3000 : 30000;
+    const id = setInterval(load, intervalMs);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [history.some((c) => c.status === 'sending')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh recipient preview whenever the filter changes.
   useEffect(() => {
