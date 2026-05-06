@@ -3431,7 +3431,7 @@ export default function AdminPage() {
 
         {/* Invoices Section */}
         {activeSection === 'invoices' && (
-          <div>
+          <div className="pt-6">
             {invoiceView === 'list' && (
               <>
                 <div className="flex items-center justify-between mb-3 gap-3">
