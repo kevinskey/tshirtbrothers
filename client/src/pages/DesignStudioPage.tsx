@@ -2650,7 +2650,7 @@ export default function DesignStudioPage() {
             <img
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
-              className="w-full h-full object-contain p-1 md:p-4 pointer-events-none"
+              className="w-full h-full object-contain p-0 md:p-4 pointer-events-none"
               draggable={false}
             />
           ) : blankCanvasMode ? (
