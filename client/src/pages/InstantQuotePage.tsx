@@ -68,6 +68,7 @@ const DEFAULT_INPUTS: Inputs = {
 
 export default function InstantQuotePage() {
   const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   // 200ms debounce — calculator hits the API on every change otherwise.
   const [debouncedInputs, setDebouncedInputs] = useState(inputs);
@@ -326,7 +327,7 @@ export default function InstantQuotePage() {
         <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => toast.message('Save Quote — coming in Phase 4')}
+            onClick={() => setSaveOpen(true)}
             disabled={!calc}
             className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-red-400 hover:bg-gray-50 disabled:opacity-50 transition"
           >
@@ -347,7 +348,133 @@ export default function InstantQuotePage() {
           Estimate only. Final price confirmed after we review your artwork. Tax + shipping calculated at checkout.
         </p>
       </main>
+
+      {saveOpen && calc && (
+        <SaveQuoteModal
+          inputs={inputs}
+          numLocations={numLocations}
+          onClose={() => setSaveOpen(false)}
+        />
+      )}
     </Layout>
+  );
+}
+
+function SaveQuoteModal({
+  inputs, numLocations, onClose,
+}: {
+  inputs: Inputs;
+  numLocations: number;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit() {
+    if (!email || !/.+@.+\..+/.test(email)) {
+      toast.error('Enter a valid email');
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/quote/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: name || null,
+          customer_email: email,
+          notes: notes || null,
+          inputs: {
+            quantity: inputs.quantity,
+            garmentName: inputs.garmentName,
+            qualityTier: inputs.qualityTier,
+            methodName: inputs.methodName,
+            numLocations,
+            colorsPerLocation: inputs.colorsPerLocation,
+            rush: inputs.rush,
+            // Non-API fields, included so the email can show 'Front + Sleeve' etc.
+            locations: inputs.locations,
+          },
+        }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || 'Save failed');
+      toast.success(`Quote #${body.id} saved — check your email.`);
+      onClose();
+    } catch (err: any) {
+      toast.error(err.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 py-8"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <h3 className="font-display text-xl font-bold text-gray-900">Save your quote</h3>
+        <p className="mt-1 text-sm text-gray-500">We'll email you the breakdown so you have it on file.</p>
+
+        <div className="mt-5 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Email *</label>
+            <input
+              type="email"
+              autoFocus
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Optional"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Notes for the shop</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Optional — special requirements, deadline notes, etc."
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={saving}
+            className="rounded-lg bg-red-600 px-6 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {saving ? 'Saving...' : 'Save & email me'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

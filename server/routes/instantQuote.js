@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
+import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services/email.js';
 
 const router = Router();
 
@@ -162,6 +163,71 @@ router.post('/calculate', async (req, res, next) => {
     }
     next(err);
   }
+});
+
+/* ---------------------------------------------------------------------------
+ * POST /api/quote/save — persist a calculated quote, email customer + admin.
+ *
+ * Recomputes server-side from the same inputs to make sure the saved price
+ * matches what the customer was shown (and to defeat any client tampering).
+ * ------------------------------------------------------------------------- */
+router.post('/save', async (req, res, next) => {
+  try {
+    const { inputs, customer_name, customer_email, notes } = req.body;
+    if (!inputs || typeof inputs !== 'object') {
+      return res.status(400).json({ error: 'inputs object is required' });
+    }
+    if (!customer_email || !/.+@.+\..+/.test(customer_email)) {
+      return res.status(400).json({ error: 'customer_email is required' });
+    }
+
+    // Recompute server-side
+    const tables = await loadPricingTables();
+    let calc;
+    try {
+      calc = computeQuote(inputs, tables);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    // Stash the full input set + price snapshot. inputs_json column was
+    // added by migration instant_quote_save_columns.sql.
+    const productName = `${inputs.qualityTier} ${inputs.garmentName} — ${inputs.methodName}`;
+    const result = await pool.query(
+      `INSERT INTO quotes
+        (customer_name, customer_email, product_name, quantity,
+         design_type, inputs_json, calculated_price,
+         estimated_price, notes, status)
+       VALUES ($1, $2, $3, $4, 'instant-quote', $5::jsonb, $6, $7, $8, 'pending')
+       RETURNING id, customer_name, customer_email, created_at`,
+      [
+        customer_name || null,
+        customer_email,
+        productName,
+        inputs.quantity,
+        JSON.stringify(inputs),
+        calc.total,
+        calc.total,
+        notes || null,
+      ]
+    );
+    const quote = result.rows[0];
+
+    // Fire emails — non-blocking from the customer's perspective; if either
+    // fails we log but still return success since the row is persisted.
+    Promise.allSettled([
+      sendInstantQuoteToCustomer({ quote, inputs, calc }),
+      sendInstantQuoteToAdmin({ quote, inputs, calc }),
+    ]).then((results) => {
+      results.forEach((r, i) => {
+        if (r.status === 'rejected') {
+          console.error(`[instant-quote save] email ${i === 0 ? 'customer' : 'admin'} failed:`, r.reason?.message || r.reason);
+        }
+      });
+    });
+
+    res.json({ id: quote.id, total: calc.total, per_shirt: calc.per_shirt });
+  } catch (err) { next(err); }
 });
 
 /* GET the pricing tables (read-only) so the frontend can render the dropdowns. */
