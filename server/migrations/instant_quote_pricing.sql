@@ -80,7 +80,10 @@ INSERT INTO instant_quote_garments (name, quality_tier, base_cost, sort_order) V
   ('Sweatshirt',  'Ultra',    19.50, 52),
   ('Hoodie',      'Standard', 11.50, 60),
   ('Hoodie',      'Premium',  18.00, 61),
-  ('Hoodie',      'Ultra',    24.00, 62)
+  ('Hoodie',      'Ultra',    24.00, 62),
+  ('Hat',         'Standard',  5.50, 70),
+  ('Hat',         'Premium',  10.00, 71),
+  ('Hat',         'Ultra',    18.00, 72)
 ON CONFLICT (name, quality_tier) DO NOTHING;
 
 INSERT INTO instant_quote_print_methods (name, setup_fee_per_color, base_per_piece_cost, charges_per_color, sort_order) VALUES
