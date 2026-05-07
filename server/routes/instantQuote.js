@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services/email.js';
+import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -256,3 +257,181 @@ router.get('/options', async (_req, res, next) => {
 });
 
 export default router;
+
+/* ===========================================================================
+ *  Admin sub-router — mounted at /api/admin/instant-quote-pricing
+ *  Protected by the standard authenticate + adminOnly middleware. All four
+ *  pricing tables are read & write through here so the shop owner can adjust
+ *  prices without a developer call.
+ * ========================================================================= */
+
+export const adminRouter = Router();
+adminRouter.use(authenticate, adminOnly);
+
+adminRouter.get('/', async (_req, res, next) => {
+  try {
+    const tables = await loadPricingTables(true /* force fresh */);
+    res.json({
+      garments: tables.garments,
+      print_methods: tables.printMethods,
+      quantity_tiers: tables.quantityTiers,
+      settings: tables.settings,
+    });
+  } catch (err) { next(err); }
+});
+
+/*
+ * PATCH body shape:
+ *   {
+ *     garments?:        Array of { id?, name, quality_tier, base_cost, image_url, active, sort_order }
+ *                       — rows with no id are inserted; rows with id are updated; ids missing
+ *                       from the array are deleted (for that table) when `replace_garments: true`.
+ *     print_methods?:   same shape (won't delete unless replace_print_methods)
+ *     quantity_tiers?:  same shape (won't delete unless replace_quantity_tiers)
+ *     settings?:        partial object, merges into singleton row.
+ *   }
+ *
+ * Operations are wrapped in a single Postgres transaction so a partial-failure
+ * leaves the tables consistent. After a successful commit the in-memory
+ * pricing cache is invalidated so /api/quote/calculate sees changes within
+ * one request.
+ */
+adminRouter.patch('/', async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { garments, print_methods, quantity_tiers, settings, replace_garments, replace_print_methods, replace_quantity_tiers } = req.body;
+
+    if (Array.isArray(garments)) {
+      const keepIds = [];
+      for (const g of garments) {
+        if (typeof g.name !== 'string' || typeof g.quality_tier !== 'string' || g.base_cost == null) {
+          throw new Error(`garment row missing required fields: ${JSON.stringify(g)}`);
+        }
+        if (g.id) {
+          await client.query(
+            `UPDATE instant_quote_garments
+                SET name=$1, quality_tier=$2, base_cost=$3, image_url=$4, active=$5, sort_order=$6
+              WHERE id=$7`,
+            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0, g.id]
+          );
+          keepIds.push(g.id);
+        } else {
+          const r = await client.query(
+            `INSERT INTO instant_quote_garments (name, quality_tier, base_cost, image_url, active, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (name, quality_tier) DO UPDATE
+               SET base_cost=EXCLUDED.base_cost, image_url=EXCLUDED.image_url,
+                   active=EXCLUDED.active, sort_order=EXCLUDED.sort_order
+             RETURNING id`,
+            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0]
+          );
+          keepIds.push(r.rows[0].id);
+        }
+      }
+      if (replace_garments) {
+        const ph = keepIds.length ? keepIds.map((_, i) => '$' + (i + 1)).join(',') : 'NULL';
+        await client.query(`DELETE FROM instant_quote_garments WHERE id NOT IN (${ph})`, keepIds);
+      }
+    }
+
+    if (Array.isArray(print_methods)) {
+      const keepIds = [];
+      for (const m of print_methods) {
+        if (typeof m.name !== 'string' || m.base_per_piece_cost == null) {
+          throw new Error(`print_method row missing required fields: ${JSON.stringify(m)}`);
+        }
+        if (m.id) {
+          await client.query(
+            `UPDATE instant_quote_print_methods
+                SET name=$1, setup_fee_per_color=$2, base_per_piece_cost=$3, charges_per_color=$4, active=$5, sort_order=$6
+              WHERE id=$7`,
+            [m.name, m.setup_fee_per_color || 0, m.base_per_piece_cost, !!m.charges_per_color, m.active !== false, m.sort_order || 0, m.id]
+          );
+          keepIds.push(m.id);
+        } else {
+          const r = await client.query(
+            `INSERT INTO instant_quote_print_methods (name, setup_fee_per_color, base_per_piece_cost, charges_per_color, active, sort_order)
+             VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (name) DO UPDATE
+               SET setup_fee_per_color=EXCLUDED.setup_fee_per_color,
+                   base_per_piece_cost=EXCLUDED.base_per_piece_cost,
+                   charges_per_color=EXCLUDED.charges_per_color,
+                   active=EXCLUDED.active, sort_order=EXCLUDED.sort_order
+             RETURNING id`,
+            [m.name, m.setup_fee_per_color || 0, m.base_per_piece_cost, !!m.charges_per_color, m.active !== false, m.sort_order || 0]
+          );
+          keepIds.push(r.rows[0].id);
+        }
+      }
+      if (replace_print_methods) {
+        const ph = keepIds.length ? keepIds.map((_, i) => '$' + (i + 1)).join(',') : 'NULL';
+        await client.query(`DELETE FROM instant_quote_print_methods WHERE id NOT IN (${ph})`, keepIds);
+      }
+    }
+
+    if (Array.isArray(quantity_tiers)) {
+      const keepIds = [];
+      for (const q of quantity_tiers) {
+        if (q.min_qty == null || q.discount_pct == null) {
+          throw new Error(`quantity_tier row missing required fields: ${JSON.stringify(q)}`);
+        }
+        if (q.id) {
+          await client.query(
+            `UPDATE instant_quote_quantity_tiers
+                SET min_qty=$1, max_qty=$2, discount_pct=$3, sort_order=$4
+              WHERE id=$5`,
+            [q.min_qty, q.max_qty == null ? null : q.max_qty, q.discount_pct, q.sort_order || 0, q.id]
+          );
+          keepIds.push(q.id);
+        } else {
+          const r = await client.query(
+            `INSERT INTO instant_quote_quantity_tiers (min_qty, max_qty, discount_pct, sort_order)
+             VALUES ($1,$2,$3,$4) RETURNING id`,
+            [q.min_qty, q.max_qty == null ? null : q.max_qty, q.discount_pct, q.sort_order || 0]
+          );
+          keepIds.push(r.rows[0].id);
+        }
+      }
+      if (replace_quantity_tiers) {
+        const ph = keepIds.length ? keepIds.map((_, i) => '$' + (i + 1)).join(',') : 'NULL';
+        await client.query(`DELETE FROM instant_quote_quantity_tiers WHERE id NOT IN (${ph})`, keepIds);
+      }
+    }
+
+    if (settings && typeof settings === 'object') {
+      const allowed = ['markup_multiplier', 'rush_surcharge_pct', 'rush_threshold_days', 'standard_turnaround', 'rush_turnaround'];
+      const updates = [];
+      const vals = [];
+      for (const k of allowed) {
+        if (settings[k] !== undefined) {
+          vals.push(settings[k]);
+          updates.push(`${k}=$${vals.length}`);
+        }
+      }
+      if (updates.length) {
+        updates.push(`updated_at=NOW()`);
+        await client.query(`UPDATE instant_quote_settings SET ${updates.join(',')} WHERE id=1`, vals);
+      }
+    }
+
+    await client.query('COMMIT');
+    invalidatePricingCache();
+    const fresh = await loadPricingTables(true);
+    res.json({
+      ok: true,
+      garments: fresh.garments,
+      print_methods: fresh.printMethods,
+      quantity_tiers: fresh.quantityTiers,
+      settings: fresh.settings,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err.message?.includes('missing required fields')) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  } finally {
+    client.release();
+  }
+});

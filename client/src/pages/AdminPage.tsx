@@ -28,6 +28,7 @@ import {
   Eye,
   X,
   DollarSign,
+  Calculator,
   Send,
   Receipt,
   PenSquare,
@@ -102,12 +103,13 @@ import {
   fetchAdminCounts,
 } from '@/lib/api';
 import PromoManager from '@/components/admin/PromoManager';
+import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -143,6 +145,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'blog',      label: 'Blog',         icon: PenSquare },
     { key: 'campaigns', label: 'Email Blasts', icon: Send },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
+    { key: 'instant-quote-pricing', label: 'Instant Quote Pricing', icon: Calculator },
   ]},
   { label: '', items: [
     { key: 'settings',  label: 'Settings',     icon: Settings },
@@ -594,7 +597,7 @@ export default function AdminPage() {
     const params = new URLSearchParams(window.location.search);
     const section = params.get('section');
     const id = params.get('id');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
     if (section && validSections.includes(section as Section)) {
       setActiveSection(section as Section);
     }
@@ -4857,6 +4860,10 @@ export default function AdminPage() {
             </div>
             <GangSheetList />
           </div>
+        )}
+
+        {activeSection === 'instant-quote-pricing' && (
+          <InstantQuotePricingAdmin />
         )}
 
         {activeSection === 'pricing' && (
