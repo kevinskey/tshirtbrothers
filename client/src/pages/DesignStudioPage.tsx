@@ -486,7 +486,12 @@ export default function DesignStudioPage() {
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
-  const [viewSwitcherOpen, setViewSwitcherOpen] = useState(true);
+  // Open by default on desktop; collapsed-pill by default on phones so it
+  // doesn't overlap the (now larger) product on screen. Tap the pill to expand.
+  const [viewSwitcherOpen, setViewSwitcherOpen] = useState(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
+    return true;
+  });
   const [designElements, setDesignElements] = useState<DesignElement[]>(
     Array.isArray(loadState?.elements) ? (loadState!.elements as DesignElement[]) : [],
   );
