@@ -532,22 +532,36 @@ export default function QuotePage() {
         {formData.product?.id === 'BYOG' && <Check className="h-6 w-6 text-red-600" />}
       </button>
 
-      <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wider text-brand-gray-400">
-        <div className="h-px flex-1 bg-brand-gray-200" />
-        or pick from our catalog
-        <div className="h-px flex-1 bg-brand-gray-200" />
-      </div>
-
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-gray-400" />
-        <input
-          type="text"
-          placeholder="Search products (e.g. Gildan, hoodie, polo)..."
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="w-full rounded-xl border border-brand-gray-200 py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-red"
-        />
+      {/* Catalog: matches the visual weight of the DTF/BYOG cards above so
+          customers can see all three options at once. The search input lives
+          inside the card so the card itself acts as the call-to-action. */}
+      <div className={`mt-3 w-full rounded-xl border-2 p-4 transition ${
+        formData.product && formData.product.id !== 'DTF' && formData.product.id !== 'BYOG'
+          ? 'border-red-600 bg-red-50'
+          : 'border-dashed border-brand-gray-300 hover:border-red-400'
+      }`}>
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-gray-100">
+            <Search className="h-6 w-6 text-brand-gray-600" />
+          </div>
+          <div className="flex-1">
+            <p className="font-display font-bold">Pick from our catalog</p>
+            <p className="text-sm text-brand-gray-500">Browse our garments — t-shirts, hoodies, polos, hats, and more.</p>
+          </div>
+          {formData.product && formData.product.id !== 'DTF' && formData.product.id !== 'BYOG' && (
+            <Check className="h-6 w-6 text-red-600" />
+          )}
+        </div>
+        <div className="relative mt-4">
+          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-gray-400" />
+          <input
+            type="text"
+            placeholder="Search products (e.g. Gildan, hoodie, polo)..."
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full rounded-xl border border-brand-gray-200 py-3 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-red"
+          />
+        </div>
       </div>
 
       {/* Selected product summary — hidden when from studio (design hero shows it) */}
