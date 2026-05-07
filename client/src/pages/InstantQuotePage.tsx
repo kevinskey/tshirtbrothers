@@ -67,7 +67,21 @@ const DEFAULT_INPUTS: Inputs = {
 /* ────────────────────────────────────────────────────────────────────── */
 
 export default function InstantQuotePage() {
-  const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
+  // Preselect a print method when arrived from a Services-page CTA like
+  // /quote?service=dtf — so customers landing from "Get a DTF Quote" don't
+  // have to re-pick the method.
+  const initialInputs = useMemo<Inputs>(() => {
+    if (typeof window === 'undefined') return DEFAULT_INPUTS;
+    const params = new URLSearchParams(window.location.search);
+    const service = params.get('service');
+    if (service === 'dtf') return { ...DEFAULT_INPUTS, methodName: 'DTF' };
+    if (service === 'embroidery') return { ...DEFAULT_INPUTS, methodName: 'Embroidery' };
+    if (service === 'screen-print') return { ...DEFAULT_INPUTS, methodName: 'Screen Print' };
+    if (service === 'dtg') return { ...DEFAULT_INPUTS, methodName: 'DTG' };
+    return DEFAULT_INPUTS;
+  }, []);
+
+  const [inputs, setInputs] = useState<Inputs>(initialInputs);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
 
   // 200ms debounce — calculator hits the API on every change otherwise.
