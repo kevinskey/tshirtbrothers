@@ -1693,7 +1693,7 @@ export default function DesignStudioPage() {
     { name: 'art', icon: Image, label: 'Add Art' },
     { name: 'shapes', icon: Square, label: 'Shapes' },
     { name: 'ai', icon: Sparkles, label: 'AI\nDesign' },
-    { name: 'details', icon: Shirt, label: 'Product\nDetails' },
+    { name: 'details', icon: Shirt, label: 'Change\nColor' },
     { name: 'products', icon: Move, label: 'Change\nProducts' },
   ];
 
@@ -2469,7 +2469,7 @@ export default function DesignStudioPage() {
     text: { title: 'Add Text', content: textPanelContent, action: textPanelAction },
     art: { title: 'Add Art', content: artPanelContent },
     shapes: { title: 'Add Shape', content: shapesPanelContent },
-    details: { title: 'Product Details', content: detailsPanelContent },
+    details: { title: 'Change Color', content: detailsPanelContent },
     products: { title: 'Change Products', content: productsPanelContent },
   };
 
