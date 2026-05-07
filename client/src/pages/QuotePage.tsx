@@ -12,6 +12,7 @@ import {
   Upload,
   X,
   Shirt,
+  Layers,
   Palette,
   Printer,
   Image,
@@ -79,11 +80,29 @@ const BYOG_PRODUCT: SSProduct = {
   category: 'BYOG',
 };
 
+// Sentinel product representing "I just want DTF print transfers — no
+// garments, no sizes". Detected via `formData.product?.id === 'DTF'`.
+// The flow skips color, sizes, and the design-idea step entirely and
+// asks only for: number of prints + (multi) design uploads.
+const DTF_PRODUCT: SSProduct = {
+  id: 'DTF',
+  name: 'DTF Print Transfers',
+  brand: '',
+  category: 'DTF',
+};
+
 interface FormData {
   product: SSProduct | null;
   color: SSColor | null;
   sizes: Record<string, number>;
   byogDescription: string;
+  // DTF mode (formData.product.id === 'DTF'): total number of prints requested
+  // plus an array of design files (one per artwork the customer wants on a
+  // transfer). Each file is uploaded separately to Spaces and the URLs are
+  // stored as design_url (first) + extra_design_urls (rest) on the quote.
+  dtfQty: number;
+  dtfFiles: File[];
+  dtfPreviews: string[];
   printAreas: string[];
   designFile: File | null;
   designPreview: string | null;
@@ -106,6 +125,9 @@ const INITIAL_FORM: FormData = {
   color: null,
   sizes: { XS: 0, S: 0, M: 0, L: 0, XL: 0, '2XL': 0, '3XL': 0, '4XL': 0, '5XL': 0 },
   byogDescription: '',
+  dtfQty: 0,
+  dtfFiles: [],
+  dtfPreviews: [],
   printAreas: ['Full Front'],
   designFile: null,
   designPreview: null,
@@ -189,6 +211,10 @@ export default function QuotePage() {
   const designState = (location.state as { fromDesignStudio?: boolean; product?: SSProduct; color?: SSColor; colorIndex?: number; designImage?: string; designElements?: DesignElement[]; designView?: string; designSnapshot?: string | null } | null);
   const savedDesignElements = designState?.designElements || [];
   const fromStudio = !!designState?.fromDesignStudio;
+  // Auto-select DTF mode when navigated from /services?service=dtf or
+  // /quote?service=dtf — saves the customer one click coming from the
+  // DTF service tile.
+  const fromDtfService = new URLSearchParams(location.search).get('service') === 'dtf';
   // Track the product image from the design studio (exact color the user designed on).
   // Cleared if the user picks a different color in step 2.
   const [studioProductImage, setStudioProductImage] = useState<string | null>(designState?.designImage || null);
@@ -238,6 +264,9 @@ export default function QuotePage() {
         designPreview: designState.designImage || null,
       };
     }
+    if (fromDtfService) {
+      return { ...INITIAL_FORM, product: DTF_PRODUCT };
+    }
     return INITIAL_FORM;
   });
   const [search, setSearch] = useState('');
@@ -253,10 +282,12 @@ export default function QuotePage() {
     [],
   );
 
-  const totalQty = useMemo(
-    () => Object.values(formData.sizes).reduce((a, b) => a + b, 0),
-    [formData.sizes],
-  );
+  const isDtf = formData.product?.id === 'DTF';
+
+  const totalQty = useMemo(() => {
+    if (isDtf) return formData.dtfQty;
+    return Object.values(formData.sizes).reduce((a, b) => a + b, 0);
+  }, [formData.sizes, formData.dtfQty, isDtf]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -271,6 +302,7 @@ export default function QuotePage() {
   const canAdvance = (): boolean => {
     if (currentStep === 1) return formData.product !== null;
     if (currentStep === 2) {
+      if (isDtf) return formData.dtfQty > 0 && formData.dtfFiles.length > 0;
       if (isByog) return totalQty > 0 && formData.byogDescription.trim().length > 0;
       if (step2Sub === 'color') return fromStudio || formData.color !== null;
       return totalQty > 0;
@@ -304,9 +336,39 @@ export default function QuotePage() {
 
       // Upload design file or design studio snapshot to server
       let designUrl: string | null = null;
-      
+      // For DTF, the customer can upload multiple files. The first becomes
+      // design_url (so legacy admin renderers still see one image); the rest
+      // ride along in extra_design_urls and the admin lists them all.
+      let extraDesignUrls: string[] = [];
+
+      if (isDtf && formData.dtfFiles.length > 0) {
+        const uploads = await Promise.all(
+          formData.dtfFiles.map(async (file) => {
+            const reader = new FileReader();
+            const base64 = await new Promise<string>((resolve) => {
+              reader.onload = () => resolve(reader.result as string);
+              reader.readAsDataURL(file);
+            });
+            const r = await fetch('/api/quotes/upload-design', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                imageBase64: base64,
+                filename: file.name,
+                customerEmail: formData.customerEmail,
+              }),
+            });
+            if (!r.ok) return null;
+            return (await r.json()).url as string;
+          }),
+        );
+        const ok = uploads.filter((u): u is string => !!u);
+        designUrl = ok[0] || null;
+        extraDesignUrls = ok.slice(1);
+      }
+
       // If from Design Studio with a product image, use that as the design preview
-      if (!designSnapshot && fromStudio && studioProductImage) {
+      if (!isDtf && !designSnapshot && fromStudio && studioProductImage) {
         try {
           const uploadRes = await fetch('/api/quotes/upload-design', {
             method: 'POST',
@@ -324,7 +386,7 @@ export default function QuotePage() {
         } catch {}
       }
       
-      if (designSnapshot) {
+      if (!isDtf && designSnapshot) {
         // Upload the Design Studio snapshot (data URL)
         const uploadRes = await fetch('/api/quotes/upload-design', {
           method: 'POST',
@@ -339,7 +401,7 @@ export default function QuotePage() {
           const uploadData = await uploadRes.json();
           designUrl = uploadData.url;
         }
-      } else if (formData.designPreview && formData.designFile) {
+      } else if (!isDtf && formData.designPreview && formData.designFile) {
         const reader = new FileReader();
         const base64 = await new Promise<string>((resolve) => {
           reader.onload = () => resolve(reader.result as string);
@@ -362,15 +424,18 @@ export default function QuotePage() {
 
       await submitQuote({
         product_id: null,
-        product_name: isByog && formData.byogDescription
+        product_name: isDtf
+          ? `DTF Print Transfers (${formData.dtfFiles.length} design${formData.dtfFiles.length === 1 ? '' : 's'})`
+          : isByog && formData.byogDescription
           ? `Customer-supplied apparel: ${formData.byogDescription}`
           : formData.product?.name,
-        color: formData.color?.name,
-        sizes: sizeEntries,
+        color: isDtf ? null : formData.color?.name,
+        sizes: isDtf ? {} : sizeEntries,
         quantity: totalQty,
-        print_areas: formData.printAreas,
-        design_type: savedDesignElements.length > 0 ? 'design-studio' : designUrl ? 'upload' : formData.designIdea ? 'description' : null,
+        print_areas: isDtf ? [] : formData.printAreas,
+        design_type: isDtf ? 'dtf' : savedDesignElements.length > 0 ? 'design-studio' : designUrl ? 'upload' : formData.designIdea ? 'description' : null,
         design_url: designUrl || null,
+        extra_design_urls: extraDesignUrls,
         customer_name: formData.customerName,
         customer_email: formData.customerEmail,
         customer_phone: formData.customerPhone,
@@ -423,13 +488,35 @@ export default function QuotePage() {
         Search our products, or bring your own apparel for printing only.
       </p>
 
+      {/* DTF: customer just wants the print transfers — no garments, no
+          sizes. Skips color/sizes entirely and goes straight to a quantity
+          input + multi-file upload in step 2. */}
+      <button
+        type="button"
+        onClick={() => { update({ product: DTF_PRODUCT, color: null }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        className={`mt-6 w-full flex items-center gap-4 rounded-xl border-2 p-4 text-left transition ${
+          formData.product?.id === 'DTF'
+            ? 'border-red-600 bg-red-50'
+            : 'border-dashed border-brand-gray-300 hover:border-red-400 hover:bg-brand-gray-50'
+        }`}
+      >
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50">
+          <Layers className="h-6 w-6 text-emerald-600" />
+        </div>
+        <div className="flex-1">
+          <p className="font-display font-bold">All I want is DTF Print Transfers</p>
+          <p className="text-sm text-brand-gray-500">Just the prints — no garments. Upload one or more designs and tell us how many.</p>
+        </div>
+        {formData.product?.id === 'DTF' && <Check className="h-6 w-6 text-red-600" />}
+      </button>
+
       {/* BYOG: customer supplies their own apparel and just needs printing.
           Selecting this skips the color picker in step 2 and asks them to
           describe what they're shipping in. */}
       <button
         type="button"
         onClick={() => { update({ product: BYOG_PRODUCT, color: null }); setStep2Sub('sizes'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-        className={`mt-6 w-full flex items-center gap-4 rounded-xl border-2 p-4 text-left transition ${
+        className={`mt-3 w-full flex items-center gap-4 rounded-xl border-2 p-4 text-left transition ${
           formData.product?.id === 'BYOG'
             ? 'border-red-600 bg-red-50'
             : 'border-dashed border-brand-gray-300 hover:border-red-400 hover:bg-brand-gray-50'
@@ -574,7 +661,7 @@ export default function QuotePage() {
   const { data: productDetails, isLoading: colorsLoading } = useQuery({
     queryKey: ['product-details', productStyleId],
     queryFn: () => fetchProductDetails(productStyleId),
-    enabled: !!productStyleId && productStyleId !== 'BYOG',
+    enabled: !!productStyleId && productStyleId !== 'BYOG' && productStyleId !== 'DTF',
     staleTime: 1000 * 60 * 30,
   });
   const colors = productDetails?.colors ?? [];
@@ -701,12 +788,88 @@ export default function QuotePage() {
       )}
 
       <h2 className="font-display text-lg md:text-2xl font-bold">
-        {isByog
+        {isDtf
+          ? 'How many prints + your designs'
+          : isByog
           ? 'Tell us about your apparel'
           : fromStudio
           ? 'Select sizes and quantities'
           : step2Sub === 'color' ? 'Choose a color' : 'Select sizes and quantities'}
       </h2>
+
+      {/* DTF: total print count + multi-file design upload. No color, no
+          size grid — just the artwork and how many transfer films to make. */}
+      {isDtf && (
+        <div className="mt-6 space-y-6">
+          <div>
+            <label className="font-medium text-sm md:text-base text-brand-gray-700">How many prints do you need? *</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={formData.dtfQty || ''}
+              onChange={(e) => update({ dtfQty: Math.max(0, parseInt(e.target.value) || 0) })}
+              placeholder="e.g. 50"
+              className="mt-2 w-full rounded-xl border border-brand-gray-200 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-red"
+            />
+            <p className="mt-2 text-xs text-brand-gray-500">Total transfer films across all designs. If you need different counts per design, note it in the notes step.</p>
+          </div>
+
+          <div>
+            <label className="font-medium text-sm md:text-base text-brand-gray-700">Upload your designs *</label>
+            <p className="mt-1 text-xs text-brand-gray-500">PNG with transparent background works best. You can add multiple — one file per design.</p>
+
+            <label className="mt-3 flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-brand-gray-300 px-4 py-8 text-sm text-brand-gray-500 transition hover:border-red-400 hover:bg-brand-gray-50">
+              <Upload className="h-5 w-5" />
+              <span>Click to add design files</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,.pdf,.svg"
+                className="hidden"
+                onChange={(e) => {
+                  const files = Array.from(e.target.files || []);
+                  if (files.length === 0) return;
+                  const newPreviews = files.map((f) => URL.createObjectURL(f));
+                  update({
+                    dtfFiles: [...formData.dtfFiles, ...files],
+                    dtfPreviews: [...formData.dtfPreviews, ...newPreviews],
+                  });
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
+            {formData.dtfFiles.length > 0 && (
+              <ul className="mt-4 space-y-2">
+                {formData.dtfFiles.map((f, i) => (
+                  <li key={i} className="flex items-center gap-3 rounded-lg border border-brand-gray-200 bg-white p-2">
+                    <img src={formData.dtfPreviews[i]} alt={f.name} className="h-12 w-12 rounded object-contain bg-brand-gray-50" />
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-sm font-medium text-brand-gray-800">{f.name}</p>
+                      <p className="text-xs text-brand-gray-500">{(f.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        URL.revokeObjectURL(formData.dtfPreviews[i]);
+                        update({
+                          dtfFiles: formData.dtfFiles.filter((_, idx) => idx !== i),
+                          dtfPreviews: formData.dtfPreviews.filter((_, idx) => idx !== i),
+                        });
+                      }}
+                      className="rounded-full p-1 text-brand-gray-400 transition hover:bg-brand-gray-100 hover:text-brand-gray-700"
+                      aria-label="Remove file"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* BYOG: short description of the customer-supplied apparel. */}
       {isByog && (
@@ -722,8 +885,8 @@ export default function QuotePage() {
         </div>
       )}
 
-      {/* Color picker screen — skipped for BYOG and Design Studio. */}
-      {!fromStudio && !isByog && step2Sub === 'color' && (
+      {/* Color picker screen — skipped for BYOG, DTF, and Design Studio. */}
+      {!fromStudio && !isByog && !isDtf && step2Sub === 'color' && (
         <>
           <p className="mt-6 font-medium text-brand-gray-700">Color</p>
           {colorsLoading ? (
@@ -778,8 +941,9 @@ export default function QuotePage() {
         </>
       )}
 
-      {/* Sizes screen — always shown for BYOG (no color step needed). */}
-      {(step2Sub === 'sizes' || fromStudio || isByog) && (
+      {/* Sizes screen — always shown for BYOG (no color step needed).
+          Skipped entirely for DTF (no garments → no sizes). */}
+      {!isDtf && (step2Sub === 'sizes' || fromStudio || isByog) && (
         <>
           {!fromStudio && formData.color && (
             <div className="mt-4 flex items-center gap-3 text-sm">
@@ -1316,7 +1480,13 @@ export default function QuotePage() {
   const stepRenderers = [renderStep1, renderStep2, renderStep3, renderStep4, renderStep5];
 
   // When from Design Studio, only show steps 2 (Color & Sizes) and 5 (Review & Submit)
-  const activeStepNums = fromStudio ? [2, 5] : [1, 2, 3, 4, 5];
+  // DTF skips step 3 (print areas — there's nothing to print on) and step 4
+  // (design upload — already done in step 2). Customer goes 1 → 2 → 5 (review).
+  const activeStepNums = fromStudio
+    ? [2, 5]
+    : isDtf
+    ? [1, 2, 5]
+    : [1, 2, 3, 4, 5];
   const activeStepIdx = activeStepNums.indexOf(currentStep);
   const goNext = () => {
     // Step 2 has two sub-screens: color then sizes

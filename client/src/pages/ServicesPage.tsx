@@ -4,6 +4,7 @@ import {
   Shirt,
   Scissors,
   Trophy,
+  Layers,
   ShieldCheck,
   MapPin,
   Upload,
@@ -51,6 +52,24 @@ const services = [
     whyChoose: ['Pro digitizing', 'Durable threads', 'Logo services'],
     cta: { label: 'Upload Logo', to: '/design' },
     reverse: true,
+  },
+  {
+    title: 'DTF Print Transfers',
+    description:
+      "Just need the prints? We'll send you ready-to-press DTF transfer films — no garments, no sizes, just the artwork on transfer film. Bring your own apparel and press them yourself, or drop the films at any local printer.",
+    icon: Layers,
+    bgColor: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
+    items: [
+      'Single transfers or bulk runs',
+      'Multiple designs per order',
+      'Vibrant full-color prints',
+      'Heat-press ready',
+      'No minimum order',
+    ],
+    whyChoose: ['Fast turnaround', 'No minimums', 'Bring your own apparel'],
+    cta: { label: 'Get a DTF Quote', to: '/quote?service=dtf' },
+    reverse: false,
   },
   {
     title: 'Premium Products',
