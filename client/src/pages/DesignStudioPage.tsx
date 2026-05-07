@@ -11,6 +11,7 @@ import { CropModal } from '@/components/design-studio/CropModal';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
 import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
 import { CanvasSizeControl } from '@/components/design-studio/CanvasSizeControl';
+import { generateDesignImage } from '@/services/deepseek';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -399,7 +400,7 @@ interface Product {
   category: string;
 }
 
-type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 'names' | null;
+type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 'names' | 'ai' | null;
 // Geometric shape types renderable as SVG inside a positioned div.
 type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
 type ViewName = 'front' | 'back' | 'sleeve';
@@ -439,15 +440,10 @@ export default function DesignStudioPage() {
     return true;
   });
   const [activeTool, setActiveTool] = useState<ToolName>(null);
-  const [aiChatOpen, setAiChatOpen] = useState(false);
-
-  // When AI Design button is clicked, tell the ChatWidget to open
-  useEffect(() => {
-    if (aiChatOpen) {
-      window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-      setAiChatOpen(false);
-    }
-  }, [aiChatOpen]);
+  // AI Design panel state — bare prompt → image, no chat persona.
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Tracks the iOS / Android soft-keyboard height. fixed-position elements
   // are anchored to the layout viewport, so without this the bottom Add-Text
@@ -1854,25 +1850,20 @@ export default function DesignStudioPage() {
     <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-16 flex-col justify-center border-r border-gray-200 bg-white md:flex">
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
-        const isActive = !isAi && activeTool === tool.name;
+        const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
           <button
             key={tool.name}
             type="button"
-            onClick={() => {
-              if (isAi) {
-                window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-              } else {
-                toggleTool(tool.name as ToolName);
-              }
-            }}
+            onClick={() => toggleTool(tool.name as ToolName)}
             className={`relative flex w-full flex-col items-center py-4 transition ${
-              isAi ? 'text-orange-500 hover:bg-orange-50 hover:text-orange-600'
-              : isActive ? 'text-red-600 bg-red-50' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              isActive
+                ? (isAi ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50')
+                : (isAi ? 'text-orange-500 hover:bg-orange-50 hover:text-orange-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700')
             }`}
           >
-            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
+            {isActive && <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
             <Icon className="h-6 w-6" />
             <span className="mt-1.5 text-[10px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
@@ -1889,24 +1880,20 @@ export default function DesignStudioPage() {
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-gray-200 bg-white md:hidden">
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
-        const isActive = !isAi && activeTool === tool.name;
+        const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
           <button
             key={tool.name}
             type="button"
-            onClick={() => {
-              if (isAi) {
-                window.dispatchEvent(new CustomEvent('tsb:open-chat'));
-              } else {
-                toggleTool(tool.name as ToolName);
-              }
-            }}
-            className={`flex flex-1 flex-col items-center py-2 transition ${
-              isAi ? 'text-orange-500' : isActive ? 'text-red-600' : 'text-gray-500'
+            onClick={() => toggleTool(tool.name as ToolName)}
+            className={`relative flex flex-1 flex-col items-center py-2 transition ${
+              isActive
+                ? (isAi ? 'text-orange-600' : 'text-red-600')
+                : (isAi ? 'text-orange-500' : 'text-gray-500')
             }`}
           >
-            {isActive && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
+            {isActive && <div className={`absolute top-0 left-0 right-0 h-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
             <Icon className="h-5 w-5" />
             <span className="mt-0.5 text-[10px]">{tool.label}</span>
           </button>
@@ -2439,6 +2426,49 @@ export default function DesignStudioPage() {
     </div>
   );
 
+  // --- AI Design Panel — bare prompt → image, no chat persona. ---
+  async function handleAiGenerate() {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiGenerating) return;
+    setAiGenerating(true);
+    setAiError(null);
+    try {
+      const { imageUrl } = await generateDesignImage(prompt);
+      addDesignElement({ type: 'image', x: 25, y: 22, width: 50, content: imageUrl });
+      setAiPrompt('');
+      setActiveTool(null);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setAiGenerating(false);
+    }
+  }
+
+  const aiPanelContent = (
+    <div className="p-4 space-y-3">
+      <textarea
+        value={aiPrompt}
+        onChange={(e) => setAiPrompt(e.target.value)}
+        placeholder="Describe your design — e.g. 'a black panther head with red flames behind it, bold vector style, no background'"
+        rows={5}
+        disabled={aiGenerating}
+        className="w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-50"
+      />
+      <button
+        type="button"
+        onClick={handleAiGenerate}
+        disabled={!aiPrompt.trim() || aiGenerating}
+        className="w-full rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:bg-orange-500 transition"
+      >
+        {aiGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        {aiGenerating ? 'Generating…' : 'Generate'}
+      </button>
+      {aiError && (
+        <p className="text-xs text-red-600">{aiError}</p>
+      )}
+    </div>
+  );
+
   const panelContentMap: Record<string, { title: string; content: React.ReactNode; action?: React.ReactNode }> = {
     upload: { title: 'Upload Design', content: uploadPanelContent },
     text: { title: 'Add Text', content: textPanelContent, action: textPanelAction },
@@ -2446,6 +2476,7 @@ export default function DesignStudioPage() {
     shapes: { title: 'Add Shape', content: shapesPanelContent },
     details: { title: 'Change Color', content: detailsPanelContent },
     products: { title: 'Change Products', content: productsPanelContent },
+    ai: { title: 'AI Design', content: aiPanelContent },
   };
 
   const activePanel = activeTool ? panelContentMap[activeTool] : null;
@@ -2613,9 +2644,9 @@ export default function DesignStudioPage() {
           print rectangle. Generous pb-64 on main gives the scroll container
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
-      <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 flex justify-center" ref={canvasRef}>
+      <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 grid place-items-center" ref={canvasRef}>
         <div
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none flex-shrink-0"
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none"
           style={{
             touchAction: 'pinch-zoom',
             aspectRatio: `${canvasInches} / ${canvasInchesH}`,
@@ -3440,7 +3471,7 @@ export default function DesignStudioPage() {
       <h2 className="text-xl font-bold text-gray-900 mb-6">How do you want to start?</h2>
       <div className="grid grid-cols-2 gap-3 mb-6">
         {[
-          { label: 'AI Design', icon: Sparkles, action: () => { setShowWelcome(false); setAiChatOpen(true); }, highlight: true },
+          { label: 'AI Design', icon: Sparkles, action: () => { setShowWelcome(false); setActiveTool('ai'); }, highlight: true },
           { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
           { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
           { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
