@@ -60,7 +60,10 @@ function getProductSizeRange(p: Product): string {
   return '';
 }
 function getProductId(p: Product): string {
-  return p.id || p.ss_id || '';
+  // Prefer ss_id — both /quote and /design fetch by ss_id (S&S style id like
+  // "G500"), and the DB serial id won't resolve there. Fall back to id only
+  // for sample/fallback rows that have no ss_id.
+  return (p.ss_id || p.id || '') as string;
 }
 
 const SAMPLE_PRODUCTS: Product[] = [
