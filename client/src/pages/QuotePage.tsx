@@ -69,10 +69,21 @@ interface ColorsResponse {
   sizes?: string[];
 }
 
+// Sentinel product representing "I'll supply my own apparel — just print
+// on it". Set as formData.product when the customer chooses BYOG, so the
+// rest of the quote flow can branch on `formData.product?.id === 'BYOG'`.
+const BYOG_PRODUCT: SSProduct = {
+  id: 'BYOG',
+  name: 'Customer-supplied apparel',
+  brand: '',
+  category: 'BYOG',
+};
+
 interface FormData {
   product: SSProduct | null;
   color: SSColor | null;
   sizes: Record<string, number>;
+  byogDescription: string;
   printAreas: string[];
   designFile: File | null;
   designPreview: string | null;
@@ -94,6 +105,7 @@ const INITIAL_FORM: FormData = {
   product: null,
   color: null,
   sizes: { XS: 0, S: 0, M: 0, L: 0, XL: 0, '2XL': 0, '3XL': 0, '4XL': 0, '5XL': 0 },
+  byogDescription: '',
   printAreas: ['Full Front'],
   designFile: null,
   designPreview: null,
@@ -254,9 +266,12 @@ export default function QuotePage() {
     }, 400);
   }, []);
 
+  const isByog = formData.product?.id === 'BYOG';
+
   const canAdvance = (): boolean => {
     if (currentStep === 1) return formData.product !== null;
     if (currentStep === 2) {
+      if (isByog) return totalQty > 0 && formData.byogDescription.trim().length > 0;
       if (step2Sub === 'color') return fromStudio || formData.color !== null;
       return totalQty > 0;
     }
@@ -347,7 +362,9 @@ export default function QuotePage() {
 
       await submitQuote({
         product_id: null,
-        product_name: formData.product?.name,
+        product_name: isByog && formData.byogDescription
+          ? `Customer-supplied apparel: ${formData.byogDescription}`
+          : formData.product?.name,
         color: formData.color?.name,
         sizes: sizeEntries,
         quantity: totalQty,
@@ -403,11 +420,39 @@ export default function QuotePage() {
     <div>
       <h2 className="font-display text-2xl font-bold">Choose your product</h2>
       <p className="mt-1 text-brand-gray-500">
-        Search our products
+        Search our products, or bring your own apparel for printing only.
       </p>
 
+      {/* BYOG: customer supplies their own apparel and just needs printing.
+          Selecting this skips the color picker in step 2 and asks them to
+          describe what they're shipping in. */}
+      <button
+        type="button"
+        onClick={() => { update({ product: BYOG_PRODUCT, color: null }); setStep2Sub('sizes'); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+        className={`mt-6 w-full flex items-center gap-4 rounded-xl border-2 p-4 text-left transition ${
+          formData.product?.id === 'BYOG'
+            ? 'border-red-600 bg-red-50'
+            : 'border-dashed border-brand-gray-300 hover:border-red-400 hover:bg-brand-gray-50'
+        }`}
+      >
+        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-brand-gray-100">
+          <Shirt className="h-6 w-6 text-brand-gray-600" />
+        </div>
+        <div className="flex-1">
+          <p className="font-display font-bold">Bring your own apparel</p>
+          <p className="text-sm text-brand-gray-500">Already have shirts/hoodies/hats? Skip the catalog — we'll print on what you ship in.</p>
+        </div>
+        {formData.product?.id === 'BYOG' && <Check className="h-6 w-6 text-red-600" />}
+      </button>
+
+      <div className="my-6 flex items-center gap-3 text-xs uppercase tracking-wider text-brand-gray-400">
+        <div className="h-px flex-1 bg-brand-gray-200" />
+        or pick from our catalog
+        <div className="h-px flex-1 bg-brand-gray-200" />
+      </div>
+
       {/* Search */}
-      <div className="relative mt-6">
+      <div className="relative">
         <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-brand-gray-400" />
         <input
           type="text"
@@ -529,7 +574,7 @@ export default function QuotePage() {
   const { data: productDetails, isLoading: colorsLoading } = useQuery({
     queryKey: ['product-details', productStyleId],
     queryFn: () => fetchProductDetails(productStyleId),
-    enabled: !!productStyleId,
+    enabled: !!productStyleId && productStyleId !== 'BYOG',
     staleTime: 1000 * 60 * 30,
   });
   const colors = productDetails?.colors ?? [];
@@ -656,13 +701,29 @@ export default function QuotePage() {
       )}
 
       <h2 className="font-display text-lg md:text-2xl font-bold">
-        {fromStudio
+        {isByog
+          ? 'Tell us about your apparel'
+          : fromStudio
           ? 'Select sizes and quantities'
           : step2Sub === 'color' ? 'Choose a color' : 'Select sizes and quantities'}
       </h2>
 
-      {/* Color picker screen — hidden when coming from Design Studio */}
-      {!fromStudio && step2Sub === 'color' && (
+      {/* BYOG: short description of the customer-supplied apparel. */}
+      {isByog && (
+        <div className="mt-6">
+          <label className="font-medium text-sm md:text-base text-brand-gray-700">What are you bringing in? *</label>
+          <textarea
+            value={formData.byogDescription}
+            onChange={(e) => update({ byogDescription: e.target.value })}
+            placeholder="e.g. 24 white Hanes Beefy-T size XL — I'll ship them to your shop. Need DTF on the back, full-color logo."
+            className="mt-2 w-full rounded-xl border border-brand-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red min-h-[100px]"
+          />
+          <p className="mt-2 text-xs text-brand-gray-500">Include garment type, brand if known, color, and any special instructions. We'll confirm intake details after the quote.</p>
+        </div>
+      )}
+
+      {/* Color picker screen — skipped for BYOG and Design Studio. */}
+      {!fromStudio && !isByog && step2Sub === 'color' && (
         <>
           <p className="mt-6 font-medium text-brand-gray-700">Color</p>
           {colorsLoading ? (
@@ -717,8 +778,8 @@ export default function QuotePage() {
         </>
       )}
 
-      {/* Sizes screen */}
-      {(step2Sub === 'sizes' || fromStudio) && (
+      {/* Sizes screen — always shown for BYOG (no color step needed). */}
+      {(step2Sub === 'sizes' || fromStudio || isByog) && (
         <>
           {!fromStudio && formData.color && (
             <div className="mt-4 flex items-center gap-3 text-sm">
