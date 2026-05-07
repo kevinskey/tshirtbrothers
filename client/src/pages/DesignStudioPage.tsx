@@ -1558,7 +1558,7 @@ export default function DesignStudioPage() {
     addDesignElement({
       type: 'text',
       x: 30,
-      y: 40,
+      y: 22,
       width: 40,
       content: textInput.trim(),
       fontSize: textFontSize,
@@ -2419,7 +2419,7 @@ export default function DesignStudioPage() {
                 type: 'shape',
                 shapeType: s.type,
                 x: 35,
-                y: 35,
+                y: 22,
                 width: 30,
                 // Default height = width (square aspect). User changes by
                 // dragging a corner; Shift preserves the original ratio.
@@ -2848,7 +2848,10 @@ export default function DesignStudioPage() {
               under ?canvas=fabric — the Fabric canvas paints its own
               background and we don't want a stray overlay catching clicks. */}
           {!useFabricRenderer && designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            // Anchor the empty-state print rectangle to the chest (~22% from
+            // top of canvas) instead of the canvas center, so it lines up
+            // with where the design will actually be printed.
+            <div className="absolute inset-x-0 top-[22%] flex justify-center pointer-events-none">
               <div className="border-2 border-dashed border-gray-300 rounded-lg px-8 py-6 flex flex-col items-center gap-1">
                 <Move className="h-5 w-5 text-gray-400" />
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
