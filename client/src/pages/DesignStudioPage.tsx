@@ -2369,52 +2369,27 @@ export default function DesignStudioPage() {
     </div>
   );
 
-  // --- Product Details Panel ---
+  // --- Change Color Panel — swatches only, no product chrome. Smaller
+  // swatches on mobile so more colors fit without scrolling. ---
   const detailsPanelContent = (
-    <div className="p-5 space-y-4">
-      {selectedProduct ? (
-        <>
-          <div className="flex items-center gap-4">
-            {selectedProduct.image_url && (
-              <img src={selectedProduct.image_url} alt="" className="w-20 h-20 rounded-lg bg-gray-100 object-contain" />
-            )}
-            <div>
-              <p className="font-semibold text-gray-900">{selectedProduct.name}</p>
-              <p className="text-sm text-gray-500">{selectedProduct.brand}</p>
-              <p className="text-xs text-gray-400 mt-1">{selectedProduct.category}</p>
-            </div>
-          </div>
-          {productColors.length > 0 && (
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2">
-                Color: {productColors[selectedColorIdx]?.name}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {productColors.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    title={c.name}
-                    onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); }}
-                    className={`h-8 w-8 rounded-full border-2 transition ${
-                      selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
-                    }`}
-                    style={{ backgroundColor: c.hex || '#ccc' }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => { setActiveTool('products'); }}
-            className="w-full rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            Change Product
-          </button>
-        </>
+    <div className="p-3 md:p-4">
+      {selectedProduct && productColors.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 md:gap-2">
+          {productColors.map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              title={c.name}
+              onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); }}
+              className={`h-7 w-7 md:h-8 md:w-8 rounded-full border-2 transition ${
+                selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+              }`}
+              style={{ backgroundColor: c.hex || '#ccc' }}
+            />
+          ))}
+        </div>
       ) : (
-        <p className="text-sm text-gray-500">No product selected</p>
+        <p className="text-sm text-gray-500">No colors available</p>
       )}
     </div>
   );
