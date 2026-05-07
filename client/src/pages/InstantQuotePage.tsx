@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import {
   Shirt,
@@ -64,6 +65,34 @@ const DEFAULT_INPUTS: Inputs = {
   rush: false,
 };
 
+// Catalog product attached via ?product=<ss_id> — kept light: just enough
+// to render the "you're quoting THIS shirt" banner and stash a reference
+// in the saved quote payload.
+type CatalogProduct = {
+  id?: number | string;
+  ss_id?: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  image_url?: string;
+  imageUrl?: string;
+};
+
+// Map a catalog product's category string onto one of the seven garment
+// names the quote calculator knows about (T-shirt / Tank / Long-sleeve /
+// Polo / Sweatshirt / Hoodie / Hat). Anything we can't classify falls
+// through to T-shirt — the user can still pick another with one tap.
+function categoryToGarmentName(category?: string): Inputs['garmentName'] {
+  const c = (category || '').toLowerCase();
+  if (c.includes('hood')) return 'Hoodie';
+  if (c.includes('sweatshirt') || c.includes('crewneck') || c.includes('fleece')) return 'Sweatshirt';
+  if (c.includes('long sleeve') || c.includes('long-sleeve')) return 'Long-sleeve';
+  if (c.includes('polo')) return 'Polo';
+  if (c.includes('tank')) return 'Tank';
+  if (c.includes('hat') || c.includes('cap') || c.includes('beanie') || c.includes('headwear')) return 'Hat';
+  return 'T-shirt';
+}
+
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Page                                                                   */
 /* ────────────────────────────────────────────────────────────────────── */
@@ -89,6 +118,36 @@ export default function InstantQuotePage() {
   // we can pass them straight through to /api/quote/save without re-upload.
   const [designs, setDesigns] = useState<Array<{ url: string; filename: string }>>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+
+  // ?product=<ss_id> arrives from the catalog "Get a Quote" CTA. We fetch
+  // the product so we can show "Quoting THIS shirt" above the form and
+  // pre-select the garment type from its category.
+  const productSsId = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('product') || '';
+  }, []);
+  const { data: catalogProduct } = useQuery<CatalogProduct | null>({
+    queryKey: ['catalog-product', productSsId],
+    queryFn: async () => {
+      if (!productSsId) return null;
+      const r = await fetch(`/api/products/by-ssid/${encodeURIComponent(productSsId)}`);
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!productSsId,
+    staleTime: 60 * 60 * 1000,
+  });
+
+  // Once the product resolves, snap garmentName onto its category — but only
+  // the first time, so a user who manually changes the garment isn't reset.
+  const [productSyncDone, setProductSyncDone] = useState(false);
+  useEffect(() => {
+    if (!productSyncDone && catalogProduct) {
+      const mapped = categoryToGarmentName(catalogProduct.category);
+      setInputs((prev) => ({ ...prev, garmentName: mapped }));
+      setProductSyncDone(true);
+    }
+  }, [catalogProduct, productSyncDone]);
 
   async function uploadDesignFile(file: File) {
     setUploadingCount((n) => n + 1);
@@ -203,6 +262,11 @@ export default function InstantQuotePage() {
       </section>
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
+        {/* ─── Catalog product banner (when arrived from /shop) ─── */}
+        {catalogProduct && (
+          <SelectedProductBanner product={catalogProduct} />
+        )}
+
         {/* ─── Sticky price card (above the fold on mobile) ─── */}
         <PriceCard
           calc={calc}
@@ -442,6 +506,7 @@ export default function InstantQuotePage() {
           intent={saveOpen}
           calcTotal={calc.total}
           designUrls={designs.map((d) => d.url)}
+          catalogProduct={catalogProduct ?? null}
           onClose={() => setSaveOpen(false)}
         />
       )}
@@ -450,13 +515,14 @@ export default function InstantQuotePage() {
 }
 
 function SaveQuoteModal({
-  inputs, numLocations, intent, calcTotal, designUrls, onClose,
+  inputs, numLocations, intent, calcTotal, designUrls, catalogProduct, onClose,
 }: {
   inputs: Inputs;
   numLocations: number;
   intent: 'save' | 'lock-in';
   calcTotal: number;
   designUrls: string[];
+  catalogProduct: CatalogProduct | null;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -499,6 +565,18 @@ function SaveQuoteModal({
             rush: inputs.rush,
             // Non-API fields, included so the email can show 'Front + Sleeve' etc.
             locations: inputs.locations,
+            // When the customer arrived from the catalog, stash the product
+            // reference so admin can see exactly which catalog item they
+            // were quoting (the calculator only knows abstract categories).
+            ...(catalogProduct ? {
+              catalog_product: {
+                ss_id: catalogProduct.ss_id,
+                name: catalogProduct.name,
+                brand: catalogProduct.brand,
+                category: catalogProduct.category,
+                image_url: catalogProduct.image_url || catalogProduct.imageUrl,
+              },
+            } : {}),
           },
         }),
       });
@@ -605,6 +683,36 @@ function SaveQuoteModal({
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Sub-components                                                         */
 /* ────────────────────────────────────────────────────────────────────── */
+
+function SelectedProductBanner({ product }: { product: CatalogProduct }) {
+  const img = product.image_url || product.imageUrl;
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-2xl border-2 border-gray-200 bg-white p-3">
+      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+        {img ? (
+          <img src={img} alt={product.name} className="h-full w-full object-contain p-1" loading="lazy" />
+        ) : (
+          <Shirt className="h-6 w-6 text-gray-400" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
+          Quoting · {product.brand || 'Catalog item'}
+        </p>
+        <p className="font-display text-sm font-semibold text-gray-900 truncate">{product.name}</p>
+        {product.category && (
+          <p className="text-xs text-gray-500 truncate">{product.category}</p>
+        )}
+      </div>
+      <Link
+        to="/shop"
+        className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+      >
+        Change
+      </Link>
+    </div>
+  );
+}
 
 function PriceCard({
   calc, quantity, loading, hasInputs, numLocations, tier,
