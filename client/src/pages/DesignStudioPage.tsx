@@ -1094,12 +1094,21 @@ export default function DesignStudioPage() {
     if (hasLoadedProduct.current) return;
     hasLoadedProduct.current = true;
     const targetId = initialProductId || '39';
-    fetch(`/api/products/by-ssid/${targetId}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(p => {
+    // Catalog historically passed the SS style id, but a stale build (or a
+    // sample fallback row) can pass the DB serial id instead. Try by-ssid
+    // first; if that 404s, fall back to /products/:id. Either way we land
+    // on the right row.
+    (async () => {
+      try {
+        let r = await fetch(`/api/products/by-ssid/${encodeURIComponent(targetId)}`);
+        let p = r.ok ? await r.json() : null;
+        if (!p && /^\d+$/.test(targetId)) {
+          r = await fetch(`/api/products/${encodeURIComponent(targetId)}`);
+          p = r.ok ? await r.json() : null;
+        }
         if (p) setSelectedProduct(prev => prev || (p as Product));
-      })
-      .catch(() => {});
+      } catch { /* keep default empty state */ }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

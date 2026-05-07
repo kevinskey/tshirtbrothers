@@ -130,9 +130,16 @@ export default function InstantQuotePage() {
     queryKey: ['catalog-product', productSsId],
     queryFn: async () => {
       if (!productSsId) return null;
-      const r = await fetch(`/api/products/by-ssid/${encodeURIComponent(productSsId)}`);
-      if (!r.ok) return null;
-      return r.json();
+      // Try by-ssid first; if that 404s and the value looks like a DB
+      // serial id (a stale catalog bundle could send that), fall back to
+      // /products/:id so we still land on the right row.
+      let r = await fetch(`/api/products/by-ssid/${encodeURIComponent(productSsId)}`);
+      let p = r.ok ? await r.json() : null;
+      if (!p && /^\d+$/.test(productSsId)) {
+        r = await fetch(`/api/products/${encodeURIComponent(productSsId)}`);
+        p = r.ok ? await r.json() : null;
+      }
+      return p;
     },
     enabled: !!productSsId,
     staleTime: 60 * 60 * 1000,
