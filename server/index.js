@@ -25,6 +25,7 @@ import localBusinessesRouter from './routes/localBusinesses.js';
 import clientErrorsRouter from './routes/clientErrors.js';
 import { adminRouter as customFontsAdminRouter, publicRouter as customFontsPublicRouter } from './routes/customFonts.js';
 import campaignsRouter, { publicRouter as emailPublicRouter } from './routes/campaigns.js';
+import instantQuoteRouter from './routes/instantQuote.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -49,6 +50,7 @@ app.use('/uploads', express.static(join(__dirname, 'uploads')));
 app.use('/api/products', productsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/quotes', quotesRouter);
+app.use('/api/quote', instantQuoteRouter); // Instant Quote Calculator (singular path, distinct from /api/quotes)
 app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/design', designRouter);
