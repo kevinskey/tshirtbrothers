@@ -54,6 +54,10 @@ export function HoldRepeatButton({ onPress, onMouseDown: _md, onMouseUp: _mu, ..
   // away mid-hold.
   useEffect(() => stop, [stop]);
 
+  // touchAction: 'manipulation' suppresses iOS Safari's double-tap-to-zoom
+  // gesture. Without it, rapidly tapping + on the font-size stepper gets
+  // interpreted as a zoom request and the whole page zooms in.
+  const { style: restStyle, ...restProps } = rest;
   return (
     <button
       type="button"
@@ -64,7 +68,8 @@ export function HoldRepeatButton({ onPress, onMouseDown: _md, onMouseUp: _mu, ..
       onTouchEnd={stop}
       onTouchCancel={stop}
       onBlur={stop}
-      {...rest}
+      style={{ ...(restStyle ?? {}), touchAction: 'manipulation' }}
+      {...restProps}
     />
   );
 }

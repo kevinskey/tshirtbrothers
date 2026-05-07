@@ -3572,7 +3572,7 @@ export default function DesignStudioPage() {
   }
 
   return (
-    <div className="h-[100dvh] w-screen overflow-hidden bg-gray-100 flex flex-col">
+    <div className="h-[100dvh] w-screen overflow-hidden bg-gray-100 flex flex-col touch-manipulation">
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
