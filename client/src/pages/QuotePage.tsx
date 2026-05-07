@@ -852,7 +852,8 @@ export default function QuotePage() {
                     <button
                       type="button"
                       onClick={() => {
-                        URL.revokeObjectURL(formData.dtfPreviews[i]);
+                        const url = formData.dtfPreviews[i];
+                        if (url) URL.revokeObjectURL(url);
                         update({
                           dtfFiles: formData.dtfFiles.filter((_, idx) => idx !== i),
                           dtfPreviews: formData.dtfPreviews.filter((_, idx) => idx !== i),
