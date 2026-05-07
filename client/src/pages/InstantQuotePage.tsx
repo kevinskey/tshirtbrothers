@@ -11,6 +11,8 @@ import {
   Loader2,
   Check,
   Zap,
+  Upload,
+  X as XIcon,
 } from 'lucide-react';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -83,6 +85,39 @@ export default function InstantQuotePage() {
 
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
+  // Customer-uploaded design files. Stored as Spaces URLs once uploaded so
+  // we can pass them straight through to /api/quote/save without re-upload.
+  const [designs, setDesigns] = useState<Array<{ url: string; filename: string }>>([]);
+  const [uploadingCount, setUploadingCount] = useState(0);
+
+  async function uploadDesignFile(file: File) {
+    setUploadingCount((n) => n + 1);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: base64, filename: file.name }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || 'Upload failed');
+      setDesigns((prev) => [...prev, { url: body.url, filename: file.name }]);
+    } catch (err: any) {
+      toast.error(err.message || `${file.name} failed to upload`);
+    } finally {
+      setUploadingCount((n) => n - 1);
+    }
+  }
+
+  function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach(uploadDesignFile);
+  }
 
   // 200ms debounce — calculator hits the API on every change otherwise.
   const [debouncedInputs, setDebouncedInputs] = useState(inputs);
@@ -180,6 +215,43 @@ export default function InstantQuotePage() {
 
         {/* ─── Form ─── */}
         <div className="mt-6 space-y-8">
+
+          {/* Upload graphic — optional, but customers usually have art ready;
+              accepting it now means we can quote artwork prep accurately and
+              the file is waiting for us when they lock in the order. */}
+          <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
+            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-red-400 hover:bg-gray-50">
+              <Upload className="h-5 w-5" />
+              <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,.pdf,.svg"
+                className="hidden"
+                onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+              />
+            </label>
+            <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
+
+            {designs.length > 0 && (
+              <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {designs.map((d, i) => (
+                  <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
+                    <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
+                    <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
+                    <button
+                      type="button"
+                      onClick={() => setDesigns(designs.filter((_, idx) => idx !== i))}
+                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shadow-sm"
+                      aria-label={`Remove ${d.filename}`}
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
 
           {/* Quantity */}
           <Section icon={<span className="text-xl">#</span>} title="How many shirts?">
@@ -369,6 +441,7 @@ export default function InstantQuotePage() {
           numLocations={numLocations}
           intent={saveOpen}
           calcTotal={calc.total}
+          designUrls={designs.map((d) => d.url)}
           onClose={() => setSaveOpen(false)}
         />
       )}
@@ -377,12 +450,13 @@ export default function InstantQuotePage() {
 }
 
 function SaveQuoteModal({
-  inputs, numLocations, intent, calcTotal, onClose,
+  inputs, numLocations, intent, calcTotal, designUrls, onClose,
 }: {
   inputs: Inputs;
   numLocations: number;
   intent: 'save' | 'lock-in';
   calcTotal: number;
+  designUrls: string[];
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -410,6 +484,11 @@ function SaveQuoteModal({
           customer_name: name || null,
           customer_email: email,
           notes: notes || null,
+          // First uploaded URL (if any) becomes design_url for backwards
+          // compatibility with admin renderers; the rest go into
+          // extra_design_urls (JSONB array) on the quote row.
+          design_url: designUrls[0] || null,
+          extra_design_urls: designUrls.slice(1),
           inputs: {
             quantity: inputs.quantity,
             garmentName: inputs.garmentName,

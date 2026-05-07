@@ -181,7 +181,7 @@ router.post('/calculate', async (req, res, next) => {
  * ------------------------------------------------------------------------- */
 router.post('/save', async (req, res, next) => {
   try {
-    const { inputs, customer_name, customer_email, notes } = req.body;
+    const { inputs, customer_name, customer_email, notes, design_url, extra_design_urls } = req.body;
     if (!inputs || typeof inputs !== 'object') {
       return res.status(400).json({ error: 'inputs object is required' });
     }
@@ -205,8 +205,9 @@ router.post('/save', async (req, res, next) => {
       `INSERT INTO quotes
         (customer_name, customer_email, product_name, quantity,
          design_type, inputs_json, calculated_price,
+         design_url, extra_design_urls,
          estimated_price, notes, status)
-       VALUES ($1, $2, $3, $4, 'instant-quote', $5::jsonb, $6, $7, $8, 'pending')
+       VALUES ($1, $2, $3, $4, 'instant-quote', $5::jsonb, $6, $7, $8::jsonb, $9, $10, 'pending')
        RETURNING id, customer_name, customer_email, created_at`,
       [
         customer_name || null,
@@ -215,6 +216,8 @@ router.post('/save', async (req, res, next) => {
         inputs.quantity,
         JSON.stringify(inputs),
         calc.total,
+        design_url || null,
+        JSON.stringify(Array.isArray(extra_design_urls) ? extra_design_urls : []),
         calc.total,
         notes || null,
       ]
