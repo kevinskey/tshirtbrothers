@@ -17,6 +17,7 @@ import HomePage from '@/pages/HomePage';
 import ServicesPage from '@/pages/ServicesPage';
 import ShopPage from '@/pages/ShopPage';
 import QuotePage from '@/pages/QuotePage';
+import InstantQuotePage from '@/pages/InstantQuotePage';
 import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
 import AuthPage from '@/pages/AuthPage';
@@ -57,6 +58,7 @@ function App() {
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/quote" element={<QuotePage />} />
+          <Route path="/instant-quote" element={<InstantQuotePage />} />
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/local-businesses" element={<LocalBusinessesPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
