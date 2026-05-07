@@ -68,7 +68,7 @@ const DEFAULT_INPUTS: Inputs = {
 
 export default function InstantQuotePage() {
   const [inputs, setInputs] = useState<Inputs>(DEFAULT_INPUTS);
-  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
 
   // 200ms debounce — calculator hits the API on every change otherwise.
   const [debouncedInputs, setDebouncedInputs] = useState(inputs);
@@ -327,7 +327,7 @@ export default function InstantQuotePage() {
         <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => setSaveOpen(true)}
+            onClick={() => setSaveOpen('save')}
             disabled={!calc}
             className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-red-400 hover:bg-gray-50 disabled:opacity-50 transition"
           >
@@ -335,11 +335,11 @@ export default function InstantQuotePage() {
           </button>
           <button
             type="button"
-            onClick={() => toast.message('Lock In Order — coming in Phase 6 (50% deposit via Stripe)')}
+            onClick={() => setSaveOpen('lock-in')}
             disabled={!calc}
             className="w-full rounded-xl bg-red-600 px-6 py-4 text-base font-bold text-white hover:bg-red-700 disabled:opacity-50 transition"
           >
-            Lock In Order
+            Lock In Order — 50% deposit
           </button>
         </div>
 
@@ -353,6 +353,8 @@ export default function InstantQuotePage() {
         <SaveQuoteModal
           inputs={inputs}
           numLocations={numLocations}
+          intent={saveOpen}
+          calcTotal={calc.total}
           onClose={() => setSaveOpen(false)}
         />
       )}
@@ -361,16 +363,21 @@ export default function InstantQuotePage() {
 }
 
 function SaveQuoteModal({
-  inputs, numLocations, onClose,
+  inputs, numLocations, intent, calcTotal, onClose,
 }: {
   inputs: Inputs;
   numLocations: number;
+  intent: 'save' | 'lock-in';
+  calcTotal: number;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const isLockIn = intent === 'lock-in';
+  const depositAmount = calcTotal / 2;
 
   async function submit() {
     if (!email || !/.+@.+\..+/.test(email)) {
@@ -379,7 +386,10 @@ function SaveQuoteModal({
     }
     setSaving(true);
     try {
-      const r = await fetch('/api/quote/save', {
+      // Step 1: persist the quote (same call as the save flow). Always run
+      // this even on lock-in so we have a permanent record + the customer
+      // gets the saved-quote email.
+      const saveRes = await fetch('/api/quote/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,13 +409,26 @@ function SaveQuoteModal({
           },
         }),
       });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || 'Save failed');
-      toast.success(`Quote #${body.id} saved — check your email.`);
-      onClose();
+      const saveBody = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveBody.error || 'Save failed');
+
+      if (!isLockIn) {
+        toast.success(`Quote #${saveBody.id} saved — check your email.`);
+        onClose();
+        return;
+      }
+
+      // Step 2 (lock-in only): create Stripe Checkout Session and redirect.
+      const lockRes = await fetch('/api/quote/lock-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote_id: saveBody.id }),
+      });
+      const lockBody = await lockRes.json();
+      if (!lockRes.ok) throw new Error(lockBody.error || 'Could not start checkout');
+      window.location.href = lockBody.url;
     } catch (err: any) {
-      toast.error(err.message || 'Save failed');
-    } finally {
+      toast.error(err.message || 'Failed');
       setSaving(false);
     }
   }
@@ -416,8 +439,14 @@ function SaveQuoteModal({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h3 className="font-display text-xl font-bold text-gray-900">Save your quote</h3>
-        <p className="mt-1 text-sm text-gray-500">We'll email you the breakdown so you have it on file.</p>
+        <h3 className="font-display text-xl font-bold text-gray-900">
+          {isLockIn ? 'Lock in your order' : 'Save your quote'}
+        </h3>
+        <p className="mt-1 text-sm text-gray-500">
+          {isLockIn
+            ? `We'll save your quote, then take you to Stripe for the 50% deposit ($${depositAmount.toFixed(2)}). Balance due before pickup or shipment.`
+            : `We'll email you the breakdown so you have it on file.`}
+        </p>
 
         <div className="mt-5 space-y-3">
           <div>
@@ -470,7 +499,9 @@ function SaveQuoteModal({
             className="rounded-lg bg-red-600 px-6 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {saving ? 'Saving...' : 'Save & email me'}
+            {isLockIn
+              ? (saving ? 'Redirecting...' : `Continue to deposit ($${depositAmount.toFixed(2)})`)
+              : (saving ? 'Saving...' : 'Save & email me')}
           </button>
         </div>
       </div>

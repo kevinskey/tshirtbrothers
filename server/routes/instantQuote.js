@@ -1,9 +1,16 @@
 import { Router } from 'express';
+import Stripe from 'stripe';
 import pool from '../db.js';
 import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services/email.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
+
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
+  return new Stripe(key);
+}
 
 /* ---------------------------------------------------------------------------
  * computeQuote — pure pricing function. Exported for unit tests so the
@@ -228,6 +235,73 @@ router.post('/save', async (req, res, next) => {
     });
 
     res.json({ id: quote.id, total: calc.total, per_shirt: calc.per_shirt });
+  } catch (err) { next(err); }
+});
+
+/* ---------------------------------------------------------------------------
+ * POST /api/quote/lock-in — create a Stripe Checkout Session for 50% deposit.
+ *
+ * The existing /webhook handler in routes/payments.js already processes
+ * checkout.session.completed events with metadata.quoteId — it sets
+ * status='accepted', records deposit_amount, and fires the customer
+ * acceptance email. We reuse that pipeline by setting the same metadata
+ * shape, so this endpoint only needs to create the session.
+ *
+ * Caller passes a saved quote_id (the id returned by /api/quote/save). We
+ * look up calculated_price, halve it for the deposit, and return a Stripe
+ * URL. The customer redirects to Stripe; the webhook does the rest.
+ * ------------------------------------------------------------------------- */
+router.post('/lock-in', async (req, res, next) => {
+  try {
+    const { quote_id } = req.body;
+    if (!quote_id) return res.status(400).json({ error: 'quote_id is required' });
+
+    const { rows } = await pool.query(
+      `SELECT id, customer_email, customer_name, product_name, calculated_price, design_type
+         FROM quotes WHERE id = $1`,
+      [quote_id]
+    );
+    const quote = rows[0];
+    if (!quote) return res.status(404).json({ error: 'Quote not found' });
+    if (quote.design_type !== 'instant-quote') {
+      return res.status(400).json({ error: 'This endpoint only locks in instant-quote calculator orders' });
+    }
+    const total = Number(quote.calculated_price);
+    if (!Number.isFinite(total) || total <= 0) {
+      return res.status(400).json({ error: 'Quote has no calculated_price' });
+    }
+
+    const depositCents = Math.round(total * 100 * 0.5);
+    const stripe = getStripe();
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: quote.customer_email || undefined,
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: depositCents,
+          product_data: {
+            name: '50% Deposit — ' + (quote.product_name || 'Instant Quote'),
+            description: `Quote #${quote.id} · Total $${total.toFixed(2)} · Balance ($${(total / 2).toFixed(2)}) due before pickup/ship`,
+          },
+        },
+        quantity: 1,
+      }],
+      // metadata.quoteId triggers the existing webhook handler in
+      // routes/payments.js: it marks the quote 'accepted', sets
+      // deposit_amount, and emails the customer.
+      metadata: {
+        quoteId: String(quote.id),
+        type: 'deposit',
+        payment_type: 'instant-quote-deposit',
+      },
+      success_url: `${domain}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${domain}/instant-quote?quote=${quote.id}&cancelled=1`,
+    });
+
+    res.json({ url: session.url, sessionId: session.id });
   } catch (err) { next(err); }
 });
 
