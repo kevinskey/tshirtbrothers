@@ -2638,9 +2638,9 @@ export default function DesignStudioPage() {
           print rectangle. Generous pb-64 on main gives the scroll container
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
-      <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6" ref={canvasRef}>
+      <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 flex justify-center" ref={canvasRef}>
         <div
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none mx-auto"
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none flex-shrink-0"
           style={{
             touchAction: 'pinch-zoom',
             aspectRatio: `${canvasInches} / ${canvasInchesH}`,
