@@ -824,13 +824,29 @@ export default function DesignStudioPage() {
     const front = designElements.filter(el => (el.side ?? 'front') === 'front');
     if (front.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
     setLibrarySaving(true);
+    // Each step is wrapped with timing + an explicit 30s timeout so a
+    // stalled font load / image fetch / upload surfaces as a clear error
+    // instead of an indefinite "Saving…" spinner.
+    const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+      });
+      try {
+        return await Promise.race([p, timeout]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
     try {
-      const dataUrl = await renderDesignSidePng('front');
+      console.log('[saveToLibrary] rendering side PNG…');
+      const dataUrl = await withTimeout(renderDesignSidePng('front'), 30_000, 'render');
       if (!dataUrl) throw new Error('nothing to render');
+      console.log('[saveToLibrary] render ok, bytes ≈', Math.round(dataUrl.length / 1024), 'KB');
 
-      // Upload PNG to Spaces, get hosted URL
       const token = getAuthToken();
-      const uploadRes = await fetch('/api/quotes/upload-design', {
+      console.log('[saveToLibrary] uploading PNG to Spaces…');
+      const uploadRes = await withTimeout(fetch('/api/quotes/upload-design', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -838,12 +854,13 @@ export default function DesignStudioPage() {
           filename: librarySaveName.replace(/\s+/g, '-').toLowerCase() + '.png',
           customerEmail: 'admin-studio',
         }),
-      });
-      if (!uploadRes.ok) throw new Error('Upload failed');
+      }), 30_000, 'upload');
+      if (!uploadRes.ok) throw new Error(`Upload failed (HTTP ${uploadRes.status})`);
       const { url } = await uploadRes.json();
+      console.log('[saveToLibrary] upload ok →', url);
 
-      // Save library record
-      const saveRes = await fetch('/api/admin/designs-library', {
+      console.log('[saveToLibrary] saving library record…');
+      const saveRes = await withTimeout(fetch('/api/admin/designs-library', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -852,13 +869,15 @@ export default function DesignStudioPage() {
           category: librarySaveCategory,
           tags: [],
         }),
-      });
-      if (!saveRes.ok) throw new Error('Library save failed');
+      }), 15_000, 'save');
+      if (!saveRes.ok) throw new Error(`Library save failed (HTTP ${saveRes.status})`);
+      console.log('[saveToLibrary] done');
 
       setLibrarySaveOpen(false);
       setLibrarySaveName('');
       alert('Saved to Art Library!');
     } catch (e) {
+      console.error('[saveToLibrary] error:', e);
       alert(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       setLibrarySaving(false);
