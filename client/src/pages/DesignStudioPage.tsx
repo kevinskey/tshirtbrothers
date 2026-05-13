@@ -423,6 +423,9 @@ export default function DesignStudioPage() {
   // Hydrates product / canvas dims / elements from the mockup on mount and
   // saves back via PATCH instead of POST.
   const editMockupId = searchParams.get('editMockup') || '';
+  // When set (no edit/attach context), saving creates a brand-new mockup
+  // row via the same screenshot flow used elsewhere.
+  const newMockupMode = searchParams.get('newMockup') === '1';
   // Auth gate — require login before designing
   const authNav = useNavigate();
   useEffect(() => {
@@ -971,6 +974,51 @@ export default function DesignStudioPage() {
   // PATCHes /admin/mockups/<id> with fresh composite URLs + the elements
   // so opening the mockup again rehydrates the same design.
   const [savingMockupEdit, setSavingMockupEdit] = useState(false);
+  // ─── New standalone mockup (no invoice, no edit) ────────────────────
+  // Saves a fresh mockups row via the same screenshot flow used by the
+  // invoice + edit paths. The Mockups page's "+ New Mockup" routes here.
+  const [savingNewMockup, setSavingNewMockup] = useState(false);
+  async function handleSaveNewMockup() {
+    if (!newMockupMode || savingNewMockup) return;
+    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    if (!productImg) { alert('Pick a product first.'); return; }
+    const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
+    const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
+    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+
+    setSavingNewMockup(true);
+    try {
+      const token = getAuthToken();
+      const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
+      const backUrl = hasBack ? await captureSideScreenshot('back') : null;
+
+      const create = await fetch('/api/admin/mockups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: designName && designName !== 'Untitled design' ? designName : `Mockup ${new Date().toISOString().slice(0, 10)}`,
+          product_ss_id: selectedProduct?.ss_id || null,
+          product_name: selectedProduct?.name || null,
+          product_image_url: productImg,
+          preview_image_url: frontUrl,
+          preview_image_url_back: backUrl,
+          design_elements: designElements,
+          design_canvas_inches: canvasInches,
+          design_canvas_inches_h: canvasInchesH,
+          design_color_index: selectedColorIdx,
+          status: 'draft',
+        }),
+      });
+      if (!create.ok) throw new Error('mockup save failed');
+
+      navigate('/admin?section=mockups');
+    } catch (e) {
+      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setSavingNewMockup(false);
+    }
+  }
+
   async function handleSaveMockupEdit() {
     if (!editMockupId || savingMockupEdit) return;
     const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
@@ -2076,6 +2124,18 @@ export default function DesignStudioPage() {
           >
             {savingMockupEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {savingMockupEdit ? 'Saving…' : 'Save Mockup'}
+          </button>
+        )}
+        {newMockupMode && !editMockupId && !attachToInvoiceId && (
+          <button
+            type="button"
+            onClick={handleSaveNewMockup}
+            disabled={savingNewMockup}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            title="Save as a new mockup (screenshot of what you see here)"
+          >
+            {savingNewMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {savingNewMockup ? 'Saving…' : 'Save Mockup'}
           </button>
         )}
         <button
