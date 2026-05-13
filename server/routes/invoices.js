@@ -56,14 +56,20 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
   const amountPaid = Number(invoice.amount_paid || 0);
   const amountDue = Number(invoice.amount_due ?? invoice.total);
 
-  const itemRows = (items || []).map((item) => `
+  const itemRows = (items || []).map((item) => {
+    const variant = [item.color, item.size].filter(Boolean).join(' · ');
+    return `
     <tr>
-      <td style="padding:10px 12px;font-size:14px;color:${BRAND_DARK};border-bottom:1px solid #f3f4f6;">${item.description || ''}</td>
+      <td style="padding:10px 12px;font-size:14px;color:${BRAND_DARK};border-bottom:1px solid #f3f4f6;">
+        ${item.description || ''}
+        ${variant ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${variant}</div>` : ''}
+      </td>
       <td style="padding:10px 12px;font-size:14px;color:#6b7280;border-bottom:1px solid #f3f4f6;text-align:center;">${item.quantity || 0}</td>
       <td style="padding:10px 12px;font-size:14px;color:#6b7280;border-bottom:1px solid #f3f4f6;text-align:right;">${formatCurrency(item.unit_price || 0)}</td>
       <td style="padding:10px 12px;font-size:14px;color:${BRAND_DARK};border-bottom:1px solid #f3f4f6;text-align:right;font-weight:500;">${formatCurrency((item.quantity || 0) * (item.unit_price || 0))}</td>
     </tr>
-  `).join('');
+  `;
+  }).join('');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -304,11 +310,17 @@ router.get('/:id/pdf', async (req, res, next) => {
       const qty = it.quantity || 1;
       const unit = Number(it.unit_price || 0);
       const lineTotal = it.total != null ? Number(it.total) : qty * unit;
-      doc.fillColor(BRAND_DARK).text(desc, 50, rowY, { width: 280 });
+      const variant = [it.color, it.size].filter(Boolean).join(' · ');
+      doc.fontSize(10).fillColor(BRAND_DARK).text(desc, 50, rowY, { width: 280 });
       doc.fillColor('#4b5563').text(String(qty), 330, rowY, { width: 50, align: 'center' });
       doc.text(`$${unit.toFixed(2)}`, 380, rowY, { width: 80, align: 'right' });
       doc.fillColor(BRAND_DARK).text(`$${lineTotal.toFixed(2)}`, 462, rowY, { width: 100, align: 'right' });
-      rowY += 22;
+      if (variant) {
+        doc.fontSize(8).fillColor('#6b7280').text(variant, 50, rowY + 12, { width: 280 });
+        rowY += 30;
+      } else {
+        rowY += 22;
+      }
     }
     doc.moveTo(50, rowY + 6).lineTo(562, rowY + 6).strokeColor('#e5e7eb').stroke();
 
