@@ -49,6 +49,7 @@ import {
   fetchCustomers,
   fetchCustomer,
   fetchCustomerDesigns,
+  fetchDesignsLibrary,
   fetchOrders,
   deleteDesign,
   deleteQuote,
@@ -997,6 +998,11 @@ export default function AdminPage() {
   // Type-ahead filter for the New Mockup modal's product picker (replaces
   // the giant dropdown of every product).
   const [mockupProductSearch, setMockupProductSearch] = useState('');
+  // "Browse media" toggle inside the New Mockup modal — surfaces both the
+  // admin Art Library and customer-uploaded designs so the admin doesn't
+  // have to re-upload a graphic that already exists on the site.
+  const [mockupBrowseOpen, setMockupBrowseOpen] = useState(false);
+  const [mockupBrowseSearch, setMockupBrowseSearch] = useState('');
 
   // Server-side search for the New Mockup modal's product picker. The shared
   // productsQuery only returns the first page (50 rows), so filtering it
@@ -1006,6 +1012,20 @@ export default function AdminPage() {
     queryKey: ['admin', 'mockup-products', mockupProductSearch],
     queryFn: () => fetchAdminProducts(mockupProductSearch),
     enabled: mockupModalOpen && mockupProductSearch.trim().length >= 2,
+  });
+
+  // Media browser inside the New Mockup modal. Two parallel queries so a
+  // single search box pulls from both the admin Art Library and the
+  // customer-uploaded graphics. Both endpoints accept ?search.
+  const mockupBrowseLibraryQuery = useQuery({
+    queryKey: ['admin', 'mockup-browse-library', mockupBrowseSearch],
+    queryFn: () => fetchDesignsLibrary(mockupBrowseSearch),
+    enabled: mockupModalOpen && mockupBrowseOpen,
+  });
+  const mockupBrowseCustomerQuery = useQuery({
+    queryKey: ['admin', 'mockup-browse-customer', mockupBrowseSearch],
+    queryFn: () => fetchCustomerDesigns(mockupBrowseSearch),
+    enabled: mockupModalOpen && mockupBrowseOpen,
   });
   const [mockupAfterSend, setMockupAfterSend] = useState<string | null>(null);
   const [editingMockup, setEditingMockup] = useState<Mockup | null>(null);
@@ -5753,8 +5773,84 @@ export default function AdminPage() {
                           onChange={(e) => setMockupForm((f) => ({ ...f, graphicFile: e.target.files?.[0] || null }))}
                         />
                       </label>
+                      <button
+                        type="button"
+                        onClick={() => setMockupBrowseOpen((b) => !b)}
+                        className={`px-3 py-2 border rounded-lg text-sm whitespace-nowrap ${mockupBrowseOpen ? 'bg-gray-900 text-white border-gray-900' : 'border-gray-300 hover:bg-gray-50'}`}
+                      >
+                        {mockupBrowseOpen ? 'Close' : 'Browse'}
+                      </button>
                     </div>
                     {mockupForm.graphicFile && <p className="text-[10px] text-gray-500 mt-1">Selected: {mockupForm.graphicFile.name}</p>}
+                    {mockupBrowseOpen && (
+                      <div className="mt-2 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <input
+                          type="text"
+                          value={mockupBrowseSearch}
+                          onChange={(e) => setMockupBrowseSearch(e.target.value)}
+                          placeholder="Search Art Library + customer uploads…"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white mb-2"
+                        />
+                        {(() => {
+                          // Normalize both sources into a single item shape
+                          // for the grid: a clickable URL + a thumbnail +
+                          // a display name + a source tag.
+                          type BrowseItem = { key: string; name: string; thumb: string; url: string; tag: 'Library' | 'Customer' };
+                          const libItems: BrowseItem[] = (mockupBrowseLibraryQuery.data ?? []).map((d) => ({
+                            key: `lib-${d.id}`,
+                            name: d.name,
+                            thumb: d.thumbnail_url || d.image_url,
+                            url: d.image_url,
+                            tag: 'Library',
+                          }));
+                          const custItems: BrowseItem[] = (mockupBrowseCustomerQuery.data ?? [])
+                            .map((d) => ({
+                              key: `cust-${d.source}-${d.source_id}`,
+                              name: d.name || d.user_name || 'Customer design',
+                              thumb: d.thumbnail || d.print_url || d.mockup_url || '',
+                              url: d.print_url || d.mockup_url || '',
+                              tag: 'Customer' as const,
+                            }))
+                            .filter((i) => i.url);
+                          const items = [...libItems, ...custItems];
+                          const isLoading = mockupBrowseLibraryQuery.isFetching || mockupBrowseCustomerQuery.isFetching;
+                          if (isLoading && items.length === 0) {
+                            return <p className="text-xs text-gray-400 py-4 text-center">Loading…</p>;
+                          }
+                          if (items.length === 0) {
+                            return <p className="text-xs text-gray-400 py-4 text-center">No media found{mockupBrowseSearch ? ` for "${mockupBrowseSearch}"` : ''}.</p>;
+                          }
+                          return (
+                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-64 overflow-y-auto">
+                              {items.slice(0, 60).map((it) => (
+                                <button
+                                  key={it.key}
+                                  type="button"
+                                  onClick={() => {
+                                    setMockupForm((f) => ({ ...f, graphic_url: it.url, graphicFile: null }));
+                                    setMockupBrowseOpen(false);
+                                  }}
+                                  className="group relative border border-gray-200 rounded-lg overflow-hidden bg-white hover:border-red-400 hover:shadow-sm transition text-left"
+                                  title={it.name}
+                                >
+                                  <div className="aspect-square bg-gray-50 flex items-center justify-center">
+                                    {it.thumb ? (
+                                      <img src={it.thumb} alt="" className="w-full h-full object-contain" loading="lazy" />
+                                    ) : (
+                                      <span className="text-[10px] text-gray-400">no preview</span>
+                                    )}
+                                  </div>
+                                  <div className="px-1.5 py-1">
+                                    <p className="text-[10px] text-gray-700 line-clamp-1">{it.name}</p>
+                                    <p className="text-[9px] text-gray-400">{it.tag}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
 
                   {(() => {
