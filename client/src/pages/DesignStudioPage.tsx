@@ -857,6 +857,16 @@ export default function DesignStudioPage() {
     }
   }
 
+  // Derive a placement from the user's canvas dims. A 12" wide canvas
+  // (default) on an adult shirt photo ≈ 36% of the photo width; the
+  // mapping is roughly 3% photo width per inch of canvas. y stays at
+  // 22% (top of chest); x centers the print horizontally. height isn't
+  // sent — sharp's resize keeps the graphic's aspect.
+  function placementFromCanvas(): { x: number; y: number; width: number; rotation: number } {
+    const widthPct = Math.max(6, Math.min(60, canvasInches * 3));
+    return { x: (100 - widthPct) / 2, y: 22, width: widthPct, rotation: 0 };
+  }
+
   // ─── Attach-to-invoice mockup save ──────────────────────────────────
   // When the studio was launched from the admin Create Invoice screen
   // (?attachToInvoice=<id>), render front + back design PNGs, upload them,
@@ -899,7 +909,7 @@ export default function DesignStudioPage() {
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: { x: 32, y: 22, width: 36, rotation: 0 },
+            placement: placementFromCanvas(),
             trim: false,
           }),
         });
@@ -973,7 +983,7 @@ export default function DesignStudioPage() {
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: { x: 32, y: 22, width: 36, rotation: 0 },
+            placement: placementFromCanvas(),
             trim: false,
           }),
         });
@@ -1282,7 +1292,12 @@ export default function DesignStudioPage() {
         const m = await res.json();
 
         // Product hydration: prefer product_ss_id (studio-native lookup) and
-        // fall back to the integer product_id for legacy rows.
+        // fall back to the integer product_id for legacy rows. If neither
+        // is present, leave selectedProduct null so the admin is prompted
+        // to pick one — synthesizing a fake Product from product_image_url
+        // looked clever but caused the model-photo bake-in bug for legacy
+        // mockups (their product_image_url is a styled product shot, not
+        // a flat catalog photo, so re-compositing baked the design twice).
         if (m.product_ss_id) {
           try {
             const pRes = await fetch(`/api/products/by-ssid/${encodeURIComponent(m.product_ss_id)}`);
@@ -1293,18 +1308,6 @@ export default function DesignStudioPage() {
             const pRes = await fetch(`/api/products/${m.product_id}`);
             if (pRes.ok) setSelectedProduct(await pRes.json());
           } catch { /* fall through */ }
-        } else if (m.product_image_url) {
-          // No product reference at all (e.g. older invoice mockup) — synth
-          // a minimal Product so the canvas shows the saved photo behind the
-          // editor instead of a blank shirt picker.
-          setSelectedProduct({
-            ss_id: 'mockup-legacy',
-            name: m.product_name || 'Mockup product',
-            brand: '',
-            image_url: m.product_image_url,
-            colors: [],
-            category: '',
-          });
         }
 
         if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
