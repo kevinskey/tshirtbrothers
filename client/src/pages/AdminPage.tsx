@@ -994,6 +994,9 @@ export default function AdminPage() {
     placement: { x: number; y: number; width: number };
   }>({ name: '', customer_id: '', customer_email: '', customer_name: '', product_id: '', graphic_url: '', graphicFile: null, notes: '', placement: { x: 35, y: 30, width: 30 } });
   const [mockupBusy, setMockupBusy] = useState(false);
+  // Type-ahead filter for the New Mockup modal's product picker (replaces
+  // the giant dropdown of every product).
+  const [mockupProductSearch, setMockupProductSearch] = useState('');
   const [mockupAfterSend, setMockupAfterSend] = useState<string | null>(null);
   const [editingMockup, setEditingMockup] = useState<Mockup | null>(null);
 
@@ -1556,7 +1559,12 @@ export default function AdminPage() {
       }
 
       const payload: Partial<Mockup> = {
-        name: mockupForm.name || 'Untitled Mockup',
+        // No more Name field in the modal — it was a duplicate of Customer.
+        // Auto-derive: customer name (if known) + product, falling back to
+        // a date stamp so every row still has a unique-ish label.
+        name: (mockupForm.customer_name && mockupForm.customer_name.trim())
+          || (mockupForm.customer_email && mockupForm.customer_email.trim())
+          || `Mockup ${new Date().toISOString().slice(0, 10)}`,
         customer_id: mockupForm.customer_id ? Number(mockupForm.customer_id) : null,
         customer_email: mockupForm.customer_email || null,
         customer_name: mockupForm.customer_name || null,
@@ -5629,11 +5637,6 @@ export default function AdminPage() {
                 </div>
                 <div className="p-6 space-y-4">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Name</label>
-                    <input type="text" value={mockupForm.name} onChange={(e) => setMockupForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Maura Keller - Left Chest Logo" />
-                  </div>
-
-                  <div>
                     <label className="block text-xs text-gray-500 mb-1">Customer</label>
                     <select
                       value={mockupForm.customer_id}
@@ -5652,16 +5655,66 @@ export default function AdminPage() {
 
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Product</label>
-                    <select
-                      value={mockupForm.product_id}
-                      onChange={(e) => setMockupForm((f) => ({ ...f, product_id: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    >
-                      <option value="">— pick a product —</option>
-                      {products.slice(0, 500).map((p) => (
-                        <option key={p.id} value={p.id}>{p.name}</option>
-                      ))}
-                    </select>
+                    {(() => {
+                      const selectedProd = mockupForm.product_id
+                        ? products.find((p) => String(p.id) === mockupForm.product_id)
+                        : null;
+                      if (selectedProd) {
+                        return (
+                          <div className="flex items-center gap-3 border border-gray-300 rounded-lg px-3 py-2">
+                            {selectedProd.image_url && (
+                              <img src={selectedProd.image_url} alt="" className="w-10 h-10 object-contain rounded" />
+                            )}
+                            <span className="flex-1 text-sm text-gray-900">{selectedProd.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => { setMockupForm((f) => ({ ...f, product_id: '' })); setMockupProductSearch(''); }}
+                              className="text-xs text-gray-500 hover:text-red-600"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        );
+                      }
+                      const q = mockupProductSearch.trim().toLowerCase();
+                      const matches = q.length >= 2
+                        ? products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12)
+                        : [];
+                      return (
+                        <div>
+                          <input
+                            type="text"
+                            value={mockupProductSearch}
+                            onChange={(e) => setMockupProductSearch(e.target.value)}
+                            placeholder="Search products by name…"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            autoFocus
+                          />
+                          {q.length >= 2 && (
+                            <div className="mt-1 max-h-56 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm">
+                              {matches.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-gray-400">No products match "{mockupProductSearch}"</div>
+                              ) : (
+                                matches.map((p) => (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => { setMockupForm((f) => ({ ...f, product_id: String(p.id) })); setMockupProductSearch(''); }}
+                                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50"
+                                  >
+                                    {p.image_url && <img src={p.image_url} alt="" className="w-8 h-8 object-contain rounded" />}
+                                    <span className="flex-1 text-sm text-gray-900">{p.name}</span>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+                          {q.length > 0 && q.length < 2 && (
+                            <div className="mt-1 text-[11px] text-gray-400">Type at least 2 characters…</div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div>
