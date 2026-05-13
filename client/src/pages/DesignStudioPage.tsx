@@ -857,13 +857,62 @@ export default function DesignStudioPage() {
     }
   }
 
-  // Chest-print placement used by the compose call. Until we have
-  // direct-manipulation placement controls, this is a fixed reasonable
-  // chest print size — combined with trim:true on the server it makes
-  // the design fill the chest area regardless of canvas usage, which is
-  // what an admin expects when they "design something for the shirt."
-  // Smaller / left-chest sizes will land when we add the drag-resize UI.
-  const CHEST_PLACEMENT = { x: 31, y: 22, width: 38, rotation: 0 } as const;
+  // Screenshot the studio's "product photo + design overlay" surface
+  // exactly as the admin sees it, upload the PNG, and return the URL.
+  // Replaces the server-side compose math — what you see is what saves.
+  // Switches the visible side first (Fabric: via the bridge; legacy: by
+  // setting currentView) and waits a frame so the canvas paints before
+  // html2canvas reads it. Restores the previously-visible side after.
+  async function captureSideScreenshot(side: ViewName): Promise<string | null> {
+    const els = designElements.filter((e) => (e.side ?? 'front') === side);
+    if (els.length === 0) return null;
+    const surface = designSurfaceRef.current;
+    if (!surface) return null;
+    const prevView = currentView;
+    if (useFabricRenderer && fabricBridgeRef.current) {
+      fabricBridgeRef.current.setSide(side);
+    } else if (prevView !== side) {
+      setCurrentView(side);
+    }
+    // Clear selection so dashed selection borders / handles don't appear
+    // in the screenshot. Wait two frames to let the browser repaint after
+    // both the side switch and the selection clear.
+    const prevSelected = selectedElementId;
+    setSelectedElementId(null);
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+    let dataUrl: string;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const cv = await html2canvas(surface, {
+        backgroundColor: null,
+        useCORS: true,
+        scale: 2,
+        logging: false,
+      });
+      dataUrl = cv.toDataURL('image/png');
+    } finally {
+      // Restore both the visible side and the previous selection.
+      if (useFabricRenderer && fabricBridgeRef.current) {
+        fabricBridgeRef.current.setSide(prevView);
+      } else if (prevView !== side) {
+        setCurrentView(prevView);
+      }
+      if (prevSelected) setSelectedElementId(prevSelected);
+    }
+
+    // Upload PNG to Spaces. The mockup row stores this URL directly as
+    // preview_image_url — no server compose needed.
+    const token = getAuthToken();
+    const up = await fetch('/api/quotes/upload-design', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ imageBase64: dataUrl, filename: `mockup-screenshot-${Date.now()}-${side}.png`, customerEmail: 'admin-studio-mockup' }),
+    });
+    if (!up.ok) return null;
+    const { url } = await up.json();
+    return url || null;
+  }
 
   // ─── Attach-to-invoice mockup save ──────────────────────────────────
   // When the studio was launched from the admin Create Invoice screen
@@ -882,44 +931,11 @@ export default function DesignStudioPage() {
     setSavingInvoiceMockup(true);
     try {
       const token = getAuthToken();
-      const productBackImg = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || productImg;
-
-      // Render one side: produce a transparent-bg PNG → upload → ask server
-      // to composite onto the side's product photo. Returns the composited
-      // mockup URL (hosted on Spaces), or null if the side has no elements.
-      async function buildSide(side: ViewName, productImageForSide: string): Promise<string | null> {
-        const dataUrl = await renderDesignSidePng(side);
-        if (!dataUrl) return null;
-        const up = await fetch('/api/quotes/upload-design', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ imageBase64: dataUrl, filename: `studio-${attachToInvoiceId}-${side}.png`, customerEmail: 'admin-studio-invoice' }),
-        });
-        if (!up.ok) throw new Error('graphic upload failed');
-        const { url: graphicUrl } = await up.json();
-        // Map the FULL design canvas to the shirt's chest print area
-        // (~36% wide centered, top ~22% down). With trim:false the design's
-        // position inside its canvas is preserved — a small left-chest
-        // logo stays small and left-chest, not re-centered and re-scaled.
-        const comp = await fetch('/api/admin/mockups/compose', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            productImageUrl: productImageForSide,
-            graphicUrl,
-            placement: CHEST_PLACEMENT,
-            trim: true,
-          }),
-        });
-        if (!comp.ok) throw new Error('composite failed');
-        const { url } = await comp.json();
-        return url || null;
-      }
-
-      const [frontUrl, backUrl] = await Promise.all([
-        hasFront ? buildSide('front', productImg) : Promise.resolve(null),
-        hasBack ? buildSide('back', productBackImg) : Promise.resolve(null),
-      ]);
+      // Capture each side as it currently appears in the studio. Runs
+      // sequentially because each captureSideScreenshot temporarily flips
+      // currentView; parallel captures would race each other.
+      const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
+      const backUrl = hasBack ? await captureSideScreenshot('back') : null;
 
       const create = await fetch('/api/admin/mockups', {
         method: 'POST',
@@ -962,39 +978,14 @@ export default function DesignStudioPage() {
     setSavingMockupEdit(true);
     try {
       const token = getAuthToken();
-      const productBackImg = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || productImg;
       const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
       const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
 
-      async function buildSide(side: ViewName, productImageForSide: string): Promise<string | null> {
-        const dataUrl = await renderDesignSidePng(side);
-        if (!dataUrl) return null;
-        const up = await fetch('/api/quotes/upload-design', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ imageBase64: dataUrl, filename: `mockup-${editMockupId}-${side}.png`, customerEmail: 'admin-studio-mockup' }),
-        });
-        if (!up.ok) throw new Error('graphic upload failed');
-        const { url: graphicUrl } = await up.json();
-        const comp = await fetch('/api/admin/mockups/compose', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            productImageUrl: productImageForSide,
-            graphicUrl,
-            placement: CHEST_PLACEMENT,
-            trim: true,
-          }),
-        });
-        if (!comp.ok) throw new Error('composite failed');
-        const { url } = await comp.json();
-        return url || null;
-      }
-
-      const [frontUrl, backUrl] = await Promise.all([
-        hasFront ? buildSide('front', productImg) : Promise.resolve(null),
-        hasBack ? buildSide('back', productBackImg) : Promise.resolve(null),
-      ]);
+      // Capture each side as it currently appears in the studio. Runs
+      // sequentially because each captureSideScreenshot temporarily flips
+      // currentView; parallel captures would race each other.
+      const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
+      const backUrl = hasBack ? await captureSideScreenshot('back') : null;
 
       const patch = await fetch(`/api/admin/mockups/${editMockupId}`, {
         method: 'PATCH',
@@ -1214,6 +1205,10 @@ export default function DesignStudioPage() {
 
   // --- Drag / resize state ---
   const canvasRef = useRef<HTMLDivElement>(null);
+  // Ref to the inner "product photo + design overlay" surface. Used by the
+  // mockup save flow to screenshot exactly what the admin sees instead of
+  // running a server-side compose with a placement constant.
+  const designSurfaceRef = useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = useState<{
     elementId: string;
     mode: 'move' | 'resize';
@@ -2898,6 +2893,7 @@ export default function DesignStudioPage() {
           panel / mobile toolbar. */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 grid place-items-center" ref={canvasRef}>
         <div
+          ref={designSurfaceRef}
           className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none"
           style={{
             touchAction: 'pinch-zoom',
