@@ -970,8 +970,12 @@ export default function DesignStudioPage() {
       // new mockup/preview shows immediately instead of waiting for the
       // user to click Re-render (which used to be the unintended cache
       // invalidator).
-      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
-      studioQueryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      // refetch (not invalidate) so this awaits — otherwise the navigate
+      // below races the refetch and AdminPage mounts on the stale cache.
+      await Promise.all([
+        studioQueryClient.refetchQueries({ queryKey: ['mockups'] }),
+        studioQueryClient.refetchQueries({ queryKey: ['admin', 'invoices'] }),
+      ]);
       // Return to admin invoice editor with the new invoice id loaded.
       navigate(`/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`);
     } catch (e) {
@@ -1022,7 +1026,7 @@ export default function DesignStudioPage() {
       });
       if (!create.ok) throw new Error('mockup save failed');
 
-      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
+      await studioQueryClient.refetchQueries({ queryKey: ['mockups'] });
       navigate('/admin?section=mockups');
     } catch (e) {
       alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
@@ -1064,8 +1068,12 @@ export default function DesignStudioPage() {
       });
       if (!patch.ok) throw new Error('mockup save failed');
 
-      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
-      studioQueryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      // refetch (not invalidate) so this awaits — otherwise the navigate
+      // below races the refetch and AdminPage mounts on the stale cache.
+      await Promise.all([
+        studioQueryClient.refetchQueries({ queryKey: ['mockups'] }),
+        studioQueryClient.refetchQueries({ queryKey: ['admin', 'invoices'] }),
+      ]);
       // If we're also tied to an invoice, return the admin to the invoice
       // editor so they can keep working on it. Otherwise back to the
       // Mockups grid.
