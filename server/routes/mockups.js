@@ -37,13 +37,14 @@ async function regeneratePreviewForMockup(row) {
 // reference size (sharp does the resize), regardless of source image dims.
 router.post('/admin/mockups/compose', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { productImageUrl, graphicUrl, placement } = req.body;
+    const { productImageUrl, graphicUrl, placement, trim } = req.body;
     if (!productImageUrl) return res.status(400).json({ error: 'productImageUrl required' });
     if (!graphicUrl) return res.status(400).json({ error: 'graphicUrl required' });
     const url = await renderMockupComposite({
       productImageUrl,
       graphicUrl,
-      placement: placement || { x: 37, y: 25, width: 26, rotation: 0 },
+      placement: placement || { x: 32, y: 22, width: 36, rotation: 0 },
+      trim: trim !== false,
     });
     res.json({ url });
   } catch (err) { next(err); }

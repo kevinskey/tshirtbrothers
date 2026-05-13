@@ -885,13 +885,18 @@ export default function DesignStudioPage() {
         });
         if (!up.ok) throw new Error('graphic upload failed');
         const { url: graphicUrl } = await up.json();
+        // Map the FULL design canvas to the shirt's chest print area
+        // (~36% wide centered, top ~22% down). With trim:false the design's
+        // position inside its canvas is preserved — a small left-chest
+        // logo stays small and left-chest, not re-centered and re-scaled.
         const comp = await fetch('/api/admin/mockups/compose', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: { x: 37, y: 25, width: 26, rotation: 0 },
+            placement: { x: 32, y: 22, width: 36, rotation: 0 },
+            trim: false,
           }),
         });
         if (!comp.ok) throw new Error('composite failed');
