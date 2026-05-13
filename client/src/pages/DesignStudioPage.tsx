@@ -857,15 +857,13 @@ export default function DesignStudioPage() {
     }
   }
 
-  // Derive a placement from the user's canvas dims. A 12" wide canvas
-  // (default) on an adult shirt photo ≈ 36% of the photo width; the
-  // mapping is roughly 3% photo width per inch of canvas. y stays at
-  // 22% (top of chest); x centers the print horizontally. height isn't
-  // sent — sharp's resize keeps the graphic's aspect.
-  function placementFromCanvas(): { x: number; y: number; width: number; rotation: number } {
-    const widthPct = Math.max(6, Math.min(60, canvasInches * 3));
-    return { x: (100 - widthPct) / 2, y: 22, width: widthPct, rotation: 0 };
-  }
+  // Chest-print placement used by the compose call. Until we have
+  // direct-manipulation placement controls, this is a fixed reasonable
+  // chest print size — combined with trim:true on the server it makes
+  // the design fill the chest area regardless of canvas usage, which is
+  // what an admin expects when they "design something for the shirt."
+  // Smaller / left-chest sizes will land when we add the drag-resize UI.
+  const CHEST_PLACEMENT = { x: 31, y: 22, width: 38, rotation: 0 } as const;
 
   // ─── Attach-to-invoice mockup save ──────────────────────────────────
   // When the studio was launched from the admin Create Invoice screen
@@ -909,8 +907,8 @@ export default function DesignStudioPage() {
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: placementFromCanvas(),
-            trim: false,
+            placement: CHEST_PLACEMENT,
+            trim: true,
           }),
         });
         if (!comp.ok) throw new Error('composite failed');
@@ -938,6 +936,7 @@ export default function DesignStudioPage() {
           design_elements: designElements,
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
+          design_color_index: selectedColorIdx,
           status: 'draft',
         }),
       });
@@ -983,8 +982,8 @@ export default function DesignStudioPage() {
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: placementFromCanvas(),
-            trim: false,
+            placement: CHEST_PLACEMENT,
+            trim: true,
           }),
         });
         if (!comp.ok) throw new Error('composite failed');
@@ -1009,6 +1008,7 @@ export default function DesignStudioPage() {
           design_elements: designElements,
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
+          design_color_index: selectedColorIdx,
         }),
       });
       if (!patch.ok) throw new Error('mockup save failed');
@@ -1312,6 +1312,7 @@ export default function DesignStudioPage() {
 
         if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
         if (m.design_canvas_inches_h) setCanvasInchesH(Number(m.design_canvas_inches_h));
+        if (typeof m.design_color_index === 'number') setSelectedColorIdx(m.design_color_index);
 
         if (Array.isArray(m.design_elements) && m.design_elements.length > 0) {
           setDesignElements(m.design_elements as DesignElement[]);
