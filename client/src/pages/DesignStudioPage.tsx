@@ -1312,7 +1312,14 @@ export default function DesignStudioPage() {
 
         if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
         if (m.design_canvas_inches_h) setCanvasInchesH(Number(m.design_canvas_inches_h));
-        if (typeof m.design_color_index === 'number') setSelectedColorIdx(m.design_color_index);
+        if (typeof m.design_color_index === 'number') {
+          setSelectedColorIdx(m.design_color_index);
+          // The visible product image only honors the chosen swatch when
+          // userPickedColor is true; otherwise the studio falls back to
+          // the catalog default. Re-opening a saved mockup is an implicit
+          // pick, so flip the flag along with the index.
+          setUserPickedColor(true);
+        }
 
         if (Array.isArray(m.design_elements) && m.design_elements.length > 0) {
           setDesignElements(m.design_elements as DesignElement[]);
