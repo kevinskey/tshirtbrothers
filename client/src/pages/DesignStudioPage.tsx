@@ -920,10 +920,14 @@ export default function DesignStudioPage() {
           name: designName && designName !== 'Untitled design' ? designName : `Invoice ${attachToInvoiceId} Mockup`,
           invoice_id: Number(attachToInvoiceId),
           product_id: null,
+          product_ss_id: selectedProduct?.ss_id || null,
           product_name: selectedProduct?.name || null,
           product_image_url: productImg,
           preview_image_url: frontUrl,
           preview_image_url_back: backUrl,
+          design_elements: designElements,
+          design_canvas_inches: canvasInches,
+          design_canvas_inches_h: canvasInchesH,
           status: 'draft',
         }),
       });
@@ -987,11 +991,7 @@ export default function DesignStudioPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          // product_id stays as-is; the studio surfaces by ss_id, not by the
-          // mockups.product_id integer FK, so we'd need an extra lookup to
-          // change it. Edit-from-mockup users typically aren't switching
-          // products anyway. product_image_url DOES update so the customer-
-          // facing preview matches whatever the admin is looking at.
+          product_ss_id: selectedProduct?.ss_id || undefined,
           product_name: selectedProduct?.name || undefined,
           product_image_url: productImg,
           preview_image_url: frontUrl,
@@ -1274,16 +1274,30 @@ export default function DesignStudioPage() {
         if (!res.ok) return;
         const m = await res.json();
 
-        // Product hydration: mockups carry only the integer product_id. Look
-        // up the product to get ss_id / colors / images for the studio.
-        if (m.product_id) {
+        // Product hydration: prefer product_ss_id (studio-native lookup) and
+        // fall back to the integer product_id for legacy rows.
+        if (m.product_ss_id) {
+          try {
+            const pRes = await fetch(`/api/products/by-ssid/${encodeURIComponent(m.product_ss_id)}`);
+            if (pRes.ok) setSelectedProduct(await pRes.json());
+          } catch { /* fall through */ }
+        } else if (m.product_id) {
           try {
             const pRes = await fetch(`/api/products/${m.product_id}`);
-            if (pRes.ok) {
-              const product = await pRes.json();
-              setSelectedProduct(product);
-            }
-          } catch { /* fall through — studio shows product picker */ }
+            if (pRes.ok) setSelectedProduct(await pRes.json());
+          } catch { /* fall through */ }
+        } else if (m.product_image_url) {
+          // No product reference at all (e.g. older invoice mockup) — synth
+          // a minimal Product so the canvas shows the saved photo behind the
+          // editor instead of a blank shirt picker.
+          setSelectedProduct({
+            ss_id: 'mockup-legacy',
+            name: m.product_name || 'Mockup product',
+            brand: '',
+            image_url: m.product_image_url,
+            colors: [],
+            category: '',
+          });
         }
 
         if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
