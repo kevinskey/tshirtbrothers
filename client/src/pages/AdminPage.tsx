@@ -997,6 +997,16 @@ export default function AdminPage() {
   // Type-ahead filter for the New Mockup modal's product picker (replaces
   // the giant dropdown of every product).
   const [mockupProductSearch, setMockupProductSearch] = useState('');
+
+  // Server-side search for the New Mockup modal's product picker. The shared
+  // productsQuery only returns the first page (50 rows), so filtering it
+  // client-side missed most of the catalog. Separate query hits the search
+  // endpoint directly with the typed term.
+  const mockupProductsQuery = useQuery({
+    queryKey: ['admin', 'mockup-products', mockupProductSearch],
+    queryFn: () => fetchAdminProducts(mockupProductSearch),
+    enabled: mockupModalOpen && mockupProductSearch.trim().length >= 2,
+  });
   const [mockupAfterSend, setMockupAfterSend] = useState<string | null>(null);
   const [editingMockup, setEditingMockup] = useState<Mockup | null>(null);
 
@@ -5656,8 +5666,14 @@ export default function AdminPage() {
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Product</label>
                     {(() => {
+                      // Selected-product lookup: try the search results
+                      // first (fresh), then the first-page products list
+                      // (so re-opening an edit-time picked product still
+                      // resolves), then a minimal fallback.
+                      const searchResults = (mockupProductsQuery.data?.products ?? []) as Product[];
                       const selectedProd = mockupForm.product_id
-                        ? products.find((p) => String(p.id) === mockupForm.product_id)
+                        ? (searchResults.find((p) => String(p.id) === mockupForm.product_id)
+                          || products.find((p) => String(p.id) === mockupForm.product_id))
                         : null;
                       if (selectedProd) {
                         return (
@@ -5676,10 +5692,9 @@ export default function AdminPage() {
                           </div>
                         );
                       }
-                      const q = mockupProductSearch.trim().toLowerCase();
-                      const matches = q.length >= 2
-                        ? products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 12)
-                        : [];
+                      const q = mockupProductSearch.trim();
+                      const isFetching = mockupProductsQuery.isFetching;
+                      const matches = q.length >= 2 ? searchResults.slice(0, 20) : [];
                       return (
                         <div>
                           <input
@@ -5692,7 +5707,9 @@ export default function AdminPage() {
                           />
                           {q.length >= 2 && (
                             <div className="mt-1 max-h-56 overflow-y-auto border border-gray-200 rounded-lg bg-white shadow-sm">
-                              {matches.length === 0 ? (
+                              {isFetching ? (
+                                <div className="px-3 py-2 text-xs text-gray-400">Searching…</div>
+                              ) : matches.length === 0 ? (
                                 <div className="px-3 py-2 text-xs text-gray-400">No products match "{mockupProductSearch}"</div>
                               ) : (
                                 matches.map((p) => (
