@@ -93,6 +93,7 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       quote_id,
       invoice_id,
       product_id,
+      product_ss_id,
       product_name,
       product_image_url,
       graphic_url,
@@ -129,10 +130,10 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
     const { rows } = await pool.query(
       `INSERT INTO mockups
          (name, customer_id, customer_email, customer_name, quote_id,
-          product_id, product_name, product_image_url, graphic_url,
+          product_id, product_ss_id, product_name, product_image_url, graphic_url,
           placement, preview_image_url, preview_image_url_back, notes,
           design_elements, design_canvas_inches, design_canvas_inches_h)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
        RETURNING *`,
       [
         name || 'Untitled Mockup',
@@ -141,6 +142,7 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
         cName,
         quote_id || null,
         product_id || null,
+        product_ss_id || null,
         pName,
         pImg,
         graphic_url || null,
@@ -187,7 +189,7 @@ router.patch('/admin/mockups/:id', authenticate, adminOnly, async (req, res, nex
     const fields = req.body || {};
     const set = [];
     const params = [];
-    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id', 'design_elements', 'design_canvas_inches', 'design_canvas_inches_h'];
+    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_ss_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id', 'design_elements', 'design_canvas_inches', 'design_canvas_inches_h'];
     const jsonbCols = new Set(['placement', 'design_elements']);
     for (const k of allow) {
       if (k in fields) {
