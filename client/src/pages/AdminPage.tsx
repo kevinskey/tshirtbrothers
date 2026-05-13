@@ -677,11 +677,18 @@ export default function AdminPage() {
     discount: string;
     notes: string;
     due_date: string;
+    mockup_id: number | null;
+    mockup_preview_url: string | null;
   }>({
     customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+    mockup_id: null, mockup_preview_url: null,
   });
+  // When the admin clicks "Create Mockup" on the invoice screen, this flag
+  // tells handleSaveMockup to write the resulting mockup id + preview URL
+  // back into invoiceForm so the invoice carries the linkage.
+  const [mockupAttachToInvoice, setMockupAttachToInvoice] = useState(false);
   function convertQuoteToInvoice(q: Quote) {
     const total = Number(q.estimated_price || 0);
     const qty = Number(q.quantity || 1);
@@ -699,6 +706,7 @@ export default function AdminPage() {
       tax: '0', shipping: '0', discount: '0',
       notes: q.notes || '',
       due_date: '',
+      mockup_id: null, mockup_preview_url: null,
     });
     setActiveSection('invoices');
     setInvoiceView('create');
@@ -1230,11 +1238,13 @@ export default function AdminPage() {
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
       tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
+      mockup_id: null, mockup_preview_url: null,
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
     setEditingInvoiceId(null);
     setEditingInvoiceFull(null);
+    setMockupAttachToInvoice(false);
   }
 
   function calcInvoiceSubtotal() {
@@ -1300,6 +1310,7 @@ export default function AdminPage() {
       notes: invoiceForm.notes || undefined,
       due_date: invoiceForm.due_date || undefined,
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
+      mockup_id: invoiceForm.mockup_id,
     };
     if (editingInvoiceId) {
       updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
@@ -1325,6 +1336,7 @@ export default function AdminPage() {
       notes: invoiceForm.notes || undefined,
       due_date: invoiceForm.due_date || undefined,
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
+      mockup_id: invoiceForm.mockup_id,
     };
     setPreviewInvoice(data);
     setInvoiceView('preview');
@@ -1465,10 +1477,22 @@ export default function AdminPage() {
         placement: mockupForm.placement,
         notes: mockupForm.notes || null,
       };
+      let savedMockup: Mockup | null = null;
       if (editingMockup) {
-        await updateMockup(editingMockup.id, payload);
+        savedMockup = await updateMockup(editingMockup.id, payload);
       } else {
-        await createMockup(payload);
+        savedMockup = await createMockup(payload);
+      }
+      // If the modal was opened from the Create Invoice screen, write the
+      // resulting id + preview URL into invoiceForm so the invoice carries
+      // the linkage when saved.
+      if (mockupAttachToInvoice && savedMockup) {
+        setInvoiceForm((p) => ({
+          ...p,
+          mockup_id: savedMockup!.id,
+          mockup_preview_url: savedMockup!.preview_image_url || p.mockup_preview_url,
+        }));
+        setMockupAttachToInvoice(false);
       }
       setMockupModalOpen(false);
       setEditingMockup(null);
@@ -3514,7 +3538,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '' }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -3575,6 +3599,8 @@ export default function AdminPage() {
                                       discount: String(inv.discount || 0),
                                       notes: inv.notes || '',
                                       due_date: inv.due_date || '',
+                                      mockup_id: inv.mockup_id ?? null,
+                                      mockup_preview_url: inv.mockup_preview_url ?? null,
                                     });
                                     setInvoiceView('create');
                                   }}
@@ -3801,6 +3827,80 @@ export default function AdminPage() {
                           );
                         })}
                       </div>
+                    )}
+                  </div>
+
+                  {/* Mockup */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-gray-900">Mockup</h3>
+                      {invoiceForm.mockup_id && (
+                        <button
+                          type="button"
+                          onClick={() => setInvoiceForm((p) => ({ ...p, mockup_id: null, mockup_preview_url: null }))}
+                          className="text-xs text-gray-500 hover:text-red-600"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {invoiceForm.mockup_preview_url ? (
+                      <div className="flex items-start gap-4 border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <img
+                          src={invoiceForm.mockup_preview_url}
+                          alt="Mockup preview"
+                          className="w-32 h-32 object-contain bg-white rounded border border-gray-200"
+                        />
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-700">Mockup attached to this invoice.</p>
+                          <p className="text-xs text-gray-500 mt-1">The customer will see this preview on the invoice page and in their invoice email.</p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMockupForm({
+                                name: invoiceForm.customer_name ? `Invoice — ${invoiceForm.customer_name}` : '',
+                                customer_id: '',
+                                customer_email: invoiceForm.customer_email || '',
+                                customer_name: invoiceForm.customer_name || '',
+                                product_id: '',
+                                graphic_url: '',
+                                graphicFile: null,
+                                notes: '',
+                                placement: { x: 35, y: 30, width: 30 },
+                              });
+                              setEditingMockup(null);
+                              setMockupAttachToInvoice(true);
+                              setMockupModalOpen(true);
+                            }}
+                            className="mt-2 text-xs font-medium text-red-600 hover:text-red-700"
+                          >
+                            Replace mockup
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMockupForm({
+                            name: invoiceForm.customer_name ? `Invoice — ${invoiceForm.customer_name}` : '',
+                            customer_id: '',
+                            customer_email: invoiceForm.customer_email || '',
+                            customer_name: invoiceForm.customer_name || '',
+                            product_id: '',
+                            graphic_url: '',
+                            graphicFile: null,
+                            notes: '',
+                            placement: { x: 35, y: 30, width: 30 },
+                          });
+                          setEditingMockup(null);
+                          setMockupAttachToInvoice(true);
+                          setMockupModalOpen(true);
+                        }}
+                        className="w-full border-2 border-dashed border-gray-300 hover:border-red-400 rounded-lg p-6 text-sm text-gray-600 hover:text-red-600 transition"
+                      >
+                        + Create Mockup
+                      </button>
                     )}
                   </div>
 

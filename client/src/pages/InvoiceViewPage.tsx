@@ -21,6 +21,8 @@ interface PublicInvoice {
   due_date: string | null;
   notes: string | null;
   created_at: string;
+  mockup_id: number | null;
+  mockup_preview_url: string | null;
 }
 
 function fmt(v: unknown): string {
@@ -114,6 +116,16 @@ export default function InvoiceViewPage() {
             )}
           </div>
         </div>
+
+        {/* Mockup preview */}
+        {inv.mockup_preview_url && (
+          <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+            <div className="px-4 py-2 text-xs uppercase text-gray-500 font-semibold border-b border-gray-200">Approved Mockup</div>
+            <div className="p-3 flex justify-center bg-white">
+              <img src={inv.mockup_preview_url} alt="Mockup preview" className="max-h-96 w-auto object-contain" />
+            </div>
+          </div>
+        )}
 
         {/* Items */}
         <table className="w-full text-sm mb-8 border-t border-b border-gray-200">

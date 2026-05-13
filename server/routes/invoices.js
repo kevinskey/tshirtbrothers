@@ -105,6 +105,16 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
       </tr>
     </table>
 
+    ${invoice.mockup_preview_url ? `
+    <!-- Mockup preview -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
+      <tr><td style="padding:14px 16px 4px;font-size:13px;color:#6b7280;font-weight:600;">Approved Mockup</td></tr>
+      <tr><td style="padding:0 16px 16px;text-align:center;">
+        <img src="${invoice.mockup_preview_url}" alt="Mockup preview" style="max-width:100%;height:auto;border-radius:6px;" />
+      </td></tr>
+    </table>
+    ` : ''}
+
     <!-- Line items -->
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:24px;">
       <thead>
@@ -186,7 +196,13 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
 // customer-visible fields. Does NOT require auth so the email link works.
 router.get('/public/:id', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query(
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+         FROM invoices i
+         LEFT JOIN mockups m ON m.id = i.mockup_id
+        WHERE i.id = $1`,
+      [req.params.id],
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     const i = rows[0];
     res.json({
@@ -208,6 +224,8 @@ router.get('/public/:id', async (req, res, next) => {
       due_date: i.due_date,
       notes: i.notes,
       created_at: i.created_at,
+      mockup_id: i.mockup_id,
+      mockup_preview_url: i.mockup_preview_url,
     });
   } catch (err) { next(err); }
 });
@@ -357,7 +375,11 @@ router.get('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT * FROM invoices ${whereClause} ORDER BY created_at DESC`,
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+         FROM invoices i
+         LEFT JOIN mockups m ON m.id = i.mockup_id
+         ${whereClause ? whereClause.replace('WHERE status', 'WHERE i.status') : ''}
+        ORDER BY i.created_at DESC`,
       params
     );
 
@@ -370,7 +392,13 @@ router.get('/', async (req, res, next) => {
 // GET /:id - Get single invoice
 router.get('/:id', async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query(
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+         FROM invoices i
+         LEFT JOIN mockups m ON m.id = i.mockup_id
+        WHERE i.id = $1`,
+      [req.params.id],
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     res.json(rows[0]);
   } catch (err) {
@@ -384,7 +412,7 @@ router.post('/', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, quote_id,
-      deposit_percent,
+      deposit_percent, mockup_id,
     } = req.body;
 
     if (!customer_name || !customer_email) {
@@ -399,14 +427,15 @@ router.post('/', async (req, res, next) => {
       `INSERT INTO invoices
         (invoice_number, customer_name, customer_email, customer_phone, customer_address,
          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-         notes, due_date, quote_id, status, deposit_percent)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16)
+         notes, due_date, quote_id, status, deposit_percent, mockup_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17)
        RETURNING *`,
       [
         invoice_number, customer_name, customer_email, customer_phone || null,
         (customer_address && customer_address !== '') ? (typeof customer_address === 'string' ? JSON.stringify({ address: customer_address }) : JSON.stringify(customer_address)) : null,
         JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, Number(total) || 0,
         amount_due, notes || null, due_date || null, quote_id || null, depositPct,
+        mockup_id ? Number(mockup_id) : null,
       ]
     );
 
@@ -423,7 +452,7 @@ router.put('/:id', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, status,
-      deposit_percent,
+      deposit_percent, mockup_id,
     } = req.body;
 
     const existing = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
@@ -451,6 +480,7 @@ router.put('/:id', async (req, res, next) => {
         due_date = COALESCE($14, due_date),
         status = COALESCE($15, status),
         deposit_percent = COALESCE($16, deposit_percent),
+        mockup_id = COALESCE($17, mockup_id),
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -463,6 +493,7 @@ router.put('/:id', async (req, res, next) => {
         discount !== undefined ? Number(discount) : null, total !== undefined ? Number(total) : null,
         newAmountDue, notes, due_date, status || null,
         deposit_percent !== undefined ? Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0)) : null,
+        mockup_id !== undefined ? (mockup_id ? Number(mockup_id) : null) : null,
       ]
     );
 
@@ -479,7 +510,13 @@ router.put('/:id', async (req, res, next) => {
 router.post('/:id/send', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
+    const { rows } = await pool.query(
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+         FROM invoices i
+         LEFT JOIN mockups m ON m.id = i.mockup_id
+        WHERE i.id = $1`,
+      [id],
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = rows[0];

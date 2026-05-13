@@ -657,6 +657,8 @@ export interface Invoice {
   due_date: string | null;
   status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
   quote_id: string | null;
+  mockup_id: number | null;
+  mockup_preview_url: string | null;
   payments: { amount: number; method: string; date: string }[];
   sent_at: string | null;
   created_at: string;
@@ -678,6 +680,7 @@ export interface CreateInvoiceData {
   due_date?: string;
   quote_id?: string;
   deposit_percent?: number;
+  mockup_id?: number | null;
 }
 
 export async function fetchInvoices(status?: string): Promise<Invoice[]> {
