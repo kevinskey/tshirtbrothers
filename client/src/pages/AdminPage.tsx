@@ -858,7 +858,7 @@ export default function AdminPage() {
   const productsQuery = useQuery({
     queryKey: ['admin', 'products', productSearch, productPage],
     queryFn: () => fetchAdminProducts(productSearch, productPage),
-    enabled: activeSection === 'products' || activeSection === 'mockups' || mockupModalOpen,
+    enabled: activeSection === 'products' || activeSection === 'mockups' || activeSection === 'invoices',
   });
 
   const categoriesQuery = useQuery({
@@ -5401,7 +5401,6 @@ export default function AdminPage() {
 
         {activeSection === 'mockups' && (() => {
           const mockups: Mockup[] = mockupsQuery.data ?? [];
-          const products = (productsQuery.data?.products ?? []) as Product[];
           const STATUS_COLORS: Record<Mockup['status'], string> = {
             draft: 'bg-gray-100 text-gray-700',
             sent: 'bg-blue-100 text-blue-800',
