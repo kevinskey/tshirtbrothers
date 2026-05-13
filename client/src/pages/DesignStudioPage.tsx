@@ -1003,7 +1003,14 @@ export default function DesignStudioPage() {
       });
       if (!patch.ok) throw new Error('mockup save failed');
 
-      navigate('/admin?section=mockups');
+      // If we're also tied to an invoice, return the admin to the invoice
+      // editor so they can keep working on it. Otherwise back to the
+      // Mockups grid.
+      if (attachToInvoiceId) {
+        navigate(`/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`);
+      } else {
+        navigate('/admin?section=mockups');
+      }
     } catch (e) {
       alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
@@ -2039,7 +2046,9 @@ export default function DesignStudioPage() {
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {isSaving ? 'Saving...' : 'Save'}
         </button>
-        {attachToInvoiceId && (
+        {/* Two-state save: edit overrides create so we update in place
+            instead of spawning a new mockup row each save. */}
+        {attachToInvoiceId && !editMockupId && (
           <button
             type="button"
             onClick={handleSaveMockupToInvoice}

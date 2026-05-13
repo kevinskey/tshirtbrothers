@@ -1369,7 +1369,11 @@ export default function AdminPage() {
         });
         invoiceId = String(draft.id);
       }
-      navigate(`/design?attachToInvoice=${encodeURIComponent(invoiceId)}`);
+      // If the invoice already has a mockup attached, edit it in place
+      // instead of spawning a fresh row. Studio detects editMockup and
+      // PATCHes the existing record.
+      const editParam = invoiceForm.mockup_id ? `&editMockup=${invoiceForm.mockup_id}` : '';
+      navigate(`/design?attachToInvoice=${encodeURIComponent(invoiceId)}${editParam}`);
     } catch (e) {
       alert(`Failed to open studio: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
