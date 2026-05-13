@@ -858,7 +858,7 @@ export default function AdminPage() {
   const productsQuery = useQuery({
     queryKey: ['admin', 'products', productSearch, productPage],
     queryFn: () => fetchAdminProducts(productSearch, productPage),
-    enabled: activeSection === 'products' || activeSection === 'mockups',
+    enabled: activeSection === 'products' || activeSection === 'mockups' || mockupModalOpen,
   });
 
   const categoriesQuery = useQuery({
@@ -5526,127 +5526,133 @@ export default function AdminPage() {
                 </div>
               )}
 
-              {mockupModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                  <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
-                    <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
-                      <h3 className="font-display font-semibold">{editingMockup ? 'Edit Mockup' : 'New Mockup'}</h3>
-                      <button onClick={() => { setMockupModalOpen(false); setEditingMockup(null); }} className="text-gray-400 hover:text-gray-600">
-                        <X className="w-5 h-5" />
-                      </button>
+            </div>
+          );
+        })()}
+
+        {/* Mockup create/edit modal — hoisted out of the Mockups section so
+            it can also open from the Create Invoice screen. */}
+        {mockupModalOpen && (() => {
+          const products = (productsQuery.data?.products ?? []) as Product[];
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+                  <h3 className="font-display font-semibold">{editingMockup ? 'Edit Mockup' : 'New Mockup'}</h3>
+                  <button onClick={() => { setMockupModalOpen(false); setEditingMockup(null); setMockupAttachToInvoice(false); }} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Name</label>
+                    <input type="text" value={mockupForm.name} onChange={(e) => setMockupForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Maura Keller - Left Chest Logo" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Customer</label>
+                    <select
+                      value={mockupForm.customer_id}
+                      onChange={(e) => {
+                        const c = (customersQuery.data ?? []).find((x) => String(x.id) === e.target.value);
+                        setMockupForm((f) => ({ ...f, customer_id: e.target.value, customer_email: c?.email || f.customer_email, customer_name: c?.name || f.customer_name }));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="">— pick a customer —</option>
+                      {(customersQuery.data ?? []).map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} · {c.email}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Product</label>
+                    <select
+                      value={mockupForm.product_id}
+                      onChange={(e) => setMockupForm((f) => ({ ...f, product_id: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                      <option value="">— pick a product —</option>
+                      {products.slice(0, 500).map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Customer Graphic</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Paste image URL"
+                        value={mockupForm.graphic_url}
+                        onChange={(e) => setMockupForm((f) => ({ ...f, graphic_url: e.target.value, graphicFile: null }))}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <label className="px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer hover:bg-gray-50 whitespace-nowrap">
+                        Upload
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => setMockupForm((f) => ({ ...f, graphicFile: e.target.files?.[0] || null }))}
+                        />
+                      </label>
                     </div>
-                    <div className="p-6 space-y-4">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Name</label>
-                        <input type="text" value={mockupForm.name} onChange={(e) => setMockupForm((f) => ({ ...f, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="e.g. Maura Keller - Left Chest Logo" />
-                      </div>
+                    {mockupForm.graphicFile && <p className="text-[10px] text-gray-500 mt-1">Selected: {mockupForm.graphicFile.name}</p>}
+                  </div>
 
+                  {(() => {
+                    const prod = products.find((p) => String(p.id) === mockupForm.product_id);
+                    const graphicPreview = mockupForm.graphicFile ? URL.createObjectURL(mockupForm.graphicFile) : mockupForm.graphic_url;
+                    if (!prod && !graphicPreview) return null;
+                    return (
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">Customer</label>
-                        <select
-                          value={mockupForm.customer_id}
-                          onChange={(e) => {
-                            const c = (customersQuery.data ?? []).find((x) => String(x.id) === e.target.value);
-                            setMockupForm((f) => ({ ...f, customer_id: e.target.value, customer_email: c?.email || f.customer_email, customer_name: c?.name || f.customer_name }));
-                          }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        >
-                          <option value="">— pick a customer —</option>
-                          {(customersQuery.data ?? []).map((c) => (
-                            <option key={c.id} value={c.id}>{c.name} · {c.email}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Product</label>
-                        <select
-                          value={mockupForm.product_id}
-                          onChange={(e) => setMockupForm((f) => ({ ...f, product_id: e.target.value }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        >
-                          <option value="">— pick a product —</option>
-                          {products.slice(0, 500).map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Customer Graphic</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            placeholder="Paste image URL"
-                            value={mockupForm.graphic_url}
-                            onChange={(e) => setMockupForm((f) => ({ ...f, graphic_url: e.target.value, graphicFile: null }))}
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          />
-                          <label className="px-3 py-2 border border-gray-300 rounded-lg text-sm cursor-pointer hover:bg-gray-50 whitespace-nowrap">
-                            Upload
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => setMockupForm((f) => ({ ...f, graphicFile: e.target.files?.[0] || null }))}
+                        <label className="block text-xs text-gray-500 mb-2">Preview & Placement</label>
+                        <div className="relative inline-block w-full bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+                          {prod?.image_url && <img src={prod.image_url} alt={prod.name} className="w-full" />}
+                          {graphicPreview && (
+                            <img
+                              src={graphicPreview}
+                              alt="Design"
+                              className="absolute"
+                              style={{ left: `${mockupForm.placement.x}%`, top: `${mockupForm.placement.y}%`, width: `${mockupForm.placement.width}%` }}
                             />
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                          <label className="text-xs">X %
+                            <input type="range" min={0} max={100} value={mockupForm.placement.x} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, x: +e.target.value } }))} className="w-full" />
+                            <span className="text-[10px] text-gray-500">{mockupForm.placement.x}%</span>
+                          </label>
+                          <label className="text-xs">Y %
+                            <input type="range" min={0} max={100} value={mockupForm.placement.y} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, y: +e.target.value } }))} className="w-full" />
+                            <span className="text-[10px] text-gray-500">{mockupForm.placement.y}%</span>
+                          </label>
+                          <label className="text-xs">Width %
+                            <input type="range" min={5} max={100} value={mockupForm.placement.width} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, width: +e.target.value } }))} className="w-full" />
+                            <span className="text-[10px] text-gray-500">{mockupForm.placement.width}%</span>
                           </label>
                         </div>
-                        {mockupForm.graphicFile && <p className="text-[10px] text-gray-500 mt-1">Selected: {mockupForm.graphicFile.name}</p>}
                       </div>
+                    );
+                  })()}
 
-                      {(() => {
-                        const prod = products.find((p) => String(p.id) === mockupForm.product_id);
-                        const graphicPreview = mockupForm.graphicFile ? URL.createObjectURL(mockupForm.graphicFile) : mockupForm.graphic_url;
-                        if (!prod && !graphicPreview) return null;
-                        return (
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-2">Preview & Placement</label>
-                            <div className="relative inline-block w-full bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                              {prod?.image_url && <img src={prod.image_url} alt={prod.name} className="w-full" />}
-                              {graphicPreview && (
-                                <img
-                                  src={graphicPreview}
-                                  alt="Design"
-                                  className="absolute"
-                                  style={{ left: `${mockupForm.placement.x}%`, top: `${mockupForm.placement.y}%`, width: `${mockupForm.placement.width}%` }}
-                                />
-                              )}
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 mt-2">
-                              <label className="text-xs">X %
-                                <input type="range" min={0} max={100} value={mockupForm.placement.x} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, x: +e.target.value } }))} className="w-full" />
-                                <span className="text-[10px] text-gray-500">{mockupForm.placement.x}%</span>
-                              </label>
-                              <label className="text-xs">Y %
-                                <input type="range" min={0} max={100} value={mockupForm.placement.y} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, y: +e.target.value } }))} className="w-full" />
-                                <span className="text-[10px] text-gray-500">{mockupForm.placement.y}%</span>
-                              </label>
-                              <label className="text-xs">Width %
-                                <input type="range" min={5} max={100} value={mockupForm.placement.width} onChange={(e) => setMockupForm((f) => ({ ...f, placement: { ...f.placement, width: +e.target.value } }))} className="w-full" />
-                                <span className="text-[10px] text-gray-500">{mockupForm.placement.width}%</span>
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })()}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Notes (shown to the customer)</label>
+                    <textarea value={mockupForm.notes} onChange={(e) => setMockupForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" />
+                  </div>
 
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Notes (shown to the customer)</label>
-                        <textarea value={mockupForm.notes} onChange={(e) => setMockupForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none" />
-                      </div>
-
-                      <div className="flex gap-3">
-                        <button onClick={() => { setMockupModalOpen(false); setEditingMockup(null); }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-                        <button onClick={handleSaveMockup} disabled={mockupBusy} className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
-                          {mockupBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                          {editingMockup ? 'Save Changes' : 'Create Mockup'}
-                        </button>
-                      </div>
-                    </div>
+                  <div className="flex gap-3">
+                    <button onClick={() => { setMockupModalOpen(false); setEditingMockup(null); setMockupAttachToInvoice(false); }} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onClick={handleSaveMockup} disabled={mockupBusy} className="flex-1 flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-sm font-medium">
+                      {mockupBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {editingMockup ? 'Save Changes' : 'Create Mockup'}
+                    </button>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           );
         })()}
