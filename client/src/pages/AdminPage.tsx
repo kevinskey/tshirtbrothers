@@ -5628,13 +5628,21 @@ export default function AdminPage() {
                             >
                               Send for Approval
                             </button>
-                            <button
-                              onClick={() => handleRegenerateMockupPreview(m.id)}
-                              className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
-                              title="Re-render the flattened preview from the current placement"
-                            >
-                              Re-render
-                            </button>
+                            {/* Re-render only makes sense for legacy mockups
+                                whose preview comes from server compose
+                                (graphic_url + placement). Studio mockups
+                                store a pre-rendered screenshot and re-render
+                                would be a no-op (and confused users into
+                                thinking it was what fixed cache-staleness). */}
+                            {m.graphic_url && (
+                              <button
+                                onClick={() => handleRegenerateMockupPreview(m.id)}
+                                className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                title="Re-render the flattened preview from the current placement"
+                              >
+                                Re-render
+                              </button>
+                            )}
                             <button
                               onClick={() => handleConvertMockup(m.id)}
                               className="text-[11px] px-2 py-1 rounded bg-purple-50 text-purple-700 hover:bg-purple-100"

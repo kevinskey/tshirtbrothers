@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
 import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
 import { LayersPanel } from '@/components/design-studio/LayersPanel';
@@ -443,6 +443,11 @@ export default function DesignStudioPage() {
 
   // --- Core state ---
   const navigate = useNavigate();
+  // Used to invalidate the admin mockups list whenever we POST/PATCH a
+  // mockup from here — otherwise React Query keeps serving the pre-save
+  // cache and the new (or freshly edited) row doesn't appear until the
+  // admin clicks Re-render (which incidentally invalidates the cache).
+  const studioQueryClient = useQueryClient();
   // On mobile the welcome panel covers the whole canvas and hides the
   // t-shirt. Default it to false on small screens so users see the product
   // immediately and can access tools via the bottom toolbar.
@@ -961,6 +966,12 @@ export default function DesignStudioPage() {
       });
       if (!create.ok) throw new Error('mockup save failed');
 
+      // Force the admin mockups/invoice queries to refetch on landing so the
+      // new mockup/preview shows immediately instead of waiting for the
+      // user to click Re-render (which used to be the unintended cache
+      // invalidator).
+      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
+      studioQueryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
       // Return to admin invoice editor with the new invoice id loaded.
       navigate(`/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`);
     } catch (e) {
@@ -1011,6 +1022,7 @@ export default function DesignStudioPage() {
       });
       if (!create.ok) throw new Error('mockup save failed');
 
+      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
       navigate('/admin?section=mockups');
     } catch (e) {
       alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
@@ -1052,6 +1064,8 @@ export default function DesignStudioPage() {
       });
       if (!patch.ok) throw new Error('mockup save failed');
 
+      studioQueryClient.invalidateQueries({ queryKey: ['mockups'] });
+      studioQueryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
       // If we're also tied to an invoice, return the admin to the invoice
       // editor so they can keep working on it. Otherwise back to the
       // Mockups grid.
