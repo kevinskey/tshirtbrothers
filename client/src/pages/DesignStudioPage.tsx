@@ -626,207 +626,12 @@ export default function DesignStudioPage() {
     return !!localStorage.getItem('tsb_token');
   });
 
-  // Shared design-side PNG renderer. Returns a transparent-bg PNG dataURL
-  // showing the elements on the requested side, or null if there are none.
-  // Used by Save-to-Library (front-only) and by the attach-to-invoice mockup
-  // flow (front + back). Fabric mode delegates to the bridge's native
-  // exportPNG, temporarily switching the bridge's side and restoring it
-  // after. Legacy mode renders elements into an offscreen 2D canvas.
-  async function renderDesignSidePng(side: ViewName): Promise<string | null> {
-    const els = designElements.filter(el => (el.side ?? 'front') === side);
-    if (els.length === 0) return null;
-
-    if (useFabricRenderer && fabricBridgeRef.current) {
-      const bridge = fabricBridgeRef.current;
-      // setSide bypasses React state so the visible currentView prop is
-      // unchanged — the bridge re-syncs to currentView via the existing
-      // useEffect once we let go. We still wait a frame so the requested
-      // side actually paints before exportPNG snapshots it.
-      bridge.setSide(side);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      const png = bridge.exportPNG({ transparent: true });
-      // Restore the visible side. The next prop-sync useEffect will also
-      // run and reassert currentView; calling setSide here just shortens
-      // the visible flicker window.
-      bridge.setSide(currentView);
-      return png || null;
-    }
-
-    // Legacy renderer path: element loop into offscreen 2D canvas.
-    const { loadFontForText } = await import('@/lib/fabric/loadFontForText');
-    const TARGET_DPI = 200;
-    const MAX_DIM = 4096;
-    let widthPx = Math.round(canvasInches * TARGET_DPI);
-    let heightPx = Math.round(canvasInchesH * TARGET_DPI);
-    const longest = Math.max(widthPx, heightPx);
-    if (longest > MAX_DIM) {
-      const scale = MAX_DIM / longest;
-      widthPx = Math.round(widthPx * scale);
-      heightPx = Math.round(heightPx * scale);
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = widthPx;
-    canvas.height = heightPx;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('canvas context unavailable');
-    ctx.clearRect(0, 0, widthPx, heightPx);
-    for (const el of els) {
-      const x = ((el.x ?? 0) / 100) * widthPx;
-      const y = ((el.y ?? 0) / 100) * heightPx;
-      const w = ((el.width ?? 30) / 100) * widthPx;
-      if (el.type === 'shape') {
-        const h = ((el.height ?? el.width) / 100) * heightPx;
-        const fill = el.color ?? '#ec4899';
-        const stroke = el.strokeColor;
-        const sw = (el.strokeWidth ?? 0) * (widthPx / 100);
-        ctx.save();
-        if (el.rotation) {
-          ctx.translate(x + w / 2, y + h / 2);
-          ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
-          ctx.translate(-(x + w / 2), -(y + h / 2));
-        }
-        if (el.opacity != null) ctx.globalAlpha = el.opacity;
-        ctx.beginPath();
-        switch (el.shapeType) {
-          case 'circle':
-            ctx.ellipse(x + w / 2, y + h / 2, w / 2 - sw / 2, h / 2 - sw / 2, 0, 0, Math.PI * 2);
-            break;
-          case 'triangle':
-            ctx.moveTo(x + w * 0.5, y + h * 0.05);
-            ctx.lineTo(x + w * 0.95, y + h * 0.95);
-            ctx.lineTo(x + w * 0.05, y + h * 0.95);
-            ctx.closePath();
-            break;
-          case 'line':
-            ctx.moveTo(x + w * 0.05, y + h * 0.5);
-            ctx.lineTo(x + w * 0.95, y + h * 0.5);
-            break;
-          case 'star': {
-            const pts: [number, number][] = [
-              [50, 5], [61.3, 38.4], [96.4, 38.4], [67.6, 60.5], [78.5, 93.9],
-              [50, 73.6], [21.5, 93.9], [32.4, 60.5], [3.6, 38.4], [38.7, 38.4],
-            ];
-            pts.forEach(([px, py], i) => {
-              const cx = x + (px / 100) * w;
-              const cy = y + (py / 100) * h;
-              if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-            });
-            ctx.closePath();
-            break;
-          }
-          case 'heart': {
-            const sx = (px: number) => x + (px / 100) * w;
-            const sy = (py: number) => y + (py / 100) * h;
-            ctx.moveTo(sx(50), sy(82));
-            ctx.bezierCurveTo(sx(22), sy(60), sx(5), sy(42), sx(5), sy(28));
-            ctx.bezierCurveTo(sx(5), sy(12), sx(18), sy(5), sx(30), sy(5));
-            ctx.bezierCurveTo(sx(38), sy(5), sx(45), sy(9), sx(50), sy(15));
-            ctx.bezierCurveTo(sx(55), sy(9), sx(62), sy(5), sx(70), sy(5));
-            ctx.bezierCurveTo(sx(82), sy(5), sx(95), sy(12), sx(95), sy(28));
-            ctx.bezierCurveTo(sx(95), sy(42), sx(78), sy(60), sx(50), sy(82));
-            ctx.closePath();
-            break;
-          }
-          case 'rect':
-          default:
-            ctx.rect(x + sw / 2, y + sw / 2, w - sw, h - sw);
-            break;
-        }
-        if (el.shapeType === 'line') {
-          ctx.strokeStyle = stroke || fill;
-          ctx.lineWidth = sw || (w * 0.06);
-          ctx.lineCap = 'round';
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = fill;
-          ctx.fill();
-          if (stroke && sw > 0) {
-            ctx.strokeStyle = stroke;
-            ctx.lineWidth = sw;
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-          }
-        }
-        ctx.restore();
-      } else if (el.type === 'image' && el.content) {
-        try {
-          const img = document.createElement('img');
-          img.crossOrigin = 'anonymous';
-          await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('img load failed'));
-            img.src = el.content;
-          });
-          const aspect = img.naturalHeight / img.naturalWidth;
-          ctx.drawImage(img, x, y, w, w * aspect);
-        } catch { /* skip on load failure */ }
-      } else if (el.type === 'text' && el.content) {
-        const fontSize = ((el.fontSize ?? 24) * widthPx) / 800;
-        const family = el.fontFamily ?? 'Inter';
-        const lineHeight = el.lineHeight ?? 1.2;
-        const lines = el.content.split('\n');
-        const font = await loadFontForText(family, 700, el.content);
-        ctx.save();
-        if (el.rotation) {
-          ctx.translate(x + w / 2, y + fontSize / 2);
-          ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
-          ctx.translate(-(x + w / 2), -(y + fontSize / 2));
-        }
-        if (!el.outline) {
-          ctx.shadowColor = 'rgba(0,0,0,0.3)';
-          ctx.shadowBlur = Math.max(2, fontSize * 0.06);
-          ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
-        }
-        if (font) {
-          const ascend = (font.ascender / font.unitsPerEm) * fontSize;
-          lines.forEach((line, i) => {
-            if (!line) return;
-            const advance = font.getAdvanceWidth(line, fontSize);
-            let lineX = x;
-            if (el.textAlign === 'center' || el.textAlign === undefined) {
-              lineX = x + w / 2 - advance / 2;
-            } else if (el.textAlign === 'right') {
-              lineX = x + w - advance;
-            }
-            const lineY = y + ascend + i * fontSize * lineHeight;
-            const path = font.getPath(line, lineX, lineY, fontSize);
-            const path2d = new Path2D(path.toPathData(2));
-            ctx.fillStyle = el.color ?? '#000000';
-            ctx.fill(path2d);
-            if (el.outline) {
-              const sb = ctx.shadowBlur;
-              ctx.shadowBlur = 0;
-              ctx.lineWidth = Math.max(1, fontSize * 0.04);
-              ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-              ctx.lineJoin = 'round';
-              ctx.stroke(path2d);
-              ctx.shadowBlur = sb;
-            }
-          });
-        } else {
-          console.warn('[renderDesignSidePng] font load failed, falling back to fillText for', family);
-          ctx.font = `bold ${fontSize}px ${family}`;
-          ctx.fillStyle = el.color ?? '#000000';
-          ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-          const textX = el.textAlign === 'left' ? x : x + w / 2;
-          lines.forEach((line, i) => {
-            ctx.fillText(line, textX, y + fontSize + i * fontSize * lineHeight);
-          });
-        }
-        ctx.restore();
-      }
-    }
-    return canvas.toDataURL('image/png');
-  }
 
   async function handleSaveToLibrary() {
     if (!librarySaveName.trim() || librarySaving) return;
     const front = designElements.filter(el => (el.side ?? 'front') === 'front');
     if (front.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
     setLibrarySaving(true);
-    // Each step is wrapped with timing + an explicit 30s timeout so a
-    // stalled font load / image fetch / upload surfaces as a clear error
-    // instead of an indefinite "Saving…" spinner.
     const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const timeout = new Promise<never>((_, rej) => {
@@ -838,14 +643,33 @@ export default function DesignStudioPage() {
         if (timer) clearTimeout(timer);
       }
     };
+
+    // Capture only the design elements (no shirt photo) by temporarily
+    // hiding the product image, html2canvas-ing the surface, then
+    // restoring. Avoids the opentype.js + cross-origin image load path
+    // that was hanging in the legacy renderer.
+    const surface = designSurfaceRef.current;
+    if (!surface) { setLibrarySaving(false); alert('Save failed: no canvas'); return; }
+    const productImg = productImgRef.current;
+    const prevVisibility = productImg ? productImg.style.visibility : null;
+    if (productImg) productImg.style.visibility = 'hidden';
+    const prevSelected = selectedElementId;
+    setSelectedElementId(null);
+
     try {
-      console.log('[saveToLibrary] rendering side PNG…');
-      const dataUrl = await withTimeout(renderDesignSidePng('front'), 30_000, 'render');
-      if (!dataUrl) throw new Error('nothing to render');
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      console.log('[saveToLibrary] capturing transparent PNG of design elements…');
+      const html2canvas = (await import('html2canvas')).default;
+      const cv = await withTimeout(
+        html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false }),
+        30_000,
+        'render',
+      );
+      const dataUrl = cv.toDataURL('image/png');
       console.log('[saveToLibrary] render ok, bytes ≈', Math.round(dataUrl.length / 1024), 'KB');
 
       const token = getAuthToken();
-      console.log('[saveToLibrary] uploading PNG to Spaces…');
+      console.log('[saveToLibrary] uploading…');
       const uploadRes = await withTimeout(fetch('/api/quotes/upload-design', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -857,7 +681,6 @@ export default function DesignStudioPage() {
       }), 30_000, 'upload');
       if (!uploadRes.ok) throw new Error(`Upload failed (HTTP ${uploadRes.status})`);
       const { url } = await uploadRes.json();
-      console.log('[saveToLibrary] upload ok →', url);
 
       console.log('[saveToLibrary] saving library record…');
       const saveRes = await withTimeout(fetch('/api/admin/designs-library', {
@@ -873,13 +696,16 @@ export default function DesignStudioPage() {
       if (!saveRes.ok) throw new Error(`Library save failed (HTTP ${saveRes.status})`);
       console.log('[saveToLibrary] done');
 
+      // Close the dialog silently on success — no extra alert.
       setLibrarySaveOpen(false);
       setLibrarySaveName('');
-      alert('Saved to Art Library!');
     } catch (e) {
       console.error('[saveToLibrary] error:', e);
       alert(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
+      // Always restore the product image + selection, even on error.
+      if (productImg) productImg.style.visibility = prevVisibility || '';
+      if (prevSelected) setSelectedElementId(prevSelected);
       setLibrarySaving(false);
     }
   }
@@ -1319,6 +1145,9 @@ export default function DesignStudioPage() {
   // the same box. Mutable refs (RefObject with writable .current).
   const designSurfaceRef = useRef<HTMLDivElement | null>(null);
   const productBgRef = useRef<HTMLDivElement | null>(null);
+  // The product photo node — toggled hidden during Save-to-Library so the
+  // captured PNG is just the design elements on a transparent background.
+  const productImgRef = useRef<HTMLImageElement | null>(null);
 
   // Per-side placement is kept for forward-compat (the mockup row still
   // stores it as JSONB), but the UI no longer constrains design elements
@@ -3061,6 +2890,7 @@ export default function DesignStudioPage() {
         >
           {displayImage ? (
             <img
+              ref={productImgRef}
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
               className="absolute inset-0 w-full h-full object-contain p-0 md:p-4 pointer-events-none"
