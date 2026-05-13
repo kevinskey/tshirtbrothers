@@ -100,6 +100,9 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       preview_image_url,
       preview_image_url_back,
       notes,
+      design_elements,
+      design_canvas_inches,
+      design_canvas_inches_h,
     } = req.body;
 
     // If customer_id was given but no email/name, hydrate from users
@@ -127,8 +130,9 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       `INSERT INTO mockups
          (name, customer_id, customer_email, customer_name, quote_id,
           product_id, product_name, product_image_url, graphic_url,
-          placement, preview_image_url, preview_image_url_back, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          placement, preview_image_url, preview_image_url_back, notes,
+          design_elements, design_canvas_inches, design_canvas_inches_h)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         name || 'Untitled Mockup',
@@ -144,6 +148,9 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
         preview_image_url || null,
         preview_image_url_back || null,
         notes || null,
+        design_elements ? JSON.stringify(design_elements) : null,
+        design_canvas_inches || null,
+        design_canvas_inches_h || null,
       ],
     );
 
@@ -180,10 +187,11 @@ router.patch('/admin/mockups/:id', authenticate, adminOnly, async (req, res, nex
     const fields = req.body || {};
     const set = [];
     const params = [];
-    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id'];
+    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id', 'design_elements', 'design_canvas_inches', 'design_canvas_inches_h'];
+    const jsonbCols = new Set(['placement', 'design_elements']);
     for (const k of allow) {
       if (k in fields) {
-        params.push(k === 'placement' && fields[k] && typeof fields[k] === 'object' ? JSON.stringify(fields[k]) : fields[k]);
+        params.push(jsonbCols.has(k) && fields[k] && typeof fields[k] === 'object' ? JSON.stringify(fields[k]) : fields[k]);
         set.push(`${k} = $${params.length}`);
       }
     }

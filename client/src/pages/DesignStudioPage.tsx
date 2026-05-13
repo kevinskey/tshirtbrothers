@@ -419,6 +419,10 @@ export default function DesignStudioPage() {
   // composites, attaches them to a mockup row tied to the invoice, then
   // navigates back to the admin invoice editor.
   const attachToInvoiceId = searchParams.get('attachToInvoice') || '';
+  // When set, the studio is acting as the editor for an existing mockup row.
+  // Hydrates product / canvas dims / elements from the mockup on mount and
+  // saves back via PATCH instead of POST.
+  const editMockupId = searchParams.get('editMockup') || '';
   // Auth gate — require login before designing
   const authNav = useNavigate();
   useEffect(() => {
@@ -934,6 +938,79 @@ export default function DesignStudioPage() {
     }
   }
 
+  // ─── Save edits back to an existing mockup row ──────────────────────
+  // PATCHes /admin/mockups/<id> with fresh composite URLs + the elements
+  // so opening the mockup again rehydrates the same design.
+  const [savingMockupEdit, setSavingMockupEdit] = useState(false);
+  async function handleSaveMockupEdit() {
+    if (!editMockupId || savingMockupEdit) return;
+    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    if (!productImg) { alert('Pick a product first.'); return; }
+    setSavingMockupEdit(true);
+    try {
+      const token = getAuthToken();
+      const productBackImg = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || productImg;
+      const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
+      const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
+
+      async function buildSide(side: ViewName, productImageForSide: string): Promise<string | null> {
+        const dataUrl = await renderDesignSidePng(side);
+        if (!dataUrl) return null;
+        const up = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ imageBase64: dataUrl, filename: `mockup-${editMockupId}-${side}.png`, customerEmail: 'admin-studio-mockup' }),
+        });
+        if (!up.ok) throw new Error('graphic upload failed');
+        const { url: graphicUrl } = await up.json();
+        const comp = await fetch('/api/admin/mockups/compose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            productImageUrl: productImageForSide,
+            graphicUrl,
+            placement: { x: 32, y: 22, width: 36, rotation: 0 },
+            trim: false,
+          }),
+        });
+        if (!comp.ok) throw new Error('composite failed');
+        const { url } = await comp.json();
+        return url || null;
+      }
+
+      const [frontUrl, backUrl] = await Promise.all([
+        hasFront ? buildSide('front', productImg) : Promise.resolve(null),
+        hasBack ? buildSide('back', productBackImg) : Promise.resolve(null),
+      ]);
+
+      const patch = await fetch(`/api/admin/mockups/${editMockupId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          // product_id stays as-is; the studio surfaces by ss_id, not by the
+          // mockups.product_id integer FK, so we'd need an extra lookup to
+          // change it. Edit-from-mockup users typically aren't switching
+          // products anyway. product_image_url DOES update so the customer-
+          // facing preview matches whatever the admin is looking at.
+          product_name: selectedProduct?.name || undefined,
+          product_image_url: productImg,
+          preview_image_url: frontUrl,
+          preview_image_url_back: backUrl,
+          design_elements: designElements,
+          design_canvas_inches: canvasInches,
+          design_canvas_inches_h: canvasInchesH,
+        }),
+      });
+      if (!patch.ok) throw new Error('mockup save failed');
+
+      navigate('/admin?section=mockups');
+    } catch (e) {
+      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setSavingMockupEdit(false);
+    }
+  }
+
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
@@ -1177,6 +1254,63 @@ export default function DesignStudioPage() {
       } catch { /* keep default empty state */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Edit-existing-mockup mode ───────────────────────────────────────
+  // When ?editMockup=<id> is set, fetch the mockup row, then:
+  //   • hydrate selectedProduct from its product_id (preferring ss_id)
+  //   • hydrate canvas dims from design_canvas_inches(_h) if saved
+  //   • hydrate designElements from design_elements if saved, else seed
+  //     a single image element with graphic_url at the saved placement.
+  // Runs once on mount.
+  useEffect(() => {
+    if (!editMockupId) return;
+    (async () => {
+      try {
+        const token = localStorage.getItem('tsb_token') || '';
+        const res = await fetch(`/api/admin/mockups/${editMockupId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const m = await res.json();
+
+        // Product hydration: mockups carry only the integer product_id. Look
+        // up the product to get ss_id / colors / images for the studio.
+        if (m.product_id) {
+          try {
+            const pRes = await fetch(`/api/products/${m.product_id}`);
+            if (pRes.ok) {
+              const product = await pRes.json();
+              setSelectedProduct(product);
+            }
+          } catch { /* fall through — studio shows product picker */ }
+        }
+
+        if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
+        if (m.design_canvas_inches_h) setCanvasInchesH(Number(m.design_canvas_inches_h));
+
+        if (Array.isArray(m.design_elements) && m.design_elements.length > 0) {
+          setDesignElements(m.design_elements as DesignElement[]);
+        } else if (m.graphic_url) {
+          // Legacy mockup (upload+placement flow): seed one image element.
+          // placement on the mockup is in % of PRODUCT image, but the studio
+          // canvas is sized to the print area, not the product photo. We
+          // can't perfectly translate without knowing the print zone, so
+          // we drop the graphic centered on the canvas at a comfortable
+          // size — the admin can reposition.
+          setDesignElements([{
+            id: `mockup-${m.id}-graphic`,
+            type: 'image',
+            content: m.graphic_url,
+            x: 20,
+            y: 20,
+            width: 60,
+            side: 'front',
+          } as DesignElement]);
+        }
+      } catch { /* silent — studio shows blank canvas + picker */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch colors for selected product from S&S API
@@ -1901,6 +2035,18 @@ export default function DesignStudioPage() {
           >
             {savingInvoiceMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {savingInvoiceMockup ? 'Saving…' : 'Save Mockup to Invoice'}
+          </button>
+        )}
+        {editMockupId && (
+          <button
+            type="button"
+            onClick={handleSaveMockupEdit}
+            disabled={savingMockupEdit}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            title={`Save changes to mockup #${editMockupId}`}
+          >
+            {savingMockupEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {savingMockupEdit ? 'Saving…' : 'Save Mockup'}
           </button>
         )}
         <button

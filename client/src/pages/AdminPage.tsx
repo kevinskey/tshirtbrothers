@@ -5571,18 +5571,9 @@ export default function AdminPage() {
                           <p className="text-[11px] text-gray-400">Product: {m.product_name || '—'}</p>
                           <div className="flex flex-wrap gap-1 mt-auto pt-2">
                             <button
-                              onClick={() => { setEditingMockup(m); setMockupForm({
-                                name: m.name || '',
-                                customer_id: m.customer_id ? String(m.customer_id) : '',
-                                customer_email: m.customer_email || '',
-                                customer_name: m.customer_name || '',
-                                product_id: m.product_id ? String(m.product_id) : '',
-                                graphic_url: m.graphic_url || '',
-                                graphicFile: null,
-                                notes: m.notes || '',
-                                placement: (m.placement as { x: number; y: number; width: number }) || { x: 35, y: 30, width: 30 },
-                              }); setMockupModalOpen(true); }}
+                              onClick={() => navigate(`/design?editMockup=${m.id}`)}
                               className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              title="Edit in Design Studio with the existing art pre-loaded"
                             >
                               Edit
                             </button>
