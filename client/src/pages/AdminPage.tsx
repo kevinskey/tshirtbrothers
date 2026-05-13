@@ -4315,6 +4315,27 @@ export default function AdminPage() {
                       </div>
                     </div>
 
+                    {/* Mockup preview — what the customer will see at top of the invoice */}
+                    {(invoiceForm.mockup_preview_url || invoiceForm.mockup_preview_url_back) && (
+                      <div className="mb-6 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                        <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200">Mockup</div>
+                        <div className={`p-3 bg-white grid gap-3 ${invoiceForm.mockup_preview_url && invoiceForm.mockup_preview_url_back ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                          {invoiceForm.mockup_preview_url && (
+                            <div className="flex flex-col items-center">
+                              <img src={invoiceForm.mockup_preview_url} alt="Mockup front" className="max-h-48 w-auto object-contain" />
+                              {invoiceForm.mockup_preview_url_back && <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Front</span>}
+                            </div>
+                          )}
+                          {invoiceForm.mockup_preview_url_back && (
+                            <div className="flex flex-col items-center">
+                              <img src={invoiceForm.mockup_preview_url_back} alt="Mockup back" className="max-h-48 w-auto object-contain" />
+                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Back</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Line Items */}
                     <table className="w-full text-sm mb-6">
                       <thead>
@@ -4326,14 +4347,20 @@ export default function AdminPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {previewInvoice.items.filter(i => i.description).map((item, idx) => (
-                          <tr key={idx} className="border-b border-gray-100">
-                            <td className="py-3 text-gray-900">{item.description}</td>
-                            <td className="py-3 text-center text-gray-600">{item.quantity}</td>
-                            <td className="py-3 text-right text-gray-600">${item.unit_price.toFixed(2)}</td>
-                            <td className="py-3 text-right font-medium text-gray-900">${(item.quantity * item.unit_price).toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {previewInvoice.items.filter(i => i.description).map((item, idx) => {
+                          const variant = [item.color, item.size].filter(Boolean).join(' · ');
+                          return (
+                            <tr key={idx} className="border-b border-gray-100">
+                              <td className="py-3 text-gray-900">
+                                {item.description}
+                                {variant && <div className="text-xs text-gray-500 mt-0.5">{variant}</div>}
+                              </td>
+                              <td className="py-3 text-center text-gray-600">{item.quantity}</td>
+                              <td className="py-3 text-right text-gray-600">${item.unit_price.toFixed(2)}</td>
+                              <td className="py-3 text-right font-medium text-gray-900">${(item.quantity * item.unit_price).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
 
