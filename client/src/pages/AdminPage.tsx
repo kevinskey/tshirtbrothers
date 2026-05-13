@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import { useGooglePlacesAutocomplete } from '@/lib/googlePlaces';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   LayoutDashboard,
@@ -67,6 +67,7 @@ import {
   type InvoiceItem,
   type CreateInvoiceData,
   fetchInvoices,
+  fetchInvoice,
   fetchCustomProducts,
   type CustomProduct,
   createInvoice,
@@ -484,6 +485,7 @@ type ConfirmRequest = { message: string; danger?: boolean; resolve: (ok: boolean
 
 export default function AdminPage() {
   const navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -597,6 +599,7 @@ export default function AdminPage() {
     const params = new URLSearchParams(window.location.search);
     const section = params.get('section');
     const id = params.get('id');
+    const editInvoice = params.get('editInvoice');
     const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
     if (section && validSections.includes(section as Section)) {
       setActiveSection(section as Section);
@@ -604,6 +607,42 @@ export default function AdminPage() {
     if (id && /^\d+$/.test(id)) {
       setHighlightedQuoteId(id);
     }
+    // Round-trip return from Design Studio: ?section=invoices&editInvoice=<id>
+    // means we just attached a mockup; reopen the invoice editor with the
+    // mockup populated (the API GET joins mockup_preview_url(_back)).
+    if (editInvoice && /^\d+$/.test(editInvoice)) {
+      (async () => {
+        try {
+          const inv = await fetchInvoice(editInvoice);
+          setEditingInvoiceId(inv.id);
+          setEditingInvoiceFull(inv);
+          setInvoiceForm({
+            customer_name: inv.customer_name || '',
+            customer_email: inv.customer_email || '',
+            customer_phone: inv.customer_phone || '',
+            customer_address: '',
+            items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
+            tax: String(inv.tax || 0),
+            shipping: String(inv.shipping || 0),
+            discount: String(inv.discount || 0),
+            notes: inv.notes || '',
+            due_date: inv.due_date || '',
+            mockup_id: inv.mockup_id ?? null,
+            mockup_preview_url: inv.mockup_preview_url ?? null,
+            mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
+          });
+          setInvoiceView('create');
+          // Strip the editInvoice param so a refresh doesn't redo the load
+          // (and so a follow-up navigation has a clean URL).
+          const next = new URLSearchParams(window.location.search);
+          next.delete('editInvoice');
+          setSearchParams(next, { replace: true });
+        } catch (e) {
+          console.warn('[admin] editInvoice load failed:', e);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [quoteFilter, setQuoteFilter] = useState<QuoteFilter>('all');
   const [quoteSearch, setQuoteSearch] = useState('');
@@ -679,16 +718,20 @@ export default function AdminPage() {
     due_date: string;
     mockup_id: number | null;
     mockup_preview_url: string | null;
+    mockup_preview_url_back: string | null;
   }>({
     customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
-    mockup_id: null, mockup_preview_url: null,
+    mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
   });
   // When the admin clicks "Create Mockup" on the invoice screen, this flag
   // tells handleSaveMockup to write the resulting mockup id + preview URL
   // back into invoiceForm so the invoice carries the linkage.
   const [mockupAttachToInvoice, setMockupAttachToInvoice] = useState(false);
+  // Drives the spinner / disabled state for the "Design Mockup in Studio"
+  // launch — covers the save-as-draft round-trip before navigating away.
+  const [openingStudio, setOpeningStudio] = useState(false);
   function convertQuoteToInvoice(q: Quote) {
     const total = Number(q.estimated_price || 0);
     const qty = Number(q.quantity || 1);
@@ -706,7 +749,7 @@ export default function AdminPage() {
       tax: '0', shipping: '0', discount: '0',
       notes: q.notes || '',
       due_date: '',
-      mockup_id: null, mockup_preview_url: null,
+      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
     });
     setActiveSection('invoices');
     setInvoiceView('create');
@@ -1238,7 +1281,7 @@ export default function AdminPage() {
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
       tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
-      mockup_id: null, mockup_preview_url: null,
+      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
@@ -1291,6 +1334,47 @@ export default function AdminPage() {
       ...prev,
       items: prev.items.filter((_, i) => i !== idx),
     }));
+  }
+
+  // Launches Design Studio in attach-to-invoice mode. If the invoice hasn't
+  // been saved yet, save it as a draft first so we have an id for the
+  // studio to write back to. The studio handles render + composite + mockup
+  // creation, then navigates back to /admin?section=invoices&editInvoice=<id>.
+  async function handleOpenStudioForInvoice() {
+    if (openingStudio) return;
+    if (!invoiceForm.customer_name || !invoiceForm.customer_email) {
+      alert('Add a customer name and email before designing a mockup.');
+      return;
+    }
+    setOpeningStudio(true);
+    try {
+      let invoiceId = editingInvoiceId;
+      if (!invoiceId) {
+        const subtotal = calcInvoiceSubtotal();
+        const total = calcInvoiceTotal();
+        const draft = await createInvoiceMutation.mutateAsync({
+          customer_name: invoiceForm.customer_name,
+          customer_email: invoiceForm.customer_email,
+          customer_phone: invoiceForm.customer_phone || undefined,
+          customer_address: invoiceForm.customer_address || undefined,
+          items: invoiceForm.items,
+          subtotal,
+          tax: parseFloat(invoiceForm.tax) || 0,
+          shipping: parseFloat(invoiceForm.shipping) || 0,
+          discount: parseFloat(invoiceForm.discount) || 0,
+          total,
+          notes: invoiceForm.notes || undefined,
+          due_date: invoiceForm.due_date || undefined,
+          deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
+        });
+        invoiceId = String(draft.id);
+      }
+      navigate(`/design?attachToInvoice=${encodeURIComponent(invoiceId)}`);
+    } catch (e) {
+      alert(`Failed to open studio: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setOpeningStudio(false);
+    }
   }
 
   function handleSaveInvoiceDraft() {
@@ -3538,7 +3622,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -3601,6 +3685,7 @@ export default function AdminPage() {
                                       due_date: inv.due_date || '',
                                       mockup_id: inv.mockup_id ?? null,
                                       mockup_preview_url: inv.mockup_preview_url ?? null,
+                                      mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
                                     });
                                     setInvoiceView('create');
                                   }}
@@ -3830,76 +3915,54 @@ export default function AdminPage() {
                     )}
                   </div>
 
-                  {/* Mockup */}
+                  {/* Mockup — Design Studio handoff */}
                   <div>
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-sm font-semibold text-gray-900">Mockup</h3>
                       {invoiceForm.mockup_id && (
                         <button
                           type="button"
-                          onClick={() => setInvoiceForm((p) => ({ ...p, mockup_id: null, mockup_preview_url: null }))}
+                          onClick={() => setInvoiceForm((p) => ({ ...p, mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null }))}
                           className="text-xs text-gray-500 hover:text-red-600"
                         >
                           Remove
                         </button>
                       )}
                     </div>
-                    {invoiceForm.mockup_preview_url ? (
-                      <div className="flex items-start gap-4 border border-gray-200 rounded-lg p-3 bg-gray-50">
-                        <img
-                          src={invoiceForm.mockup_preview_url}
-                          alt="Mockup preview"
-                          className="w-32 h-32 object-contain bg-white rounded border border-gray-200"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm text-gray-700">Mockup attached to this invoice.</p>
-                          <p className="text-xs text-gray-500 mt-1">The customer will see this preview on the invoice page and in their invoice email.</p>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setMockupForm({
-                                name: invoiceForm.customer_name ? `Invoice — ${invoiceForm.customer_name}` : '',
-                                customer_id: '',
-                                customer_email: invoiceForm.customer_email || '',
-                                customer_name: invoiceForm.customer_name || '',
-                                product_id: '',
-                                graphic_url: '',
-                                graphicFile: null,
-                                notes: '',
-                                placement: { x: 35, y: 30, width: 30 },
-                              });
-                              setEditingMockup(null);
-                              setMockupAttachToInvoice(true);
-                              setMockupModalOpen(true);
-                            }}
-                            className="mt-2 text-xs font-medium text-red-600 hover:text-red-700"
-                          >
-                            Replace mockup
-                          </button>
+                    {invoiceForm.mockup_preview_url || invoiceForm.mockup_preview_url_back ? (
+                      <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+                        <div className="grid grid-cols-2 gap-3">
+                          {invoiceForm.mockup_preview_url && (
+                            <div className="flex flex-col items-center">
+                              <img src={invoiceForm.mockup_preview_url} alt="Mockup front" className="w-full h-48 object-contain bg-white rounded border border-gray-200" />
+                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Front</span>
+                            </div>
+                          )}
+                          {invoiceForm.mockup_preview_url_back && (
+                            <div className="flex flex-col items-center">
+                              <img src={invoiceForm.mockup_preview_url_back} alt="Mockup back" className="w-full h-48 object-contain bg-white rounded border border-gray-200" />
+                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Back</span>
+                            </div>
+                          )}
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStudioForInvoice()}
+                          disabled={openingStudio}
+                          className="mt-3 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                        >
+                          {openingStudio ? 'Opening…' : 'Edit / Re-render in Design Studio'}
+                        </button>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => {
-                          setMockupForm({
-                            name: invoiceForm.customer_name ? `Invoice — ${invoiceForm.customer_name}` : '',
-                            customer_id: '',
-                            customer_email: invoiceForm.customer_email || '',
-                            customer_name: invoiceForm.customer_name || '',
-                            product_id: '',
-                            graphic_url: '',
-                            graphicFile: null,
-                            notes: '',
-                            placement: { x: 35, y: 30, width: 30 },
-                          });
-                          setEditingMockup(null);
-                          setMockupAttachToInvoice(true);
-                          setMockupModalOpen(true);
-                        }}
-                        className="w-full border-2 border-dashed border-gray-300 hover:border-red-400 rounded-lg p-6 text-sm text-gray-600 hover:text-red-600 transition"
+                        onClick={() => handleOpenStudioForInvoice()}
+                        disabled={openingStudio || !invoiceForm.customer_name || !invoiceForm.customer_email}
+                        className="w-full border-2 border-dashed border-gray-300 hover:border-emerald-500 rounded-lg p-6 text-sm text-gray-600 hover:text-emerald-700 transition disabled:opacity-50"
+                        title={!invoiceForm.customer_name || !invoiceForm.customer_email ? 'Enter customer name + email first' : 'Open Design Studio to build a mockup attached to this invoice'}
                       >
-                        + Create Mockup
+                        {openingStudio ? 'Opening…' : '+ Design Mockup in Studio'}
                       </button>
                     )}
                   </div>
