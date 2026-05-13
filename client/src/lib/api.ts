@@ -614,6 +614,22 @@ export async function fetchCustomerDesigns(search?: string) {
   return authRequest<CustomerDesign[]>(`/admin/customer-designs${query}`);
 }
 
+export interface AdminDesignLibraryItem {
+  id: number;
+  name: string;
+  description?: string;
+  image_url: string;
+  thumbnail_url?: string;
+  tags?: string[];
+  category?: string;
+  created_at: string;
+}
+
+export async function fetchDesignsLibrary(search?: string) {
+  const query = search ? `?search=${encodeURIComponent(search)}` : '';
+  return authRequest<AdminDesignLibraryItem[]>(`/admin/designs-library${query}`);
+}
+
 export async function deleteQuote(id: string) {
   return authRequest<{ deleted: boolean }>(`/quotes/${id}`, { method: 'DELETE' });
 }
