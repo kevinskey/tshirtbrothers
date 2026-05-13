@@ -50,7 +50,20 @@ export async function renderMockupComposite({ productImageUrl, graphicUrl, place
 
   const graphicTargetWidth = Math.max(8, Math.round((pl.width / 100) * RENDER_SIZE));
 
-  let graphic = sharp(graphicBuf).resize({ width: graphicTargetWidth });
+  // Trim transparent / near-transparent borders before sizing. Design Studio
+  // exports a full canvas-sized PNG (e.g. 12"×12") with the actual design
+  // occupying only a portion of the middle; without trim the placement width
+  // is applied to the whole canvas, which makes the visible graphic tiny.
+  // For graphics that are already cropped to content, trim is a near no-op.
+  let graphicTrimmedBuf;
+  try {
+    graphicTrimmedBuf = await sharp(graphicBuf).trim({ threshold: 10 }).toBuffer();
+  } catch {
+    // trim() throws when the image is entirely uniform; fall back to original.
+    graphicTrimmedBuf = graphicBuf;
+  }
+
+  let graphic = sharp(graphicTrimmedBuf).resize({ width: graphicTargetWidth });
   if (pl.rotation) {
     graphic = graphic.rotate(pl.rotation, { background: { r: 0, g: 0, b: 0, alpha: 0 } });
   }

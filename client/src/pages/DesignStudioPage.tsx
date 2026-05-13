@@ -891,7 +891,7 @@ export default function DesignStudioPage() {
           body: JSON.stringify({
             productImageUrl: productImageForSide,
             graphicUrl,
-            placement: { x: 30, y: 22, width: 40, rotation: 0 },
+            placement: { x: 25, y: 22, width: 50, rotation: 0 },
           }),
         });
         if (!comp.ok) throw new Error('composite failed');
