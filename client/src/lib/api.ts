@@ -532,6 +532,10 @@ export interface Mockup {
   updated_at: string;
 }
 
+export async function fetchMockup(id: number | string) {
+  return authRequest<Mockup & { design_elements?: unknown; design_canvas_inches?: number; design_canvas_inches_h?: number }>(`/admin/mockups/${id}`);
+}
+
 export async function fetchMockups(opts: { status?: string; search?: string } = {}) {
   const p = new URLSearchParams();
   if (opts.status) p.set('status', opts.status);
