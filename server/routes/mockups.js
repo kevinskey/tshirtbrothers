@@ -43,7 +43,7 @@ router.post('/admin/mockups/compose', authenticate, adminOnly, async (req, res, 
     const url = await renderMockupComposite({
       productImageUrl,
       graphicUrl,
-      placement: placement || { x: 30, y: 22, width: 40, rotation: 0 },
+      placement: placement || { x: 25, y: 22, width: 50, rotation: 0 },
     });
     res.json({ url });
   } catch (err) { next(err); }
