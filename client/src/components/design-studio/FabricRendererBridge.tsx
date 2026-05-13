@@ -35,6 +35,9 @@ export interface FabricRendererBridgeHandle {
   exportPNG(opts?: { transparent?: boolean }): string | null;
   /** v2 serialized form for the save handler. */
   getDesignJSON(): object;
+  /** Switch the visible side (front/back/sleeve). Used by the invoice
+   *  mockup save flow to snapshot each side via exportPNG. */
+  setSide(side: ViewSide): void;
 }
 
 export interface FabricRendererBridgeProps {
@@ -160,6 +163,9 @@ export const FabricRendererBridge = forwardRef<
     },
     getDesignJSON() {
       return handleRef.current?.getDesignJSON() ?? {};
+    },
+    setSide(side) {
+      handleRef.current?.setSide(side);
     },
   }), []);
 

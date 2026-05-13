@@ -29,6 +29,26 @@ async function regeneratePreviewForMockup(row) {
   }
 }
 
+// POST /admin/mockups/compose - one-shot composite without persisting a row.
+// Used by Design Studio's "Save Mockup to Invoice" flow: the client renders
+// the design canvas to a transparent PNG, uploads it, then calls this with
+// the product image + that PNG + chest-area placement to get a flattened
+// mockup URL. Doing this server-side keeps every mockup at the same
+// reference size (sharp does the resize), regardless of source image dims.
+router.post('/admin/mockups/compose', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { productImageUrl, graphicUrl, placement } = req.body;
+    if (!productImageUrl) return res.status(400).json({ error: 'productImageUrl required' });
+    if (!graphicUrl) return res.status(400).json({ error: 'graphicUrl required' });
+    const url = await renderMockupComposite({
+      productImageUrl,
+      graphicUrl,
+      placement: placement || { x: 30, y: 22, width: 40, rotation: 0 },
+    });
+    res.json({ url });
+  } catch (err) { next(err); }
+});
+
 // GET /admin/mockups - list all
 router.get('/admin/mockups', authenticate, adminOnly, async (req, res, next) => {
   try {
@@ -70,12 +90,14 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       customer_email,
       customer_name,
       quote_id,
+      invoice_id,
       product_id,
       product_name,
       product_image_url,
       graphic_url,
       placement,
       preview_image_url,
+      preview_image_url_back,
       notes,
     } = req.body;
 
@@ -104,8 +126,8 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       `INSERT INTO mockups
          (name, customer_id, customer_email, customer_name, quote_id,
           product_id, product_name, product_image_url, graphic_url,
-          placement, preview_image_url, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          placement, preview_image_url, preview_image_url_back, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         name || 'Untitled Mockup',
@@ -119,17 +141,34 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
         graphic_url || null,
         placement ? JSON.stringify(placement) : null,
         preview_image_url || null,
+        preview_image_url_back || null,
         notes || null,
       ],
     );
 
     // If admin didn't supply a pre-rendered preview, render one now so the
     // approval page, admin grid, and any quote spawned from this mockup
-    // all show the same flattened image.
+    // all show the same flattened image. Skip this when preview_image_url_back
+    // is set — that signals a Design Studio mockup which is fully baked
+    // already, and there's no graphic_url + placement to render from.
     let row = rows[0];
-    if (!preview_image_url) {
+    if (!preview_image_url && !preview_image_url_back) {
       row = await regeneratePreviewForMockup(row);
     }
+
+    // If this mockup was created from the Create Invoice screen, link it
+    // back to the invoice immediately so the invoice's mockup_id is set
+    // even before the admin returns to the invoice editor.
+    if (invoice_id) {
+      try {
+        await pool.query('UPDATE invoices SET mockup_id = $1, updated_at = NOW() WHERE id = $2', [row.id, invoice_id]);
+      } catch (e) {
+        // Don't fail the mockup save if the invoice link fails — the admin
+        // can still attach manually from the invoice editor.
+        console.warn('[mockups] failed to link mockup', row.id, 'to invoice', invoice_id, ':', e.message);
+      }
+    }
+
     res.json(row);
   } catch (err) { next(err); }
 });
@@ -140,7 +179,7 @@ router.patch('/admin/mockups/:id', authenticate, adminOnly, async (req, res, nex
     const fields = req.body || {};
     const set = [];
     const params = [];
-    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id'];
+    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id'];
     for (const k of allow) {
       if (k in fields) {
         params.push(k === 'placement' && fields[k] && typeof fields[k] === 'object' ? JSON.stringify(fields[k]) : fields[k]);

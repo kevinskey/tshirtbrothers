@@ -105,12 +105,21 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
       </tr>
     </table>
 
-    ${invoice.mockup_preview_url ? `
+    ${invoice.mockup_preview_url || invoice.mockup_preview_url_back ? `
     <!-- Mockup preview -->
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
       <tr><td style="padding:14px 16px 4px;font-size:13px;color:#6b7280;font-weight:600;">Approved Mockup</td></tr>
-      <tr><td style="padding:0 16px 16px;text-align:center;">
-        <img src="${invoice.mockup_preview_url}" alt="Mockup preview" style="max-width:100%;height:auto;border-radius:6px;" />
+      <tr><td style="padding:0 16px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          ${invoice.mockup_preview_url ? `<td style="text-align:center;padding:4px;${invoice.mockup_preview_url_back ? 'width:50%;' : ''}">
+            ${invoice.mockup_preview_url_back ? '<div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Front</div>' : ''}
+            <img src="${invoice.mockup_preview_url}" alt="Mockup front" style="max-width:100%;height:auto;border-radius:6px;" />
+          </td>` : ''}
+          ${invoice.mockup_preview_url_back ? `<td style="text-align:center;padding:4px;${invoice.mockup_preview_url ? 'width:50%;' : ''}">
+            <div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Back</div>
+            <img src="${invoice.mockup_preview_url_back}" alt="Mockup back" style="max-width:100%;height:auto;border-radius:6px;" />
+          </td>` : ''}
+        </tr></table>
       </td></tr>
     </table>
     ` : ''}
@@ -197,7 +206,7 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
 router.get('/public/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,
@@ -226,6 +235,7 @@ router.get('/public/:id', async (req, res, next) => {
       created_at: i.created_at,
       mockup_id: i.mockup_id,
       mockup_preview_url: i.mockup_preview_url,
+      mockup_preview_url_back: i.mockup_preview_url_back,
     });
   } catch (err) { next(err); }
 });
@@ -375,7 +385,7 @@ router.get('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
          ${whereClause ? whereClause.replace('WHERE status', 'WHERE i.status') : ''}
@@ -393,7 +403,7 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,
@@ -511,7 +521,7 @@ router.post('/:id/send', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,

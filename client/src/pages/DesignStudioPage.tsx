@@ -414,6 +414,11 @@ type ViewName = 'front' | 'back' | 'sleeve';
 export default function DesignStudioPage() {
   const [searchParams] = useSearchParams();
   const initialProductId = searchParams.get('product') || '';
+  // When set, the studio is acting as the mockup editor for an admin invoice.
+  // Shows a "Save Mockup to Invoice" CTA that renders front + (optional) back
+  // composites, attaches them to a mockup row tied to the invoice, then
+  // navigates back to the admin invoice editor.
+  const attachToInvoiceId = searchParams.get('attachToInvoice') || '';
   // Auth gate — require login before designing
   const authNav = useNavigate();
   useEffect(() => {
@@ -609,234 +614,207 @@ export default function DesignStudioPage() {
     return !!localStorage.getItem('tsb_token');
   });
 
-  async function handleSaveToLibrary() {
-    if (!librarySaveName.trim() || librarySaving) return;
-    const els = designElements.filter(el => (el.side ?? 'front') === 'front');
-    if (els.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
-    setLibrarySaving(true);
-    try {
-      // Dynamic import — opentype.js + wawoff2 are 1+ MB. Loading them
-      // eagerly into the page bundle would slow first paint for every
-      // visitor; loading them at click-time (admin-only Save to Library)
-      // keeps the main bundle lean and the cost lands where the user
-      // already expects a wait (the Saving spinner).
-      const { loadFontForText } = await import('@/lib/fabric/loadFontForText');
-      // Fabric mode: defer to the canvas's native exportPNG. Avoids a
-      // second 2D-canvas codepath that would drift from the renderer
-      // (the legacy block below uses by-hand drawImage / fillText math
-      // that doesn't match how Fabric paints). Pixel-equivalence with
-      // the legacy path is one of the toggle exit criteria.
-      let dataUrl: string;
-      if (useFabricRenderer && fabricBridgeRef.current) {
-        const png = fabricBridgeRef.current.exportPNG({ transparent: true });
-        if (!png) throw new Error('canvas not initialized');
-        dataUrl = png;
-      } else {
-        // Legacy renderer: render front-side elements to a print-resolution
-        // PNG. The output canvas matches the design's per-design aspect
-        // ratio (canvasInches × canvasInchesH) — without this, a 3" × 19"
-        // design got squished into a 2048 × 2048 square, blowing text
-        // proportions and shrinking images. Target ~200 DPI, capped to
-        // 4096px on the longest side so encoded PNGs stay under the
-        // server's 10mb body limit.
-        const TARGET_DPI = 200;
-        const MAX_DIM = 4096;
-        let widthPx = Math.round(canvasInches * TARGET_DPI);
-        let heightPx = Math.round(canvasInchesH * TARGET_DPI);
-        const longest = Math.max(widthPx, heightPx);
-        if (longest > MAX_DIM) {
-          const scale = MAX_DIM / longest;
-          widthPx = Math.round(widthPx * scale);
-          heightPx = Math.round(heightPx * scale);
+  // Shared design-side PNG renderer. Returns a transparent-bg PNG dataURL
+  // showing the elements on the requested side, or null if there are none.
+  // Used by Save-to-Library (front-only) and by the attach-to-invoice mockup
+  // flow (front + back). Fabric mode delegates to the bridge's native
+  // exportPNG, temporarily switching the bridge's side and restoring it
+  // after. Legacy mode renders elements into an offscreen 2D canvas.
+  async function renderDesignSidePng(side: ViewName): Promise<string | null> {
+    const els = designElements.filter(el => (el.side ?? 'front') === side);
+    if (els.length === 0) return null;
+
+    if (useFabricRenderer && fabricBridgeRef.current) {
+      const bridge = fabricBridgeRef.current;
+      // setSide bypasses React state so the visible currentView prop is
+      // unchanged — the bridge re-syncs to currentView via the existing
+      // useEffect once we let go. We still wait a frame so the requested
+      // side actually paints before exportPNG snapshots it.
+      bridge.setSide(side);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      const png = bridge.exportPNG({ transparent: true });
+      // Restore the visible side. The next prop-sync useEffect will also
+      // run and reassert currentView; calling setSide here just shortens
+      // the visible flicker window.
+      bridge.setSide(currentView);
+      return png || null;
+    }
+
+    // Legacy renderer path: element loop into offscreen 2D canvas.
+    const { loadFontForText } = await import('@/lib/fabric/loadFontForText');
+    const TARGET_DPI = 200;
+    const MAX_DIM = 4096;
+    let widthPx = Math.round(canvasInches * TARGET_DPI);
+    let heightPx = Math.round(canvasInchesH * TARGET_DPI);
+    const longest = Math.max(widthPx, heightPx);
+    if (longest > MAX_DIM) {
+      const scale = MAX_DIM / longest;
+      widthPx = Math.round(widthPx * scale);
+      heightPx = Math.round(heightPx * scale);
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = widthPx;
+    canvas.height = heightPx;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('canvas context unavailable');
+    ctx.clearRect(0, 0, widthPx, heightPx);
+    for (const el of els) {
+      const x = ((el.x ?? 0) / 100) * widthPx;
+      const y = ((el.y ?? 0) / 100) * heightPx;
+      const w = ((el.width ?? 30) / 100) * widthPx;
+      if (el.type === 'shape') {
+        const h = ((el.height ?? el.width) / 100) * heightPx;
+        const fill = el.color ?? '#ec4899';
+        const stroke = el.strokeColor;
+        const sw = (el.strokeWidth ?? 0) * (widthPx / 100);
+        ctx.save();
+        if (el.rotation) {
+          ctx.translate(x + w / 2, y + h / 2);
+          ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+          ctx.translate(-(x + w / 2), -(y + h / 2));
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = widthPx;
-        canvas.height = heightPx;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('canvas context unavailable');
-        ctx.clearRect(0, 0, widthPx, heightPx);
-        for (const el of els) {
-          // Element x / y are percent of CANVAS WIDTH / HEIGHT respectively;
-          // width is percent of canvas WIDTH (height tracks naturally for
-          // images, derived from fontSize for text).
-          const x = ((el.x ?? 0) / 100) * widthPx;
-          const y = ((el.y ?? 0) / 100) * heightPx;
-          const w = ((el.width ?? 30) / 100) * widthPx;
-          if (el.type === 'shape') {
-            // Mirror ShapeSvg's geometry into Canvas-2D paths. Bounding
-            // box uses the shape's own height (% of canvas height) when
-            // present — falls back to width-as-height for older saves
-            // that pre-date the free-resize change.
-            const h = ((el.height ?? el.width) / 100) * heightPx;
-            const fill = el.color ?? '#ec4899';
-            const stroke = el.strokeColor;
-            const sw = (el.strokeWidth ?? 0) * (widthPx / 100);
-            ctx.save();
-            if (el.rotation) {
-              ctx.translate(x + w / 2, y + h / 2);
-              ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
-              ctx.translate(-(x + w / 2), -(y + h / 2));
-            }
-            if (el.opacity != null) ctx.globalAlpha = el.opacity;
-            const drawShape = () => {
-              ctx.beginPath();
-              switch (el.shapeType) {
-                case 'circle':
-                  ctx.ellipse(x + w / 2, y + h / 2, w / 2 - sw / 2, h / 2 - sw / 2, 0, 0, Math.PI * 2);
-                  break;
-                case 'triangle':
-                  ctx.moveTo(x + w * 0.5, y + h * 0.05);
-                  ctx.lineTo(x + w * 0.95, y + h * 0.95);
-                  ctx.lineTo(x + w * 0.05, y + h * 0.95);
-                  ctx.closePath();
-                  break;
-                case 'line':
-                  ctx.moveTo(x + w * 0.05, y + h * 0.5);
-                  ctx.lineTo(x + w * 0.95, y + h * 0.5);
-                  break;
-                case 'star': {
-                  // Same 5-point coords as SHAPE_VIEWBOX_STAR, scaled to box.
-                  const pts: [number, number][] = [
-                    [50, 5], [61.3, 38.4], [96.4, 38.4], [67.6, 60.5], [78.5, 93.9],
-                    [50, 73.6], [21.5, 93.9], [32.4, 60.5], [3.6, 38.4], [38.7, 38.4],
-                  ];
-                  pts.forEach(([px, py], i) => {
-                    const cx = x + (px / 100) * w;
-                    const cy = y + (py / 100) * h;
-                    if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-                  });
-                  ctx.closePath();
-                  break;
-                }
-                case 'heart': {
-                  // Same Bezier curve as SHAPE_PATH_HEART.
-                  const sx = (px: number) => x + (px / 100) * w;
-                  const sy = (py: number) => y + (py / 100) * h;
-                  ctx.moveTo(sx(50), sy(82));
-                  ctx.bezierCurveTo(sx(22), sy(60), sx(5), sy(42), sx(5), sy(28));
-                  ctx.bezierCurveTo(sx(5), sy(12), sx(18), sy(5), sx(30), sy(5));
-                  ctx.bezierCurveTo(sx(38), sy(5), sx(45), sy(9), sx(50), sy(15));
-                  ctx.bezierCurveTo(sx(55), sy(9), sx(62), sy(5), sx(70), sy(5));
-                  ctx.bezierCurveTo(sx(82), sy(5), sx(95), sy(12), sx(95), sy(28));
-                  ctx.bezierCurveTo(sx(95), sy(42), sx(78), sy(60), sx(50), sy(82));
-                  ctx.closePath();
-                  break;
-                }
-                case 'rect':
-                default:
-                  ctx.rect(x + sw / 2, y + sw / 2, w - sw, h - sw);
-                  break;
-              }
-            };
-            drawShape();
-            if (el.shapeType === 'line') {
-              ctx.strokeStyle = stroke || fill;
-              ctx.lineWidth = sw || (w * 0.06);
-              ctx.lineCap = 'round';
-              ctx.stroke();
-            } else {
-              ctx.fillStyle = fill;
-              ctx.fill();
-              if (stroke && sw > 0) {
-                ctx.strokeStyle = stroke;
-                ctx.lineWidth = sw;
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-              }
-            }
-            ctx.restore();
-          } else if (el.type === 'image' && el.content) {
-            try {
-              const img = document.createElement('img');
-              img.crossOrigin = 'anonymous';
-              await new Promise<void>((resolve, reject) => {
-                img.onload = () => resolve();
-                img.onerror = () => reject(new Error('img load failed'));
-                img.src = el.content;
-              });
-              const aspect = img.naturalHeight / img.naturalWidth;
-              ctx.drawImage(img, x, y, w, w * aspect);
-            } catch { /* skip on load failure */ }
-          } else if (el.type === 'text' && el.content) {
-            // Text → vectors (Illustrator "Create Outlines"). We load the
-            // actual Google Font binary via opentype.js and render the
-            // glyph paths into the Canvas 2D context. This avoids the
-            // browser-default-font fallback that ctx.fillText hits when
-            // the webfont isn't registered against the export canvas —
-            // that was the source of the "saved text is the wrong size"
-            // bug. Outline (el.outline=true) becomes a real stroke on the
-            // path; the soft drop shadow stays.
-            const fontSize = ((el.fontSize ?? 24) * widthPx) / 800;
-            const family = el.fontFamily ?? 'Inter';
-            const lineHeight = el.lineHeight ?? 1.2;
-            const lines = el.content.split('\n');
-            const font = await loadFontForText(family, 700, el.content);
-
-            ctx.save();
-            if (el.rotation) {
-              ctx.translate(x + w / 2, y + fontSize / 2);
-              ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
-              ctx.translate(-(x + w / 2), -(y + fontSize / 2));
-            }
-            // Drop shadow for non-outline text. Match the studio's CSS
-            // textShadow values, scaled with fontSize.
-            if (!el.outline) {
-              ctx.shadowColor = 'rgba(0,0,0,0.3)';
-              ctx.shadowBlur = Math.max(2, fontSize * 0.06);
-              ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
-            }
-
-            if (font) {
-              // Vector path. opentype.js places the BASELINE at y; ascender
-              // ratio gives us the right top-of-glyphs offset.
-              const ascend = (font.ascender / font.unitsPerEm) * fontSize;
-              lines.forEach((line, i) => {
-                if (!line) return;
-                // Horizontal alignment: opentype draws starting at the
-                // given x, so for center / right we need to offset by
-                // measured advance width.
-                const advance = font.getAdvanceWidth(line, fontSize);
-                let lineX = x;
-                if (el.textAlign === 'center' || el.textAlign === undefined) {
-                  lineX = x + w / 2 - advance / 2;
-                } else if (el.textAlign === 'right') {
-                  lineX = x + w - advance;
-                }
-                const lineY = y + ascend + i * fontSize * lineHeight;
-                const path = font.getPath(line, lineX, lineY, fontSize);
-                const path2d = new Path2D(path.toPathData(2));
-                ctx.fillStyle = el.color ?? '#000000';
-                ctx.fill(path2d);
-                if (el.outline) {
-                  // Re-stroke with shadow disabled — we don't want the
-                  // shadow on the outline strokes.
-                  const sb = ctx.shadowBlur;
-                  ctx.shadowBlur = 0;
-                  ctx.lineWidth = Math.max(1, fontSize * 0.04);
-                  ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-                  ctx.lineJoin = 'round';
-                  ctx.stroke(path2d);
-                  ctx.shadowBlur = sb;
-                }
-              });
-            } else {
-              // Font load failed (network, unsupported family, etc.) —
-              // fall back to the previous fillText path so we still emit
-              // SOMETHING readable. Tagged so we can grep for it later.
-              console.warn('[saveToLibrary] font load failed, falling back to fillText for', family);
-              ctx.font = `bold ${fontSize}px ${family}`;
-              ctx.fillStyle = el.color ?? '#000000';
-              ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
-              const textX = el.textAlign === 'left' ? x : x + w / 2;
-              lines.forEach((line, i) => {
-                ctx.fillText(line, textX, y + fontSize + i * fontSize * lineHeight);
-              });
-            }
-            ctx.restore();
+        if (el.opacity != null) ctx.globalAlpha = el.opacity;
+        ctx.beginPath();
+        switch (el.shapeType) {
+          case 'circle':
+            ctx.ellipse(x + w / 2, y + h / 2, w / 2 - sw / 2, h / 2 - sw / 2, 0, 0, Math.PI * 2);
+            break;
+          case 'triangle':
+            ctx.moveTo(x + w * 0.5, y + h * 0.05);
+            ctx.lineTo(x + w * 0.95, y + h * 0.95);
+            ctx.lineTo(x + w * 0.05, y + h * 0.95);
+            ctx.closePath();
+            break;
+          case 'line':
+            ctx.moveTo(x + w * 0.05, y + h * 0.5);
+            ctx.lineTo(x + w * 0.95, y + h * 0.5);
+            break;
+          case 'star': {
+            const pts: [number, number][] = [
+              [50, 5], [61.3, 38.4], [96.4, 38.4], [67.6, 60.5], [78.5, 93.9],
+              [50, 73.6], [21.5, 93.9], [32.4, 60.5], [3.6, 38.4], [38.7, 38.4],
+            ];
+            pts.forEach(([px, py], i) => {
+              const cx = x + (px / 100) * w;
+              const cy = y + (py / 100) * h;
+              if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+            });
+            ctx.closePath();
+            break;
+          }
+          case 'heart': {
+            const sx = (px: number) => x + (px / 100) * w;
+            const sy = (py: number) => y + (py / 100) * h;
+            ctx.moveTo(sx(50), sy(82));
+            ctx.bezierCurveTo(sx(22), sy(60), sx(5), sy(42), sx(5), sy(28));
+            ctx.bezierCurveTo(sx(5), sy(12), sx(18), sy(5), sx(30), sy(5));
+            ctx.bezierCurveTo(sx(38), sy(5), sx(45), sy(9), sx(50), sy(15));
+            ctx.bezierCurveTo(sx(55), sy(9), sx(62), sy(5), sx(70), sy(5));
+            ctx.bezierCurveTo(sx(82), sy(5), sx(95), sy(12), sx(95), sy(28));
+            ctx.bezierCurveTo(sx(95), sy(42), sx(78), sy(60), sx(50), sy(82));
+            ctx.closePath();
+            break;
+          }
+          case 'rect':
+          default:
+            ctx.rect(x + sw / 2, y + sw / 2, w - sw, h - sw);
+            break;
+        }
+        if (el.shapeType === 'line') {
+          ctx.strokeStyle = stroke || fill;
+          ctx.lineWidth = sw || (w * 0.06);
+          ctx.lineCap = 'round';
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = fill;
+          ctx.fill();
+          if (stroke && sw > 0) {
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = sw;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
           }
         }
-        dataUrl = canvas.toDataURL('image/png');
+        ctx.restore();
+      } else if (el.type === 'image' && el.content) {
+        try {
+          const img = document.createElement('img');
+          img.crossOrigin = 'anonymous';
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error('img load failed'));
+            img.src = el.content;
+          });
+          const aspect = img.naturalHeight / img.naturalWidth;
+          ctx.drawImage(img, x, y, w, w * aspect);
+        } catch { /* skip on load failure */ }
+      } else if (el.type === 'text' && el.content) {
+        const fontSize = ((el.fontSize ?? 24) * widthPx) / 800;
+        const family = el.fontFamily ?? 'Inter';
+        const lineHeight = el.lineHeight ?? 1.2;
+        const lines = el.content.split('\n');
+        const font = await loadFontForText(family, 700, el.content);
+        ctx.save();
+        if (el.rotation) {
+          ctx.translate(x + w / 2, y + fontSize / 2);
+          ctx.rotate(((el.rotation || 0) * Math.PI) / 180);
+          ctx.translate(-(x + w / 2), -(y + fontSize / 2));
+        }
+        if (!el.outline) {
+          ctx.shadowColor = 'rgba(0,0,0,0.3)';
+          ctx.shadowBlur = Math.max(2, fontSize * 0.06);
+          ctx.shadowOffsetY = Math.max(1, fontSize * 0.04);
+        }
+        if (font) {
+          const ascend = (font.ascender / font.unitsPerEm) * fontSize;
+          lines.forEach((line, i) => {
+            if (!line) return;
+            const advance = font.getAdvanceWidth(line, fontSize);
+            let lineX = x;
+            if (el.textAlign === 'center' || el.textAlign === undefined) {
+              lineX = x + w / 2 - advance / 2;
+            } else if (el.textAlign === 'right') {
+              lineX = x + w - advance;
+            }
+            const lineY = y + ascend + i * fontSize * lineHeight;
+            const path = font.getPath(line, lineX, lineY, fontSize);
+            const path2d = new Path2D(path.toPathData(2));
+            ctx.fillStyle = el.color ?? '#000000';
+            ctx.fill(path2d);
+            if (el.outline) {
+              const sb = ctx.shadowBlur;
+              ctx.shadowBlur = 0;
+              ctx.lineWidth = Math.max(1, fontSize * 0.04);
+              ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+              ctx.lineJoin = 'round';
+              ctx.stroke(path2d);
+              ctx.shadowBlur = sb;
+            }
+          });
+        } else {
+          console.warn('[renderDesignSidePng] font load failed, falling back to fillText for', family);
+          ctx.font = `bold ${fontSize}px ${family}`;
+          ctx.fillStyle = el.color ?? '#000000';
+          ctx.textAlign = (el.textAlign as CanvasTextAlign) ?? 'center';
+          const textX = el.textAlign === 'left' ? x : x + w / 2;
+          lines.forEach((line, i) => {
+            ctx.fillText(line, textX, y + fontSize + i * fontSize * lineHeight);
+          });
+        }
+        ctx.restore();
       }
+    }
+    return canvas.toDataURL('image/png');
+  }
+
+  async function handleSaveToLibrary() {
+    if (!librarySaveName.trim() || librarySaving) return;
+    const front = designElements.filter(el => (el.side ?? 'front') === 'front');
+    if (front.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
+    setLibrarySaving(true);
+    try {
+      const dataUrl = await renderDesignSidePng('front');
+      if (!dataUrl) throw new Error('nothing to render');
 
       // Upload PNG to Spaces, get hosted URL
       const token = getAuthToken();
@@ -874,6 +852,83 @@ export default function DesignStudioPage() {
       setLibrarySaving(false);
     }
   }
+
+  // ─── Attach-to-invoice mockup save ──────────────────────────────────
+  // When the studio was launched from the admin Create Invoice screen
+  // (?attachToInvoice=<id>), render front + back design PNGs, upload them,
+  // ask the server to composite each onto the product image, then create a
+  // mockup row tied to the invoice and navigate back to the admin editor.
+  const [savingInvoiceMockup, setSavingInvoiceMockup] = useState(false);
+  async function handleSaveMockupToInvoice() {
+    if (!attachToInvoiceId || savingInvoiceMockup) return;
+    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
+    const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
+    const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
+    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+
+    setSavingInvoiceMockup(true);
+    try {
+      const token = getAuthToken();
+      const productBackImg = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || productImg;
+
+      // Render one side: produce a transparent-bg PNG → upload → ask server
+      // to composite onto the side's product photo. Returns the composited
+      // mockup URL (hosted on Spaces), or null if the side has no elements.
+      async function buildSide(side: ViewName, productImageForSide: string): Promise<string | null> {
+        const dataUrl = await renderDesignSidePng(side);
+        if (!dataUrl) return null;
+        const up = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ imageBase64: dataUrl, filename: `studio-${attachToInvoiceId}-${side}.png`, customerEmail: 'admin-studio-invoice' }),
+        });
+        if (!up.ok) throw new Error('graphic upload failed');
+        const { url: graphicUrl } = await up.json();
+        const comp = await fetch('/api/admin/mockups/compose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            productImageUrl: productImageForSide,
+            graphicUrl,
+            placement: { x: 30, y: 22, width: 40, rotation: 0 },
+          }),
+        });
+        if (!comp.ok) throw new Error('composite failed');
+        const { url } = await comp.json();
+        return url || null;
+      }
+
+      const [frontUrl, backUrl] = await Promise.all([
+        hasFront ? buildSide('front', productImg) : Promise.resolve(null),
+        hasBack ? buildSide('back', productBackImg) : Promise.resolve(null),
+      ]);
+
+      const create = await fetch('/api/admin/mockups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: designName && designName !== 'Untitled design' ? designName : `Invoice ${attachToInvoiceId} Mockup`,
+          invoice_id: Number(attachToInvoiceId),
+          product_id: null,
+          product_name: selectedProduct?.name || null,
+          product_image_url: productImg,
+          preview_image_url: frontUrl,
+          preview_image_url_back: backUrl,
+          status: 'draft',
+        }),
+      });
+      if (!create.ok) throw new Error('mockup save failed');
+
+      // Return to admin invoice editor with the new invoice id loaded.
+      navigate(`/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`);
+    } catch (e) {
+      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setSavingInvoiceMockup(false);
+    }
+  }
+
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
@@ -1831,6 +1886,18 @@ export default function DesignStudioPage() {
           {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           {isSaving ? 'Saving...' : 'Save'}
         </button>
+        {attachToInvoiceId && (
+          <button
+            type="button"
+            onClick={handleSaveMockupToInvoice}
+            disabled={savingInvoiceMockup}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            title={`Save mockup and attach to invoice ${attachToInvoiceId}`}
+          >
+            {savingInvoiceMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {savingInvoiceMockup ? 'Saving…' : 'Save Mockup to Invoice'}
+          </button>
+        )}
         <button
           type="button"
           onClick={handleGetPrice}

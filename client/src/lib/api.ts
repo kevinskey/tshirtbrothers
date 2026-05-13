@@ -659,6 +659,7 @@ export interface Invoice {
   quote_id: string | null;
   mockup_id: number | null;
   mockup_preview_url: string | null;
+  mockup_preview_url_back: string | null;
   payments: { amount: number; method: string; date: string }[];
   sent_at: string | null;
   created_at: string;
