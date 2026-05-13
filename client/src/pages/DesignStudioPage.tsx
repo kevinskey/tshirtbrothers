@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import type { MouseEvent as ReactMouseEvent, TouchEvent as ReactTouchEvent } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
@@ -961,6 +962,11 @@ export default function DesignStudioPage() {
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
           design_color_index: selectedColorIdx,
+          // Per-side print-zone rectangles in % of the product photo.
+          // The mockups table's `placement` JSONB now holds the per-side
+          // shape — legacy single-rect rows stay valid because reads
+          // accept either format.
+          placement,
           status: 'draft',
         }),
       });
@@ -1021,6 +1027,11 @@ export default function DesignStudioPage() {
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
           design_color_index: selectedColorIdx,
+          // Per-side print-zone rectangles in % of the product photo.
+          // The mockups table's `placement` JSONB now holds the per-side
+          // shape — legacy single-rect rows stay valid because reads
+          // accept either format.
+          placement,
           status: 'draft',
         }),
       });
@@ -1064,6 +1075,11 @@ export default function DesignStudioPage() {
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
           design_color_index: selectedColorIdx,
+          // Per-side print-zone rectangles in % of the product photo.
+          // The mockups table's `placement` JSONB now holds the per-side
+          // shape — legacy single-rect rows stay valid because reads
+          // accept either format.
+          placement,
         }),
       });
       if (!patch.ok) throw new Error('mockup save failed');
@@ -1279,6 +1295,143 @@ export default function DesignStudioPage() {
   // mockup save flow to screenshot exactly what the admin sees instead of
   // running a server-side compose with a placement constant.
   const designSurfaceRef = useRef<HTMLDivElement>(null);
+  // Ref to the full product-photo backdrop. Drag/resize of the print-zone
+  // rectangle uses this as the reference for converting pointer deltas
+  // to % of the photo.
+  const productBgRef = useRef<HTMLDivElement>(null);
+
+  // Per-side print-zone placement in % of the product backdrop. The
+  // rectangle is dashed and draggable in the studio; the design elements
+  // live inside it, so their positions are % of the rectangle, not the
+  // shirt. Defaults are conservative (front: chest-print; back: bigger,
+  // higher up; sleeve: small right sleeve area).
+  type Placement = { x: number; y: number; width: number; height: number };
+  const [placement, setPlacement] = useState<Record<ViewName, Placement>>({
+    front: { x: 30, y: 22, width: 40, height: 40 },
+    back: { x: 25, y: 18, width: 50, height: 50 },
+    sleeve: { x: 70, y: 25, width: 18, height: 18 },
+  });
+  const currentPlacement = placement[currentView];
+  function updateCurrentPlacement(next: Placement | ((prev: Placement) => Placement)) {
+    setPlacement((all) => {
+      const prev = all[currentView];
+      const resolved = typeof next === 'function' ? next(prev) : next;
+      return { ...all, [currentView]: resolved };
+    });
+  }
+
+  // Quick presets that snap the placement rectangle to common print zones.
+  const PLACEMENT_PRESETS: Record<string, Partial<Record<ViewName, Placement>>> = {
+    'left-chest': { front: { x: 55, y: 22, width: 18, height: 18 } },
+    'chest':      { front: { x: 30, y: 22, width: 40, height: 40 }, back: { x: 25, y: 18, width: 50, height: 50 } },
+    'full-front': { front: { x: 18, y: 18, width: 64, height: 64 }, back: { x: 18, y: 18, width: 64, height: 64 } },
+    'pocket':     { front: { x: 60, y: 28, width: 14, height: 14 } },
+    'sleeve':     { sleeve: { x: 70, y: 25, width: 18, height: 18 } },
+  };
+  function applyPlacementPreset(key: string) {
+    const preset = PLACEMENT_PRESETS[key];
+    if (!preset) return;
+    const next = preset[currentView];
+    if (next) updateCurrentPlacement(next);
+  }
+
+  // Drag/resize the print-zone rectangle. Pointer deltas convert to % of
+  // the product backdrop's rendered size. Mode is either 'move' or one of
+  // four corners; corners pin the opposite corner of the rect.
+  type PlacementDragMode = 'move' | 'nw' | 'ne' | 'sw' | 'se';
+  const placementDragStateRef = useRef<{
+    mode: PlacementDragMode;
+    startClientX: number;
+    startClientY: number;
+    start: Placement;
+    bgWidth: number;
+    bgHeight: number;
+  } | null>(null);
+
+  function startPlacementDrag(mode: PlacementDragMode, clientX: number, clientY: number) {
+    const bg = productBgRef.current?.getBoundingClientRect();
+    if (!bg) return;
+    placementDragStateRef.current = {
+      mode,
+      startClientX: clientX,
+      startClientY: clientY,
+      start: { ...currentPlacement },
+      bgWidth: bg.width,
+      bgHeight: bg.height,
+    };
+  }
+
+  function applyPlacementDrag(clientX: number, clientY: number) {
+    const s = placementDragStateRef.current;
+    if (!s) return;
+    const dxPct = ((clientX - s.startClientX) / s.bgWidth) * 100;
+    const dyPct = ((clientY - s.startClientY) / s.bgHeight) * 100;
+    const MIN = 6;
+    let next: Placement = { ...s.start };
+    if (s.mode === 'move') {
+      next.x = Math.max(0, Math.min(100 - s.start.width, s.start.x + dxPct));
+      next.y = Math.max(0, Math.min(100 - s.start.height, s.start.y + dyPct));
+    } else {
+      const right = s.start.x + s.start.width;
+      const bottom = s.start.y + s.start.height;
+      if (s.mode === 'nw' || s.mode === 'sw') {
+        next.x = Math.max(0, Math.min(right - MIN, s.start.x + dxPct));
+        next.width = right - next.x;
+      } else {
+        next.width = Math.max(MIN, Math.min(100 - s.start.x, s.start.width + dxPct));
+      }
+      if (s.mode === 'nw' || s.mode === 'ne') {
+        next.y = Math.max(0, Math.min(bottom - MIN, s.start.y + dyPct));
+        next.height = bottom - next.y;
+      } else {
+        next.height = Math.max(MIN, Math.min(100 - s.start.y, s.start.height + dyPct));
+      }
+    }
+    updateCurrentPlacement(next);
+  }
+
+  function endPlacementDrag() {
+    placementDragStateRef.current = null;
+  }
+
+  function onPlacementHandleMouseDown(mode: PlacementDragMode) {
+    return (e: ReactMouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startPlacementDrag(mode, e.clientX, e.clientY);
+      const onMove = (ev: MouseEvent) => applyPlacementDrag(ev.clientX, ev.clientY);
+      const onUp = () => {
+        endPlacementDrag();
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    };
+  }
+
+  function onPlacementHandleTouchStart(mode: PlacementDragMode) {
+    return (e: ReactTouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      e.stopPropagation();
+      startPlacementDrag(mode, t.clientX, t.clientY);
+      const onMove = (ev: TouchEvent) => {
+        const tt = ev.touches[0];
+        if (!tt) return;
+        applyPlacementDrag(tt.clientX, tt.clientY);
+      };
+      const onEnd = () => {
+        endPlacementDrag();
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onEnd);
+        window.removeEventListener('touchcancel', onEnd);
+      };
+      window.addEventListener('touchmove', onMove, { passive: true });
+      window.addEventListener('touchend', onEnd);
+      window.addEventListener('touchcancel', onEnd);
+    };
+  }
   const [dragState, setDragState] = useState<{
     elementId: string;
     mode: 'move' | 'resize';
@@ -1377,6 +1530,23 @@ export default function DesignStudioPage() {
 
         if (m.design_canvas_inches) setCanvasInches(Number(m.design_canvas_inches));
         if (m.design_canvas_inches_h) setCanvasInchesH(Number(m.design_canvas_inches_h));
+        // Restore per-side placement. Accept either the new
+        // {front,back,sleeve} shape or the legacy single rect.
+        if (m.placement && typeof m.placement === 'object') {
+          const raw = m.placement as Record<string, unknown>;
+          const isLegacy = typeof raw.x === 'number' && typeof raw.y === 'number';
+          if (isLegacy) {
+            const legacy = raw as unknown as { x: number; y: number; width: number; height?: number };
+            const rect = { x: legacy.x, y: legacy.y, width: legacy.width, height: legacy.height ?? legacy.width };
+            setPlacement({ front: rect, back: rect, sleeve: rect });
+          } else {
+            setPlacement((prev) => ({
+              front: (raw.front as Placement) || prev.front,
+              back: (raw.back as Placement) || prev.back,
+              sleeve: (raw.sleeve as Placement) || prev.sleeve,
+            }));
+          }
+        }
         if (typeof m.design_color_index === 'number') {
           setSelectedColorIdx(m.design_color_index);
           // The visible product image only honors the chosen swatch when
@@ -2974,54 +3144,109 @@ export default function DesignStudioPage() {
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
       <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 grid place-items-center" ref={canvasRef}>
+        {/* Print-zone preset bar — one-click snap to common print sizes
+            for the current side. The rectangle on the product photo is
+            still freely draggable; presets just save the admin a click. */}
+        {selectedProduct && (
+          <div className="absolute -top-2 md:top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 px-2 py-1 bg-white/95 backdrop-blur rounded-full shadow border border-gray-200 text-[10px]">
+            <span className="text-gray-500 px-1">Print zone:</span>
+            {(currentView === 'front'
+              ? ([['left-chest', 'Left Chest'], ['chest', 'Chest'], ['full-front', 'Full Front'], ['pocket', 'Pocket']] as const)
+              : currentView === 'back'
+                ? ([['chest', 'Center'], ['full-front', 'Full Back']] as const)
+                : ([['sleeve', 'Sleeve']] as const)
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => applyPlacementPreset(key)}
+                className="px-2 py-1 rounded-full text-gray-700 hover:bg-blue-50 hover:text-blue-700 font-medium"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Product backdrop — fills a square area at the wrapper width.
+            Print-zone overlay is positioned in % of THIS box, not of the
+            old canvasInches-aspect design surface. */}
         <div
-          ref={designSurfaceRef}
-          className="relative bg-white rounded-2xl shadow-sm overflow-hidden flex items-center justify-center select-none"
+          ref={productBgRef}
+          className="relative bg-white rounded-2xl shadow-sm overflow-hidden select-none"
           style={{
             touchAction: 'pinch-zoom',
-            aspectRatio: `${canvasInches} / ${canvasInchesH}`,
-            // Zoom multiplies width — height tracks via aspect-ratio. > 100%
-            // overflows the parent main (which has overflow-auto), so
-            // horizontal + vertical scrollbars appear. mx-auto centers the
-            // canvas while it still fits.
+            aspectRatio: '1 / 1',
             width: `${100 * canvasZoom}%`,
-            // containerType: text inside this surface uses cqw units so
-            // font size scales with the canvas width — independent of the
-            // canvas's literal pixel size on screen. Without this, a 1"
-            // text on a 3"-wide canvas would render at the same pixel size
-            // as on a 12" canvas (i.e. 4x too large visually).
-            containerType: 'inline-size',
           }}
         >
           {displayImage ? (
             <img
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
-              className="w-full h-full object-contain p-0 md:p-4 pointer-events-none"
+              className="absolute inset-0 w-full h-full object-contain p-0 md:p-4 pointer-events-none"
               draggable={false}
             />
           ) : blankCanvasMode ? (
-            // Admin chose Blank Canvas — show a transparent design surface
-            // with a subtle hint instead of the product picker prompt.
             <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center pointer-events-none">
               <p className="text-sm text-gray-400 font-medium">Blank canvas — add text, art, or AI designs</p>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-gray-400">
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
               <Shirt className="h-16 w-16 mb-2" />
               <p className="text-sm font-medium">Select a product to start designing</p>
               <button
                 type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  setActiveTool('products');
-                }}
+                onClick={e => { e.stopPropagation(); setActiveTool('products'); }}
                 className="mt-2 text-sm text-red-600 font-semibold hover:underline"
               >
                 Browse Products
               </button>
             </div>
           )}
+
+          {/* Print-zone overlay — draggable + resizable. Design elements
+              live inside; their x/y/width % are relative to THIS box, not
+              the product photo, so positioning is preserved WYSIWYG.
+              containerType: inline-size keeps cqw font scaling correct. */}
+          <div
+            ref={designSurfaceRef}
+            className="absolute border-2 border-dashed border-blue-400/80 bg-transparent group"
+            style={{
+              left: `${currentPlacement.x}%`,
+              top: `${currentPlacement.y}%`,
+              width: `${currentPlacement.width}%`,
+              height: `${currentPlacement.height}%`,
+              containerType: 'inline-size',
+              touchAction: 'none',
+            }}
+          >
+            {/* Drag handle (top center). Outside the rect's content area
+                so clicking the design surface itself doesn't accidentally
+                drag the rectangle while you're trying to move an element. */}
+            <div
+              onMouseDown={onPlacementHandleMouseDown('move')}
+              onTouchStart={onPlacementHandleTouchStart('move')}
+              className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-blue-500 hover:bg-blue-600 text-white text-[10px] uppercase tracking-wider font-semibold rounded cursor-move select-none whitespace-nowrap z-20 shadow-sm"
+              title="Drag to move the print zone"
+            >
+              ⤧ Print Zone
+            </div>
+            {/* Four corner resize handles. */}
+            {(['nw', 'ne', 'sw', 'se'] as const).map((c) => (
+              <div
+                key={c}
+                onMouseDown={onPlacementHandleMouseDown(c)}
+                onTouchStart={onPlacementHandleTouchStart(c)}
+                className={`absolute w-3 h-3 bg-blue-500 border-2 border-white rounded-sm z-20 shadow ${
+                  c === 'nw' ? '-top-1.5 -left-1.5 cursor-nwse-resize'
+                  : c === 'ne' ? '-top-1.5 -right-1.5 cursor-nesw-resize'
+                  : c === 'sw' ? '-bottom-1.5 -left-1.5 cursor-nesw-resize'
+                  : '-bottom-1.5 -right-1.5 cursor-nwse-resize'
+                }`}
+                title="Drag to resize"
+              />
+            ))}
 
           {/* Fabric renderer (gated on ?canvas=fabric). Sibling of the legacy
               element loop below — never both at once. The bridge owns its
@@ -3232,6 +3457,9 @@ export default function DesignStudioPage() {
             canvasInchesH={canvasInchesH}
           />
         </div>
+        {/* Close productBgRef wrapper (was just designSurfaceRef before
+            the refactor introduced the product-photo backdrop level). */}
+      </div>
       </div>
 
       {/* View Switcher — left column, collapses once a side is chosen */}
