@@ -1788,14 +1788,46 @@ export default function AdminPage() {
     }
   }
 
+  // Aggregate per-size quantities across all line items. Falls back to the
+  // legacy `quote.sizes` column when no items are present (instant-quote etc).
+  function sizeMapForQuote(q: Quote | null): Record<string, number> {
+    const out: Record<string, number> = {};
+    if (!q) return out;
+    if (q.items && q.items.length > 0) {
+      for (const it of q.items) {
+        const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
+        for (const s of sizes) {
+          if (s?.size && Number(s.quantity) > 0) out[s.size] = (out[s.size] || 0) + Number(s.quantity);
+        }
+      }
+      return out;
+    }
+    const legacy = typeof q.sizes === 'string' ? JSON.parse(q.sizes as string) : q.sizes;
+    if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
+      for (const [size, qty] of Object.entries(legacy as Record<string, number>)) {
+        if (Number(qty) > 0) out[size] = Number(qty);
+      }
+    } else if (Array.isArray(legacy)) {
+      for (const s of legacy as Array<{ size: string; quantity: number }>) {
+        if (s?.size && Number(s.quantity) > 0) out[s.size] = (out[s.size] || 0) + Number(s.quantity);
+      }
+    }
+    return out;
+  }
+
   async function handleCalculateFromGangSheet() {
     if (!priceModalQuote) return;
     setCalcError(null);
     setCalcLoading(true);
     try {
-      const qty = Number(priceModalQuote.quantity) || 1;
+      // Prefer the first line item's product_id; legacy column otherwise.
+      const firstItem = priceModalQuote.items?.[0];
+      const productId = firstItem?.product_id
+        ?? Number((priceModalQuote as unknown as { product_id?: number }).product_id || 0);
+      const totalQty = Object.values(sizeMapForQuote(priceModalQuote)).reduce((a, b) => a + b, 0);
+      const qty = totalQty || Number(priceModalQuote.quantity) || 1;
       const result = await calculateQuotePrice({
-        product_id: Number((priceModalQuote as unknown as { product_id?: number }).product_id || 0),
+        product_id: Number(productId || 0),
         quantity: qty,
         graphic_width_in: parseFloat(calcGraphicW) || 0,
         graphic_height_in: parseFloat(calcGraphicH) || 0,
@@ -1828,14 +1860,13 @@ export default function AdminPage() {
   function handleSendPrice(e: FormEvent) {
     e.preventDefault();
     if (!priceModalQuote) return;
-    // Calculate garment total from per-size prices × quantities
-    const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
+    // Calculate garment total from per-size prices × quantities, aggregated
+    // across all line items (or fall back to the legacy sizes column).
+    const sizeMap = sizeMapForQuote(priceModalQuote);
     let garmentTotal = 0;
-    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
-      Object.entries(sizes).forEach(([size, qty]) => {
-        const pricePerItem = parseFloat(sizeMarkups[size] || '0');
-        garmentTotal += pricePerItem * Number(qty);
-      });
+    for (const [size, qty] of Object.entries(sizeMap)) {
+      const pricePerItem = parseFloat(sizeMarkups[size] || '0');
+      garmentTotal += pricePerItem * Number(qty);
     }
     const designFee = parseFloat(priceDesignFee) || 0;
     const rushFee = parseFloat(priceRushFee) || 0;
@@ -1858,14 +1889,11 @@ export default function AdminPage() {
     setPriceRushFee('0');
     setPriceShipping('0');
     setPriceMessage('');
-    // Initialize per-size markups from quote sizes
-    const sizes = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
+    // Seed a markup input for every size that has positive quantity, drawn
+    // from the line items if present (so admin-edited quotes carry through)
+    // and from the legacy sizes column for instant-quote submissions.
     const markups: Record<string, string> = {};
-    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
-      Object.entries(sizes).forEach(([size, qty]) => {
-        if (Number(qty) > 0) markups[size] = '';
-      });
-    }
+    for (const size of Object.keys(sizeMapForQuote(quote))) markups[size] = '';
     setSizeMarkups(markups);
     setOpenActionMenu(null);
   }
@@ -6723,9 +6751,10 @@ export default function AdminPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {Object.entries(sizeMarkups).map(([size, price]) => {
-                            const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
-                            const qty = Number((sizes as Record<string, number>)?.[size] || 0);
+                          {(() => {
+                            const sizeQtys = sizeMapForQuote(priceModalQuote);
+                            return Object.entries(sizeMarkups).map(([size, price]) => {
+                            const qty = Number(sizeQtys[size] || 0);
                             const perItem = parseFloat(price) || 0;
                             return (
                               <tr key={size}>
@@ -6748,7 +6777,8 @@ export default function AdminPage() {
                                 <td className="px-4 py-2 text-right font-medium text-gray-900">${(perItem * qty).toFixed(2)}</td>
                               </tr>
                             );
-                          })}
+                          });
+                          })()}
                         </tbody>
                       </table>
                     </div>
@@ -6784,12 +6814,10 @@ export default function AdminPage() {
 
                   {/* Total Preview */}
                   {(() => {
-                    const sizes = typeof priceModalQuote.sizes === 'string' ? JSON.parse(priceModalQuote.sizes as string) : priceModalQuote.sizes;
+                    const sizeQtys = sizeMapForQuote(priceModalQuote);
                     let garmentTotal = 0;
-                    if (sizes && typeof sizes === 'object' && !Array.isArray(sizes)) {
-                      Object.entries(sizes).forEach(([size, qty]) => {
-                        garmentTotal += (parseFloat(sizeMarkups[size] || '0')) * Number(qty);
-                      });
+                    for (const [size, qty] of Object.entries(sizeQtys)) {
+                      garmentTotal += (parseFloat(sizeMarkups[size] || '0')) * Number(qty);
                     }
                     const fees = (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0) + (parseFloat(priceShipping) || 0);
                     const total = garmentTotal + fees;
