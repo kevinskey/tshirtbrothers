@@ -655,10 +655,20 @@ export default function DesignStudioPage() {
 
     try {
       await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      console.log('[saveToLibrary] capturing surface PNG…');
+      console.log('[saveToLibrary] capturing surface PNG (excluding product photo)…');
       const html2canvas = (await import('html2canvas')).default;
+      const productImg = productImgRef.current;
       const cv = await withTimeout(
-        html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false }),
+        html2canvas(surface, {
+          backgroundColor: null,
+          useCORS: true,
+          scale: 2,
+          logging: false,
+          // Tell html2canvas to skip the product photo entirely. Hiding via
+          // visibility:hidden previously made it stall — ignoreElements is
+          // the well-supported way to drop a node before render.
+          ignoreElements: (el) => el === productImg,
+        }),
         30_000,
         'render',
       );
