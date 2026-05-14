@@ -6159,10 +6159,11 @@ export default function AdminPage() {
 
                   {/* Line items editor — product, sizes, print areas, pricing
                       all live as editable line items. Customer-submitted
-                      values have been backfilled as the first item. */}
+                      values have been backfilled as the first item. The
+                      product picker hits the catalog via live search so it
+                      can find any of the 5k+ products without preloading. */}
                   <QuoteItemsEditor
                     quote={q as Quote}
-                    products={products as Product[]}
                     onSaved={(updated) => {
                       setDetailQuote(updated as Quote);
                       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });

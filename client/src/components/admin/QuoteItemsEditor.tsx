@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus, Trash2, Loader2, Search } from 'lucide-react';
 import type { Product, Quote, QuoteItem } from '@/lib/api';
-import { replaceQuoteItems } from '@/lib/api';
+import { fetchAdminProducts, replaceQuoteItems } from '@/lib/api';
 
 // Internal draft row — sizes/print_areas always arrays in UI state so the
 // JSX never has to handle `unknown`.
@@ -56,11 +56,9 @@ function draftLineTotal(d: DraftItem): number {
 
 export default function QuoteItemsEditor({
   quote,
-  products,
   onSaved,
 }: {
   quote: Quote;
-  products: Product[];
   onSaved: (updated: Quote) => void;
 }) {
   const [drafts, setDrafts] = useState<DraftItem[]>(() =>
@@ -158,37 +156,17 @@ export default function QuoteItemsEditor({
             <div className="flex items-start gap-2">
               <div className="flex-1 min-w-0">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Product</label>
-                <select
-                  value={d.product_id ?? ''}
-                  onChange={(e) => {
-                    const pid = e.target.value ? Number(e.target.value) : null;
-                    const p = pid ? products.find((x) => Number(x.id) === pid) : null;
-                    updateDraft(i, {
-                      product_id: pid,
-                      product_name: p ? p.name : d.product_name,
-                    });
-                  }}
-                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white"
-                  style={{ fontSize: '16px' }}
-                >
-                  <option value="">— pick a product or type a name —</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={d.product_name}
-                  onChange={(e) => updateDraft(i, { product_name: e.target.value })}
-                  placeholder="Override / free-form product name"
-                  className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 mt-1 bg-white"
-                  style={{ fontSize: '16px' }}
+                <ProductPicker
+                  productId={d.product_id}
+                  productName={d.product_name}
+                  onPick={(p) => updateDraft(i, { product_id: Number(p.id), product_name: p.name })}
+                  onName={(name) => updateDraft(i, { product_name: name })}
                 />
               </div>
               <button
                 onClick={() => removeDraft(i)}
                 title="Remove item"
-                className="p-1.5 text-gray-400 hover:text-red-600"
+                className="p-1.5 text-gray-400 hover:text-red-600 mt-4"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -311,6 +289,125 @@ export default function QuoteItemsEditor({
       </div>
 
       {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+    </div>
+  );
+}
+
+// Live-search typeahead for picking a product from the 5k+-row catalog.
+// Falls back to free-form text — if the admin just types and tabs away,
+// product_name is set but product_id stays null. Suggestions list closes
+// when you click outside, click a result, or hit Enter on the highlighted one.
+function ProductPicker({
+  productId, productName, onPick, onName,
+}: {
+  productId: number | null;
+  productName: string;
+  onPick: (p: Product) => void;
+  onName: (name: string) => void;
+}) {
+  const [query, setQuery] = useState(productName);
+  const [results, setResults] = useState<Product[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Keep the input in sync if the parent draft changes the product_name from
+  // outside (e.g. when initial draft is loaded from server).
+  useEffect(() => { setQuery(productName); }, [productName]);
+
+  // Debounced live search.
+  useEffect(() => {
+    const term = query.trim();
+    if (!term) { setResults([]); return; }
+    setLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        const data = await fetchAdminProducts(term, 1);
+        setResults(data.products.slice(0, 12));
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 220);
+    return () => clearTimeout(handle);
+  }, [query]);
+
+  // Close the suggestion list when clicking anywhere outside it.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  function pick(p: Product) {
+    onPick(p);
+    setQuery(p.name);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={rootRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            onName(v);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search the catalog or type a custom name…"
+          className="w-full text-sm border border-gray-200 rounded pl-7 pr-2 py-1.5 bg-white"
+          style={{ fontSize: '16px' }}
+        />
+      </div>
+      {productId && (
+        <p className="text-[10px] text-gray-400 mt-0.5">
+          Catalog product #{productId}
+        </p>
+      )}
+      {open && (results.length > 0 || loading) && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-auto">
+          {loading && results.length === 0 && (
+            <div className="px-3 py-2 text-xs text-gray-400 flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" /> Searching…
+            </div>
+          )}
+          {results.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => pick(p)}
+              className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 border-b border-gray-100 last:border-b-0"
+            >
+              {('image_url' in p && (p as Product & { image_url?: string }).image_url) ? (
+                <img
+                  src={(p as Product & { image_url?: string }).image_url}
+                  alt=""
+                  className="w-8 h-8 object-cover rounded border border-gray-100 flex-shrink-0"
+                />
+              ) : (
+                <div className="w-8 h-8 rounded bg-gray-100 flex-shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-gray-900 truncate">{p.name}</p>
+                {('category' in p && (p as Product & { category?: string }).category) && (
+                  <p className="text-[11px] text-gray-500 truncate">
+                    {(p as Product & { category?: string }).category}
+                  </p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
