@@ -1790,14 +1790,22 @@ export default function AdminPage() {
 
   // Aggregate per-size quantities across all line items. Falls back to the
   // legacy `quote.sizes` column when no items are present (instant-quote etc).
+  // Items that carry a quantity but no size breakdown contribute under a
+  // synthetic "—" key so the Send Price grid still renders a row to price.
+  const NO_SIZE_KEY = '—';
   function sizeMapForQuote(q: Quote | null): Record<string, number> {
     const out: Record<string, number> = {};
     if (!q) return out;
     if (q.items && q.items.length > 0) {
       for (const it of q.items) {
         const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
-        for (const s of sizes) {
-          if (s?.size && Number(s.quantity) > 0) out[s.size] = (out[s.size] || 0) + Number(s.quantity);
+        const itemQty = Number(it.quantity) || 0;
+        if (sizes.length > 0) {
+          for (const s of sizes) {
+            if (s?.size && Number(s.quantity) > 0) out[s.size] = (out[s.size] || 0) + Number(s.quantity);
+          }
+        } else if (itemQty > 0) {
+          out[NO_SIZE_KEY] = (out[NO_SIZE_KEY] || 0) + itemQty;
         }
       }
       return out;
@@ -1813,6 +1821,26 @@ export default function AdminPage() {
       }
     }
     return out;
+  }
+
+  // Per-size opening markups: items' unit_price flows into the matching
+  // size cells so admins start from whatever the customer was already
+  // shown (e.g. the instant-quote calculator result).
+  function initialMarkups(q: Quote | null): Record<string, string> {
+    const seeded: Record<string, string> = {};
+    for (const size of Object.keys(sizeMapForQuote(q))) seeded[size] = '';
+    if (!q?.items) return seeded;
+    for (const it of q.items) {
+      const unit = it.unit_price != null && it.unit_price !== '' ? String(it.unit_price) : '';
+      if (!unit) continue;
+      const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
+      if (sizes.length > 0) {
+        for (const s of sizes) if (s?.size && Number(s.quantity) > 0 && !seeded[s.size]) seeded[s.size] = unit;
+      } else if (Number(it.quantity) > 0 && !seeded[NO_SIZE_KEY]) {
+        seeded[NO_SIZE_KEY] = unit;
+      }
+    }
+    return seeded;
   }
 
   async function handleCalculateFromGangSheet() {
@@ -1889,12 +1917,10 @@ export default function AdminPage() {
     setPriceRushFee('0');
     setPriceShipping('0');
     setPriceMessage('');
-    // Seed a markup input for every size that has positive quantity, drawn
-    // from the line items if present (so admin-edited quotes carry through)
+    // Seed per-size markups from line items (including item.unit_price when
+    // available, so the admin starts from what the customer was shown)
     // and from the legacy sizes column for instant-quote submissions.
-    const markups: Record<string, string> = {};
-    for (const size of Object.keys(sizeMapForQuote(quote))) markups[size] = '';
-    setSizeMarkups(markups);
+    setSizeMarkups(initialMarkups(quote));
     setOpenActionMenu(null);
   }
 
