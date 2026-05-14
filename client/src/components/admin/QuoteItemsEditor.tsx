@@ -61,15 +61,23 @@ export default function QuoteItemsEditor({
   quote: Quote;
   onSaved: (updated: Quote) => void;
 }) {
+  // A backfilled row from a no-product quote (customer uploaded a graphic
+  // without picking a product) is just clutter — don't render it as an
+  // empty fields skeleton. Filter it out at load.
+  const isEmptyItem = (d: DraftItem) =>
+    !d.product_id && !d.product_name.trim() && d.sizes.length === 0
+    && !d.unit_price.trim() && !d.line_total.trim() && !d.color.trim() && !d.notes.trim();
+
   const [drafts, setDrafts] = useState<DraftItem[]>(() =>
-    (quote.items || []).map(quoteItemToDraft));
+    (quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   // Reset when a different quote is opened.
   useEffect(() => {
-    setDrafts((quote.items || []).map(quoteItemToDraft));
+    setDrafts((quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
     setErr(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quote.id, quote.items]);
 
   const total = useMemo(
@@ -147,7 +155,9 @@ export default function QuoteItemsEditor({
       </div>
 
       {drafts.length === 0 && (
-        <p className="text-sm text-gray-500 italic mb-3">No items yet. Add one below.</p>
+        <p className="text-sm text-gray-500 italic mb-3">
+          No product on this quote yet — the customer didn't pick one. Add the product you'll be quoting them.
+        </p>
       )}
 
       <ul className="space-y-3">
@@ -277,7 +287,7 @@ export default function QuoteItemsEditor({
           onClick={addBlank}
           className="flex items-center gap-1 text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg"
         >
-          <Plus className="w-4 h-4" /> Add item
+          <Plus className="w-4 h-4" /> Add product
         </button>
         <button
           onClick={save}
