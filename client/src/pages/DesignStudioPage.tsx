@@ -1144,6 +1144,24 @@ export default function DesignStudioPage() {
   // captured PNG is just the design elements on a transparent background.
   const productImgRef = useRef<HTMLImageElement | null>(null);
 
+  // Live width of the design surface (productBg) in px. Text font-size used
+  // to derive from CSS cqw units (1% of container width), but html2canvas
+  // doesn't resolve cqw correctly — it falls back to a default rem, blowing
+  // text up to multiples of its rendered size in the saved output. Switch to
+  // a JS-computed px value (fontSize/800 of surfaceWidth) so DOM and capture
+  // agree on size to the pixel.
+  const [surfaceWidth, setSurfaceWidth] = useState(0);
+  useEffect(() => {
+    const node = productBgRef.current;
+    if (!node) return;
+    const measure = () => setSurfaceWidth(node.getBoundingClientRect().width);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
   // Per-side placement is kept for forward-compat (the mockup row still
   // stores it as JSONB), but the UI no longer constrains design elements
   // to it. Saving the current state preserves backward compatibility
@@ -3027,13 +3045,13 @@ export default function DesignStudioPage() {
                   <span
                     className="block whitespace-pre-wrap pointer-events-none"
                     style={{
-                      // cqw = 1% of the canvas surface width. fontSize is
-                      // stored in legacy 800-unit reference space; divide by 8
-                      // to get %-of-canvas-width directly. Replaces the old
-                      // hardcoded `* 0.5` px math which assumed a fixed canvas
-                      // display size and broke as soon as canvasInches went
-                      // away from its 12" default (e.g., 3"-wide tall designs).
-                      fontSize: `${(el.fontSize ?? 24) / 8}cqw`,
+                      // Compute fontSize in px from the measured surface
+                      // width. cqw would be cleaner CSS but html2canvas
+                      // doesn't resolve it correctly, so studio and capture
+                      // disagreed on sizes by 2-4x — text overlapped art
+                      // in the saved image even when it sat above in the
+                      // studio. px is unambiguous in both.
+                      fontSize: `${((el.fontSize ?? 24) * surfaceWidth) / 800}px`,
                       color: el.color ?? '#fff',
                       fontFamily: el.fontFamily ?? 'Inter',
                       fontWeight: 700,
