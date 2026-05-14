@@ -71,32 +71,45 @@ const SUBJECTS = [
 ];
 
 // Each style: a slug (folder + admin_designs.category) + a prompt template
-// that takes ONE subject and returns the final Flux prompt.
+// that takes ONE subject and returns the final Ideogram prompt. The
+// headline string is given to Ideogram in quotes so it renders that
+// exact text instead of picking words out of the style description.
 const STYLES = {
   'retro-mascot': {
     label: 'Retro Mascot',
-    prompt: (subject) =>
-      `vintage 1930s rubber-hose cartoon mascot of a ${subject}, anthropomorphized character with arms and legs and white gloves, big oval cartoon eyes, clean thin black outlines, flat two-color fill in warm retro hues (e.g. pink and teal, red and cream, orange and brown), textured cream background, bold serif headline above the mascot, centered composition, retro Disney studios style, t-shirt graphic, isolated, no extra elements`,
+    prompt: (subject) => {
+      const headline = subject.toUpperCase();
+      return `Vintage 1930s cartoon mascot illustration. A smiling anthropomorphic ${subject} with arms, legs, and big white-gloved hands, large oval cartoon eyes, clean thin black outlines, flat two-color fill in warm retro hues like pink and teal or red and cream, on a textured cream background with a thin black border. Above the character, the bold serif headline reads "${headline}" in a single arched line. Centered composition. Classic vintage rubber-hose cartoon style.`;
+    },
   },
   'hand-drawn-sketch': {
     label: 'Hand Drawn Sketch',
-    prompt: (subject) =>
-      `black ink hand-drawn pen sketch of a ${subject}, playful cartoon doodle style, motion squiggles and stars and swirls around the subject, transparent or clean white background, cartoon-bubble lettering text below reading the subject name, monochrome black line art only, sketchbook aesthetic, t-shirt graphic, isolated`,
+    prompt: (subject) => {
+      const lettering = subject.toUpperCase();
+      return `Black ink hand-drawn pen sketch of a ${subject}, playful cartoon doodle style, with motion squiggles, stars, and swirls around the subject, on a clean white background. Below the subject, fat cartoon-bubble lettering reads "${lettering}" in chunky 3D style. Monochrome black line art only. Sketchbook aesthetic. Isolated, t-shirt-ready.`;
+    },
   },
   'vintage-grunge-typography': {
     label: 'Vintage Grunge Typography',
-    prompt: (subject) =>
-      `vintage textured distressed typography poster celebrating ${subject}, bold serif headline with grunge and halftone texture, faded ink and washed-out edges, banner ribbons and small arrow accents, animal silhouettes like tigers or eagles flanking the type, muted vintage cream and faded blue and rust palette on dark charcoal background, retro Americana print, t-shirt graphic`,
+    prompt: (subject) => {
+      const headline = subject.toUpperCase();
+      return `Vintage textured distressed typography poster. Massive bold serif headline reads "${headline}" with heavy grunge and halftone texture, faded ink, and washed-out edges. Below the headline, a small banner ribbon reads "STAY STRONG" or "EST. 1990". Animal silhouettes like tigers or eagles flank the type. Muted vintage cream, faded sky blue, and rust palette on a dark charcoal background. Retro Americana print aesthetic. Centered.`;
+    },
   },
   'vintage-badge-logo': {
     label: 'Vintage Badge Logo',
-    prompt: (subject) =>
-      `vintage badge logo design featuring a ${subject}, black ink hand-lettered script combined with bold serif typography, classic line drawing illustration of the subject, decorative flourishes and a 'EST. 1992' style label, single-color black ink on cream paper background, classic American craft brand aesthetic, t-shirt graphic, isolated centered composition`,
+    prompt: (subject) => {
+      const top = 'HEADROOM AUDIO';
+      const middle = subject.toUpperCase();
+      return `Vintage hand-lettered badge logo on cream paper. Decorative ornaments and serif typography at the top reading "${top}". A large hand-lettered cursive script in the middle reads "${middle}" with flourishes. Below it, a classic single-color black ink line illustration of a ${subject}. A small "EST 1992" label at the bottom. Black ink only on cream paper. Classic American craft brand aesthetic. Centered, symmetric composition.`;
+    },
   },
   'streetwear-collage': {
     label: 'Streetwear Collage',
-    prompt: (subject) =>
-      `abstract streetwear collage graphic with a ${subject} as the centerpiece, red and black ink splatter and bold brush strokes, layered handwritten cursive scribbles, deconstructed silhouette with chaotic scribbled line work over the top, mixed-media street art and high-fashion editorial style, asymmetric composition, t-shirt print, isolated on near-white background`,
+    prompt: (subject) => {
+      const tag = subject.toUpperCase();
+      return `Abstract streetwear collage graphic with a ${subject} silhouette as the centerpiece in black ink, surrounded by red paint splatter and bold brush strokes, layered handwritten cursive scribbles in pencil and ink. In the bottom-right corner, the small bold sans-serif label reads "${tag} — STREETWEAR" with a tagline below. Mixed-media street art and high-fashion editorial style. Asymmetric composition. Near-white textured background.`;
+    },
   },
 };
 
