@@ -672,8 +672,56 @@ export default function DesignStudioPage() {
         30_000,
         'render',
       );
-      const dataUrl = cv.toDataURL('image/png');
-      console.log('[saveToLibrary] render ok, bytes ≈', Math.round(dataUrl.length / 1024), 'KB');
+
+      // Auto-crop the captured canvas to the non-transparent bounding box
+      // so the library asset is sized to the design, not the full surface.
+      // Scans alpha channel for the tightest box of visible pixels and
+      // copies that region into a new canvas.
+      const tight = (() => {
+        const ctx = cv.getContext('2d');
+        if (!ctx) return cv;
+        let img: ImageData;
+        try {
+          img = ctx.getImageData(0, 0, cv.width, cv.height);
+        } catch {
+          return cv;
+        }
+        const { data, width: W, height: H } = img;
+        let minX = W, minY = H, maxX = -1, maxY = -1;
+        const stride = 8; // 8x faster scan with negligible accuracy loss
+        for (let y = 0; y < H; y += stride) {
+          const rowOff = y * W * 4;
+          for (let x = 0; x < W; x += stride) {
+            const a = data[rowOff + x * 4 + 3]!;
+            if (a > 10) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        if (maxX < 0) return cv; // fully transparent — leave as-is
+        // Refine edges to within `stride` px so trim is tight.
+        const padding = 4;
+        minX = Math.max(0, minX - stride - padding);
+        minY = Math.max(0, minY - stride - padding);
+        maxX = Math.min(W - 1, maxX + stride + padding);
+        maxY = Math.min(H - 1, maxY + stride + padding);
+        const cw = maxX - minX + 1;
+        const ch = maxY - minY + 1;
+        if (cw <= 0 || ch <= 0 || (cw === W && ch === H)) return cv;
+        const out = document.createElement('canvas');
+        out.width = cw;
+        out.height = ch;
+        const octx = out.getContext('2d');
+        if (!octx) return cv;
+        octx.drawImage(cv, minX, minY, cw, ch, 0, 0, cw, ch);
+        return out;
+      })();
+
+      const dataUrl = tight.toDataURL('image/png');
+      console.log('[saveToLibrary] render ok, cropped to', tight.width, 'x', tight.height, '— bytes ≈', Math.round(dataUrl.length / 1024), 'KB');
 
       const token = getAuthToken();
       console.log('[saveToLibrary] uploading…');
