@@ -65,7 +65,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [view, setView] = useState<'create' | 'library'>('create');
+  // Land on the Library view by default — the sidebar entry is labeled
+  // "Art Library", so opening it on the Create tools was confusing.
+  // Create is one click away via the toggle in the header.
+  const [view, setView] = useState<'create' | 'library'>('library');
 
   // Save dialog
   const [saveDialog, setSaveDialog] = useState(false);
