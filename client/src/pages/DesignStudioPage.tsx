@@ -2036,15 +2036,19 @@ export default function DesignStudioPage() {
         >
           <Redo2 className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
-        >
-          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
+        {/* "Save" (customer design history) is irrelevant in admin mockup
+            modes — hide it so the toolbar has one save action only. */}
+        {!(newMockupMode || editMockupId || attachToInvoiceId) && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        )}
         {/* Two-state save: edit overrides create so we update in place
             instead of spawning a new mockup row each save. */}
         {attachToInvoiceId && !editMockupId && (
@@ -2083,6 +2087,9 @@ export default function DesignStudioPage() {
             {savingNewMockup ? 'Saving…' : 'Save Mockup'}
           </button>
         )}
+        {/* Get Price is the customer's quote-flow CTA — admins in mockup
+            mode don't need it taking up toolbar space. */}
+        {!(newMockupMode || editMockupId || attachToInvoiceId) && (
         <button
           type="button"
           onClick={handleGetPrice}
@@ -2090,6 +2097,7 @@ export default function DesignStudioPage() {
         >
           Get Price
         </button>
+        )}
       </div>
     </header>
   );
