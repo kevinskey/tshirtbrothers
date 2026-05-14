@@ -644,21 +644,18 @@ export default function DesignStudioPage() {
       }
     };
 
-    // Capture only the design elements (no shirt photo) by temporarily
-    // hiding the product image, html2canvas-ing the surface, then
-    // restoring. Avoids the opentype.js + cross-origin image load path
-    // that was hanging in the legacy renderer.
+    // Use the same html2canvas path the mockup save uses (which works).
+    // Hiding the product image first caused html2canvas to stall — keep
+    // it visible. The library item ends up including the shirt backdrop;
+    // we can crop / remove the background as a follow-up.
     const surface = designSurfaceRef.current;
     if (!surface) { setLibrarySaving(false); alert('Save failed: no canvas'); return; }
-    const productImg = productImgRef.current;
-    const prevVisibility = productImg ? productImg.style.visibility : null;
-    if (productImg) productImg.style.visibility = 'hidden';
     const prevSelected = selectedElementId;
     setSelectedElementId(null);
 
     try {
       await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      console.log('[saveToLibrary] capturing transparent PNG of design elements…');
+      console.log('[saveToLibrary] capturing surface PNG…');
       const html2canvas = (await import('html2canvas')).default;
       const cv = await withTimeout(
         html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false }),
@@ -703,8 +700,6 @@ export default function DesignStudioPage() {
       console.error('[saveToLibrary] error:', e);
       alert(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
-      // Always restore the product image + selection, even on error.
-      if (productImg) productImg.style.visibility = prevVisibility || '';
       if (prevSelected) setSelectedElementId(prevSelected);
       setLibrarySaving(false);
     }
