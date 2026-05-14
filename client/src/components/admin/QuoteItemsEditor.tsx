@@ -62,11 +62,12 @@ export default function QuoteItemsEditor({
   onSaved: (updated: Quote) => void;
 }) {
   // A backfilled row from a no-product quote (customer uploaded a graphic
-  // without picking a product) is just clutter — don't render it as an
-  // empty fields skeleton. Filter it out at load.
+  // and went through instant-quote without picking a real product) is just
+  // clutter — even if a price snapshot is attached, it's not a fulfillable
+  // line item. Anything with no catalog product link AND no sizes counts as
+  // empty; admin-added free-form items always have at least sizes.
   const isEmptyItem = (d: DraftItem) =>
-    !d.product_id && !d.product_name.trim() && d.sizes.length === 0
-    && !d.unit_price.trim() && !d.line_total.trim() && !d.color.trim() && !d.notes.trim();
+    !d.product_id && d.sizes.length === 0;
 
   const [drafts, setDrafts] = useState<DraftItem[]>(() =>
     (quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
