@@ -109,6 +109,7 @@ import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmi
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
+import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
 type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
@@ -6090,43 +6091,10 @@ export default function AdminPage() {
           const customerPhone = (q as Quote).customer_phone || (q as Quote).customerPhone || '';
           const productName = (q as Quote).product_name || (q as Quote).productName || '';
           const createdAt = (q as Quote).created_at || (q as Quote).createdAt || '';
-          const sizes = (q as Quote).sizes;
-          const printAreas = (q as Quote).print_areas;
           const shippingAddress = (q as Quote).shipping_address as { street?: string; city?: string; state?: string; zip?: string } | undefined;
           const total = q.estimated_price != null ? Number(q.estimated_price) : 0;
           const paid = q.deposit_amount != null ? Number(q.deposit_amount) : 0;
           const balance = total - paid;
-
-          const sizeEntries: [string, number][] = (() => {
-            if (!sizes) return [];
-            try {
-              const parsed = typeof sizes === 'string' ? JSON.parse(sizes) : sizes;
-              if (Array.isArray(parsed)) {
-                return parsed.map((s) =>
-                  typeof s === 'object' && s !== null
-                    ? [String((s as { size?: string }).size), Number((s as { quantity?: number }).quantity) || 0]
-                    : [String(s), 0]
-                );
-              }
-              if (typeof parsed === 'object' && parsed !== null) {
-                return Object.entries(parsed as Record<string, number>).filter(([, v]) => Number(v) > 0).map(([k, v]) => [k, Number(v)]);
-              }
-            } catch {
-              // ignore
-            }
-            return [];
-          })();
-
-          const printAreasList: string[] = (() => {
-            if (!printAreas) return [];
-            try {
-              const parsed = typeof printAreas === 'string' ? JSON.parse(printAreas) : printAreas;
-              if (Array.isArray(parsed)) return parsed.map(String);
-            } catch {
-              // ignore
-            }
-            return [];
-          })();
 
           return (
             <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailQuote(null)}>
@@ -6219,42 +6187,18 @@ export default function AdminPage() {
                     {customerPhone && <a href={`tel:${customerPhone}`} className="text-sm text-blue-600 block">{customerPhone}</a>}
                   </div>
 
-                  {/* Product */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Product</p>
-                    <p className="font-semibold text-gray-900">{productName}</p>
-                    {q.color && (
-                      <p className="text-sm text-gray-600">Color: <span className="font-medium">{q.color}</span></p>
-                    )}
-                    <p className="text-sm text-gray-600">Quantity: <span className="font-medium">{q.quantity}</span></p>
-                  </div>
-
-                  {/* Sizes breakdown */}
-                  {sizeEntries.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Sizes</p>
-                      <div className="grid grid-cols-4 gap-2">
-                        {sizeEntries.map(([size, qty]) => (
-                          <div key={size} className="bg-gray-50 rounded-lg p-2 text-center">
-                            <p className="text-xs text-gray-500">{size}</p>
-                            <p className="font-semibold text-gray-900">{qty}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Print Areas */}
-                  {printAreasList.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Print Areas</p>
-                      <div className="flex flex-wrap gap-2">
-                        {printAreasList.map((area) => (
-                          <span key={area} className="text-xs bg-gray-100 text-gray-700 px-3 py-1 rounded-full">{area}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* Line items editor — product, sizes, print areas, pricing
+                      all live as editable line items. Customer-submitted
+                      values have been backfilled as the first item. */}
+                  <QuoteItemsEditor
+                    quote={q as Quote}
+                    products={products as Product[]}
+                    onSaved={(updated) => {
+                      setDetailQuote(updated as Quote);
+                      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+                    }}
+                  />
 
                   {/* Shipping */}
                   <div>
