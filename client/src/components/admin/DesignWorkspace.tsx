@@ -1248,28 +1248,56 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
 
       {view === 'library' && (
         <div>
-          {/* Search + Filter */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search designs..."
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-                style={{ fontSize: '16px' }}
-              />
-            </div>
-            {/* min-w-0 lets this flex child shrink below its natural
-                content width so overflow-x-auto actually triggers — without
-                it the tabs row was just getting clipped on smaller screens. */}
-            <div className="flex gap-1 overflow-x-auto min-w-0 flex-1 sm:flex-none">
-              {['all', ...CATEGORIES].map(cat => (
-                <button key={cat} onClick={() => setCategoryFilter(cat)}
-                  className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition capitalize ${categoryFilter === cat ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                  {cat}
-                </button>
-              ))}
-            </div>
+          {/* Search row */}
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search designs..."
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          </div>
+          {/* Category tabs — own row, full width. overflow-x-auto now
+              works because there's no flex sibling competing for width.
+              Left/Right arrow keys cycle categories (with auto-scroll into
+              view); Home/End jump to first/last. */}
+          <div
+            role="tablist"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              const cats = ['all', ...CATEGORIES];
+              const idx = cats.indexOf(categoryFilter);
+              if (idx < 0) return;
+              let next = idx;
+              if (e.key === 'ArrowRight') next = Math.min(cats.length - 1, idx + 1);
+              else if (e.key === 'ArrowLeft') next = Math.max(0, idx - 1);
+              else if (e.key === 'Home') next = 0;
+              else if (e.key === 'End') next = cats.length - 1;
+              else return;
+              e.preventDefault();
+              const target = cats[next];
+              if (!target) return;
+              setCategoryFilter(target);
+              const btn = (e.currentTarget as HTMLDivElement).querySelector<HTMLButtonElement>(`[data-cat="${target}"]`);
+              btn?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+              btn?.focus();
+            }}
+            className="flex gap-1 overflow-x-auto mb-4 focus:outline-none focus:ring-2 focus:ring-orange-300 rounded-lg"
+          >
+            {['all', ...CATEGORIES].map(cat => (
+              <button
+                key={cat}
+                data-cat={cat}
+                role="tab"
+                aria-selected={categoryFilter === cat}
+                tabIndex={categoryFilter === cat ? 0 : -1}
+                onClick={() => setCategoryFilter(cat)}
+                className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition capitalize ${categoryFilter === cat ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {cat}
+              </button>
+            ))}
           </div>
 
           {/* Grid */}
