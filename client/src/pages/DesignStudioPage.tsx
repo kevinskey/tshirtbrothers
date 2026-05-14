@@ -1167,7 +1167,10 @@ export default function DesignStudioPage() {
   const [textInput, setTextInput] = useState('');
   // Defaults for newly-added text. Tweakable via the Edit Text drawer
   // after placement, so they don't need to be panel controls.
-  const textFontSize = 24;
+  // Default ~10% of surface width (fontSize 80 ÷ 800 × surfaceWidth). Matches
+  // the rough visual scale of a default image element so a fresh text +
+  // graphic come in at comparable sizes instead of text feeling tiny.
+  const textFontSize = 80;
   const textColor = '#FFFFFF';
 
   // --- Art panel state ---

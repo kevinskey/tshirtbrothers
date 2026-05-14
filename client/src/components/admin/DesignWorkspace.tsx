@@ -1259,7 +1259,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                 style={{ fontSize: '16px' }}
               />
             </div>
-            <div className="flex gap-1 overflow-x-auto">
+            {/* min-w-0 lets this flex child shrink below its natural
+                content width so overflow-x-auto actually triggers — without
+                it the tabs row was just getting clipped on smaller screens. */}
+            <div className="flex gap-1 overflow-x-auto min-w-0 flex-1 sm:flex-none">
               {['all', ...CATEGORIES].map(cat => (
                 <button key={cat} onClick={() => setCategoryFilter(cat)}
                   className={`px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition capitalize ${categoryFilter === cat ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
