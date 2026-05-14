@@ -156,6 +156,30 @@ router.post('/', async (req, res, next) => {
 });
 
 // GET / - List all quotes (admin only)
+// Shared aggregation: attach an ordered `items` array to each quote row by
+// pulling rows from quote_items via a lateral subquery. Returned as `[]`
+// when a quote has no items (shouldn't happen post-backfill, but defensive).
+const QUOTE_ITEMS_SUBQUERY = `
+  COALESCE((
+    SELECT json_agg(json_build_object(
+      'id',           qi.id,
+      'position',     qi.position,
+      'product_id',   qi.product_id,
+      'product_name', qi.product_name,
+      'color',        qi.color,
+      'sizes',        qi.sizes,
+      'quantity',     qi.quantity,
+      'print_areas',  qi.print_areas,
+      'design_url',   qi.design_url,
+      'unit_price',   qi.unit_price,
+      'line_total',   qi.line_total,
+      'notes',        qi.notes
+    ) ORDER BY qi.position, qi.id)
+    FROM quote_items qi
+    WHERE qi.quote_id = quotes.id
+  ), '[]'::json) AS items
+`;
+
 router.get('/', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { status, search, sort } = req.query;
@@ -179,12 +203,225 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const query = `SELECT * FROM quotes ${whereClause} ${orderClause}`;
+    const query = `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes ${whereClause} ${orderClause}`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     next(err);
+  }
+});
+
+// GET /:id — single quote with items. Admin-only.
+router.get('/:id', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const result = await pool.query(
+      `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
+      [req.params.id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── Line items CRUD ────────────────────────────────────────────────
+// All admin-only. Items are rendered against the quote on every read via
+// QUOTE_ITEMS_SUBQUERY above, so these routes only need to mutate.
+
+// Helper: total quantity from a sizes array of {size, quantity}.
+function totalQtyFromSizes(sizes) {
+  if (!Array.isArray(sizes)) return 0;
+  return sizes.reduce((n, s) => n + (Number(s?.quantity) || 0), 0);
+}
+
+// Helper: compute line_total when not explicitly given.
+function deriveLineTotal({ unit_price, quantity, line_total }) {
+  if (line_total != null && line_total !== '') return Number(line_total);
+  const u = Number(unit_price);
+  const q = Number(quantity);
+  if (Number.isFinite(u) && Number.isFinite(q)) return Math.round(u * q * 100) / 100;
+  return null;
+}
+
+// After any items mutation, recompute the quote's legacy estimated_price as
+// the sum of line totals so older code paths that read quotes.estimated_price
+// stay accurate without code changes.
+async function rebuildQuoteTotals(quoteId, client = pool) {
+  await client.query(
+    `UPDATE quotes
+       SET estimated_price = COALESCE((
+         SELECT SUM(line_total) FROM quote_items WHERE quote_id = $1
+       ), estimated_price),
+       quantity = COALESCE((
+         SELECT SUM(quantity) FROM quote_items WHERE quote_id = $1
+       ), quantity)
+     WHERE id = $1`,
+    [quoteId],
+  );
+}
+
+// POST /:id/items — add a line item.
+router.post('/:id/items', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      product_id   = null,
+      product_name = null,
+      color        = null,
+      sizes        = [],
+      quantity, // optional — derived from sizes if absent
+      print_areas  = [],
+      design_url   = null,
+      unit_price   = null,
+      line_total,
+      notes        = null,
+      position,
+    } = req.body || {};
+
+    const exists = await pool.query('SELECT 1 FROM quotes WHERE id = $1', [id]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Quote not found' });
+
+    const qty = Number.isFinite(Number(quantity)) ? Number(quantity) : totalQtyFromSizes(sizes);
+    const lt  = deriveLineTotal({ unit_price, quantity: qty, line_total });
+
+    // Default position: append after current last.
+    const posRes = await pool.query(
+      'SELECT COALESCE(MAX(position), -1) + 1 AS next FROM quote_items WHERE quote_id = $1',
+      [id],
+    );
+    const pos = Number.isFinite(Number(position)) ? Number(position) : posRes.rows[0].next;
+
+    const inserted = await pool.query(
+      `INSERT INTO quote_items
+         (quote_id, position, product_id, product_name, color, sizes, quantity,
+          print_areas, design_url, unit_price, line_total, notes)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12)
+       RETURNING *`,
+      [id, pos, product_id, product_name, color, JSON.stringify(sizes),
+       qty, JSON.stringify(print_areas), design_url, unit_price, lt, notes],
+    );
+
+    await rebuildQuoteTotals(id);
+    res.status(201).json(inserted.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /:id/items/:itemId — update a line item. Whitelisted fields only.
+router.patch('/:id/items/:itemId', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id, itemId } = req.params;
+
+    const allowed = ['product_id', 'product_name', 'color', 'sizes', 'quantity',
+                     'print_areas', 'design_url', 'unit_price', 'line_total',
+                     'notes', 'position'];
+    const sets = [];
+    const params = [];
+    for (const key of allowed) {
+      if (!(key in (req.body || {}))) continue;
+      params.push(['sizes', 'print_areas'].includes(key)
+        ? JSON.stringify(req.body[key] ?? [])
+        : req.body[key]);
+      sets.push(`${key} = $${params.length}${['sizes','print_areas'].includes(key) ? '::jsonb' : ''}`);
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'No editable fields supplied' });
+
+    sets.push(`updated_at = NOW()`);
+    params.push(itemId, id);
+
+    const result = await pool.query(
+      `UPDATE quote_items SET ${sets.join(', ')}
+        WHERE id = $${params.length - 1} AND quote_id = $${params.length}
+        RETURNING *`,
+      params,
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+
+    // If qty or unit_price changed and line_total wasn't explicitly set, recompute it.
+    const row = result.rows[0];
+    if ('line_total' in (req.body || {}) === false &&
+        ('unit_price' in (req.body || {}) || 'quantity' in (req.body || {}) || 'sizes' in (req.body || {}))) {
+      const qty = Number.isFinite(Number(row.quantity)) && Number(row.quantity) > 0
+        ? Number(row.quantity)
+        : totalQtyFromSizes(row.sizes);
+      const lt = deriveLineTotal({ unit_price: row.unit_price, quantity: qty, line_total: null });
+      if (lt != null) {
+        await pool.query('UPDATE quote_items SET quantity = $1, line_total = $2 WHERE id = $3',
+          [qty, lt, itemId]);
+      }
+    }
+
+    await rebuildQuoteTotals(id);
+    const fresh = await pool.query('SELECT * FROM quote_items WHERE id = $1', [itemId]);
+    res.json(fresh.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /:id/items/:itemId
+router.delete('/:id/items/:itemId', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id, itemId } = req.params;
+    const result = await pool.query(
+      'DELETE FROM quote_items WHERE id = $1 AND quote_id = $2 RETURNING id',
+      [itemId, id],
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
+    await rebuildQuoteTotals(id);
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /:id/items — replace the whole items list in one go. Easier for the
+// admin edit modal: the client sends the full desired array and we diff.
+router.put('/:id/items', authenticate, adminOnly, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const items = Array.isArray(req.body?.items) ? req.body.items : null;
+    if (!items) return res.status(400).json({ error: 'items array required' });
+
+    const exists = await client.query('SELECT 1 FROM quotes WHERE id = $1', [id]);
+    if (exists.rowCount === 0) return res.status(404).json({ error: 'Quote not found' });
+
+    await client.query('BEGIN');
+    await client.query('DELETE FROM quote_items WHERE quote_id = $1', [id]);
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const qty = Number.isFinite(Number(it.quantity)) ? Number(it.quantity)
+                : totalQtyFromSizes(it.sizes);
+      const lt = deriveLineTotal({ unit_price: it.unit_price, quantity: qty, line_total: it.line_total });
+      await client.query(
+        `INSERT INTO quote_items
+           (quote_id, position, product_id, product_name, color, sizes, quantity,
+            print_areas, design_url, unit_price, line_total, notes)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12)`,
+        [id, i, it.product_id ?? null, it.product_name ?? null, it.color ?? null,
+         JSON.stringify(it.sizes ?? []), qty,
+         JSON.stringify(it.print_areas ?? []), it.design_url ?? null,
+         it.unit_price ?? null, lt, it.notes ?? null],
+      );
+    }
+    await rebuildQuoteTotals(id, client);
+    await client.query('COMMIT');
+
+    const fresh = await pool.query(
+      `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
+      [id],
+    );
+    res.json(fresh.rows[0]);
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    next(err);
+  } finally {
+    client.release();
   }
 });
 

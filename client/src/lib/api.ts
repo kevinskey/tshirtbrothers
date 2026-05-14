@@ -120,6 +120,22 @@ export interface Quote {
     estimated_hours?: number;
     summary?: string;
   } | null;
+  items?: QuoteItem[];
+}
+
+export interface QuoteItem {
+  id?: number;             // missing for not-yet-persisted draft rows
+  position?: number;
+  product_id?: number | null;
+  product_name?: string | null;
+  color?: string | null;
+  sizes?: Array<{ size: string; quantity: number }> | unknown;
+  quantity?: number | null;
+  print_areas?: string[] | unknown;
+  design_url?: string | null;
+  unit_price?: number | string | null;
+  line_total?: number | string | null;
+  notes?: string | null;
 }
 
 export interface Product {
@@ -190,6 +206,19 @@ export async function updateQuoteStatus(id: string, status: string) {
   return authRequest<Quote>(`/quotes/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function fetchQuote(id: string) {
+  return authRequest<Quote>(`/quotes/${id}`);
+}
+
+// Replace the full set of line items on a quote in one shot. Easiest to
+// drive from a single "Save" button in an edit modal — the server diffs.
+export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
+  return authRequest<Quote>(`/quotes/${quoteId}/items`, {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
   });
 }
 
