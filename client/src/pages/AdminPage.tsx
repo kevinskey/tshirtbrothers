@@ -126,9 +126,10 @@ type NavItem =
   | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never }
   | { key: string; label: string; icon: typeof LayoutDashboard; to: string };
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  // Dashboard + Pipeline merged into one landing: the Pipeline page now
+  // shows the four stat cards above the search/filter list.
   { label: 'Workflow', items: [
-    { key: 'dashboard', label: 'Dashboard',  icon: LayoutDashboard },
-    { key: 'quotes',    label: 'Pipeline',   icon: FileText },
+    { key: 'quotes',    label: 'Dashboard',  icon: LayoutDashboard },
     { key: 'invoices',  label: 'Invoices',   icon: Receipt },
     { key: 'customers', label: 'Customers',  icon: Users },
   ]},
@@ -489,7 +490,8 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  // Dashboard + Pipeline merged: 'quotes' (= Pipeline) is now the landing.
+  const [activeSection, setActiveSection] = useState<Section>('quotes');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Convert an accepted/completed quote into a draft invoice. Pre-fills the
@@ -604,7 +606,8 @@ export default function AdminPage() {
     const editInvoice = params.get('editInvoice');
     const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
     if (section && validSections.includes(section as Section)) {
-      setActiveSection(section as Section);
+      // Dashboard was merged into Pipeline; old deep links land on the same page.
+      setActiveSection(section === 'dashboard' ? 'quotes' : (section as Section));
     }
     if (id && /^\d+$/.test(id)) {
       setHighlightedQuoteId(id);
@@ -2019,11 +2022,16 @@ export default function AdminPage() {
           </Link>
         </div>
         {/* Dashboard */}
-        {activeSection === 'dashboard' && (
+        {/* Dashboard + Pipeline merged: stat cards on top, then the full
+            search / filter / list. Was two separate routes before. */}
+        {activeSection === 'quotes' && (
           <div>
-            <h2 className="text-xl sm:text-2xl font-display font-bold text-gray-900 mb-4 sm:mb-6">Dashboard</h2>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Dashboard</h2>
+              <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
+            </div>
 
-            {/* Stat Cards */}
+            {/* Stat cards (was a separate Dashboard page) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 mb-6">
               <StatCard
                 icon={ClipboardList}
@@ -2049,44 +2057,6 @@ export default function AdminPage() {
                 label="Categories"
                 loading={statsQuery.isLoading}
               />
-            </div>
-
-            {/* Recent Quotes */}
-            <div>
-              <h3 className="font-display font-semibold text-gray-900 mb-3">Recent Quotes</h3>
-              <div className="space-y-2">
-                {quotes.slice(0, 10).map((q: Quote) => (
-                  <div key={q.id} onClick={() => setDetailQuote(q)}
-                    className="bg-white rounded-xl border border-gray-200 p-3 flex items-center gap-3 cursor-pointer active:bg-gray-50">
-                    {(q.mockup_image_url || q.design_url) && (
-                      <div className="w-12 h-12 flex-shrink-0 rounded-lg bg-gray-50 border border-gray-200 overflow-hidden">
-                        <img src={q.mockup_image_url || q.design_url || ''} alt="" className="w-full h-full object-contain" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{q.customer_name || q.customerName}</p>
-                      <p className="text-xs text-gray-500 truncate">{q.product_name || q.productName} · {q.quantity} pcs</p>
-                      <p className="text-[10px] text-gray-400">{new Date(q.created_at || q.createdAt).toLocaleDateString()}</p>
-                    </div>
-                    <StatusBadge status={q.status} />
-                  </div>
-                ))}
-                {quotes.length === 0 && !quotesQuery.isLoading && (
-                  <div className="text-center py-8 bg-white rounded-xl border border-gray-200 text-gray-400 text-sm">
-                    No quotes yet
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Pipeline (was Quotes + Orders, now one section with status filter) */}
-        {activeSection === 'quotes' && (
-          <div>
-            <div className="flex items-center justify-between mb-4 md:mb-6">
-              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Pipeline</h2>
-              <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
             </div>
 
             {/* Search + Sort */}
