@@ -111,9 +111,10 @@ import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
+import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -135,12 +136,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'customers', label: 'Customers',  icon: Users },
   ]},
   { label: 'Catalog', items: [
-    { key: 'products',  label: 'Products',   icon: Package },
+    { key: 'products',    label: 'Products',     icon: Package },
+    { key: 'art-library', label: 'Art Library',  icon: FolderOpen },
   ]},
   { label: 'Production', items: [
     { key: 'studio',    label: 'Design Studio',    icon: Palette, to: '/design' },
     { key: 'designs',   label: 'Customer Designs', icon: Palette },
-    { key: 'workspace', label: 'Art Library',      icon: FolderOpen },
+    { key: 'workspace', label: 'Art Editor',       icon: FolderOpen },
     { key: 'mockups',   label: 'Mockups',          icon: Eye },
     { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
@@ -605,7 +607,7 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'settings'];
     if (section && validSections.includes(section as Section)) {
       // Dashboard was merged into Pipeline; old deep links land on the same page.
       setActiveSection(section === 'dashboard' ? 'quotes' : (section as Section));
@@ -5082,6 +5084,10 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {activeSection === 'art-library' && (
+          <ArtLibraryAdmin />
         )}
 
         {activeSection === 'workspace' && (

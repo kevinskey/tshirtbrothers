@@ -213,6 +213,71 @@ export async function fetchQuote(id: string) {
   return authRequest<Quote>(`/quotes/${id}`);
 }
 
+// ── Art Library catalog ──────────────────────────────────────────────
+
+export interface ArtCategory {
+  name: string;
+  display_name: string | null;
+  position: number;
+  count: number;
+}
+
+export interface ArtDesign {
+  id: number;
+  name: string;
+  description: string | null;
+  image_url: string;
+  thumbnail_url: string | null;
+  category: string;
+  tags: string[];
+  width: number | null;
+  height: number | null;
+  file_size: number | null;
+  created_at: string;
+}
+
+export async function fetchArtCategories() {
+  return request<ArtCategory[]>(`/design/art-categories`);
+}
+
+export async function fetchAdminArtLibrary(opts: { category?: string; q?: string; page?: number; limit?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.category) params.set('category', opts.category);
+  if (opts.q)        params.set('q', opts.q);
+  if (opts.page)     params.set('page', String(opts.page));
+  if (opts.limit)    params.set('limit', String(opts.limit));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return authRequest<{ designs: ArtDesign[]; total: number; page: number; totalPages: number }>(`/design/admin/art-library${qs}`);
+}
+
+export async function createArtCategory(data: { name: string; display_name?: string | null; position?: number }) {
+  return authRequest<ArtCategory>(`/design/admin/art-categories`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function updateArtCategory(
+  name: string,
+  data: { new_name?: string; display_name?: string | null; position?: number },
+) {
+  return authRequest<ArtCategory>(`/design/admin/art-categories/${encodeURIComponent(name)}`, {
+    method: 'PATCH', body: JSON.stringify(data),
+  });
+}
+
+export async function deleteArtCategory(name: string, reassignTo = 'general') {
+  return authRequest<{ deleted: boolean; reassigned_to: string }>(
+    `/design/admin/art-categories/${encodeURIComponent(name)}?reassign_to=${encodeURIComponent(reassignTo)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export async function bulkSetArtCategory(ids: number[], category: string) {
+  return authRequest<{ updated: number; ids: number[] }>(`/design/admin/admin-designs/bulk-category`, {
+    method: 'PUT', body: JSON.stringify({ ids, category }),
+  });
+}
+
 // Replace the full set of line items on a quote in one shot. Easiest to
 // drive from a single "Save" button in an edit modal — the server diffs.
 export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
