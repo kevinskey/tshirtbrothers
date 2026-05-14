@@ -245,19 +245,32 @@ function deriveLineTotal({ unit_price, quantity, line_total }) {
   return null;
 }
 
-// After any items mutation, recompute the quote's legacy estimated_price as
-// the sum of line totals so older code paths that read quotes.estimated_price
-// stay accurate without code changes.
+// After any items mutation, mirror the items' aggregates onto the legacy
+// quotes columns (estimated_price, quantity, product_id, product_name) so
+// every read path that still uses those columns — price email, customer
+// accept page, invoice generation, the Send Price modal's header summary —
+// reflects whatever the admin shaped the quote into. The "first" item by
+// position drives the single-row product fields; SUMs cover the totals.
 async function rebuildQuoteTotals(quoteId, client = pool) {
   await client.query(
-    `UPDATE quotes
+    `UPDATE quotes q
        SET estimated_price = COALESCE((
-         SELECT SUM(line_total) FROM quote_items WHERE quote_id = $1
-       ), estimated_price),
-       quantity = COALESCE((
-         SELECT SUM(quantity) FROM quote_items WHERE quote_id = $1
-       ), quantity)
-     WHERE id = $1`,
+             SELECT SUM(line_total) FROM quote_items WHERE quote_id = $1
+           ), q.estimated_price),
+           quantity = COALESCE((
+             SELECT SUM(quantity) FROM quote_items WHERE quote_id = $1
+           ), q.quantity),
+           product_id = COALESCE((
+             SELECT product_id FROM quote_items
+               WHERE quote_id = $1
+               ORDER BY position, id LIMIT 1
+           ), q.product_id),
+           product_name = COALESCE((
+             SELECT product_name FROM quote_items
+               WHERE quote_id = $1
+               ORDER BY position, id LIMIT 1
+           ), q.product_name)
+     WHERE q.id = $1`,
     [quoteId],
   );
 }

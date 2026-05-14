@@ -103,6 +103,7 @@ import {
   type Mockup,
   updateAdminNotes,
   fetchAdminCounts,
+  fetchQuote,
 } from '@/lib/api';
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
@@ -1909,7 +1910,7 @@ export default function AdminPage() {
     sendPriceMutation.mutate(payload);
   }
 
-  function openPriceModal(quote: Quote) {
+  async function openPriceModal(quote: Quote) {
     setPriceModalQuote(quote);
     setPriceBase('');
     setPricePrinting('');
@@ -1918,10 +1919,24 @@ export default function AdminPage() {
     setPriceShipping('0');
     setPriceMessage('');
     // Seed per-size markups from line items (including item.unit_price when
-    // available, so the admin starts from what the customer was shown)
-    // and from the legacy sizes column for instant-quote submissions.
+    // available, so the admin starts from what the customer was shown).
     setSizeMarkups(initialMarkups(quote));
     setOpenActionMenu(null);
+    // Refetch — the click-handler closure may hold a stale cached quote
+    // (e.g. just after a line-items save, before the list query refetches).
+    // Pulling the fresh row guarantees we render the latest items + prices.
+    try {
+      const fresh = await fetchQuote(String(quote.id));
+      setPriceModalQuote(fresh);
+      setSizeMarkups((prev) => {
+        // Don't clobber inputs the user has already typed.
+        const seeded = initialMarkups(fresh);
+        for (const k of Object.keys(prev)) {
+          if (prev[k] && prev[k] !== '') seeded[k] = prev[k];
+        }
+        return seeded;
+      });
+    } catch { /* keep the optimistic copy */ }
   }
 
   function handleAddCategory(e: FormEvent) {
