@@ -1,5 +1,6 @@
 import express, { Router } from 'express';
 import pool from '../db.js';
+import { authenticate, adminOnly } from '../middleware/auth.js';
 import { generateDesign } from '../services/openai.js';
 import Replicate from 'replicate';
 import QRCode from 'qrcode';
@@ -606,16 +607,226 @@ router.get('/art-library', async (req, res, next) => {
 });
 
 // ── GET /art-categories — List categories with counts ───────────────────────
-
-router.get('/art-categories', async (req, res, next) => {
+// Combines the explicit art_categories table (so admins can pre-create
+// empty categories) with current design counts from admin_designs.
+// Returns rows like { name, display_name, position, count }.
+router.get('/art-categories', async (_req, res, next) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT category, COUNT(*) as count FROM admin_designs GROUP BY category ORDER BY category`
-    );
+    const { rows } = await pool.query(`
+      SELECT
+        c.name,
+        c.display_name,
+        c.position,
+        COALESCE(d.count, 0)::int AS count
+      FROM art_categories c
+      LEFT JOIN (
+        SELECT category, COUNT(*) AS count
+          FROM admin_designs
+         WHERE category IS NOT NULL AND category <> ''
+         GROUP BY category
+      ) d ON d.category = c.name
+      UNION
+      -- Surface stray categories that exist on admin_designs but not in
+      -- the seed table (shouldn't happen post-migration, but defensive).
+      SELECT
+        d.category AS name,
+        NULL AS display_name,
+        0 AS position,
+        d.count::int AS count
+      FROM (
+        SELECT category, COUNT(*) AS count
+          FROM admin_designs
+         WHERE category IS NOT NULL AND category <> ''
+           AND category NOT IN (SELECT name FROM art_categories)
+         GROUP BY category
+      ) d
+      ORDER BY position, name
+    `);
     res.json(rows);
   } catch (err) {
     next(err);
   }
+});
+
+// ─── Admin: catalog management ──────────────────────────────────────
+
+// POST /admin/art-categories — create a category (empty by default).
+router.post('/admin/art-categories', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { name, display_name, position } = req.body || {};
+    const slug = String(name || '').trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) return res.status(400).json({ error: 'name is required' });
+    const { rows } = await pool.query(
+      `INSERT INTO art_categories (name, display_name, position)
+       VALUES ($1, $2, COALESCE($3, 0))
+       ON CONFLICT (name) DO UPDATE SET display_name = EXCLUDED.display_name
+       RETURNING *`,
+      [slug, display_name || null, Number.isFinite(Number(position)) ? Number(position) : null],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// PATCH /admin/art-categories/:name — rename or relabel.
+//   { new_name? }       → renames slug everywhere (updates admin_designs too)
+//   { display_name? }   → just changes the friendly label
+//   { position? }       → reorders
+router.patch('/admin/art-categories/:name', authenticate, adminOnly, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { name } = req.params;
+    const { new_name, display_name, position } = req.body || {};
+    await client.query('BEGIN');
+
+    let finalName = name;
+    if (new_name && String(new_name).trim() && String(new_name).trim() !== name) {
+      const slug = String(new_name).trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+      if (!slug) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'invalid new_name' }); }
+      // Conflict check.
+      const conflict = await client.query('SELECT 1 FROM art_categories WHERE name = $1', [slug]);
+      if (conflict.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'category already exists', name: slug });
+      }
+      await client.query('UPDATE art_categories SET name = $1, updated_at = NOW() WHERE name = $2', [slug, name]);
+      await client.query('UPDATE admin_designs SET category = $1 WHERE category = $2', [slug, name]);
+      finalName = slug;
+    }
+    if (display_name !== undefined) {
+      await client.query('UPDATE art_categories SET display_name = $1, updated_at = NOW() WHERE name = $2',
+        [display_name || null, finalName]);
+    }
+    if (position !== undefined && Number.isFinite(Number(position))) {
+      await client.query('UPDATE art_categories SET position = $1, updated_at = NOW() WHERE name = $2',
+        [Number(position), finalName]);
+    }
+    await client.query('COMMIT');
+    const fresh = await pool.query('SELECT * FROM art_categories WHERE name = $1', [finalName]);
+    res.json(fresh.rows[0]);
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /admin/art-categories/:name — remove the category. Any designs
+// currently in it are reassigned to `reassign_to` (default 'general').
+router.delete('/admin/art-categories/:name', authenticate, adminOnly, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { name } = req.params;
+    const reassign = String(req.query.reassign_to || 'general').toLowerCase();
+    if (name === reassign) return res.status(400).json({ error: 'cannot reassign to the category being deleted' });
+    await client.query('BEGIN');
+    // Make sure target exists (auto-create general if needed).
+    await client.query(
+      `INSERT INTO art_categories (name) VALUES ($1)
+       ON CONFLICT (name) DO NOTHING`,
+      [reassign],
+    );
+    await client.query('UPDATE admin_designs SET category = $1 WHERE category = $2', [reassign, name]);
+    await client.query('DELETE FROM art_categories WHERE name = $1', [name]);
+    await client.query('COMMIT');
+    res.json({ deleted: true, reassigned_to: reassign });
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
+// GET /admin/art-library — admin listing (paged + filterable, returns more fields).
+router.get('/admin/art-library', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { category, q, page = '1', limit = '60' } = req.query;
+    const pg = Math.max(1, parseInt(String(page), 10) || 1);
+    const lim = Math.min(200, Math.max(1, parseInt(String(limit), 10) || 60));
+    const where = [];
+    const params = [];
+    if (category && category !== 'all') {
+      params.push(category);
+      where.push(`category = $${params.length}`);
+    }
+    if (q && String(q).trim()) {
+      params.push(`%${String(q).trim().toLowerCase()}%`);
+      where.push(`(LOWER(name) ILIKE $${params.length} OR LOWER(COALESCE(description, '')) ILIKE $${params.length})`);
+    }
+    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const countRes = await pool.query(`SELECT COUNT(*)::int AS total FROM admin_designs ${whereClause}`, params);
+    params.push(lim, (pg - 1) * lim);
+    const rows = await pool.query(
+      `SELECT id, name, description, image_url, thumbnail_url, category, tags, width, height, file_size, created_at
+         FROM admin_designs
+         ${whereClause}
+        ORDER BY created_at DESC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    );
+    res.json({
+      designs: rows.rows,
+      total: countRes.rows[0].total,
+      page: pg,
+      totalPages: Math.max(1, Math.ceil(countRes.rows[0].total / lim)),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /admin/admin-designs/:id — single design edit (category for now).
+router.patch('/admin/admin-designs/:id', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { category, name } = req.body || {};
+    const sets = [];
+    const params = [];
+    if (category !== undefined) {
+      params.push(String(category).toLowerCase());
+      sets.push(`category = $${params.length}`);
+      // Auto-create category seed.
+      await pool.query(
+        `INSERT INTO art_categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+        [String(category).toLowerCase()],
+      );
+    }
+    if (name !== undefined) {
+      params.push(String(name));
+      sets.push(`name = $${params.length}`);
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
+    params.push(id);
+    const result = await pool.query(
+      `UPDATE admin_designs SET ${sets.join(', ')}, updated_at = NOW()
+         WHERE id = $${params.length} RETURNING *`,
+      params,
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'design not found' });
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// PUT /admin/admin-designs/bulk-category — assign N designs to a category.
+router.put('/admin/admin-designs/bulk-category', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { ids, category } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids array required' });
+    if (typeof category !== 'string' || !category.trim()) return res.status(400).json({ error: 'category required' });
+    const slug = category.trim().toLowerCase();
+    await pool.query(
+      `INSERT INTO art_categories (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
+      [slug],
+    );
+    const numericIds = ids.map((x) => Number(x)).filter((n) => Number.isFinite(n));
+    const result = await pool.query(
+      `UPDATE admin_designs SET category = $1, updated_at = NOW()
+         WHERE id = ANY($2::int[]) RETURNING id`,
+      [slug, numericIds],
+    );
+    res.json({ updated: result.rowCount, ids: result.rows.map((r) => r.id) });
+  } catch (err) { next(err); }
 });
 
 export default router;
