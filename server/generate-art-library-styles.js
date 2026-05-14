@@ -11,11 +11,33 @@
 
 import 'dotenv/config';
 import pool from './db.js';
-import Replicate from 'replicate';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'crypto';
 
-const replicate = new Replicate({ auth: process.env.REPLICATE_API_KEY });
+async function generateWithIdeogram(prompt) {
+  const apiKey = process.env.IDEOGRAM_API_KEY;
+  if (!apiKey) throw new Error('IDEOGRAM_API_KEY not set on the droplet');
+  const res = await fetch('https://api.ideogram.ai/generate', {
+    method: 'POST',
+    headers: { 'Api-Key': apiKey, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      image_request: {
+        prompt,
+        model: 'V_2',
+        magic_prompt_option: 'ON',
+        aspect_ratio: 'ASPECT_1_1',
+      },
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Ideogram HTTP ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const url = data?.data?.[0]?.url;
+  if (!url) throw new Error('Ideogram returned no image URL');
+  return url;
+}
 
 const s3 = new S3Client({
   endpoint: `https://${process.env.SPACES_REGION}.digitaloceanspaces.com`,
@@ -112,16 +134,12 @@ async function generateOne(styleSlug, subject, index, total, dryRun) {
 
   try {
     console.log(`${tag} generating: ${subject}…`);
-    const output = await replicate.run('black-forest-labs/flux-schnell', {
-      input: {
-        prompt: fullPrompt,
-        aspect_ratio: '1:1',
-        output_format: 'png',
-        num_outputs: 1,
-      },
-    });
-    const imageUrl = Array.isArray(output) ? output[0] : output;
-    if (!imageUrl) throw new Error('No output from Flux');
+    // All five styles include hand-lettered headlines or signage in the
+    // reference samples. Flux Schnell can't render legible text — Ideogram
+    // can ($0.030 vs $0.003, still cheap at this volume) — so route the
+    // whole batch through Ideogram.
+    const imageUrl = await generateWithIdeogram(fullPrompt);
+    if (!imageUrl) throw new Error('No output from Ideogram');
 
     const imgRes = await fetch(imageUrl.toString());
     if (!imgRes.ok) throw new Error(`fetch image -> ${imgRes.status}`);
