@@ -59,7 +59,7 @@ const DEFAULT_INPUTS: Inputs = {
   quantity: 25,
   garmentName: 'T-shirt',
   qualityTier: 'Standard',
-  methodName: 'Screen Print',
+  methodName: 'DTF',
   locations: { front: true, back: false, sleeve: false },
   colorsPerLocation: 1,
   rush: false,
