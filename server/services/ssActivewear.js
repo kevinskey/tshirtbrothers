@@ -79,6 +79,55 @@ export async function fetchStyleSizes(styleId) {
   });
 }
 
+// Fetch sizes + customerPrice in one round trip. The /styles/ endpoint
+// doesn't include pricing, so the sync hits /products/?styleid=X — and
+// since we're already paying for that call to get sizes, we may as well
+// grab the price too. Returns { sizes, customer_price } where
+// customer_price is the price of the first SKU (typically all sizes
+// within a style share the same price; upcharges for 2XL+ are not
+// modeled here yet). customer_price is null when not returned.
+export async function fetchStyleSkuData(styleId) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=sizeName,customerPrice`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) {
+    console.error(`[fetchStyleSkuData] style ${styleId}: HTTP ${response.status}`);
+    return { sizes: [], customer_price: null };
+  }
+  const data = await response.json().catch(() => []);
+  const items = Array.isArray(data) ? data : [];
+
+  // Sizes (mirror fetchStyleSizes' logic so behavior stays consistent).
+  const seen = new Set();
+  for (const p of items) {
+    const sz = (p.sizeName || '').trim();
+    if (sz) seen.add(sz);
+  }
+  const ORDER = ['XS','S','M','L','XL','2XL','3XL','4XL','4XLT','5XL','5XLT','6XL','6XLT','7XL'];
+  const sizes = [...seen].sort((a, b) => {
+    const ai = ORDER.indexOf(a.toUpperCase());
+    const bi = ORDER.indexOf(b.toUpperCase());
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+
+  // Price: take the lowest non-zero customerPrice across SKUs so the
+  // catalog reflects the base size's price, not an upcharged 2XL/3XL.
+  const prices = items
+    .map((p) => Number(p.customerPrice))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const customer_price = prices.length ? Math.min(...prices) : null;
+
+  return { sizes, customer_price };
+}
+
 // Fetch a single style by ID
 export async function fetchStyle(styleId) {
   const credentials = getCredentials();

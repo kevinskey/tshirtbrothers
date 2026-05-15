@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { fetchProducts, fetchStyleSizes } from '../services/ssActivewear.js';
+import { fetchProducts, fetchStyleSizes, fetchStyleSkuData } from '../services/ssActivewear.js';
 import pool from '../db.js';
 
 const router = Router();
@@ -61,30 +61,39 @@ router.post('/sync-products', async (req, res, next) => {
     const products = result.products || [];
     console.log(`Syncing ${products.length} products...`);
 
-    // Backfill sizes per-style with bounded concurrency. S&S rate-limits
-    // aggressively if you go too parallel — 3 in flight is the sweet spot
-    // we've found that keeps the sync moving without 429s.
+    // Backfill sizes + price per-style with bounded concurrency. S&S
+    // rate-limits aggressively if you go too parallel — 3 in flight is
+    // the sweet spot we've found that keeps the sync moving without
+    // 429s. The /styles/ endpoint doesn't include pricing, so we hit
+    // /products/?styleid=X to get both sizes and customerPrice in one
+    // call (cheaper than two separate API calls per style).
     const CONCURRENCY = 3;
     let nextIdx = 0;
     let sizesFilled = 0;
+    let pricesFilled = 0;
     async function worker() {
       while (true) {
         const i = nextIdx++;
         if (i >= products.length) return;
         const p = products[i];
         try {
-          const sizes = await fetchStyleSizes(p.ss_id);
+          const { sizes, customer_price } = await fetchStyleSkuData(p.ss_id);
           if (sizes.length > 0) {
             p.sizes = sizes;
             sizesFilled++;
           }
+          if (customer_price != null && customer_price > 0) {
+            p.base_price = customer_price;
+            pricesFilled++;
+          }
         } catch (err) {
-          console.error(`[sync] sizes fetch failed for style ${p.ss_id}:`, err.message);
+          console.error(`[sync] sku data fetch failed for style ${p.ss_id}:`, err.message);
         }
       }
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     console.log(`Sizes backfilled for ${sizesFilled}/${products.length} styles`);
+    console.log(`Prices backfilled for ${pricesFilled}/${products.length} styles`);
 
     let upserted = 0;
     for (const product of products) {
@@ -120,7 +129,7 @@ router.post('/sync-products', async (req, res, next) => {
       upserted++;
     }
 
-    res.json({ message: 'Product sync complete', upserted, sizesFilled });
+    res.json({ message: 'Product sync complete', upserted, sizesFilled, pricesFilled });
   } catch (err) {
     next(err);
   }
