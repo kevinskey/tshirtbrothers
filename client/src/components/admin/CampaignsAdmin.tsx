@@ -159,7 +159,9 @@ export default function CampaignsAdmin() {
       if (isHeic) {
         const { default: heic2any } = await import('heic2any');
         const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-        blob = Array.isArray(result) ? result[0] : result;
+        const first = Array.isArray(result) ? result[0] : result;
+        if (!first) throw new Error('HEIC conversion produced no output');
+        blob = first;
         outName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
       }
       const base64 = await new Promise<string>((resolve, reject) => {
