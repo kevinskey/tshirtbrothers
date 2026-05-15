@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { sendCampaignEmail, unsubscribeToken, trackingToken } from '../services/email.js';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 
@@ -177,6 +178,23 @@ router.post('/preview', async (req, res, next) => {
       count: recipients.length,
       sample: recipients.slice(0, 5).map((r) => r.email),
     });
+  } catch (err) { next(err); }
+});
+
+// POST upload-image — accept a base64 image from disk, push it to Spaces,
+// and hand back a public URL the admin can attach to a campaign without
+// having to add it to the Art Library first.
+router.post('/upload-image', async (req, res, next) => {
+  try {
+    const { imageBase64, filename } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+    const match = String(imageBase64).match(/^data:([^;]+);base64,/);
+    const contentType = match ? match[1] : 'image/png';
+    const extFromCT = contentType.split('/')[1]?.split('+')[0] || 'png';
+    const safeName = String(filename || `upload.${extFromCT}`).replace(/[^a-zA-Z0-9.-]/g, '-');
+    const key = `marketing/campaigns/${Date.now()}-${safeName}`;
+    const url = await uploadObject({ key, body: imageBase64, contentType });
+    res.json({ url, filename: filename || safeName });
   } catch (err) { next(err); }
 });
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye, Upload } from 'lucide-react';
 
 type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30';
 
@@ -68,6 +68,8 @@ export default function CampaignsAdmin() {
   const [history, setHistory] = useState<CampaignRow[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [unsubs, setUnsubs] = useState<UnsubscribeRow[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load art library once on mount.
   useEffect(() => {
@@ -135,6 +137,43 @@ export default function CampaignsAdmin() {
       setBodyHtml(data.body_html || '');
     } finally {
       setDrafting(false);
+    }
+  }
+
+  async function handleUpload(file: File) {
+    if (examples.length >= 6) {
+      alert('You can attach up to 6 example designs.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('Only image files are supported.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/admin/campaigns/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ imageBase64: base64, filename: file.name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Upload failed');
+        return;
+      }
+      const { url } = await res.json();
+      setExamples([
+        ...examples,
+        { id: -Date.now(), name: file.name, thumbnail_url: url, image_url: url },
+      ]);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -298,14 +337,35 @@ export default function CampaignsAdmin() {
 
       {/* Step 3: examples */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <h3 className="font-semibold text-gray-900 text-sm">3. Add example designs ({examples.length}/6)</h3>
-          <button
-            onClick={() => setPickerOpen(true)}
-            className="text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg"
-          >
-            Pick from Art Library
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || examples.length >= 6}
+              className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
+            >
+              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {uploading ? 'Uploading…' : 'Upload file'}
+            </button>
+            <button
+              onClick={() => setPickerOpen(true)}
+              className="text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg"
+            >
+              Pick from Art Library
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUpload(file);
+                e.target.value = '';
+              }}
+            />
+          </div>
         </div>
         {examples.length === 0 ? (
           <p className="text-xs text-gray-400">Optional. Up to 6 thumbnails will appear in the email body.</p>
