@@ -145,22 +145,33 @@ export default function CampaignsAdmin() {
       alert('You can attach up to 6 example designs.');
       return;
     }
-    if (!file.type.startsWith('image/')) {
+    const isHeic = /\.(heic|heif)$/i.test(file.name) || /heic|heif/i.test(file.type);
+    if (!isHeic && !file.type.startsWith('image/')) {
       alert('Only image files are supported.');
       return;
     }
     setUploading(true);
     try {
+      // HEIC (iPhone default) doesn't render in Gmail/Outlook/most clients —
+      // convert to JPEG in the browser before upload so recipients can see it.
+      let blob: Blob = file;
+      let outName = file.name;
+      if (isHeic) {
+        const { default: heic2any } = await import('heic2any');
+        const result = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        blob = Array.isArray(result) ? result[0] : result;
+        outName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
+      }
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
         reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(blob);
       });
       const res = await fetch('/api/admin/campaigns/upload-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({ imageBase64: base64, filename: file.name }),
+        body: JSON.stringify({ imageBase64: base64, filename: outName }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -170,8 +181,11 @@ export default function CampaignsAdmin() {
       const { url } = await res.json();
       setExamples([
         ...examples,
-        { id: -Date.now(), name: file.name, thumbnail_url: url, image_url: url },
+        { id: -Date.now(), name: outName, thumbnail_url: url, image_url: url },
       ]);
+    } catch (err) {
+      console.error('[campaign upload]', err);
+      alert(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -357,7 +371,7 @@ export default function CampaignsAdmin() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,.heic,.heif"
               className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
