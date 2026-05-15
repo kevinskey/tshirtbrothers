@@ -51,6 +51,31 @@ const FILTER_LABELS: Record<Filter, string> = {
   new_30: 'New (joined last 30 days)',
 };
 
+// Resize an image Blob to fit within `maxEdge` on its long side and re-encode
+// as JPEG at the given quality. Used to keep email-attachment uploads under
+// the server's JSON body limit (a raw iPhone photo can be 4-5MB → ~7MB
+// base64 → over budget). Returns the original blob if it's already small.
+async function downscaleToJpeg(blob: Blob, maxEdge: number, quality: number): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob);
+  const { width, height } = bitmap;
+  const scale = Math.min(1, maxEdge / Math.max(width, height));
+  const w = Math.round(width * scale);
+  const h = Math.round(height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas not available');
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (!b) reject(new Error('Image encode failed'));
+      else resolve(b);
+    }, 'image/jpeg', quality);
+  });
+}
+
 export default function CampaignsAdmin() {
   const [prompt, setPrompt] = useState('');
   const [drafting, setDrafting] = useState(false);
@@ -164,6 +189,11 @@ export default function CampaignsAdmin() {
         blob = first;
         outName = file.name.replace(/\.(heic|heif)$/i, '.jpg');
       }
+      // Downscale to a sane email size — phone photos are 12MP, which after
+      // base64 wrapping easily blows past the server's 10MB JSON limit.
+      // Long edge 1600px at JPEG 0.85 keeps thumbnails sharp at ~300KB.
+      blob = await downscaleToJpeg(blob, 1600, 0.85);
+      if (!/\.(jpe?g)$/i.test(outName)) outName = outName.replace(/\.[^.]+$/, '') + '.jpg';
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result));
