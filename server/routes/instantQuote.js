@@ -17,7 +17,11 @@ function getStripe() {
  * formula can be exercised without an Express + Postgres stack.
  *
  *   inputs = {
- *     quantity:           1+ integer
+ *     quantity:           1+ integer (optional if `sizes` provided — derived from sum)
+ *     sizes:              [{ size: 'S'|'M'|'L'|'XL'|'2XL'|..., quantity: int }, ...]
+ *                         When provided, per-size upcharges (from settings.size_upcharges)
+ *                         apply to each shirt's garment cost. When absent, the whole
+ *                         `quantity` is treated as base size (no upcharge).
  *     garmentName:        e.g. 'T-shirt'
  *     qualityTier:        'Standard' | 'Premium' | 'Ultra'
  *     methodName:         'Screen Print' | 'DTF' | 'DTG' | 'Embroidery'
@@ -29,7 +33,6 @@ function getStripe() {
  * ------------------------------------------------------------------------- */
 export function computeQuote(inputs, tables) {
   const {
-    quantity,
     garmentName,
     qualityTier,
     methodName,
@@ -38,10 +41,23 @@ export function computeQuote(inputs, tables) {
     rush = false,
   } = inputs;
 
-  // Input validation
-  if (!Number.isInteger(quantity) || quantity < 1) {
+  // Normalize quantity input. `sizes` is the canonical form; `quantity`
+  // alone is a shortcut meaning "all one base-priced size".
+  let sizes;
+  if (Array.isArray(inputs.sizes) && inputs.sizes.length > 0) {
+    sizes = inputs.sizes
+      .map((s) => ({ size: String(s.size || '').trim(), quantity: Number(s.quantity) || 0 }))
+      .filter((s) => s.quantity > 0);
+    if (sizes.length === 0) {
+      throw new Error('quantity must be a positive integer');
+    }
+  } else if (Number.isInteger(inputs.quantity) && inputs.quantity > 0) {
+    sizes = [{ size: '', quantity: inputs.quantity }];
+  } else {
     throw new Error('quantity must be a positive integer');
   }
+  const quantity = sizes.reduce((n, s) => n + s.quantity, 0);
+
   if (!Number.isInteger(numLocations) || numLocations < 1) {
     throw new Error('numLocations must be a positive integer');
   }
@@ -74,9 +90,24 @@ export function computeQuote(inputs, tables) {
   const discountPct = Number(tier.discount_pct);
   const rushPct = Number(settings.rush_surcharge_pct);
   const markup = Number(settings.markup_multiplier);
+  // Per-size upcharge table (e.g. {"2XL": 2, "3XL": 4, ...}). Sizes not
+  // listed default to $0. Stored on settings to keep the admin edit UI
+  // in one place.
+  const sizeUpchargeTable = (settings.size_upcharges && typeof settings.size_upcharges === 'object')
+    ? settings.size_upcharges
+    : {};
+  const upchargeFor = (sz) => Number(sizeUpchargeTable[sz] || 0);
 
-  // base = (garment_cost + per_piece_print_cost × num_locations) × quantity
-  const base = (garmentCost + perPiecePrint * numLocations) * quantity;
+  // base = Σ over sizes of (garment_cost + upcharge_size + per_piece_print × num_locations) × qty_s
+  // Same shape as the old formula when there's no upcharge, but accommodates
+  // 2XL+ being more expensive per shirt.
+  let base = 0;
+  let sizeUpchargeTotal = 0;
+  for (const s of sizes) {
+    const up = upchargeFor(s.size);
+    sizeUpchargeTotal += up * s.quantity;
+    base += (garmentCost + up + perPiecePrint * numLocations) * s.quantity;
+  }
 
   // setup = setup_fee_per_color × colors × num_locations    (screen print)
   // setup = setup_fee × num_locations                         (embroidery — per-design fee)
@@ -106,12 +137,15 @@ export function computeQuote(inputs, tables) {
   return {
     per_shirt: r2(perShirt),
     total: r2(total),
+    quantity,
     turnaround_days: turnaroundDays,
     breakdown: {
       garment_cost_per_piece: r2(garmentCost),
       print_cost_per_piece: r2(perPiecePrint),
       num_locations: numLocations,
       colors_per_location: colorsPerLocation,
+      sizes: sizes.map((s) => ({ size: s.size, quantity: s.quantity, upcharge: r2(upchargeFor(s.size)) })),
+      size_upcharge_total: r2(sizeUpchargeTotal),
       base: r2(base),
       setup: r2(setup),
       quantity_discount: r2(quantityDiscount),
@@ -213,7 +247,7 @@ router.post('/save', async (req, res, next) => {
         customer_name || null,
         customer_email,
         productName,
-        inputs.quantity,
+        calc.quantity,
         JSON.stringify(inputs),
         calc.total,
         design_url || null,
@@ -328,6 +362,7 @@ router.get('/options', async (_req, res, next) => {
         rush_surcharge_pct: Number(t.settings.rush_surcharge_pct),
         standard_turnaround: t.settings.standard_turnaround,
         rush_turnaround: t.settings.rush_turnaround,
+        size_upcharges: t.settings.size_upcharges || {},
       },
     });
   } catch (err) { next(err); }
@@ -477,13 +512,20 @@ adminRouter.patch('/', async (req, res, next) => {
     }
 
     if (settings && typeof settings === 'object') {
-      const allowed = ['markup_multiplier', 'rush_surcharge_pct', 'rush_threshold_days', 'standard_turnaround', 'rush_turnaround'];
+      const allowed = ['markup_multiplier', 'rush_surcharge_pct', 'rush_threshold_days', 'standard_turnaround', 'rush_turnaround', 'size_upcharges'];
       const updates = [];
       const vals = [];
       for (const k of allowed) {
         if (settings[k] !== undefined) {
-          vals.push(settings[k]);
-          updates.push(`${k}=$${vals.length}`);
+          if (k === 'size_upcharges') {
+            // JSONB column — serialize and cast so the driver doesn't
+            // stringify the object as "[object Object]".
+            vals.push(JSON.stringify(settings[k] || {}));
+            updates.push(`${k}=$${vals.length}::jsonb`);
+          } else {
+            vals.push(settings[k]);
+            updates.push(`${k}=$${vals.length}`);
+          }
         }
       }
       if (updates.length) {

@@ -23,7 +23,7 @@ import {
 type Garment = { id: number; name: string; quality_tier: string; base_cost: number; image_url: string | null };
 type PrintMethod = { id: number; name: string; charges_per_color: boolean };
 type QuantityTier = { id: number; min_qty: number; max_qty: number | null; discount_pct: number };
-type Settings = { markup_multiplier: number; rush_surcharge_pct: number; standard_turnaround: number; rush_turnaround: number };
+type Settings = { markup_multiplier: number; rush_surcharge_pct: number; standard_turnaround: number; rush_turnaround: number; size_upcharges?: Record<string, number> };
 type OptionsResponse = { garments: Garment[]; print_methods: PrintMethod[]; quantity_tiers: QuantityTier[]; settings: Settings };
 
 type CalcResponse = {
@@ -46,7 +46,11 @@ type CalcResponse = {
 };
 
 type Inputs = {
-  quantity: number;
+  // sizes drives both the total quantity (sum) and per-size upcharges.
+  // `quantity` is kept as a convenience for downstream consumers but is
+  // always derived from `sizes` on the page.
+  sizes: Array<{ size: string; quantity: number }>;
+  color: string;
   garmentName: string;
   qualityTier: 'Standard' | 'Premium' | 'Ultra';
   methodName: 'Screen Print' | 'DTF' | 'DTG' | 'Embroidery';
@@ -55,8 +59,20 @@ type Inputs = {
   rush: boolean;
 };
 
+const COLOR_OPTIONS: readonly string[] = [
+  'Black', 'White', 'Navy', 'Heather Gray', 'Gray', 'Charcoal',
+  'Red', 'Maroon', 'Royal', 'Forest', 'Kelly Green', 'Purple',
+  'Orange', 'Yellow', 'Pink', 'Sand', 'Brown',
+];
+
 const DEFAULT_INPUTS: Inputs = {
-  quantity: 25,
+  sizes: [
+    { size: 'S', quantity: 0 }, { size: 'M', quantity: 10 },
+    { size: 'L', quantity: 10 }, { size: 'XL', quantity: 5 },
+    { size: '2XL', quantity: 0 }, { size: '3XL', quantity: 0 },
+    { size: '4XL', quantity: 0 }, { size: '5XL', quantity: 0 },
+  ],
+  color: 'Black',
   garmentName: 'T-shirt',
   qualityTier: 'Standard',
   methodName: 'DTF',
@@ -64,6 +80,10 @@ const DEFAULT_INPUTS: Inputs = {
   colorsPerLocation: 1,
   rush: false,
 };
+
+function totalQuantity(sizes: Inputs['sizes']): number {
+  return sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
+}
 
 // Catalog product attached via ?product=<ss_id> — kept light: just enough
 // to render the "you're quoting THIS shirt" banner and stash a reference
@@ -210,7 +230,8 @@ export default function InstantQuotePage() {
   );
 
   // Calculate query — runs against debouncedInputs so it doesn't fire on every keystroke.
-  const calcEnabled = numLocations > 0 && debouncedInputs.quantity > 0;
+  const debouncedTotalQty = totalQuantity(debouncedInputs.sizes);
+  const calcEnabled = numLocations > 0 && debouncedTotalQty > 0;
   const { data: calc, isFetching: calcLoading } = useQuery<CalcResponse>({
     queryKey: ['instant-quote', 'calculate', debouncedInputs, numLocations],
     queryFn: async () => {
@@ -218,7 +239,8 @@ export default function InstantQuotePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quantity: debouncedInputs.quantity,
+          sizes: debouncedInputs.sizes.filter((s) => s.quantity > 0),
+          color: debouncedInputs.color,
           garmentName: debouncedInputs.garmentName,
           qualityTier: debouncedInputs.qualityTier,
           methodName: debouncedInputs.methodName,
@@ -249,12 +271,13 @@ export default function InstantQuotePage() {
   }, [options]);
 
   const isScreenPrint = inputs.methodName === 'Screen Print';
+  const liveTotalQty = totalQuantity(inputs.sizes);
   const currentTier = useMemo(() => {
     if (!options) return null;
     return options.quantity_tiers.find(
-      (t) => inputs.quantity >= t.min_qty && (t.max_qty === null || inputs.quantity <= t.max_qty)
+      (t) => liveTotalQty >= t.min_qty && (t.max_qty === null || liveTotalQty <= t.max_qty)
     ) || null;
-  }, [options, inputs.quantity]);
+  }, [options, liveTotalQty]);
 
   return (
     <Layout>
@@ -277,7 +300,7 @@ export default function InstantQuotePage() {
         {/* ─── Sticky price card (above the fold on mobile) ─── */}
         <PriceCard
           calc={calc}
-          quantity={debouncedInputs.quantity}
+          quantity={debouncedTotalQty}
           loading={calcLoading}
           hasInputs={calcEnabled}
           numLocations={numLocations}
@@ -324,42 +347,57 @@ export default function InstantQuotePage() {
             )}
           </Section>
 
-          {/* Quantity */}
-          <Section icon={<span className="text-xl">#</span>} title="How many shirts?">
-            {options && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {options.quantity_tiers.map((t) => {
-                  const label = t.max_qty === null ? `${t.min_qty}+` : `${t.min_qty}–${t.max_qty}`;
-                  const active = currentTier?.id === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => update({ quantity: t.min_qty })}
-                      className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                        active ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
-                      }`}
-                    >
-                      {label}
-                      {t.discount_pct > 0 && (
-                        <div className="text-[10px] mt-0.5 text-gray-500">{Math.round(t.discount_pct * 100)}% off</div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <div className="mt-3 flex items-center gap-3">
-              <label className="text-xs text-gray-500 uppercase tracking-wide">Exact quantity</label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                value={inputs.quantity || ''}
-                onChange={(e) => update({ quantity: Math.max(1, parseInt(e.target.value) || 1) })}
-                className="w-24 rounded-lg border border-gray-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
+          {/* Sizes — per-size quantities; 2XL+ trigger upcharges */}
+          <Section icon={<span className="text-xl">#</span>} title="How many shirts? (per size)">
+            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+              {inputs.sizes.map((row, i) => {
+                const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
+                return (
+                  <div key={row.size} className="flex flex-col items-center gap-1">
+                    <label className="text-xs font-semibold text-gray-700">{row.size}</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={row.quantity || ''}
+                      onChange={(e) => {
+                        const next = inputs.sizes.slice();
+                        next[i] = { ...row, quantity: Math.max(0, parseInt(e.target.value) || 0) };
+                        update({ sizes: next });
+                      }}
+                      placeholder="0"
+                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+                      style={{ fontSize: '16px' }}
+                    />
+                    {upcharge > 0 && (
+                      <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+            <div className="mt-3 text-sm text-gray-600">
+              Total: <strong className="text-gray-900">{totalQuantity(inputs.sizes)}</strong>
+              {currentTier && currentTier.discount_pct > 0 && (
+                <span className="ml-2 text-xs text-green-700">
+                  {Math.round(currentTier.discount_pct * 100)}% volume discount
+                </span>
+              )}
+            </div>
+          </Section>
+
+          {/* Color */}
+          <Section icon={<span className="text-xl">🎨</span>} title="Shirt color">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {COLOR_OPTIONS.map((c) => (
+                <Chip key={c} active={inputs.color === c} onClick={() => update({ color: c })}>
+                  {c}
+                </Chip>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Other colors available — we'll match it on your final mockup.
+            </p>
           </Section>
 
           {/* Garment */}
@@ -563,7 +601,8 @@ function SaveQuoteModal({
           design_url: designUrls[0] || null,
           extra_design_urls: designUrls.slice(1),
           inputs: {
-            quantity: inputs.quantity,
+            sizes: inputs.sizes.filter((s) => s.quantity > 0),
+            color: inputs.color,
             garmentName: inputs.garmentName,
             qualityTier: inputs.qualityTier,
             methodName: inputs.methodName,
