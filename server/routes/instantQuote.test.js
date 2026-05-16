@@ -36,6 +36,7 @@ const FIXTURE = {
     rush_surcharge_pct: '0.2500',
     standard_turnaround: 10,
     rush_turnaround: 5,
+    size_upcharges: { '2XL': 2, '3XL': 4, '4XL': 6, '5XL': 8, '6XL': 10 },
   },
 };
 
@@ -150,6 +151,48 @@ test('multiple locations multiply per-piece print cost', () => {
   // b base = (3.50 + 4 × 3) × 50 = 775
   assert.equal(a.breakdown.base, 375);
   assert.equal(b.breakdown.base, 775);
+});
+
+test('per-size quantities sum to total qty and pick the right discount tier', () => {
+  const r = computeQuote(
+    { ...baseInputs, quantity: undefined, methodName: 'DTF',
+      sizes: [{ size: 'M', quantity: 10 }, { size: 'L', quantity: 10 }, { size: 'XL', quantity: 5 }] },
+    FIXTURE
+  );
+  // 25 shirts → tier 11-25 → 5% discount. No size upcharges (S-XL).
+  // base = (3.50 + 4 × 1) × 25 = 187.50
+  // discount = 187.50 × 0.05 = 9.375
+  // total = (187.50 - 9.375) × 2 = 356.25
+  assert.equal(r.quantity, 25);
+  assert.equal(r.breakdown.base, 187.5);
+  assert.equal(r.breakdown.discount_pct, 0.05);
+  assert.equal(r.total, 356.25);
+});
+
+test('2XL+ upcharge adds to each shirt of that size', () => {
+  // 10 M + 5 2XL = 15 shirts → tier 11-25 → 5% discount
+  const r = computeQuote(
+    { ...baseInputs, quantity: undefined, methodName: 'DTF',
+      sizes: [{ size: 'M', quantity: 10 }, { size: '2XL', quantity: 5 }] },
+    FIXTURE
+  );
+  // M:    (3.50 + 0 + 4) × 10 = 75
+  // 2XL:  (3.50 + 2 + 4) ×  5 = 47.50
+  // base = 122.50
+  // upcharge_total = 2 × 5 = 10
+  // discount = 122.50 × 0.05 = 6.125
+  // total = (122.50 - 6.125) × 2 = 232.75
+  assert.equal(r.breakdown.base, 122.5);
+  assert.equal(r.breakdown.size_upcharge_total, 10);
+  assert.equal(r.total, 232.75);
+});
+
+test('back-compat: bare quantity (no sizes) behaves like before', () => {
+  // Same call shape as the original tests — no `sizes`, just `quantity`.
+  const r = computeQuote({ ...baseInputs, methodName: 'DTF' }, FIXTURE);
+  assert.equal(r.quantity, 50);
+  assert.equal(r.breakdown.base, 375);
+  assert.equal(r.breakdown.size_upcharge_total, 0);
 });
 
 test('throws on unknown garment', () => {
