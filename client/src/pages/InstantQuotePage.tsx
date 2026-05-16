@@ -443,6 +443,9 @@ export default function InstantQuotePage() {
                   onClick={() => update({ methodName: m.name as Inputs['methodName'] })}
                 >
                   {m.name}
+                  {m.name === 'DTF' && (
+                    <span className="ml-1 italic text-xs text-gray-500">(most popular)</span>
+                  )}
                 </Chip>
               ))}
             </div>
