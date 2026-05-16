@@ -195,6 +195,24 @@ test('back-compat: bare quantity (no sizes) behaves like before', () => {
   assert.equal(r.breakdown.size_upcharge_total, 0);
 });
 
+test('pickedProduct overrides the tier — your_price drives the garment portion', () => {
+  // your_price = 5.90 (= wholesale 2.95 × 2). Formula divides by markup
+  // and re-multiplies, so the garment portion of retail = exactly 5.90.
+  // 1 shirt + DTF $4 1 location, markup 2.0:
+  //   garment_cost = 5.90 / 2 = 2.95
+  //   base = (2.95 + 4 × 1) × 1 = 6.95
+  //   total = 6.95 × 2 = 13.90
+  const r = computeQuote(
+    { ...baseInputs, quantity: undefined,
+      sizes: [{ size: 'M', quantity: 1 }],
+      methodName: 'DTF',
+      pickedProduct: { ss_id: '12345', name: 'Some Tee', your_price: 5.90 } },
+    FIXTURE
+  );
+  assert.equal(r.breakdown.base, 6.95);
+  assert.equal(r.total, 13.9);
+});
+
 test('throws on unknown garment', () => {
   assert.throws(
     () => computeQuote({ ...baseInputs, garmentName: 'Nonexistent' }, FIXTURE),

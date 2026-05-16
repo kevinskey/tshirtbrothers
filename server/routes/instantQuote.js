@@ -39,6 +39,12 @@ export function computeQuote(inputs, tables) {
     numLocations,
     colorsPerLocation = 1,
     rush = false,
+    // When the customer picked a specific catalog product, `pickedProduct`
+    // carries { ss_id, name, your_price } and overrides the tier lookup:
+    // garment_cost in the formula is set to your_price / markup so the
+    // garment portion of the customer-facing total equals "Your Price"
+    // exactly (= wholesale × 2 or the admin override).
+    pickedProduct = null,
   } = inputs;
 
   // Normalize quantity input. `sizes` is the canonical form; `quantity`
@@ -65,11 +71,26 @@ export function computeQuote(inputs, tables) {
     throw new Error('colorsPerLocation must be a positive integer');
   }
 
-  // Lookup
-  const garment = tables.garments.find(
-    (g) => g.name === garmentName && g.quality_tier === qualityTier && g.active !== false
-  );
-  if (!garment) throw new Error(`Unknown garment: ${garmentName} / ${qualityTier}`);
+  // Lookup. If a specific product is picked, the tier lookup is skipped —
+  // we synthesize a garment object whose base_cost = your_price / markup
+  // (markup is reapplied below so the customer-facing garment portion of
+  // the total equals "Your Price" exactly).
+  const settingsForMarkup = tables.settings;
+  if (!settingsForMarkup) throw new Error('Missing instant_quote_settings row');
+  const markupForPicked = Number(settingsForMarkup.markup_multiplier);
+  let garment;
+  if (pickedProduct && pickedProduct.your_price != null) {
+    const yp = Number(pickedProduct.your_price);
+    if (!Number.isFinite(yp) || yp <= 0) {
+      throw new Error('pickedProduct.your_price must be a positive number');
+    }
+    garment = { base_cost: yp / markupForPicked };
+  } else {
+    garment = tables.garments.find(
+      (g) => g.name === garmentName && g.quality_tier === qualityTier && g.active !== false
+    );
+    if (!garment) throw new Error(`Unknown garment: ${garmentName} / ${qualityTier}`);
+  }
 
   const method = tables.printMethods.find((m) => m.name === methodName && m.active !== false);
   if (!method) throw new Error(`Unknown print method: ${methodName}`);
@@ -192,12 +213,39 @@ export function invalidatePricingCache() {
 }
 
 /* ---------------------------------------------------------------------------
+ * Resolve a picked product's "Your Price" from the catalog. Trusts the DB,
+ * not the client — the client only sends ss_id, the server reads
+ * custom_price ?? (base_price × 2). Returns null if the product isn't
+ * found or has no usable price.
+ * ------------------------------------------------------------------------- */
+async function resolvePickedProductPrice(ss_id) {
+  if (!ss_id) return null;
+  const { rows } = await pool.query(
+    'SELECT ss_id, name, base_price, custom_price FROM products WHERE ss_id = $1 LIMIT 1',
+    [String(ss_id)]
+  );
+  if (!rows.length) return null;
+  const p = rows[0];
+  const yourPrice = p.custom_price != null && Number(p.custom_price) > 0
+    ? Number(p.custom_price)
+    : (Number(p.base_price) > 0 ? Number(p.base_price) * 2 : 0);
+  if (!(yourPrice > 0)) return null;
+  return { ss_id: p.ss_id, name: p.name, your_price: yourPrice };
+}
+
+/* ---------------------------------------------------------------------------
  * POST /api/quote/calculate
  * ------------------------------------------------------------------------- */
 router.post('/calculate', async (req, res, next) => {
   try {
     const tables = await loadPricingTables();
-    const result = computeQuote(req.body, tables);
+    const inputs = { ...req.body };
+    if (inputs.productSsId) {
+      const picked = await resolvePickedProductPrice(inputs.productSsId);
+      if (picked) inputs.pickedProduct = picked;
+    }
+    const result = computeQuote(inputs, tables);
+    if (inputs.pickedProduct) result.picked_product = inputs.pickedProduct;
     res.json(result);
   } catch (err) {
     if (err.message.startsWith('Unknown') || err.message.startsWith('No quantity') || err.message.includes('must be')) {
@@ -223,11 +271,18 @@ router.post('/save', async (req, res, next) => {
       return res.status(400).json({ error: 'customer_email is required' });
     }
 
-    // Recompute server-side
+    // Recompute server-side. If the customer picked a specific catalog
+    // product, look up its price here too so the saved quote uses the
+    // authoritative DB value (the client can't tamper with the price).
     const tables = await loadPricingTables();
+    const effectiveInputs = { ...inputs };
+    if (effectiveInputs.productSsId) {
+      const picked = await resolvePickedProductPrice(effectiveInputs.productSsId);
+      if (picked) effectiveInputs.pickedProduct = picked;
+    }
     let calc;
     try {
-      calc = computeQuote(inputs, tables);
+      calc = computeQuote(effectiveInputs, tables);
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }

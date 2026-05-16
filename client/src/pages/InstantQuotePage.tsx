@@ -96,6 +96,8 @@ type CatalogProduct = {
   category?: string;
   image_url?: string;
   imageUrl?: string;
+  base_price?: number | string | null;
+  custom_price?: number | string | null;
 };
 
 // Map a catalog product's category string onto one of the seven garment
@@ -133,6 +135,11 @@ export default function InstantQuotePage() {
   }, []);
 
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
+  // In-page product picker — overrides whatever ?product= loaded from the
+  // URL. When set, the calculator switches to using this product's price
+  // instead of the abstract quality tier, and the tier section is hidden.
+  const [pickedProduct, setPickedProduct] = useState<CatalogProduct | null>(null);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
   // Customer-uploaded design files. Stored as Spaces URLs once uploaded so
   // we can pass them straight through to /api/quote/save without re-upload.
@@ -232,8 +239,13 @@ export default function InstantQuotePage() {
   // Calculate query — runs against debouncedInputs so it doesn't fire on every keystroke.
   const debouncedTotalQty = totalQuantity(debouncedInputs.sizes);
   const calcEnabled = numLocations > 0 && debouncedTotalQty > 0;
+  // Unified picked-product: manual pick overrides the URL-loaded one. Both
+  // get sent to the calc API as productSsId so the server uses the catalog
+  // price instead of the tier base_cost.
+  const effectiveProduct = pickedProduct || catalogProduct || null;
+  const effectiveProductSsId = effectiveProduct?.ss_id || null;
   const { data: calc, isFetching: calcLoading } = useQuery<CalcResponse>({
-    queryKey: ['instant-quote', 'calculate', debouncedInputs, numLocations],
+    queryKey: ['instant-quote', 'calculate', debouncedInputs, numLocations, effectiveProductSsId],
     queryFn: async () => {
       const r = await fetch('/api/quote/calculate', {
         method: 'POST',
@@ -247,6 +259,7 @@ export default function InstantQuotePage() {
           numLocations: Object.values(debouncedInputs.locations).filter(Boolean).length,
           colorsPerLocation: debouncedInputs.colorsPerLocation,
           rush: debouncedInputs.rush,
+          productSsId: effectiveProductSsId,
         }),
       });
       const body = await r.json();
@@ -292,9 +305,12 @@ export default function InstantQuotePage() {
       </section>
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
-        {/* ─── Catalog product banner (when arrived from /shop) ─── */}
-        {catalogProduct && (
-          <SelectedProductBanner product={catalogProduct} />
+        {/* ─── Catalog product banner (manual pick or arrived from /shop) ─── */}
+        {effectiveProduct && (
+          <SelectedProductBanner
+            product={effectiveProduct}
+            onClear={() => { setPickedProduct(null); }}
+          />
         )}
 
         {/* ─── Sticky price card (above the fold on mobile) ─── */}
@@ -309,6 +325,21 @@ export default function InstantQuotePage() {
 
         {/* ─── Form ─── */}
         <div className="mt-6 space-y-8">
+
+          {/* Optional: pick a specific catalog garment instead of using the
+              abstract Standard/Premium/Ultra tier. When picked, the quote
+              uses that product's price; the Quality tier section hides. */}
+          {!effectiveProduct && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setProductPickerOpen(true)}
+                className="text-sm text-orange-700 hover:text-orange-800 hover:underline"
+              >
+                Quoting a specific shirt? <span className="underline">Browse the catalog</span>
+              </button>
+            </div>
+          )}
 
           {/* Upload graphic — optional, but customers usually have art ready;
               accepting it now means we can quote artwork prep accurately and
@@ -411,7 +442,9 @@ export default function InstantQuotePage() {
             </div>
           </Section>
 
-          {/* Quality tier */}
+          {/* Quality tier — hidden when a specific product is picked, since
+              its catalog price overrides the tier-based one. */}
+          {!effectiveProduct && (
           <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
             <div className="grid grid-cols-3 gap-2">
               {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
@@ -439,6 +472,7 @@ export default function InstantQuotePage() {
               })}
             </div>
           </Section>
+          )}
 
           {/* Print method */}
           <Section icon={<Printer className="h-5 w-5" />} title="Print method">
@@ -561,8 +595,14 @@ export default function InstantQuotePage() {
           intent={saveOpen}
           calcTotal={calc.total}
           designUrls={designs.map((d) => d.url)}
-          catalogProduct={catalogProduct ?? null}
+          catalogProduct={effectiveProduct}
           onClose={() => setSaveOpen(false)}
+        />
+      )}
+      {productPickerOpen && (
+        <ProductPickerModal
+          onPick={(p) => { setPickedProduct(p); setProductPickerOpen(false); }}
+          onClose={() => setProductPickerOpen(false)}
         />
       )}
     </Layout>
@@ -621,9 +661,10 @@ function SaveQuoteModal({
             rush: inputs.rush,
             // Non-API fields, included so the email can show 'Front + Sleeve' etc.
             locations: inputs.locations,
-            // When the customer arrived from the catalog, stash the product
-            // reference so admin can see exactly which catalog item they
-            // were quoting (the calculator only knows abstract categories).
+            // Server uses productSsId to re-look up the price (custom_price
+            // ?? base_price × 2) and override the tier-based garment_cost.
+            ...(catalogProduct?.ss_id ? { productSsId: catalogProduct.ss_id } : {}),
+            // Snapshot of the picked product for the saved-quote email + admin.
             ...(catalogProduct ? {
               catalog_product: {
                 ss_id: catalogProduct.ss_id,
@@ -740,11 +781,15 @@ function SaveQuoteModal({
 /*  Sub-components                                                         */
 /* ────────────────────────────────────────────────────────────────────── */
 
-function SelectedProductBanner({ product }: { product: CatalogProduct }) {
+function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; onClear?: () => void }) {
   const img = product.image_url || product.imageUrl;
+  const wholesale = Number(product.base_price || 0);
+  const yourPrice = product.custom_price != null && Number(product.custom_price) > 0
+    ? Number(product.custom_price)
+    : wholesale > 0 ? wholesale * 2 : null;
   return (
-    <div className="mb-4 flex items-center gap-3 rounded-2xl border-2 border-gray-200 bg-white p-3">
-      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+    <div className="mb-4 flex items-center gap-3 rounded-2xl border-2 border-orange-300 bg-orange-50/50 p-3">
+      <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
         {img ? (
           <img src={img} alt={product.name} className="h-full w-full object-contain p-1" loading="lazy" />
         ) : (
@@ -752,20 +797,105 @@ function SelectedProductBanner({ product }: { product: CatalogProduct }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">
+        <p className="text-[10px] uppercase tracking-wider text-orange-700/70 font-medium">
           Quoting · {product.brand || 'Catalog item'}
         </p>
         <p className="font-display text-sm font-semibold text-gray-900 truncate">{product.name}</p>
-        {product.category && (
-          <p className="text-xs text-gray-500 truncate">{product.category}</p>
+        {yourPrice != null && (
+          <p className="text-xs text-gray-700 mt-0.5">Your price: <strong>${yourPrice.toFixed(2)}</strong> per shirt</p>
         )}
       </div>
-      <Link
-        to="/shop"
-        className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-      >
-        Change
-      </Link>
+      {onClear ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Clear
+        </button>
+      ) : (
+        <Link
+          to="/shop"
+          className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          Change
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) => void; onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 200);
+    return () => clearTimeout(t);
+  }, [q]);
+  const { data, isFetching } = useQuery<{ products: CatalogProduct[] }>({
+    queryKey: ['quote-product-search', debouncedQ],
+    queryFn: async () => {
+      const url = debouncedQ
+        ? `/api/products?search=${encodeURIComponent(debouncedQ)}&limit=20`
+        : '/api/products?limit=20';
+      const r = await fetch(url);
+      if (!r.ok) return { products: [] };
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+  const results = data?.products || [];
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 pt-20" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="border-b border-gray-200 px-4 py-3 flex items-center gap-2">
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by style number, name, or brand…"
+            className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+            style={{ fontSize: '16px' }}
+          />
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><XIcon className="h-5 w-5" /></button>
+        </div>
+        <div className="overflow-y-auto divide-y divide-gray-100">
+          {isFetching && results.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" /> Searching…
+            </div>
+          ) : results.length === 0 ? (
+            <div className="p-8 text-center text-sm text-gray-400">No products match "{debouncedQ}"</div>
+          ) : (
+            results.map((p) => {
+              const img = p.image_url || p.imageUrl;
+              const wholesale = Number(p.base_price || 0);
+              const yourPrice = p.custom_price != null && Number(p.custom_price) > 0
+                ? Number(p.custom_price)
+                : wholesale > 0 ? wholesale * 2 : null;
+              return (
+                <button
+                  key={p.ss_id || p.id}
+                  type="button"
+                  onClick={() => onPick(p)}
+                  className="w-full flex items-center gap-3 p-3 text-left hover:bg-orange-50"
+                >
+                  <div className="h-12 w-12 flex-shrink-0 bg-gray-50 rounded flex items-center justify-center overflow-hidden">
+                    {img ? <img src={img} alt="" className="h-full w-full object-contain p-1" loading="lazy" /> : <Shirt className="h-5 w-5 text-gray-400" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">{p.brand}</p>
+                    <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
+                  </div>
+                  {yourPrice != null && (
+                    <span className="text-sm font-semibold text-orange-700 whitespace-nowrap">${yourPrice.toFixed(2)}</span>
+                  )}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
     </div>
   );
 }
