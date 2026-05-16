@@ -67,8 +67,8 @@ const COLOR_OPTIONS: readonly string[] = [
 
 const DEFAULT_INPUTS: Inputs = {
   sizes: [
-    { size: 'S', quantity: 0 }, { size: 'M', quantity: 10 },
-    { size: 'L', quantity: 10 }, { size: 'XL', quantity: 5 },
+    { size: 'S', quantity: 0 }, { size: 'M', quantity: 0 },
+    { size: 'L', quantity: 0 }, { size: 'XL', quantity: 0 },
     { size: '2XL', quantity: 0 }, { size: '3XL', quantity: 0 },
     { size: '4XL', quantity: 0 }, { size: '5XL', quantity: 0 },
   ],
@@ -772,10 +772,22 @@ function PriceCard({
 }) {
   if (!hasInputs) {
     return (
-      <div className="rounded-2xl border-2 border-dashed border-gray-300 p-6 text-center text-gray-500">
-        {numLocations === 0
-          ? 'Pick at least one print location to see your quote.'
-          : 'Fill in the form to see your quote.'}
+      <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-orange-700/70">Per shirt</div>
+            <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">$0.00</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs uppercase tracking-wider text-orange-700/70">Total</div>
+            <div className="font-display text-2xl sm:text-3xl font-bold text-gray-900">$0.00</div>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">
+          {numLocations === 0
+            ? 'Pick at least one print location.'
+            : 'Enter quantities to see your price update live.'}
+        </p>
       </div>
     );
   }
