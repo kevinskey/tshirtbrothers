@@ -36,7 +36,10 @@ interface Settings {
   rush_threshold_days: number;
   standard_turnaround: number;
   rush_turnaround: number;
+  size_upcharges?: Record<string, number | string>;
 }
+
+const UPCHARGE_SIZES = ['2XL', '3XL', '4XL', '5XL', '6XL'];
 interface Pricing {
   garments: Garment[];
   print_methods: PrintMethod[];
@@ -189,6 +192,32 @@ export default function InstantQuotePricingAdmin() {
             help="If customer wants it faster than this, surcharge applies."
             onChange={(v) => setField('settings', { ...data.settings, rush_threshold_days: Number(v) })}
           />
+        </div>
+
+        <div className="mt-6">
+          <h4 className="text-sm font-semibold text-gray-800">Size upcharges</h4>
+          <p className="text-xs text-gray-500 mt-0.5 mb-3">
+            Added per shirt for each size. S–XL are free; leave a row at 0 to disable that size's upcharge.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {UPCHARGE_SIZES.map((sz) => (
+              <NumberField
+                key={sz}
+                label={sz}
+                value={data.settings.size_upcharges?.[sz] ?? 0}
+                step="0.50"
+                onChange={(v) =>
+                  setField('settings', {
+                    ...data.settings,
+                    size_upcharges: {
+                      ...(data.settings.size_upcharges || {}),
+                      [sz]: v === '' ? 0 : Number(v),
+                    },
+                  })
+                }
+              />
+            ))}
+          </div>
         </div>
       </Card>
 

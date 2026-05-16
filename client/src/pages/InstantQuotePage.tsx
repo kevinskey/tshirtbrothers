@@ -314,7 +314,7 @@ export default function InstantQuotePage() {
               accepting it now means we can quote artwork prep accurately and
               the file is waiting for us when they lock in the order. */}
           <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
-            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-red-400 hover:bg-gray-50">
+            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
               <Upload className="h-5 w-5" />
               <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
               <input
@@ -336,7 +336,7 @@ export default function InstantQuotePage() {
                     <button
                       type="button"
                       onClick={() => setDesigns(designs.filter((_, idx) => idx !== i))}
-                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shadow-sm"
+                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
                       aria-label={`Remove ${d.filename}`}
                     >
                       <XIcon className="h-3.5 w-3.5" />
@@ -366,7 +366,7 @@ export default function InstantQuotePage() {
                         update({ sizes: next });
                       }}
                       placeholder="0"
-                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
                       style={{ fontSize: '16px' }}
                     />
                     {upcharge > 0 && (
@@ -422,7 +422,7 @@ export default function InstantQuotePage() {
                     type="button"
                     onClick={() => update({ qualityTier: q })}
                     className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                      inputs.qualityTier === q ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                     }`}
                   >
                     <div>{q}</div>
@@ -457,7 +457,7 @@ export default function InstantQuotePage() {
                   type="button"
                   onClick={() => update({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
                   className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
-                    inputs.locations[loc] ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+                    inputs.locations[loc] ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                   }`}
                 >
                   {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
@@ -478,7 +478,7 @@ export default function InstantQuotePage() {
                     type="button"
                     onClick={() => update({ colorsPerLocation: n })}
                     className={`rounded-xl border-2 py-3 text-base font-bold transition ${
-                      inputs.colorsPerLocation === n ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+                      inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                     }`}
                   >
                     {n}
@@ -496,7 +496,7 @@ export default function InstantQuotePage() {
                 type="button"
                 onClick={() => update({ rush: false })}
                 className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                  !inputs.rush ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+                  !inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                 }`}
               >
                 <div>Standard</div>
@@ -506,7 +506,7 @@ export default function InstantQuotePage() {
                 type="button"
                 onClick={() => update({ rush: true })}
                 className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                  inputs.rush ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+                  inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                 }`}
               >
                 <div>Rush</div>
@@ -524,7 +524,7 @@ export default function InstantQuotePage() {
             type="button"
             onClick={() => setSaveOpen('save')}
             disabled={!calc}
-            className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-red-400 hover:bg-gray-50 disabled:opacity-50 transition"
+            className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-orange-400 hover:bg-gray-50 disabled:opacity-50 transition"
           >
             Save Quote (email me)
           </button>
@@ -532,7 +532,7 @@ export default function InstantQuotePage() {
             type="button"
             onClick={() => setSaveOpen('lock-in')}
             disabled={!calc}
-            className="w-full rounded-xl bg-red-600 px-6 py-4 text-base font-bold text-white hover:bg-red-700 disabled:opacity-50 transition"
+            className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
           >
             Lock In Order — 50% deposit
           </button>
@@ -675,7 +675,7 @@ function SaveQuoteModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
           <div>
@@ -685,7 +685,7 @@ function SaveQuoteModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Optional"
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-red-500"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
           <div>
@@ -695,7 +695,7 @@ function SaveQuoteModal({
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               placeholder="Optional — special requirements, deadline notes, etc."
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
             />
           </div>
         </div>
@@ -713,7 +713,7 @@ function SaveQuoteModal({
             type="button"
             onClick={submit}
             disabled={saving}
-            className="rounded-lg bg-red-600 px-6 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+            className="rounded-lg bg-orange-600 px-6 py-3 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isLockIn
@@ -787,17 +787,17 @@ function PriceCard({
     );
   }
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200 p-6">
+    <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
       <div className="flex items-baseline justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-red-700/70">Per shirt</div>
+          <div className="text-xs uppercase tracking-wider text-orange-700/70">Per shirt</div>
           <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">
             ${calc.per_shirt.toFixed(2)}
-            {loading && <Loader2 className="inline ml-2 h-4 w-4 animate-spin text-red-400" />}
+            {loading && <Loader2 className="inline ml-2 h-4 w-4 animate-spin text-orange-400" />}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-wider text-red-700/70">Total</div>
+          <div className="text-xs uppercase tracking-wider text-orange-700/70">Total</div>
           <div className="font-display text-2xl sm:text-3xl font-bold text-gray-900">
             ${calc.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
@@ -805,11 +805,11 @@ function PriceCard({
       </div>
 
       <div className="mt-3 flex items-center gap-3 text-sm">
-        <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-red-200">
+        <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
           {calc.turnaround_days} day turnaround
         </span>
         {tier && tier.discount_pct > 0 && (
-          <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-red-200">
+          <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
             {Math.round(tier.discount_pct * 100)}% volume discount
           </span>
         )}
@@ -817,7 +817,7 @@ function PriceCard({
 
       {/* Collapsible breakdown */}
       <details className="mt-4 group">
-        <summary className="flex items-center gap-1 text-sm text-red-700 hover:text-red-800 cursor-pointer select-none list-none">
+        <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
           <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
           Price breakdown
         </summary>
@@ -846,7 +846,7 @@ function PriceCard({
 
 function Row({ label, sub, value, negative, bold }: { label: string; sub?: string; value: number; negative?: boolean; bold?: boolean }) {
   return (
-    <div className={`flex items-baseline justify-between gap-2 ${bold ? 'pt-2 border-t border-red-200 font-bold text-gray-900' : ''}`}>
+    <div className={`flex items-baseline justify-between gap-2 ${bold ? 'pt-2 border-t border-orange-200 font-bold text-gray-900' : ''}`}>
       <div>
         <span className={negative ? 'text-green-700' : ''}>{label}</span>
         {sub && <span className="ml-1 text-xs text-gray-500">{sub}</span>}
@@ -876,7 +876,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-        active ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 hover:border-red-400'
+        active ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
       }`}
     >
       {children}
