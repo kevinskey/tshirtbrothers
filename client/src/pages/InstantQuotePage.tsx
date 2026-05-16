@@ -521,7 +521,7 @@ export default function InstantQuotePage() {
               >
                 <div>Rush</div>
                 <div className="text-[10px] mt-0.5 text-gray-500">
-                  {options?.settings.rush_turnaround ?? 5} days · +{Math.round((options?.settings.rush_surcharge_pct ?? 0.25) * 100)}%
+                  1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
                 </div>
               </button>
             </div>
@@ -858,7 +858,12 @@ function PriceCard({
           {calc.breakdown.quantity_discount > 0 && (
             <Row label={`Volume discount (${Math.round(calc.breakdown.discount_pct * 100)}% off)`} value={-calc.breakdown.quantity_discount} negative />
           )}
-          {calc.breakdown.rush_surcharge > 0 && <Row label="Rush surcharge (+25%)" value={calc.breakdown.rush_surcharge} />}
+          {calc.breakdown.rush_surcharge > 0 && (
+            <Row
+              label={`Rush surcharge (+${calc.breakdown.base > 0 ? Math.round((calc.breakdown.rush_surcharge / calc.breakdown.base) * 100) : 0}%)`}
+              value={calc.breakdown.rush_surcharge}
+            />
+          )}
           <Row label={`Subtotal × ${calc.breakdown.markup_multiplier} markup`} value={calc.total} bold />
         </dl>
       </details>
