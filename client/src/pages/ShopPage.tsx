@@ -409,6 +409,20 @@ export default function ShopPage() {
                       {styleNum}{styleNum && colors.length ? ' · ' : ''}{colors.length > 0 ? `${colors.length} colors` : ''}{sizeRange ? ` · ${sizeRange}` : ''}
                     </p>
 
+                    {/* Your Price — wholesale doubled, rounded to two decimals.
+                        Hidden when S&S didn't return a price (a few discontinued
+                        styles return 0). */}
+                    {(() => {
+                      const wholesale = Number(product.base_price || 0);
+                      if (!(wholesale > 0)) return null;
+                      return (
+                        <p className="mt-2 text-sm">
+                          <span className="text-gray-500">Your price: </span>
+                          <span className="font-semibold text-gray-900">${(wholesale * 2).toFixed(2)}</span>
+                        </p>
+                      );
+                    })()}
+
                     {/* Color dots */}
                     {colors.length > 0 && (
                     <div className="flex items-center gap-1.5 mt-3">
@@ -491,6 +505,17 @@ export default function ShopPage() {
                 </div>
 
                 <div className="space-y-4 text-sm">
+                  {(() => {
+                    const wholesale = Number(p.base_price || 0);
+                    if (!(wholesale > 0)) return null;
+                    return (
+                      <div className="rounded-xl bg-orange-50 border border-orange-200 px-4 py-3">
+                        <p className="text-xs uppercase tracking-wider text-orange-700/70 font-medium">Your price</p>
+                        <p className="font-display text-2xl font-bold text-gray-900">${(wholesale * 2).toFixed(2)}</p>
+                        <p className="text-[11px] text-gray-500 mt-0.5">Blank garment. Print pricing calculated separately.</p>
+                      </div>
+                    );
+                  })()}
                   {styleNum && (
                     <div>
                       <p className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-1">Style</p>

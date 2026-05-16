@@ -415,7 +415,14 @@ export default function InstantQuotePage() {
           <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
             <div className="grid grid-cols-3 gap-2">
               {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
-                const garment = options?.garments.find((g) => g.name === inputs.garmentName && g.quality_tier === q);
+                // Brand hint shown under each tier when garment is T-shirt —
+                // the three canonical tiers map directly to a brand staple.
+                const tshirtBrand: Record<typeof q, string> = {
+                  Standard: 'Gildan',
+                  Premium: 'Next Level',
+                  Ultra: 'Comfort Colors',
+                } as const;
+                const brandHint = inputs.garmentName === 'T-shirt' ? tshirtBrand[q] : null;
                 return (
                   <button
                     key={q}
@@ -426,7 +433,7 @@ export default function InstantQuotePage() {
                     }`}
                   >
                     <div>{q}</div>
-                    {garment && <div className="text-[10px] mt-0.5 text-gray-500">${garment.base_cost.toFixed(2)} cost</div>}
+                    {brandHint && <div className="text-[10px] mt-0.5 text-gray-500">{brandHint}</div>}
                   </button>
                 );
               })}
