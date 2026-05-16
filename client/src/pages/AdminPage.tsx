@@ -2511,6 +2511,14 @@ export default function AdminPage() {
                         <td className="px-4 py-3">
                           {hasCustom ? (
                             <span className="text-green-700 font-semibold text-xs">${Number(customPrice).toFixed(2)}</span>
+                          ) : wholesale > 0 ? (
+                            // Default "Your Price" to 2x wholesale when no
+                            // override exists, so the admin sees the price
+                            // customers will actually see on the shop.
+                            <span className="text-gray-700 text-xs">
+                              ${(wholesale * 2).toFixed(2)}
+                              <span className="ml-1 text-gray-400">(default)</span>
+                            </span>
                           ) : (
                             <span className="text-gray-400 text-xs">Not set</span>
                           )}
@@ -2520,7 +2528,7 @@ export default function AdminPage() {
                             type="number"
                             step="0.01"
                             min="0"
-                            placeholder="$0.00"
+                            placeholder={wholesale > 0 ? `$${(wholesale * 2).toFixed(2)}` : '$0.00'}
                             defaultValue={hasCustom ? Number(customPrice).toFixed(2) : ''}
                             onBlur={async (e) => {
                               const val = parseFloat(e.target.value);
