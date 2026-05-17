@@ -25,6 +25,7 @@ import BrandsPage from '@/pages/BrandsPage';
 import BlogPage from '@/pages/BlogPage';
 import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
+import FavoritesPage from '@/pages/FavoritesPage';
 import GangSheetPage from '@/pages/GangSheetPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
@@ -66,6 +67,7 @@ function App() {
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/gangsheet" element={<GangSheetPage />} />
           <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />

@@ -1,8 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { Search, Loader2, X } from 'lucide-react';
+import { Search, Loader2, X, Heart } from 'lucide-react';
+
+function favAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('tsb_token') || '';
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 interface ColorInfo {
   name: string;
@@ -246,6 +251,33 @@ export default function ShopPage() {
   const apiBrands = filtersData?.brands ?? [];
   const apiCategories = filtersData?.categories ?? [];
 
+  // Logged-in user's favorited product IDs — used to render a filled
+  // heart on the card. Skips the fetch (and the heart UI) for guests.
+  const qc = useQueryClient();
+  const isLoggedIn = !!localStorage.getItem('tsb_token');
+  const { data: favIds } = useQuery<{ ids: number[] }>({
+    queryKey: ['favorite-ids'],
+    queryFn: async () => {
+      const r = await fetch('/api/favorites/ids', { headers: favAuthHeaders() });
+      if (!r.ok) return { ids: [] };
+      return r.json();
+    },
+    enabled: isLoggedIn,
+    staleTime: 60_000,
+  });
+  const favSet = new Set(favIds?.ids || []);
+  const toggleFav = useMutation({
+    mutationFn: async ({ productId, current }: { productId: number; current: boolean }) => {
+      const method = current ? 'DELETE' : 'POST';
+      const r = await fetch(`/api/favorites/${productId}`, { method, headers: favAuthHeaders() });
+      if (!r.ok) throw new Error('Failed');
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['favorite-ids'] });
+      qc.invalidateQueries({ queryKey: ['favorites'] });
+    },
+  });
+
   const {
     data,
     isError,
@@ -373,13 +405,31 @@ export default function ShopPage() {
                 const styleNum = getProductStyleNumber(product);
                 const sizeRange = getProductSizeRange(product);
                 const pid = getProductId(product);
+                const numericPid = Number(product.id);
+                const isFav = Number.isFinite(numericPid) && favSet.has(numericPid);
                 return (
-                <button
-                  key={pid}
-                  type="button"
-                  onClick={() => setDetailProduct(product)}
-                  className="text-left border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group cursor-pointer bg-white"
-                >
+                <div key={pid} className="relative border border-gray-100 rounded-xl overflow-hidden hover:shadow-lg transition-shadow group bg-white">
+                  {/* Heart toggle — guests bounce to /auth. Live tile UI
+                      while the mutation runs; React Query refetches on
+                      success so the filled state stays in sync. */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (!isLoggedIn) { window.location.href = '/auth'; return; }
+                      if (Number.isFinite(numericPid)) toggleFav.mutate({ productId: numericPid, current: isFav });
+                    }}
+                    aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                    className="absolute top-2 right-2 z-10 p-1.5 rounded-full bg-white/90 hover:bg-white shadow-sm"
+                  >
+                    <Heart className={`h-4 w-4 ${isFav ? 'text-orange-500 fill-orange-500' : 'text-gray-500'}`} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDetailProduct(product)}
+                    className="block text-left w-full cursor-pointer"
+                  >
                   {/* Image */}
                   <div className="bg-gray-100 aspect-square flex items-center justify-center overflow-hidden">
                     {imgUrl ? (
@@ -442,7 +492,8 @@ export default function ShopPage() {
                     </div>
                     )}
                   </div>
-                </button>
+                  </button>
+                </div>
                 );
               })}
             </div>

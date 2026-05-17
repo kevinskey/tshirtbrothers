@@ -26,6 +26,7 @@ import clientErrorsRouter from './routes/clientErrors.js';
 import { adminRouter as customFontsAdminRouter, publicRouter as customFontsPublicRouter } from './routes/customFonts.js';
 import campaignsRouter, { publicRouter as emailPublicRouter } from './routes/campaigns.js';
 import instantQuoteRouter, { adminRouter as instantQuotePricingAdminRouter } from './routes/instantQuote.js';
+import favoritesRouter from './routes/favorites.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -70,6 +71,7 @@ app.use('/api/admin/custom-fonts', customFontsAdminRouter);
 app.use('/api/custom-fonts', customFontsPublicRouter);
 app.use('/api/admin/campaigns', campaignsRouter);
 app.use('/api/email', emailPublicRouter);
+app.use('/api/favorites', favoritesRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart } from 'lucide-react';
+import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavLink = { label: string; href: string };
@@ -102,16 +102,16 @@ export default function Navbar() {
                 })()}
               </div>
 
-              {/* Saved designs / favorites */}
+              {/* Favorites (heart) */}
               <Link
-                to={isLoggedIn ? '/account' : '/auth'}
-                aria-label="Saved designs"
+                to={isLoggedIn ? '/favorites' : '/auth'}
+                aria-label="Favorites"
                 className="inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors"
               >
                 <Heart className="h-5 w-5" />
               </Link>
 
-              {/* Account / Sign In */}
+              {/* Account / Sign In (avatar + label) */}
               {isLoggedIn ? (
                 <Link to="/account" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
                   <User className="h-5 w-5" />
@@ -123,6 +123,15 @@ export default function Navbar() {
                   <span className="hidden sm:inline">Sign In</span>
                 </Link>
               )}
+
+              {/* Cart — links to quote builder since TSB orders go through quotes */}
+              <Link
+                to="/quote"
+                aria-label="Quote builder"
+                className="inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors"
+              >
+                <ShoppingCart className="h-5 w-5" />
+              </Link>
             </div>
           </div>
         </div>
