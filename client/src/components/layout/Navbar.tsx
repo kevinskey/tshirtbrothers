@@ -46,6 +46,15 @@ export default function Navbar() {
 
   return (
     <nav className="sticky top-0 z-50 bg-white overflow-x-hidden">
+      {/* Top promo strip — same shape as the Custom Ink black banner. */}
+      <Link
+        to="/shop"
+        className="block bg-gray-900 text-white text-center text-sm py-2.5 px-4 hover:bg-gray-800 transition-colors"
+      >
+        15% Off T-shirts, Athletics &amp; Polos — Prices as Marked.<sup>*</sup>{' '}
+        <span className="font-bold underline">Shop Sale</span>
+      </Link>
+
       {/* Main header row — Custom Ink-style: hamburger + logo on left,
           heart / account / phone on the right. The big rounded search
           field lives in its own row below, full-width at every viewport. */}
@@ -70,10 +79,11 @@ export default function Navbar() {
                 className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
               />
               <span
-                className="hidden sm:inline text-base sm:text-lg font-bold text-gray-900"
+                className="text-sm sm:text-lg font-bold text-orange-500 leading-tight"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
-                TShirt Brothers
+                <span className="block sm:inline">TSHIRT</span>{' '}
+                <span className="block sm:inline">BROTHERS</span>
               </span>
             </Link>
 
