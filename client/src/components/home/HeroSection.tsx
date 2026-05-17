@@ -33,7 +33,7 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8 pb-12 sm:pt-12 sm:pb-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-12 sm:pt-4 sm:pb-16">
         {/* Rounded colored card with 3 floating garments (Custom Ink style).
             White product backgrounds drop out via mix-blend-multiply.
             Explicit z-index layering: bg color = card itself, products
