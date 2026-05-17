@@ -59,7 +59,7 @@ export default function Navbar() {
           heart / account / phone on the right. The big rounded search
           field lives in its own row below, full-width at every viewport. */}
       <div className="bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-1.5">
           <div className="flex items-center gap-3">
             {/* Always-visible hamburger (mobile + desktop, like Custom Ink) */}
             <button
