@@ -76,7 +76,7 @@ export default function Navbar() {
               <img
                 src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
                 alt="TShirt Brothers"
-                className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
+                className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
               />
               <span
                 className="text-sm sm:text-lg font-bold text-orange-500 leading-tight"
