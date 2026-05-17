@@ -1823,6 +1823,12 @@ export default function AdminPage() {
         if (s?.size && Number(s.quantity) > 0) out[s.size] = (out[s.size] || 0) + Number(s.quantity);
       }
     }
+    // Final fallback: quote has just a plain quantity (legacy instant-quote
+    // pre-sizes, or a customer who didn't break out per-size). Show one
+    // row keyed by NO_SIZE_KEY so the admin still has a price input.
+    if (Object.keys(out).length === 0 && Number(q.quantity) > 0) {
+      out[NO_SIZE_KEY] = Number(q.quantity);
+    }
     return out;
   }
 
