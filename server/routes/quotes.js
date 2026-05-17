@@ -472,10 +472,13 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
     const acceptToken = crypto.randomBytes(32).toString('hex');
     const depositAmount = (Number(total) * 0.5).toFixed(2);
 
-    // Update the quote
+    // Update the quote. calculated_price is overwritten here too so the
+    // admin-set total replaces the original auto-estimate — otherwise
+    // reports and downstream readers can show a stale figure.
     const result = await pool.query(
       `UPDATE quotes
        SET estimated_price = $1,
+           calculated_price = $1,
            status = 'quoted',
            accept_token = $2,
            price_breakdown = $3,
