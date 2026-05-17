@@ -10,7 +10,7 @@ export default function HeroSection() {
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-12 sm:pt-4 sm:pb-16">
         {/* Hero card */}
-        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] sm:aspect-[3/2] bg-gray-100">
+        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-square sm:aspect-[3/2] bg-gray-100">
           <img
             src={HERO_IMG}
             alt="Custom apparel"
