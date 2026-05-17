@@ -22,7 +22,7 @@ export default function HeroSection() {
         {/* Headline + CTAs below the photo */}
         <div className="mt-10 sm:mt-14 text-center">
           <h1
-            className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl text-gray-900 leading-[1.05] tracking-tight"
+            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl text-gray-900 leading-[1.05] tracking-tight"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
             Custom Apparel,<br />
