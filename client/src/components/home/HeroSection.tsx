@@ -3,7 +3,7 @@ import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
 // Single hero image — point this at the uploaded file in DO Spaces.
 // Replace with the actual CDN URL once the file is uploaded.
-const HERO_IMG = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/hero-main.jpg';
+const HERO_IMG = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/tshirts.png';
 
 export default function HeroSection() {
   return (
