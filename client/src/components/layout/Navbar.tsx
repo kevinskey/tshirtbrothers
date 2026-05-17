@@ -158,7 +158,7 @@ export default function Navbar() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search for t-shirts, hoodies, hats, and more"
-              className="w-full rounded-full bg-gray-100 pl-12 pr-4 py-3 text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
+              className="w-full rounded-full bg-gray-100 pl-12 pr-4 py-[9.5px] text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
               style={{ fontSize: '16px' }}
             />
           </div>
