@@ -826,7 +826,9 @@ export default function AdminPage() {
   const [priceDesignFee, setPriceDesignFee] = useState('0');
   const [priceRushFee, setPriceRushFee] = useState('0');
   const [priceShipping, setPriceShipping] = useState('0');
+  const [priceTaxExempt, setPriceTaxExempt] = useState(false);
   const [priceMessage, setPriceMessage] = useState('');
+  const TAX_RATE = 0.0775; // Fairburn, GA combined sales tax
   // Gang-sheet calculator inputs
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcGraphicW, setCalcGraphicW] = useState('10');
@@ -1908,10 +1910,16 @@ export default function AdminPage() {
     const designFee = parseFloat(priceDesignFee) || 0;
     const rushFee = parseFloat(priceRushFee) || 0;
     const shipping = parseFloat(priceShipping) || 0;
-    const total = garmentTotal + designFee + rushFee + shipping;
+    const preTax = garmentTotal + designFee + rushFee + shipping;
+    const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
+    const total = preTax + tax;
     const payload = {
       quoteId: String(priceModalQuote.id),
-      priceBreakdown: { basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total, shipping, sizeMarkups },
+      priceBreakdown: {
+        basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total,
+        shipping, sizeMarkups,
+        tax, taxExempt: priceTaxExempt, taxRate: TAX_RATE,
+      },
       message: priceMessage || undefined,
     };
     console.log('Sending price payload:', JSON.stringify(payload));
@@ -1925,6 +1933,7 @@ export default function AdminPage() {
     setPriceDesignFee('0');
     setPriceRushFee('0');
     setPriceShipping('0');
+    setPriceTaxExempt(false);
     setPriceMessage('');
     // Seed per-size markups from line items (including item.unit_price when
     // available, so the admin starts from what the customer was shown).
@@ -6891,6 +6900,17 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  {/* Tax */}
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={priceTaxExempt}
+                      onChange={(e) => setPriceTaxExempt(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    Tax-exempt (school, nonprofit, etc.) — skip the {(TAX_RATE * 100).toFixed(2)}% sales tax
+                  </label>
+
                   {/* Total Preview */}
                   {(() => {
                     const sizeQtys = sizeMapForQuote(priceModalQuote);
@@ -6898,16 +6918,25 @@ export default function AdminPage() {
                     for (const [size, qty] of Object.entries(sizeQtys)) {
                       garmentTotal += (parseFloat(sizeMarkups[size] || '0')) * Number(qty);
                     }
-                    const fees = (parseFloat(priceDesignFee) || 0) + (parseFloat(priceRushFee) || 0) + (parseFloat(priceShipping) || 0);
-                    const total = garmentTotal + fees;
+                    const designFee = parseFloat(priceDesignFee) || 0;
+                    const rushFee = parseFloat(priceRushFee) || 0;
+                    const shipping = parseFloat(priceShipping) || 0;
+                    const preTax = garmentTotal + designFee + rushFee + shipping;
+                    const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
+                    const total = preTax + tax;
                     return (
                       <div className="bg-gray-900 rounded-lg p-4">
                         <div className="flex justify-between text-sm text-gray-400 mb-1">
                           <span>Garments subtotal</span><span className="text-white">${garmentTotal.toFixed(2)}</span>
                         </div>
-                        {(parseFloat(priceDesignFee) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Artwork fee</span><span className="text-white">${parseFloat(priceDesignFee).toFixed(2)}</span></div>}
-                        {(parseFloat(priceRushFee) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Rush fee</span><span className="text-white">${parseFloat(priceRushFee).toFixed(2)}</span></div>}
-                        {(parseFloat(priceShipping) || 0) > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Shipping</span><span className="text-white">${parseFloat(priceShipping).toFixed(2)}</span></div>}
+                        {designFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Artwork fee</span><span className="text-white">${designFee.toFixed(2)}</span></div>}
+                        {rushFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Rush fee</span><span className="text-white">${rushFee.toFixed(2)}</span></div>}
+                        {shipping > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Shipping</span><span className="text-white">${shipping.toFixed(2)}</span></div>}
+                        {priceTaxExempt ? (
+                          <div className="flex justify-between text-sm text-gray-500"><span>Sales tax</span><span className="italic">Exempt</span></div>
+                        ) : tax > 0 && (
+                          <div className="flex justify-between text-sm text-gray-400"><span>Sales tax ({(TAX_RATE * 100).toFixed(2)}%)</span><span className="text-white">${tax.toFixed(2)}</span></div>
+                        )}
                         <div className="border-t border-gray-700 mt-2 pt-2 flex justify-between">
                           <span className="text-sm font-bold text-white">Total</span>
                           <span className="text-xl font-bold text-white">${total.toFixed(2)}</span>

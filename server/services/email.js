@@ -125,7 +125,7 @@ export async function sendQuoteRequestNotification(quote) {
  * Sends the quoted price to the customer.
  */
 export async function sendQuotePriceToCustomer(quote, priceDetails) {
-  const { basePrice, printingCost, designFee, rushFee, total, message } = priceDetails;
+  const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message } = priceDetails;
   const deposit = (Number(total) * 0.5).toFixed(2);
 
   const sizesDisplay = (() => {
@@ -146,11 +146,14 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
   const acceptUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token}`;
   const declineUrl = `${DOMAIN}/quote/decline/${quote.id}?token=${quote.accept_token}`;
 
+  const taxLabel = taxRate ? `Sales Tax (${(Number(taxRate) * 100).toFixed(2)}%)` : 'Sales Tax';
   const priceRows =
     detailRow('Base Price (apparel)', formatCurrency(basePrice)) +
     detailRow('Printing Cost', formatCurrency(printingCost)) +
     (Number(designFee) > 0 ? detailRow('Design Fee', formatCurrency(designFee)) : '') +
     (Number(rushFee) > 0 ? detailRow('Rush Fee', formatCurrency(rushFee)) : '') +
+    (Number(shipping) > 0 ? detailRow('Shipping', formatCurrency(shipping)) : '') +
+    (taxExempt ? detailRow('Sales Tax', 'Exempt') : (Number(tax) > 0 ? detailRow(taxLabel, formatCurrency(tax)) : '')) +
     `<tr>
       <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Total</td>
       <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(total)}</td>
