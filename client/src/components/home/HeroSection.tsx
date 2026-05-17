@@ -1,84 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
-// Custom Ink-style "floating products on a colored block." We composite
-// three S&S catalog product shots — hoodie / tee / polo — onto a rounded
-// colored card. The product images are white-background JPGs from S&S;
-// `mix-blend-multiply` makes the white drop out so each garment appears
-// to float on the card.
-const SS_IMG = 'https://www.ssactivewear.com/Images/Style';
-const HERO_PRODUCTS = {
-  hoodie: `${SS_IMG}/3946_fm.jpg`, // Comfort Colors Garment-Dyed Hooded Sweatshirt
-  tee:    `${SS_IMG}/1822_fm.jpg`, // Comfort Colors Heavyweight T-Shirt
-  polo:   `${SS_IMG}/223_fm.jpg`,  // Gildan DryBlend Jersey Polo
-};
-// Rotating background colors only — same 3 garments, vivid colors cycle.
-const HERO_SLIDES = [
-  { bg: 'bg-violet-600' },
-  { bg: 'bg-orange-500' },
-  { bg: 'bg-emerald-600' },
-  { bg: 'bg-rose-600' },
-  { bg: 'bg-indigo-600' },
-  { bg: 'bg-slate-700' },
-];
+// Single hero image — point this at the uploaded file in DO Spaces.
+// Replace with the actual CDN URL once the file is uploaded.
+const HERO_IMG = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/hero-main.jpg';
 
 export default function HeroSection() {
-  const [activeImg, setActiveImg] = useState(0);
-  const nextImg = useCallback(() => setActiveImg(s => (s + 1) % HERO_SLIDES.length), []);
-  useEffect(() => {
-    const t = setInterval(nextImg, 4500);
-    return () => clearInterval(t);
-  }, [nextImg]);
-
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-12 sm:pt-4 sm:pb-16">
-        {/* Rounded colored card with 3 floating garments (Custom Ink style).
-            White product backgrounds drop out via mix-blend-multiply.
-            Explicit z-index layering: bg color = card itself, products
-            stack on top, soft vignette overlay sits ABOVE them but at
-            low opacity so it tints rather than covers.
-            Aspect set close to 4:3 mobile / 3:2 desktop to match Custom
-            Ink's taller hero. */}
-        <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] sm:aspect-[3/2] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
-          {/* Hoodie — left, slightly back/smaller */}
+        {/* Hero card */}
+        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] sm:aspect-[3/2] bg-gray-100">
           <img
-            src={HERO_PRODUCTS.hoodie}
-            alt=""
-            aria-hidden
-            className="absolute z-10 left-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[-6deg] hidden sm:block"
-            loading="eager"
-          />
-          {/* Polo — right, slightly back/smaller */}
-          <img
-            src={HERO_PRODUCTS.polo}
-            alt=""
-            aria-hidden
-            className="absolute z-10 right-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[6deg] hidden sm:block"
-            loading="eager"
-          />
-          {/* Tee — center, hero piece, in front */}
-          <img
-            src={HERO_PRODUCTS.tee}
+            src={HERO_IMG}
             alt="Custom apparel"
-            className="absolute z-20 left-1/2 -translate-x-1/2 bottom-[4%] h-[92%] object-contain mix-blend-multiply drop-shadow-2xl"
+            className="absolute inset-0 h-full w-full object-cover"
             loading="eager"
           />
-          {/* Dot indicators sit inside the photo card */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-            {HERO_SLIDES.map((_, i) => (
-              <button
-                key={i}
-                aria-label={`Slide ${i + 1}`}
-                onClick={() => setActiveImg(i)}
-                className={`h-1.5 rounded-full transition-all duration-300 ${i === activeImg ? 'w-8 bg-white' : 'w-1.5 bg-white/60 hover:bg-white'}`}
-              />
-            ))}
-          </div>
         </div>
 
-        {/* Text + CTAs BELOW the photo, like the Custom Ink reference */}
+        {/* Headline + CTAs below the photo */}
         <div className="mt-10 sm:mt-14 text-center">
           <h1
             className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl text-gray-900 leading-[1.05] tracking-tight"
