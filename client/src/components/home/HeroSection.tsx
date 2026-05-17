@@ -2,17 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
-const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides';
-// Each slide gets a vivid solid background color so the photo card
-// always contrasts against the white page (Custom Ink-style). The
-// color rotates with the active image.
+// Custom Ink-style "floating products on a colored block." We composite
+// three S&S catalog product shots — hoodie / tee / polo — onto a rounded
+// colored card. The product images are white-background JPGs from S&S;
+// `mix-blend-multiply` makes the white drop out so each garment appears
+// to float on the card.
+const SS_IMG = 'https://www.ssactivewear.com/Images/Style';
+const HERO_PRODUCTS = {
+  hoodie: `${SS_IMG}/3946_fm.jpg`, // Comfort Colors Garment-Dyed Hooded Sweatshirt
+  tee:    `${SS_IMG}/1822_fm.jpg`, // Comfort Colors Heavyweight T-Shirt
+  polo:   `${SS_IMG}/223_fm.jpg`,  // Gildan DryBlend Jersey Polo
+};
+// Rotating background colors only — same 3 garments, vivid colors cycle.
 const HERO_SLIDES = [
-  { img: `${CDN}/family-reunion.png?v=2`,   bg: 'bg-orange-500' },
-  { img: `${CDN}/sports-jerseys.png?v=2`,   bg: 'bg-emerald-600' },
-  { img: `${CDN}/small-business.png?v=2`,   bg: 'bg-slate-700' },
-  { img: `${CDN}/school-class.png?v=2`,     bg: 'bg-rose-600' },
-  { img: `${CDN}/event-concert.png?v=2`,    bg: 'bg-indigo-600' },
-  { img: `${CDN}/church-ministry.png?v=2`,  bg: 'bg-violet-600' },
+  { bg: 'bg-violet-600' },
+  { bg: 'bg-orange-500' },
+  { bg: 'bg-emerald-600' },
+  { bg: 'bg-rose-600' },
+  { bg: 'bg-indigo-600' },
+  { bg: 'bg-slate-700' },
 ];
 
 export default function HeroSection() {
@@ -26,19 +34,35 @@ export default function HeroSection() {
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-14">
-        {/* Photo card — rounded, contained. Card bg rotates through vivid
-            colors so the hero always pops off the white page (Custom Ink
-            purple-block style). */}
+        {/* Rounded colored card with 3 floating garments (Custom Ink style).
+            White product backgrounds drop out via mix-blend-multiply. */}
         <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[16/9] sm:aspect-[2/1] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
-          {HERO_SLIDES.map((slide, i) => (
-            <img
-              key={slide.img}
-              src={slide.img}
-              alt=""
-              aria-hidden
-              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${i === activeImg ? 'opacity-100' : 'opacity-0'}`}
-            />
-          ))}
+          {/* Soft inner glow for depth */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/20" />
+
+          {/* Hoodie — left, slightly back/smaller */}
+          <img
+            src={HERO_PRODUCTS.hoodie}
+            alt=""
+            aria-hidden
+            className="absolute left-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[-6deg] hidden sm:block"
+            loading="eager"
+          />
+          {/* Polo — right, slightly back/smaller */}
+          <img
+            src={HERO_PRODUCTS.polo}
+            alt=""
+            aria-hidden
+            className="absolute right-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[6deg] hidden sm:block"
+            loading="eager"
+          />
+          {/* Tee — center, hero piece, in front */}
+          <img
+            src={HERO_PRODUCTS.tee}
+            alt="Custom apparel"
+            className="absolute left-1/2 -translate-x-1/2 bottom-[4%] h-[92%] object-contain mix-blend-multiply drop-shadow-2xl"
+            loading="eager"
+          />
           {/* Dot indicators sit inside the photo card */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
             {HERO_SLIDES.map((_, i) => (
