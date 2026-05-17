@@ -31,7 +31,6 @@ import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
-import ChatWidget from '@/components/chat/ChatWidget';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,7 +82,6 @@ function App() {
           <Route path="/payment/cancel" element={<PaymentCancel />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
-        <ChatWidget />
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>
