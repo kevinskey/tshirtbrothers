@@ -1,22 +1,56 @@
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
-// Single hero image — point this at the uploaded file in DO Spaces.
-// Replace with the actual CDN URL once the file is uploaded.
-const HERO_IMG = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/tshirts.png';
+// Rotating hero — files live in DO Spaces under hero-slides/v2/ as
+// public-read PNGs. Add/remove entries here to change the carousel.
+const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v2';
+const HERO_SLIDES = [
+  `${CDN}/tshirt-ad.png`,
+  `${CDN}/team-wear.png`,
+  `${CDN}/spirit-wear.png`,
+  `${CDN}/family-reunion.png`,
+  `${CDN}/embroidery.png`,
+  `${CDN}/small-business.png`,
+  `${CDN}/summer-camp.png`,
+  `${CDN}/summer-essentials.png`,
+  `${CDN}/cruise-ad.png`,
+];
 
 export default function HeroSection() {
+  const [active, setActive] = useState(0);
+  const next = useCallback(() => setActive(s => (s + 1) % HERO_SLIDES.length), []);
+  useEffect(() => {
+    const t = setInterval(next, 4500);
+    return () => clearInterval(t);
+  }, [next]);
+
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-12 sm:pt-4 sm:pb-16">
-        {/* Hero card */}
+        {/* Hero card — rotating slides cross-fade in place */}
         <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[64/37] sm:aspect-[3/2] bg-gray-100">
-          <img
-            src={HERO_IMG}
-            alt="Custom apparel"
-            className="absolute inset-0 h-full w-full object-cover"
-            loading="eager"
-          />
+          {HERO_SLIDES.map((src, i) => (
+            <img
+              key={src}
+              src={src}
+              alt=""
+              aria-hidden
+              className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+              loading={i === 0 ? 'eager' : 'lazy'}
+            />
+          ))}
+          {/* Dot indicators */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+            {HERO_SLIDES.map((_, i) => (
+              <button
+                key={i}
+                aria-label={`Slide ${i + 1}`}
+                onClick={() => setActive(i)}
+                className={`h-1.5 rounded-full transition-all duration-300 ${i === active ? 'w-8 bg-white' : 'w-1.5 bg-white/60 hover:bg-white'}`}
+              />
+            ))}
+          </div>
         </div>
 
         {/* Headline + CTAs below the photo */}
