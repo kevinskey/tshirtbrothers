@@ -35,17 +35,17 @@ export default function HeroSection() {
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-14">
         {/* Rounded colored card with 3 floating garments (Custom Ink style).
-            White product backgrounds drop out via mix-blend-multiply. */}
+            White product backgrounds drop out via mix-blend-multiply.
+            Explicit z-index layering: bg color = card itself, products
+            stack on top, soft vignette overlay sits ABOVE them but at
+            low opacity so it tints rather than covers. */}
         <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[16/9] sm:aspect-[2/1] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
-          {/* Soft inner glow for depth */}
-          <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/20" />
-
           {/* Hoodie — left, slightly back/smaller */}
           <img
             src={HERO_PRODUCTS.hoodie}
             alt=""
             aria-hidden
-            className="absolute left-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[-6deg] hidden sm:block"
+            className="absolute z-10 left-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[-6deg] hidden sm:block"
             loading="eager"
           />
           {/* Polo — right, slightly back/smaller */}
@@ -53,14 +53,14 @@ export default function HeroSection() {
             src={HERO_PRODUCTS.polo}
             alt=""
             aria-hidden
-            className="absolute right-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[6deg] hidden sm:block"
+            className="absolute z-10 right-[8%] bottom-[6%] h-[78%] object-contain mix-blend-multiply drop-shadow-2xl rotate-[6deg] hidden sm:block"
             loading="eager"
           />
           {/* Tee — center, hero piece, in front */}
           <img
             src={HERO_PRODUCTS.tee}
             alt="Custom apparel"
-            className="absolute left-1/2 -translate-x-1/2 bottom-[4%] h-[92%] object-contain mix-blend-multiply drop-shadow-2xl"
+            className="absolute z-20 left-1/2 -translate-x-1/2 bottom-[4%] h-[92%] object-contain mix-blend-multiply drop-shadow-2xl"
             loading="eager"
           />
           {/* Dot indicators sit inside the photo card */}
