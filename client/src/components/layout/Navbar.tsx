@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown } from 'lucide-react';
+import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavLink = { label: string; href: string };
@@ -42,78 +42,57 @@ export default function Navbar() {
     }
   };
 
-  return (
-    <nav className="sticky top-0 z-50 overflow-x-hidden">
-      {/* Top thin announcement bar */}
-      <div className="bg-gray-900 text-white text-xs text-center py-1.5 px-4">
-        Custom T-Shirts &amp; Promotional Products, Fast &amp; Free Shipping
-      </div>
+  const isLoggedIn = !!localStorage.getItem('tsb_token');
 
-      {/* Main nav row */}
-      <div className="bg-white border-b border-gray-200">
+  return (
+    <nav className="sticky top-0 z-50 bg-white overflow-x-hidden">
+      {/* Main header row — Custom Ink-style: hamburger + logo on left,
+          heart / account / phone on the right. The big rounded search
+          field lives in its own row below, full-width at every viewport. */}
+      <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Always-visible hamburger (mobile + desktop, like Custom Ink) */}
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+              onClick={() => setMobileOpen(!mobileOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
+
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2 flex-shrink-0">
               <img
                 src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
                 alt="TShirt Brothers"
-                className="h-10 w-10 object-contain"
+                className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
               />
               <span
-                className="text-sm sm:text-lg font-bold text-gray-900"
+                className="hidden sm:inline text-base sm:text-lg font-bold text-gray-900"
                 style={{ fontFamily: "'Space Grotesk', sans-serif" }}
               >
                 TShirt Brothers
               </span>
             </Link>
 
-            {/* Center: Search bar (hidden on mobile) */}
-            <div className="hidden md:flex flex-1 max-w-2xl mx-4">
-              <div className="relative w-full">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder="Search for t-shirts, hoodies, hats, and more"
-                  className="w-full rounded-full border-2 border-gray-300 bg-white pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 shadow-sm"
-                />
-                <button
-                  type="button"
-                  onClick={handleSearch}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 bg-gray-900 hover:bg-gray-800 text-white rounded-full p-2 transition-colors"
-                  aria-label="Search"
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Right side */}
-            <div className="flex items-center gap-3 flex-shrink-0 ml-auto md:ml-0">
-              {/* Phone - desktop only */}
+            {/* Right side actions */}
+            <div className="flex items-center gap-1 sm:gap-3 ml-auto flex-shrink-0">
+              {/* Phone — desktop only */}
               <div className="relative hidden md:block" ref={phoneBtnRef}>
-                <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm sm:text-base font-bold text-orange-600 hover:text-orange-700 transition-colors">
+                <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors px-2 py-2">
                   <Phone className="h-4 w-4" />
-                  (470) 622-4845
+                  <span className="hidden lg:inline">(470) 622-4845</span>
                 </button>
                 {phoneMenu && (() => {
-                  // Portal directly under <body> so this dropdown escapes
-                  // every ancestor stacking context AND every overflow
-                  // clipping container (the nav has overflow-x-hidden,
-                  // which the CSS spec promotes to overflow-y: auto and
-                  // would otherwise chop the dropdown).
                   const r = phoneBtnRef.current?.getBoundingClientRect();
                   const top = r ? r.bottom + 8 : 64;
                   const right = r ? window.innerWidth - r.right : 16;
                   return createPortal(
                     <>
                       <div className="fixed inset-0 z-[9998]" onClick={() => setPhoneMenu(false)} />
-                      <div
-                        className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]"
-                        style={{ top, right }}
-                      >
+                      <div className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]" style={{ top, right }}>
                         <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
                         <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
                       </div>
@@ -123,46 +102,54 @@ export default function Navbar() {
                 })()}
               </div>
 
-              {/* Admin + Logout - desktop only when logged in */}
-              {localStorage.getItem('tsb_token') ? (
-                <div className="hidden md:flex items-center gap-3">
-                  <Link to="/admin" className="flex items-center gap-1.5 text-sm font-medium text-orange-600 hover:text-orange-700 transition-colors">
-                    <User className="h-4 w-4" />Admin
-                  </Link>
-                  <button onClick={() => { localStorage.removeItem('tsb_token'); window.location.href = '/'; }} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors">
-                    <LogOut className="h-4 w-4" />Log Out
-                  </button>
-                </div>
+              {/* Saved designs / favorites */}
+              <Link
+                to={isLoggedIn ? '/account' : '/auth'}
+                aria-label="Saved designs"
+                className="inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors"
+              >
+                <Heart className="h-5 w-5" />
+              </Link>
+
+              {/* Account / Sign In */}
+              {isLoggedIn ? (
+                <Link to="/account" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
+                  <User className="h-5 w-5" />
+                  <span className="hidden sm:inline">My Account</span>
+                </Link>
               ) : (
-                <Link to="/auth" className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors">
-                  <User className="h-4 w-4" />
+                <Link to="/auth" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
+                  <User className="h-5 w-5" />
                   <span className="hidden sm:inline">Sign In</span>
                 </Link>
               )}
-
-              {/* Mobile hamburger */}
-              <button
-                type="button"
-                className="md:hidden inline-flex items-center justify-center rounded-lg p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-                onClick={() => setMobileOpen(!mobileOpen)}
-                aria-label="Toggle menu"
-              >
-                {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-              </button>
             </div>
+          </div>
+        </div>
+
+        {/* Custom Ink-style pill search — its own row, full-width, all sizes */}
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-3">
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              placeholder="Search for t-shirts, hoodies, hats, and more"
+              className="w-full rounded-full bg-gray-100 pl-12 pr-4 py-3 text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
+              style={{ fontSize: '16px' }}
+            />
           </div>
         </div>
       </div>
 
       {/* Sub-nav row (desktop) */}
-      <div className="bg-white border-b border-gray-200 hidden md:block">
+      <div className="bg-white border-t border-b border-gray-200 hidden md:block">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2">
           <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-visible">
             {subNavEntries.map((entry) => {
               if (isGroup(entry)) {
-                // Catalogue is a real link (clicking goes to /shop) AND a
-                // hover-open dropdown for sub-categories. Avoids the "click
-                // does nothing" feel when admins expect it to navigate.
                 return (
                   <div
                     key={entry.label}
@@ -173,7 +160,7 @@ export default function Navbar() {
                     <button
                       type="button"
                       onClick={() => { setDesktopCatalogueOpen(false); navigate('/shop'); }}
-                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap cursor-pointer bg-transparent border-0 p-0"
+                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap cursor-pointer bg-transparent border-0 p-0"
                     >
                       {entry.label}
                       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
@@ -186,7 +173,7 @@ export default function Navbar() {
                               key={c.label}
                               to={c.href}
                               onClick={() => setDesktopCatalogueOpen(false)}
-                              className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
                             >
                               {c.label}
                             </Link>
@@ -201,7 +188,7 @@ export default function Navbar() {
                 <Link
                   key={entry.label}
                   to={entry.href}
-                  className="text-sm font-medium text-gray-600 hover:text-red-600 transition-colors whitespace-nowrap"
+                  className="text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap"
                 >
                   {entry.label}
                 </Link>
@@ -211,36 +198,13 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu */}
+      {/* Mobile/hamburger menu */}
       <div
         className={cn(
-          'md:hidden bg-white border-b border-gray-200 max-h-[80vh] overflow-y-auto',
+          'bg-white border-b border-gray-200 max-h-[80vh] overflow-y-auto',
           mobileOpen ? 'block' : 'hidden'
         )}
       >
-        {/* Mobile search */}
-        <div className="px-4 pt-3 pb-2">
-          <div className="relative w-full">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search for t-shirts, hoodies, hats, and more"
-              className="w-full rounded-full border-2 border-gray-300 bg-white pl-5 pr-12 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 shadow-sm"
-            />
-            <button
-              type="button"
-              onClick={handleSearch}
-              className="absolute right-1 top-1/2 -translate-y-1/2 bg-gray-900 hover:bg-gray-800 text-white rounded-full p-2 transition-colors"
-              aria-label="Search"
-            >
-              <Search className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile nav links */}
         <div className="px-4 py-3 space-y-1">
           {subNavEntries.map((entry) => {
             if (isGroup(entry)) {
@@ -249,7 +213,7 @@ export default function Navbar() {
                   <button
                     type="button"
                     onClick={() => setMobileCatalogueOpen((v) => !v)}
-                    className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                    className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
                   >
                     <span>{entry.label}</span>
                     <ChevronDown className={cn('h-4 w-4 transition-transform', mobileCatalogueOpen && 'rotate-180')} />
@@ -260,7 +224,7 @@ export default function Navbar() {
                         <Link
                           key={c.label}
                           to={c.href}
-                          className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                          className="block rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
                           onClick={() => setMobileOpen(false)}
                         >
                           {c.label}
@@ -275,7 +239,7 @@ export default function Navbar() {
               <Link
                 key={entry.label}
                 to={entry.href}
-                className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+                className="block rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
                 onClick={() => setMobileOpen(false)}
               >
                 {entry.label}
@@ -285,7 +249,7 @@ export default function Navbar() {
 
           <a
             href="sms:+14706224845"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-red-600 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
             onClick={() => setMobileOpen(false)}
           >
             <MessageCircle className="h-4 w-4" />
@@ -294,7 +258,7 @@ export default function Navbar() {
 
           {/* Account section */}
           <div className="border-t border-gray-200 mt-2 pt-2">
-            {localStorage.getItem('tsb_token') ? (
+            {isLoggedIn ? (
               <>
                 <Link
                   to="/account"
