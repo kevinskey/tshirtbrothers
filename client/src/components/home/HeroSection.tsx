@@ -33,7 +33,7 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-14">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8 pb-12 sm:pt-12 sm:pb-16">
         {/* Rounded colored card with 3 floating garments (Custom Ink style).
             White product backgrounds drop out via mix-blend-multiply.
             Explicit z-index layering: bg color = card itself, products
@@ -77,15 +77,15 @@ export default function HeroSection() {
         </div>
 
         {/* Text + CTAs BELOW the photo, like the Custom Ink reference */}
-        <div className="mt-8 sm:mt-10 text-center">
+        <div className="mt-10 sm:mt-14 text-center">
           <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-[1.1] tracking-tight">
             Custom Apparel, <span className="text-orange-500">Done Right.</span>
           </h1>
-          <p className="mt-3 text-base sm:text-lg text-gray-600">
+          <p className="mt-4 text-base sm:text-lg text-gray-600">
             Local pickup in Fairburn, GA · Shipped nationwide.
           </p>
 
-          <div className="mt-6 sm:mt-8 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/quote"
               className="inline-flex items-center justify-center rounded-lg bg-orange-500 hover:bg-orange-600 px-7 py-3.5 sm:px-8 sm:py-4 text-base sm:text-lg font-bold text-white shadow-lg shadow-orange-500/25 transition-colors"
@@ -101,7 +101,7 @@ export default function HeroSection() {
             </Link>
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
+          <div className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
             <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
             <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
             <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
