@@ -38,8 +38,10 @@ export default function HeroSection() {
             White product backgrounds drop out via mix-blend-multiply.
             Explicit z-index layering: bg color = card itself, products
             stack on top, soft vignette overlay sits ABOVE them but at
-            low opacity so it tints rather than covers. */}
-        <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[16/9] sm:aspect-[2/1] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
+            low opacity so it tints rather than covers.
+            Aspect set close to 4:3 mobile / 3:2 desktop to match Custom
+            Ink's taller hero. */}
+        <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] sm:aspect-[3/2] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
           {/* Hoodie — left, slightly back/smaller */}
           <img
             src={HERO_PRODUCTS.hoodie}
@@ -78,25 +80,28 @@ export default function HeroSection() {
 
         {/* Text + CTAs BELOW the photo, like the Custom Ink reference */}
         <div className="mt-10 sm:mt-14 text-center">
-          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-[1.1] tracking-tight">
+          <h1
+            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl text-gray-900 leading-[1.05] tracking-tight"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+          >
             Custom Apparel, <span className="text-orange-500">Done Right.</span>
           </h1>
-          <p className="mt-4 text-base sm:text-lg text-gray-600">
+          <p className="mt-5 text-base sm:text-lg text-gray-600">
             Local pickup in Fairburn, GA · Shipped nationwide.
           </p>
 
-          <div className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-3">
+          <div className="mt-8 sm:mt-10 flex flex-wrap items-stretch justify-center gap-3">
             <Link
               to="/quote"
-              className="inline-flex items-center justify-center rounded-lg bg-orange-500 hover:bg-orange-600 px-7 py-3.5 sm:px-8 sm:py-4 text-base sm:text-lg font-bold text-white shadow-lg shadow-orange-500/25 transition-colors"
+              className="inline-flex items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 px-8 py-4 sm:px-10 sm:py-5 text-lg sm:text-xl font-bold text-white shadow-lg shadow-orange-500/25 transition-colors min-w-[10rem]"
             >
               Get a Free Quote
             </Link>
             <Link
               to="/design"
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-900 hover:bg-gray-800 px-7 py-3.5 sm:px-8 sm:py-4 text-base sm:text-lg font-bold text-white transition-colors"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-8 py-4 sm:px-10 sm:py-5 text-lg sm:text-xl font-bold text-white transition-colors min-w-[10rem]"
             >
-              <Palette className="h-5 w-5" />
+              <Palette className="h-5 w-5 sm:h-6 sm:w-6" />
               Design Studio
             </Link>
           </div>
