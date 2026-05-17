@@ -31,18 +31,18 @@ export default function HeroSection() {
             Local pickup in Fairburn, GA · Shipped nationwide.
           </p>
 
-          <div className="mt-8 sm:mt-10 flex flex-wrap items-stretch justify-center gap-3">
+          <div className="mt-8 sm:mt-10 flex items-stretch justify-center gap-2 sm:gap-3">
             <Link
               to="/quote"
-              className="inline-flex items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 px-8 py-4 sm:px-10 sm:py-5 text-lg sm:text-xl font-bold text-white shadow-lg shadow-orange-500/25 transition-colors min-w-[10rem]"
+              className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-3 sm:px-10 sm:py-5 text-sm sm:text-xl font-bold text-white shadow-lg shadow-orange-500/25 transition-colors whitespace-nowrap sm:min-w-[10rem]"
             >
               Get a Free Quote
             </Link>
             <Link
               to="/design"
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-8 py-4 sm:px-10 sm:py-5 text-lg sm:text-xl font-bold text-white transition-colors min-w-[10rem]"
+              className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-10 sm:py-5 text-sm sm:text-xl font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem]"
             >
-              <Palette className="h-5 w-5 sm:h-6 sm:w-6" />
+              <Palette className="h-4 w-4 sm:h-6 sm:w-6" />
               Design Studio
             </Link>
           </div>
