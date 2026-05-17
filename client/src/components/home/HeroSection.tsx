@@ -3,18 +3,21 @@ import { Link } from 'react-router-dom';
 import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
 const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides';
-const HERO_IMAGES = [
-  `${CDN}/family-reunion.png?v=2`,
-  `${CDN}/sports-jerseys.png?v=2`,
-  `${CDN}/small-business.png?v=2`,
-  `${CDN}/school-class.png?v=2`,
-  `${CDN}/event-concert.png?v=2`,
-  `${CDN}/church-ministry.png?v=2`,
+// Each slide gets a vivid solid background color so the photo card
+// always contrasts against the white page (Custom Ink-style). The
+// color rotates with the active image.
+const HERO_SLIDES = [
+  { img: `${CDN}/family-reunion.png?v=2`,   bg: 'bg-orange-500' },
+  { img: `${CDN}/sports-jerseys.png?v=2`,   bg: 'bg-emerald-600' },
+  { img: `${CDN}/small-business.png?v=2`,   bg: 'bg-slate-700' },
+  { img: `${CDN}/school-class.png?v=2`,     bg: 'bg-rose-600' },
+  { img: `${CDN}/event-concert.png?v=2`,    bg: 'bg-indigo-600' },
+  { img: `${CDN}/church-ministry.png?v=2`,  bg: 'bg-violet-600' },
 ];
 
 export default function HeroSection() {
   const [activeImg, setActiveImg] = useState(0);
-  const nextImg = useCallback(() => setActiveImg(s => (s + 1) % HERO_IMAGES.length), []);
+  const nextImg = useCallback(() => setActiveImg(s => (s + 1) % HERO_SLIDES.length), []);
   useEffect(() => {
     const t = setInterval(nextImg, 4500);
     return () => clearInterval(t);
@@ -23,13 +26,14 @@ export default function HeroSection() {
   return (
     <section className="bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-10 sm:pt-6 sm:pb-14">
-        {/* Photo card — rounded, contained, NOT full-bleed. Mirrors the
-            Custom Ink "rounded color block" hero. */}
-        <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-gray-900 shadow-sm aspect-[16/9] sm:aspect-[2/1]">
-          {HERO_IMAGES.map((src, i) => (
+        {/* Photo card — rounded, contained. Card bg rotates through vivid
+            colors so the hero always pops off the white page (Custom Ink
+            purple-block style). */}
+        <div className={`relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[16/9] sm:aspect-[2/1] transition-colors duration-1000 ${HERO_SLIDES[activeImg]!.bg}`}>
+          {HERO_SLIDES.map((slide, i) => (
             <img
-              key={src}
-              src={src}
+              key={slide.img}
+              src={slide.img}
               alt=""
               aria-hidden
               className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${i === activeImg ? 'opacity-100' : 'opacity-0'}`}
@@ -37,12 +41,12 @@ export default function HeroSection() {
           ))}
           {/* Dot indicators sit inside the photo card */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-            {HERO_IMAGES.map((_, i) => (
+            {HERO_SLIDES.map((_, i) => (
               <button
                 key={i}
                 aria-label={`Slide ${i + 1}`}
                 onClick={() => setActiveImg(i)}
-                className={`h-1.5 rounded-full transition-all duration-300 ${i === activeImg ? 'w-8 bg-orange-400' : 'w-1.5 bg-white/60 hover:bg-white'}`}
+                className={`h-1.5 rounded-full transition-all duration-300 ${i === activeImg ? 'w-8 bg-white' : 'w-1.5 bg-white/60 hover:bg-white'}`}
               />
             ))}
           </div>
