@@ -21,7 +21,7 @@ export default function HeroSection() {
   const [active, setActive] = useState(0);
   const next = useCallback(() => setActive(s => (s + 1) % HERO_SLIDES.length), []);
   useEffect(() => {
-    const t = setInterval(next, 4500);
+    const t = setInterval(next, 7000);
     return () => clearInterval(t);
   }, [next]);
 
@@ -36,14 +36,14 @@ export default function HeroSection() {
 
           {/* Hero image card — first in source so mobile renders it on top.
               On desktop, order-2 sends it to the right column. */}
-          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[64/37] sm:aspect-[3/2] lg:aspect-square bg-gray-100">
+          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-square bg-white">
             {HERO_SLIDES.map((src, i) => (
               <img
                 key={src}
                 src={src}
                 alt=""
                 aria-hidden
-                className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+                className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                 loading={i === 0 ? 'eager' : 'lazy'}
               />
             ))}
