@@ -49,7 +49,7 @@ export default function Navbar() {
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
       <Link
         to="/shop"
-        className="block bg-gray-900 text-white text-center text-xs py-0.5 px-4 hover:bg-gray-800 transition-colors"
+        className="block bg-gray-900 text-white text-center text-[10px] sm:text-xs py-0.5 px-2 sm:px-4 whitespace-nowrap overflow-hidden hover:bg-gray-800 transition-colors"
       >
         15% Off T-shirts, Athletics &amp; Polos — Prices as Marked.<sup>*</sup>{' '}
         <span className="font-bold underline">Shop Sale</span>
