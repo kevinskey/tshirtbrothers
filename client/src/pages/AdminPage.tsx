@@ -3437,7 +3437,11 @@ export default function AdminPage() {
                 <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No orders found</div>
               ) : orders.map((o: Order) => {
                 const total = o.estimated_price != null ? Number(o.estimated_price) : 0;
-                const paid = o.deposit_amount != null ? Number(o.deposit_amount) : 0;
+                // Only count the deposit as "paid" once accepted_at is set
+                // (the Stripe webhook flips that on deposit success). Same
+                // for the balance and balance_paid_at.
+                const depositRequired = o.deposit_amount != null ? Number(o.deposit_amount) : 0;
+                const paid = o.balance_paid_at ? total : (o.accepted_at ? depositRequired : 0);
                 const balance = total - paid;
                 const needed = o.date_needed ? new Date(o.date_needed) : null;
                 const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
@@ -3580,16 +3584,18 @@ export default function AdminPage() {
                             : '--'}
                         </td>
                         <td className="px-4 py-3 text-green-600 font-medium text-right whitespace-nowrap">
-                          {o.deposit_amount != null && Number(o.deposit_amount) > 0
+                          {o.accepted_at && o.deposit_amount != null && Number(o.deposit_amount) > 0
                             ? `$${Number(o.deposit_amount).toFixed(2)}`
                             : '--'}
                         </td>
                         <td className="px-4 py-3 text-red-600 font-medium text-right whitespace-nowrap">
-                          {o.estimated_price != null && o.deposit_amount != null && Number(o.deposit_amount) > 0
-                            ? `$${(Number(o.estimated_price) - Number(o.deposit_amount)).toFixed(2)}`
-                            : o.estimated_price != null
-                              ? `$${Number(o.estimated_price).toFixed(2)}`
-                              : '--'}
+                          {(() => {
+                            const total = o.estimated_price != null ? Number(o.estimated_price) : 0;
+                            if (total <= 0) return '--';
+                            if (o.balance_paid_at) return '$0.00';
+                            const paid = o.accepted_at && o.deposit_amount != null ? Number(o.deposit_amount) : 0;
+                            return `$${(total - paid).toFixed(2)}`;
+                          })()}
                         </td>
                         <td className="px-6 py-3">
                           <StatusBadge status={o.status} />
@@ -6152,7 +6158,14 @@ export default function AdminPage() {
           const createdAt = (q as Quote).created_at || (q as Quote).createdAt || '';
           const shippingAddress = (q as Quote).shipping_address as { street?: string; city?: string; state?: string; zip?: string } | undefined;
           const total = q.estimated_price != null ? Number(q.estimated_price) : 0;
-          const paid = q.deposit_amount != null ? Number(q.deposit_amount) : 0;
+          // deposit_amount is the *required* deposit (50% of total), not
+          // what's been paid. Only count it as paid once the customer
+          // has accepted (deposit hit Stripe) — and the balance is only
+          // settled once balance_paid_at is set.
+          const acceptedAt = (q as Quote & { accepted_at?: string | null }).accepted_at || null;
+          const balancePaidAt = q.balance_paid_at || null;
+          const depositRequired = q.deposit_amount != null ? Number(q.deposit_amount) : 0;
+          const paid = (balancePaidAt ? total : (acceptedAt ? depositRequired : 0));
           const balance = total - paid;
 
           return (
@@ -6471,18 +6484,23 @@ export default function AdminPage() {
                           <span className="text-gray-600">Total</span>
                           <span className="font-semibold text-gray-900">${total.toFixed(2)}</span>
                         </div>
-                        {paid > 0 && (
+                        {acceptedAt ? (
                           <>
                             <div className="flex justify-between">
                               <span className="text-gray-600">Deposit Paid</span>
-                              <span className="font-semibold text-green-600">${paid.toFixed(2)}</span>
+                              <span className="font-semibold text-green-600">${depositRequired.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between pt-1 border-t border-gray-200">
                               <span className="text-gray-600">Balance Due</span>
                               <span className={`font-semibold ${balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>${balance.toFixed(2)}</span>
                             </div>
                           </>
-                        )}
+                        ) : depositRequired > 0 ? (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Deposit Due</span>
+                            <span className="font-semibold text-orange-600">${depositRequired.toFixed(2)}</span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )}
