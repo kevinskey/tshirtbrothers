@@ -125,12 +125,12 @@ export default function Navbar() {
               {isLoggedIn ? (
                 <Link to="/account" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
                   <User className="h-5 w-5" />
-                  <span className="hidden sm:inline">My Account</span>
+                  <span>Account</span>
                 </Link>
               ) : (
                 <Link to="/auth" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
                   <User className="h-5 w-5" />
-                  <span className="hidden sm:inline">Sign In</span>
+                  <span>Sign In</span>
                 </Link>
               )}
 
