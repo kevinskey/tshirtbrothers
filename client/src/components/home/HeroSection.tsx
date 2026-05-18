@@ -1,29 +1,44 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Palette, Clock, MapPin, Users } from 'lucide-react';
 
-// Rotating hero — files live in DO Spaces under hero-slides/v2/ as
-// public-read PNGs. Add/remove entries here to change the carousel.
-const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v2';
-const HERO_SLIDES = [
-  `${CDN}/tshirt-ad.png`,
-  `${CDN}/team-wear.png`,
-  `${CDN}/spirit-wear.png`,
-  `${CDN}/family-reunion.png`,
-  `${CDN}/embroidery.png`,
-  `${CDN}/small-business.png`,
-  `${CDN}/summer-camp.png`,
-  `${CDN}/summer-essentials.png`,
-  `${CDN}/cruise-ad.png`,
+interface HeroSlide {
+  id: number;
+  image_url: string;
+  label: string | null;
+  link_url: string | null;
+}
+
+// Default fallback so the page never renders a totally empty hero — if
+// the API is unreachable or has zero active rows, we still show one slide.
+const FALLBACK_SLIDES: HeroSlide[] = [
+  { id: 0, image_url: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v2/tshirt-ad.png', label: null, link_url: null },
 ];
 
 export default function HeroSection() {
+  const { data } = useQuery<{ slides: HeroSlide[] }>({
+    queryKey: ['hero-slides'],
+    queryFn: async () => {
+      const r = await fetch('/api/hero-slides');
+      if (!r.ok) return { slides: [] };
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+  const slides = data?.slides && data.slides.length > 0 ? data.slides : FALLBACK_SLIDES;
+
   const [active, setActive] = useState(0);
-  const next = useCallback(() => setActive(s => (s + 1) % HERO_SLIDES.length), []);
+  const next = useCallback(() => setActive(s => (s + 1) % slides.length), [slides.length]);
   useEffect(() => {
+    // Clamp active when slide list shrinks (e.g. admin deleted some).
+    if (active >= slides.length) setActive(0);
+  }, [slides.length, active]);
+  useEffect(() => {
+    if (slides.length <= 1) return;
     const t = setInterval(next, 7000);
     return () => clearInterval(t);
-  }, [next]);
+  }, [next, slides.length]);
 
   return (
     <section className="bg-white">
@@ -37,27 +52,36 @@ export default function HeroSection() {
           {/* Hero image card — first in source so mobile renders it on top.
               On desktop, order-2 sends it to the right column. */}
           <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-square bg-white">
-            {HERO_SLIDES.map((src, i) => (
-              <img
-                key={src}
-                src={src}
-                alt=""
-                aria-hidden
-                className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
-                loading={i === 0 ? 'eager' : 'lazy'}
-              />
-            ))}
-            {/* Dot indicators */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-              {HERO_SLIDES.map((_, i) => (
-                <button
-                  key={i}
-                  aria-label={`Slide ${i + 1}`}
-                  onClick={() => setActive(i)}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${i === active ? 'w-8 bg-white' : 'w-1.5 bg-white/60 hover:bg-white'}`}
+            {slides.map((s, i) => {
+              const img = (
+                <img
+                  src={s.image_url}
+                  alt={s.label || ''}
+                  className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+                  loading={i === 0 ? 'eager' : 'lazy'}
                 />
-              ))}
-            </div>
+              );
+              // Admin-set link_url makes the slide clickable; otherwise it's
+              // a static image so the rotator dots can still steal focus.
+              return s.link_url ? (
+                <a key={s.id} href={s.link_url} className="absolute inset-0" aria-label={s.label || `Slide ${i + 1}`}>{img}</a>
+              ) : (
+                <div key={s.id}>{img}</div>
+              );
+            })}
+            {/* Dot indicators */}
+            {slides.length > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5">
+                {slides.map((_, i) => (
+                  <button
+                    key={i}
+                    aria-label={`Slide ${i + 1}`}
+                    onClick={() => setActive(i)}
+                    className={`h-1.5 rounded-full transition-all duration-300 ${i === active ? 'w-8 bg-white shadow' : 'w-1.5 bg-white/60 hover:bg-white'}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Headline + CTAs */}
