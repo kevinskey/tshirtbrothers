@@ -42,7 +42,7 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-3 pb-12 sm:pt-4 sm:pb-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-1 pb-6 sm:pt-4 sm:pb-16">
         {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT
             (Custom Ink desktop hero). Below lg the layout collapses back to
             image-on-top, text-below — the mobile experience we already tuned
@@ -85,7 +85,7 @@ export default function HeroSection() {
           </div>
 
           {/* Headline + CTAs */}
-          <div className="mt-10 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left">
+          <div className="mt-5 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left">
             <h1
               className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl text-gray-900 leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
