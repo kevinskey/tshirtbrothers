@@ -128,6 +128,40 @@ export async function fetchStyleSkuData(styleId) {
   return { sizes, customer_price };
 }
 
+// Fetch the unique color list for a style. Each SKU on /v2/products/ has
+// colorName + color1 (hex) + colorSwatchImage / colorFrontImage; we
+// dedupe by colorName so a style with N sizes × M colors collapses to
+// just the M color rows we want for swatches. Returns [] on non-200
+// (caller treats empty as "no update").
+export async function fetchStyleColors(styleId) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,color1,colorSwatchImage,colorFrontImage`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) {
+    console.error(`[fetchStyleColors] style ${styleId}: HTTP ${response.status}`);
+    return [];
+  }
+  const data = await response.json().catch(() => []);
+  const items = Array.isArray(data) ? data : [];
+  const seen = new Map();
+  for (const p of items) {
+    const name = (p.colorName || '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.set(name, {
+      name,
+      hex: (p.color1 || '').trim() || null,
+      swatch: p.colorSwatchImage ? toFullImageUrl(p.colorSwatchImage) : null,
+      image: p.colorFrontImage ? toFullImageUrl(p.colorFrontImage) : null,
+    });
+  }
+  return [...seen.values()];
+}
+
 // Fetch a single style by ID
 export async function fetchStyle(styleId) {
   const credentials = getCredentials();
