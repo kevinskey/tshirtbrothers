@@ -98,12 +98,13 @@ router.post('/sync-products', async (req, res, next) => {
     let upserted = 0;
     for (const product of products) {
       await pool.query(
-        `INSERT INTO products (ss_id, name, brand, category, base_price, colors, sizes, image_url, back_image_url, specifications, price_breaks, last_synced)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        `INSERT INTO products (ss_id, name, brand, category, style_number, base_price, colors, sizes, image_url, back_image_url, specifications, price_breaks, last_synced)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
          ON CONFLICT (ss_id) DO UPDATE SET
            name = EXCLUDED.name,
            brand = EXCLUDED.brand,
            category = EXCLUDED.category,
+           style_number = EXCLUDED.style_number,
            base_price = EXCLUDED.base_price,
            colors = EXCLUDED.colors,
            sizes = EXCLUDED.sizes,
@@ -117,6 +118,7 @@ router.post('/sync-products', async (req, res, next) => {
           product.name,
           product.brand,
           product.category,
+          product.style_number || null,
           product.base_price,
           JSON.stringify(product.colors || []),
           JSON.stringify(product.sizes || []),

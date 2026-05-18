@@ -80,6 +80,15 @@ router.get('/', async (req, res, next) => {
           .replace(/\bhoodies?\b/gi, 'hood')
           .replace(/\bpolos?\b/gi, 'polo');
         const terms = normalized.split(/\s+/).filter(Boolean);
+        // Style codes like "G500" or "g50000" are how brands abbreviate
+        // their model numbers. Strip a single-letter prefix (or "PC" / "DT"
+        // for non-Gildan brands) so "G500" still matches stored "5000".
+        const styleVariants = (t) => {
+          const out = new Set([t]);
+          const m = t.match(/^([A-Za-z]{1,3})(\d{2,6})$/);
+          if (m) out.add(m[2]);
+          return [...out];
+        };
         // A "size token" is anything that looks like a garment size — XS,
         // S, M, L, XL, 2XL, 3XL, 4XL, 4XLT, 5XL, 6XL, 7XL, plus S/M, L/XL,
         // 2X, 3X, etc. When a term matches, we additionally check whether
@@ -103,8 +112,19 @@ router.get('/', async (req, res, next) => {
             params.push(`%${term}%`, `%${upperTerm}%`);
             paramIndex += 2;
           } else {
-            conditions.push(`(name ILIKE $${paramIndex} OR brand ILIKE $${paramIndex} OR category ILIKE $${paramIndex})`);
-            params.push(`%${term}%`);
+            // Match the term against name/brand/category, and also against
+            // style_number — accepting G500/5000 etc. as variants of the
+            // same code so customers can search either way.
+            const variants = styleVariants(term);
+            const styleClauses = variants.map(() => `style_number ILIKE $${paramIndex++}`);
+            conditions.push(
+              `(name ILIKE $${paramIndex}
+                OR brand ILIKE $${paramIndex}
+                OR category ILIKE $${paramIndex}
+                OR ${styleClauses.join(' OR ')})`
+            );
+            for (const v of variants) params.push(v); // for style_number ILIKE $N (exact, no %)
+            params.push(`%${term}%`); // for name/brand/category ILIKE
             paramIndex++;
           }
         }
