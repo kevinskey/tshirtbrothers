@@ -123,7 +123,10 @@ router.get('/', async (req, res, next) => {
                 OR category ILIKE $${paramIndex}
                 OR ${styleClauses.join(' OR ')})`
             );
-            for (const v of variants) params.push(v); // for style_number ILIKE $N (exact, no %)
+            // Style codes get a wildcard so "G500" → strips to "500" →
+            // matches Gildan's stored "5000". A bit fuzzy but on-brand
+            // for how customers type these.
+            for (const v of variants) params.push(`%${v}%`);
             params.push(`%${term}%`); // for name/brand/category ILIKE
             paramIndex++;
           }
