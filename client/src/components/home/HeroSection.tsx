@@ -42,7 +42,7 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-1 pb-6 sm:pt-4 sm:pb-16">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-0 pb-3 sm:pt-4 sm:pb-16">
         {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT
             (Custom Ink desktop hero). Below lg the layout collapses back to
             image-on-top, text-below — the mobile experience we already tuned
