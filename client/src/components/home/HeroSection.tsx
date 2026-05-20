@@ -51,7 +51,7 @@ export default function HeroSection() {
 
           {/* Hero image card — first in source so mobile renders it on top.
               On desktop, order-2 sends it to the right column. */}
-          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] lg:aspect-square bg-white">
+          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-square bg-white">
             {slides.map((s, i) => {
               const img = (
                 <img
