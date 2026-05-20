@@ -6,24 +6,10 @@ import { login, register } from '@/lib/api';
 
 type Tab = 'login' | 'register';
 
-const BOT_IMG = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tee-bot-nobg.png';
-
-function BotMascot({ size = 120 }: { size?: number }) {
-  return (
-    <img
-      src={BOT_IMG}
-      alt="Tee - AI Assistant"
-      width={size}
-      style={{ height: 'auto', filter: 'drop-shadow(0 8px 24px rgba(249,115,22,0.25))' }}
-    />
-  );
-}
-
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/';
-  const reason = searchParams.get('reason'); // 'quote' or 'design'
   const [activeTab, setActiveTab] = useState<Tab>('register');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,16 +24,6 @@ export default function AuthPage() {
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
-
-  const registerMessage = reason === 'design'
-    ? "Let me know who you are before we start designing! 🎨"
-    : reason === 'quote'
-      ? "Let me know who you are so I can send you a quote! 📋"
-      : "Let me know who you are before we get started! 👋";
-
-  const botMessage = activeTab === 'login'
-    ? "Welcome back! Good to see you again! 😊"
-    : registerMessage;
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
@@ -93,20 +69,6 @@ export default function AuthPage() {
     <Layout>
       <div className="bg-white min-h-[80vh] overflow-x-hidden">
       <div className="w-full max-w-md sm:max-w-lg lg:max-w-5xl mx-auto pt-8 sm:pt-12 pb-16 px-4 lg:px-8">
-        {/* Mobile only: small bot + speech bubble above form */}
-        <div className="flex flex-col items-center mb-6 lg:hidden">
-          <BotMascot size={80} />
-          {/* max-w-full forces the bubble to wrap inside the parent column
-              instead of letting its single-line content expand wider than
-              the viewport (which was clipping the right edge on iOS). */}
-          <div className="max-w-full bg-white border border-orange-200 rounded-2xl px-5 py-3 shadow-md -mt-2 relative">
-            <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-l border-t border-orange-200 rotate-45" />
-            <p className="text-sm font-semibold text-gray-900 text-center relative">
-              {botMessage}
-            </p>
-          </div>
-        </div>
-
         <div className="lg:flex lg:items-start lg:justify-center lg:gap-8">
         {/* Auth form card */}
         <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden lg:max-w-2xl lg:flex-shrink-0">
@@ -266,15 +228,6 @@ export default function AuthPage() {
               </form>
             )}
           </div>
-        </div>
-        {/* Large freestanding bot — beside the card, not inside it */}
-        <div className="hidden lg:flex flex-col items-center flex-shrink-0">
-          <div className="bg-white border border-orange-200 rounded-2xl px-5 py-3 shadow-lg mb-3">
-            <p className="text-sm font-semibold text-gray-900 text-center leading-snug max-w-[220px]">
-              {botMessage}
-            </p>
-          </div>
-          <BotMascot size={340} />
         </div>
         </div>
 
