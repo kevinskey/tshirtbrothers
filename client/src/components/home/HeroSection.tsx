@@ -51,13 +51,13 @@ export default function HeroSection() {
 
           {/* Hero image card — first in source so mobile renders it on top.
               On desktop, order-2 sends it to the right column. */}
-          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-square bg-white">
+          <div className="lg:order-2 relative overflow-hidden rounded-2xl sm:rounded-3xl shadow-sm aspect-[4/3] lg:aspect-square bg-white">
             {slides.map((s, i) => {
               const img = (
                 <img
                   src={s.image_url}
                   alt={s.label || ''}
-                  className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                   loading={i === 0 ? 'eager' : 'lazy'}
                 />
               );
