@@ -232,6 +232,9 @@ export default function InstantQuotePage() {
   const [productPickerItemId, setProductPickerItemId] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
   const [uploadingByItem, setUploadingByItem] = useState<Record<string, number>>({});
+  // Only one item is expanded at a time — newly-added items auto-expand
+  // and the previous one collapses to a summary card.
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(() => items[0]?.id || null);
 
   // ?product=<ss_id> arrives from the catalog "Get a Quote" CTA — applies
   // to the first item only.
@@ -379,15 +382,30 @@ export default function InstantQuotePage() {
   }
 
   function addItem() {
-    setItems((prev) => [...prev, newItem()]);
-    // Scroll the new card into view after the next paint.
+    const next = newItem();
+    setItems((prev) => [...prev, next]);
+    setExpandedItemId(next.id);
+    // Wait for the new card to render, then scroll it into view at the top
+    // of the viewport so the user lands right where they need to type.
     setTimeout(() => {
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    }, 50);
+      const el = document.getElementById(`item-card-${next.id}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
   }
 
   function removeItem(itemId: string) {
-    setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== itemId) : prev));
+    setItems((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((it) => it.id === itemId);
+      const next = prev.filter((it) => it.id !== itemId);
+      // If the removed item was expanded, expand a neighbor so the user
+      // isn't left staring at a list of collapsed cards.
+      if (expandedItemId === itemId) {
+        const fallback = next[idx] || next[idx - 1] || next[0];
+        if (fallback) setExpandedItemId(fallback.id);
+      }
+      return next;
+    });
   }
 
   async function uploadDesignFile(itemId: string, file: File) {
@@ -458,6 +476,8 @@ export default function InstantQuotePage() {
               options={options || null}
               calc={calcQueries[i]?.data || null}
               uploadingCount={uploadingByItem[item.id] || 0}
+              expanded={items.length === 1 || expandedItemId === item.id}
+              onExpand={() => setExpandedItemId(item.id)}
               onPatchInputs={(patch) => patchInputs(item.id, patch)}
               onClearProduct={() => patchItem(item.id, {
                 pickedProduct: null,
@@ -556,6 +576,7 @@ export default function InstantQuotePage() {
 
 function ItemCard({
   index, totalItems, item, options, calc, uploadingCount,
+  expanded, onExpand,
   onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker, onRemove,
 }: {
   index: number;
@@ -564,6 +585,8 @@ function ItemCard({
   options: OptionsResponse | null;
   calc: CalcResponse | null;
   uploadingCount: number;
+  expanded: boolean;
+  onExpand: () => void;
   onPatchInputs: (patch: Partial<Inputs>) => void;
   onClearProduct: () => void;
   onRemoveDesign: (idx: number) => void;
@@ -613,8 +636,75 @@ function ItemCard({
     ) || null;
   }, [options, liveTotalQty]);
 
+  // Collapsed summary — shown for prior products once a newer one is being
+  // edited, so the form is short and scannable while only the active card
+  // is in full edit mode.
+  if (!expanded) {
+    const img = item.pickedProduct?.image_url || item.pickedProduct?.imageUrl;
+    const productLabel = item.pickedProduct
+      ? item.pickedProduct.name
+      : `${inputs.qualityTier} ${inputs.garmentName}`;
+    const locs: string[] = [];
+    if (inputs.locations.front) locs.push('Front');
+    if (inputs.locations.back) locs.push('Back');
+    if (inputs.locations.sleeve) locs.push('Sleeve');
+    const detail = `${liveTotalQty} pcs · ${inputs.color} · ${inputs.methodName}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
+    return (
+      <div
+        id={`item-card-${item.id}`}
+        className="rounded-2xl border-2 border-gray-200 bg-white p-3 sm:p-4 hover:border-orange-300 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-7 min-w-[28px] items-center justify-center rounded-full bg-orange-100 px-2 text-sm font-bold text-orange-700">
+            {index + 1}
+          </span>
+          <button
+            type="button"
+            onClick={onExpand}
+            className="flex flex-1 min-w-0 items-center gap-3 text-left"
+            aria-label={`Edit product ${index + 1}`}
+          >
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-50">
+              {img ? (
+                <img src={img} alt="" className="h-full w-full object-contain p-1" loading="lazy" />
+              ) : (
+                <Shirt className="h-4 w-4 text-gray-400" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-gray-900">{productLabel}</p>
+              <p className="truncate text-xs text-gray-500">{detail}</p>
+            </div>
+            {calc && (
+              <span className="whitespace-nowrap font-display text-base font-bold text-gray-900">
+                ${calc.total.toFixed(2)}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onExpand}
+            className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-200"
+          >
+            Edit
+          </button>
+          {onRemove && (
+            <button
+              type="button"
+              onClick={onRemove}
+              className="flex-shrink-0 inline-flex items-center rounded-lg border border-gray-200 p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+              aria-label={`Remove product ${index + 1}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-6">
+    <div id={`item-card-${item.id}`} className="rounded-2xl border-2 border-orange-200 bg-white p-4 sm:p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
