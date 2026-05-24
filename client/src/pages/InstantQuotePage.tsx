@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import {
   Shirt,
@@ -14,6 +13,8 @@ import {
   Zap,
   Upload,
   X as XIcon,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -29,6 +30,7 @@ type OptionsResponse = { garments: Garment[]; print_methods: PrintMethod[]; quan
 type CalcResponse = {
   per_shirt: number;
   total: number;
+  quantity: number;
   turnaround_days: number;
   breakdown: {
     garment_cost_per_piece: number;
@@ -46,9 +48,6 @@ type CalcResponse = {
 };
 
 type Inputs = {
-  // sizes drives both the total quantity (sum) and per-size upcharges.
-  // `quantity` is kept as a convenience for downstream consumers but is
-  // always derived from `sizes` on the page.
   sizes: Array<{ size: string; quantity: number }>;
   color: string;
   garmentName: string;
@@ -57,6 +56,27 @@ type Inputs = {
   locations: { front: boolean; back: boolean; sleeve: boolean };
   colorsPerLocation: number;
   rush: boolean;
+};
+
+type CatalogProduct = {
+  id?: number | string;
+  ss_id?: string;
+  name: string;
+  brand?: string;
+  category?: string;
+  image_url?: string;
+  imageUrl?: string;
+  base_price?: number | string | null;
+  custom_price?: number | string | null;
+};
+
+// One line item the customer is configuring. A quote is an ordered list of
+// these — the customer can add as many as they want before saving.
+type ItemDraft = {
+  id: string;
+  inputs: Inputs;
+  designs: Array<{ url: string; filename: string }>;
+  pickedProduct: CatalogProduct | null;
 };
 
 const COLOR_OPTIONS: readonly string[] = [
@@ -85,25 +105,6 @@ function totalQuantity(sizes: Inputs['sizes']): number {
   return sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
 }
 
-// Catalog product attached via ?product=<ss_id> — kept light: just enough
-// to render the "you're quoting THIS shirt" banner and stash a reference
-// in the saved quote payload.
-type CatalogProduct = {
-  id?: number | string;
-  ss_id?: string;
-  name: string;
-  brand?: string;
-  category?: string;
-  image_url?: string;
-  imageUrl?: string;
-  base_price?: number | string | null;
-  custom_price?: number | string | null;
-};
-
-// Map a catalog product's category string onto one of the seven garment
-// names the quote calculator knows about (T-shirt / Tank / Long-sleeve /
-// Polo / Sweatshirt / Hoodie / Hat). Anything we can't classify falls
-// through to T-shirt — the user can still pick another with one tap.
 function categoryToGarmentName(category?: string): Inputs['garmentName'] {
   const c = (category || '').toLowerCase();
   if (c.includes('hood')) return 'Hoodie';
@@ -115,14 +116,26 @@ function categoryToGarmentName(category?: string): Inputs['garmentName'] {
   return 'T-shirt';
 }
 
+function genItemId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function newItem(initial?: Partial<Inputs>): ItemDraft {
+  return {
+    id: genItemId(),
+    inputs: { ...DEFAULT_INPUTS, ...(initial || {}) },
+    designs: [],
+    pickedProduct: null,
+  };
+}
+
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Page                                                                   */
 /* ────────────────────────────────────────────────────────────────────── */
 
 export default function InstantQuotePage() {
-  // Preselect a print method when arrived from a Services-page CTA like
-  // /quote?service=dtf — so customers landing from "Get a DTF Quote" don't
-  // have to re-pick the method.
+  // ?service=dtf preselects the print method on the FIRST item only — so a
+  // customer landing from "Get a DTF Quote" doesn't have to re-pick.
   const initialInputs = useMemo<Inputs>(() => {
     if (typeof window === 'undefined') return DEFAULT_INPUTS;
     const params = new URLSearchParams(window.location.search);
@@ -134,32 +147,21 @@ export default function InstantQuotePage() {
     return DEFAULT_INPUTS;
   }, []);
 
-  const [inputs, setInputs] = useState<Inputs>(initialInputs);
-  // In-page product picker — overrides whatever ?product= loaded from the
-  // URL. When set, the calculator switches to using this product's price
-  // instead of the abstract quality tier, and the tier section is hidden.
-  const [pickedProduct, setPickedProduct] = useState<CatalogProduct | null>(null);
-  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [items, setItems] = useState<ItemDraft[]>(() => [newItem(initialInputs)]);
+  const [productPickerItemId, setProductPickerItemId] = useState<string | null>(null);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
-  // Customer-uploaded design files. Stored as Spaces URLs once uploaded so
-  // we can pass them straight through to /api/quote/save without re-upload.
-  const [designs, setDesigns] = useState<Array<{ url: string; filename: string }>>([]);
-  const [uploadingCount, setUploadingCount] = useState(0);
+  const [uploadingByItem, setUploadingByItem] = useState<Record<string, number>>({});
 
-  // ?product=<ss_id> arrives from the catalog "Get a Quote" CTA. We fetch
-  // the product so we can show "Quoting THIS shirt" above the form and
-  // pre-select the garment type from its category.
+  // ?product=<ss_id> arrives from the catalog "Get a Quote" CTA — applies
+  // to the first item only.
   const productSsId = useMemo(() => {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('product') || '';
   }, []);
-  const { data: catalogProduct } = useQuery<CatalogProduct | null>({
+  const { data: urlCatalogProduct } = useQuery<CatalogProduct | null>({
     queryKey: ['catalog-product', productSsId],
     queryFn: async () => {
       if (!productSsId) return null;
-      // Try by-ssid first; if that 404s and the value looks like a DB
-      // serial id (a stale catalog bundle could send that), fall back to
-      // /products/:id so we still land on the right row.
       let r = await fetch(`/api/products/by-ssid/${encodeURIComponent(productSsId)}`);
       let p = r.ok ? await r.json() : null;
       if (!p && /^\d+$/.test(productSsId)) {
@@ -172,19 +174,121 @@ export default function InstantQuotePage() {
     staleTime: 60 * 60 * 1000,
   });
 
-  // Once the product resolves, snap garmentName onto its category — but only
-  // the first time, so a user who manually changes the garment isn't reset.
-  const [productSyncDone, setProductSyncDone] = useState(false);
+  // Once URL product resolves, snap first item's pickedProduct + garmentName
+  // onto it — but only the first time, so a user who manually changes either
+  // isn't reset.
+  const [urlProductSyncDone, setUrlProductSyncDone] = useState(false);
   useEffect(() => {
-    if (!productSyncDone && catalogProduct) {
-      const mapped = categoryToGarmentName(catalogProduct.category);
-      setInputs((prev) => ({ ...prev, garmentName: mapped }));
-      setProductSyncDone(true);
+    if (!urlProductSyncDone && urlCatalogProduct) {
+      const mapped = categoryToGarmentName(urlCatalogProduct.category);
+      setItems((prev) => prev.map((it, i) => i === 0
+        ? { ...it, pickedProduct: urlCatalogProduct, inputs: { ...it.inputs, garmentName: mapped } }
+        : it,
+      ));
+      setUrlProductSyncDone(true);
     }
-  }, [catalogProduct, productSyncDone]);
+  }, [urlCatalogProduct, urlProductSyncDone]);
 
-  async function uploadDesignFile(file: File) {
-    setUploadingCount((n) => n + 1);
+  // Pricing options — fetched once.
+  const { data: options } = useQuery<OptionsResponse>({
+    queryKey: ['instant-quote', 'options'],
+    queryFn: async () => {
+      const r = await fetch('/api/quote/options');
+      if (!r.ok) throw new Error('Failed to load pricing options');
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Debounce all items together. 200ms after any change, kick off N parallel
+  // /calculate calls — react-query caches each independently.
+  const [debouncedItems, setDebouncedItems] = useState(items);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedItems(items), 200);
+    return () => clearTimeout(t);
+  }, [items]);
+
+  const calcQueries = useQueries({
+    queries: debouncedItems.map((item) => {
+      const numLocations = Object.values(item.inputs.locations).filter(Boolean).length;
+      const qty = totalQuantity(item.inputs.sizes);
+      const productSsId = item.pickedProduct?.ss_id || null;
+      return {
+        queryKey: ['instant-quote', 'calc-item', item.id, item.inputs, productSsId],
+        queryFn: async (): Promise<CalcResponse> => {
+          const r = await fetch('/api/quote/calculate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sizes: item.inputs.sizes.filter((s) => s.quantity > 0),
+              color: item.inputs.color,
+              garmentName: item.inputs.garmentName,
+              qualityTier: item.inputs.qualityTier,
+              methodName: item.inputs.methodName,
+              numLocations,
+              colorsPerLocation: item.inputs.colorsPerLocation,
+              rush: item.inputs.rush,
+              productSsId,
+            }),
+          });
+          const body = await r.json();
+          if (!r.ok) throw new Error(body.error || 'Calculation failed');
+          return body;
+        },
+        enabled: numLocations > 0 && qty > 0,
+        placeholderData: (prev: CalcResponse | undefined) => prev,
+      };
+    }),
+  });
+
+  // Roll-ups across all items.
+  const grandTotal = useMemo(
+    () => calcQueries.reduce((sum, q) => sum + (q.data?.total || 0), 0),
+    [calcQueries],
+  );
+  const grandQuantity = useMemo(
+    () => items.reduce((sum, it) => sum + totalQuantity(it.inputs.sizes), 0),
+    [items],
+  );
+  const grandTurnaroundDays = useMemo(() => {
+    let m = 0;
+    for (const q of calcQueries) {
+      if (q.data?.turnaround_days && q.data.turnaround_days > m) m = q.data.turnaround_days;
+    }
+    return m || (options?.settings.standard_turnaround ?? 0);
+  }, [calcQueries, options]);
+
+  const anyCalcLoading = calcQueries.some((q) => q.isFetching);
+  // A "valid" item has at least one location AND at least one shirt.
+  const itemValidity = items.map(
+    (it) => totalQuantity(it.inputs.sizes) > 0 && Object.values(it.inputs.locations).some(Boolean),
+  );
+  const allItemsValid = itemValidity.every(Boolean);
+  const allCalcsReady = calcQueries.every((q, i) => !itemValidity[i] || q.data != null);
+  const canSave = items.length > 0 && allItemsValid && allCalcsReady && grandTotal > 0;
+
+  function patchInputs(itemId: string, patch: Partial<Inputs>) {
+    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, inputs: { ...it.inputs, ...patch } } : it)));
+  }
+
+  function patchItem(itemId: string, patch: Partial<ItemDraft>) {
+    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  }
+
+  function addItem() {
+    setItems((prev) => [...prev, newItem()]);
+    // Scroll the new card into view after the next paint.
+    setTimeout(() => {
+      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    }, 50);
+  }
+
+  function removeItem(itemId: string) {
+    setItems((prev) => (prev.length > 1 ? prev.filter((it) => it.id !== itemId) : prev));
+  }
+
+  async function uploadDesignFile(itemId: string, file: File) {
+    setUploadingByItem((m) => ({ ...m, [itemId]: (m[itemId] || 0) + 1 }));
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -199,80 +303,151 @@ export default function InstantQuotePage() {
       });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error || 'Upload failed');
-      setDesigns((prev) => [...prev, { url: body.url, filename: file.name }]);
+      setItems((prev) => prev.map((it) => it.id === itemId
+        ? { ...it, designs: [...it.designs, { url: body.url, filename: file.name }] }
+        : it,
+      ));
     } catch (err: any) {
       toast.error(err.message || `${file.name} failed to upload`);
     } finally {
-      setUploadingCount((n) => n - 1);
+      setUploadingByItem((m) => ({ ...m, [itemId]: Math.max(0, (m[itemId] || 0) - 1) }));
     }
   }
 
-  function handleFiles(files: FileList | null) {
+  function handleItemFiles(itemId: string, files: FileList | null) {
     if (!files || files.length === 0) return;
-    Array.from(files).forEach(uploadDesignFile);
+    Array.from(files).forEach((f) => uploadDesignFile(itemId, f));
   }
 
-  // 200ms debounce — calculator hits the API on every change otherwise.
-  const [debouncedInputs, setDebouncedInputs] = useState(inputs);
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedInputs(inputs), 200);
-    return () => clearTimeout(t);
-  }, [inputs]);
+  return (
+    <Layout>
+      {/* Hero */}
+      <section className="bg-gray-900 text-white py-12 sm:py-16 text-center">
+        <div className="container mx-auto px-4">
+          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold">Instant Quote</h1>
+          <p className="mt-3 text-gray-400 max-w-xl mx-auto text-base sm:text-lg">
+            Add as many products as you need — see the price update in real time.
+          </p>
+        </div>
+      </section>
 
-  // Pricing options — fetched once, cached forever (admin edits invalidate
-  // server-side cache; user reload picks up changes).
-  const { data: options } = useQuery<OptionsResponse>({
-    queryKey: ['instant-quote', 'options'],
-    queryFn: async () => {
-      const r = await fetch('/api/quote/options');
-      if (!r.ok) throw new Error('Failed to load pricing options');
-      return r.json();
-    },
-    staleTime: 5 * 60 * 1000,
-  });
+      <main className="container mx-auto px-4 py-8 max-w-3xl">
+        {/* ─── Sticky grand-total card ─── */}
+        <PriceCard
+          items={items}
+          calcs={calcQueries.map((q) => q.data || null)}
+          itemValidity={itemValidity}
+          loading={anyCalcLoading}
+          grandTotal={grandTotal}
+          grandQuantity={grandQuantity}
+          turnaroundDays={grandTurnaroundDays}
+          allValid={allItemsValid}
+        />
 
-  const numLocations = useMemo(
-    () => Object.values(inputs.locations).filter(Boolean).length,
-    [inputs.locations]
+        {/* ─── Items ─── */}
+        <div className="mt-6 space-y-6">
+          {items.map((item, i) => (
+            <ItemCard
+              key={item.id}
+              index={i}
+              totalItems={items.length}
+              item={item}
+              options={options || null}
+              calc={calcQueries[i]?.data || null}
+              uploadingCount={uploadingByItem[item.id] || 0}
+              onPatchInputs={(patch) => patchInputs(item.id, patch)}
+              onClearProduct={() => patchItem(item.id, { pickedProduct: null })}
+              onRemoveDesign={(idx) => patchItem(item.id, {
+                designs: item.designs.filter((_, k) => k !== idx),
+              })}
+              onUploadFiles={(files) => handleItemFiles(item.id, files)}
+              onOpenPicker={() => setProductPickerItemId(item.id)}
+              onRemove={items.length > 1 ? () => removeItem(item.id) : null}
+            />
+          ))}
+        </div>
+
+        {/* ─── Add another product ─── */}
+        <button
+          type="button"
+          onClick={addItem}
+          className="mt-6 w-full rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/40 px-6 py-5 text-base font-semibold text-orange-700 hover:bg-orange-50 hover:border-orange-400 inline-flex items-center justify-center gap-2 transition"
+        >
+          <Plus className="h-5 w-5" /> Add another product
+        </button>
+
+        {/* CTAs */}
+        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setSaveOpen('save')}
+            disabled={!canSave}
+            className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-orange-400 hover:bg-gray-50 disabled:opacity-50 transition"
+          >
+            Save Quote (email me)
+          </button>
+          <button
+            type="button"
+            onClick={() => setSaveOpen('lock-in')}
+            disabled={!canSave}
+            className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
+          >
+            Lock In Order — 50% deposit
+          </button>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-gray-500">
+          Estimate only. Final price confirmed after we review your artwork. Tax + shipping calculated at checkout.
+        </p>
+      </main>
+
+      {saveOpen && canSave && (
+        <SaveQuoteModal
+          items={items}
+          intent={saveOpen}
+          grandTotal={grandTotal}
+          onClose={() => setSaveOpen(false)}
+        />
+      )}
+      {productPickerItemId && (
+        <ProductPickerModal
+          onPick={(p) => {
+            patchItem(productPickerItemId, { pickedProduct: p });
+            setProductPickerItemId(null);
+          }}
+          onClose={() => setProductPickerItemId(null)}
+        />
+      )}
+    </Layout>
   );
+}
 
-  // Calculate query — runs against debouncedInputs so it doesn't fire on every keystroke.
-  const debouncedTotalQty = totalQuantity(debouncedInputs.sizes);
-  const calcEnabled = numLocations > 0 && debouncedTotalQty > 0;
-  // Unified picked-product: manual pick overrides the URL-loaded one. Both
-  // get sent to the calc API as productSsId so the server uses the catalog
-  // price instead of the tier base_cost.
-  const effectiveProduct = pickedProduct || catalogProduct || null;
-  const effectiveProductSsId = effectiveProduct?.ss_id || null;
-  const { data: calc, isFetching: calcLoading } = useQuery<CalcResponse>({
-    queryKey: ['instant-quote', 'calculate', debouncedInputs, numLocations, effectiveProductSsId],
-    queryFn: async () => {
-      const r = await fetch('/api/quote/calculate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sizes: debouncedInputs.sizes.filter((s) => s.quantity > 0),
-          color: debouncedInputs.color,
-          garmentName: debouncedInputs.garmentName,
-          qualityTier: debouncedInputs.qualityTier,
-          methodName: debouncedInputs.methodName,
-          numLocations: Object.values(debouncedInputs.locations).filter(Boolean).length,
-          colorsPerLocation: debouncedInputs.colorsPerLocation,
-          rush: debouncedInputs.rush,
-          productSsId: effectiveProductSsId,
-        }),
-      });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || 'Calculation failed');
-      return body;
-    },
-    enabled: calcEnabled,
-    placeholderData: (prev) => prev, // keep showing last result while recalculating
-  });
+/* ────────────────────────────────────────────────────────────────────── */
+/*  ItemCard — one product's worth of form                                 */
+/* ────────────────────────────────────────────────────────────────────── */
 
-  const update = (patch: Partial<Inputs>) => setInputs((prev) => ({ ...prev, ...patch }));
+function ItemCard({
+  index, totalItems, item, options, calc, uploadingCount,
+  onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker, onRemove,
+}: {
+  index: number;
+  totalItems: number;
+  item: ItemDraft;
+  options: OptionsResponse | null;
+  calc: CalcResponse | null;
+  uploadingCount: number;
+  onPatchInputs: (patch: Partial<Inputs>) => void;
+  onClearProduct: () => void;
+  onRemoveDesign: (idx: number) => void;
+  onUploadFiles: (files: FileList | null) => void;
+  onOpenPicker: () => void;
+  onRemove: (() => void) | null;
+}) {
+  const inputs = item.inputs;
+  const isScreenPrint = inputs.methodName === 'Screen Print';
+  const liveTotalQty = totalQuantity(inputs.sizes);
+  const numLocations = Object.values(inputs.locations).filter(Boolean).length;
 
-  // Garment names (deduped from options, preserving first-seen order)
   const garmentNames = useMemo(() => {
     if (!options) return [];
     const seen = new Set<string>();
@@ -283,173 +458,168 @@ export default function InstantQuotePage() {
     return out;
   }, [options]);
 
-  const isScreenPrint = inputs.methodName === 'Screen Print';
-  const liveTotalQty = totalQuantity(inputs.sizes);
   const currentTier = useMemo(() => {
     if (!options) return null;
     return options.quantity_tiers.find(
-      (t) => liveTotalQty >= t.min_qty && (t.max_qty === null || liveTotalQty <= t.max_qty)
+      (t) => liveTotalQty >= t.min_qty && (t.max_qty === null || liveTotalQty <= t.max_qty),
     ) || null;
   }, [options, liveTotalQty]);
 
   return (
-    <Layout>
-      {/* Hero */}
-      <section className="bg-gray-900 text-white py-12 sm:py-16 text-center">
-        <div className="container mx-auto px-4">
-          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold">Instant Quote</h1>
-          <p className="mt-3 text-gray-400 max-w-xl mx-auto text-base sm:text-lg">
-            Pick your garment, method, and quantity — see the price update in real time.
-          </p>
+    <div className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-7 min-w-[28px] items-center justify-center rounded-full bg-orange-100 px-2 text-sm font-bold text-orange-700">
+            {index + 1}
+          </span>
+          <h2 className="font-display text-lg font-bold text-gray-900">
+            Product {totalItems > 1 ? `${index + 1} of ${totalItems}` : ''}
+          </h2>
+          {calc && liveTotalQty > 0 && (
+            <span className="ml-2 text-sm text-gray-500">
+              · {liveTotalQty} × ${calc.per_shirt.toFixed(2)} = <strong className="text-gray-900">${calc.total.toFixed(2)}</strong>
+            </span>
+          )}
         </div>
-      </section>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-red-50 hover:text-red-700 hover:border-red-200"
+            aria-label={`Remove product ${index + 1}`}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Remove
+          </button>
+        )}
+      </div>
 
-      <main className="container mx-auto px-4 py-8 max-w-3xl">
-        {/* ─── Catalog product banner (manual pick or arrived from /shop) ─── */}
-        {effectiveProduct && (
-          <SelectedProductBanner
-            product={effectiveProduct}
-            onClear={() => { setPickedProduct(null); }}
-          />
+      {/* Catalog product banner (manual pick or URL-loaded on item 0) */}
+      {item.pickedProduct && (
+        <SelectedProductBanner product={item.pickedProduct} onClear={onClearProduct} />
+      )}
+
+      <div className="space-y-6">
+        {/* Optional product pick */}
+        {!item.pickedProduct && (
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={onOpenPicker}
+              className="text-sm text-orange-700 hover:text-orange-800 hover:underline"
+            >
+              Quoting a specific shirt? <span className="underline">Browse the catalog</span>
+            </button>
+          </div>
         )}
 
-        {/* ─── Sticky price card (above the fold on mobile) ─── */}
-        <PriceCard
-          calc={calc}
-          quantity={debouncedTotalQty}
-          loading={calcLoading}
-          hasInputs={calcEnabled}
-          numLocations={numLocations}
-          tier={currentTier}
-        />
+        {/* Upload */}
+        <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
+          <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
+            <Upload className="h-5 w-5" />
+            <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
+            <input
+              type="file"
+              multiple
+              accept="image/*,.pdf,.svg"
+              className="hidden"
+              onChange={(e) => { onUploadFiles(e.target.files); e.target.value = ''; }}
+            />
+          </label>
+          <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
 
-        {/* ─── Form ─── */}
-        <div className="mt-6 space-y-8">
-
-          {/* Optional: pick a specific catalog garment instead of using the
-              abstract Standard/Premium/Ultra tier. When picked, the quote
-              uses that product's price; the Quality tier section hides. */}
-          {!effectiveProduct && (
-            <div className="text-center">
-              <button
-                type="button"
-                onClick={() => setProductPickerOpen(true)}
-                className="text-sm text-orange-700 hover:text-orange-800 hover:underline"
-              >
-                Quoting a specific shirt? <span className="underline">Browse the catalog</span>
-              </button>
-            </div>
+          {item.designs.length > 0 && (
+            <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {item.designs.map((d, i) => (
+                <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
+                  <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
+                  <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveDesign(i)}
+                    className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
+                    aria-label={`Remove ${d.filename}`}
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
           )}
+        </Section>
 
-          {/* Upload graphic — optional, but customers usually have art ready;
-              accepting it now means we can quote artwork prep accurately and
-              the file is waiting for us when they lock in the order. */}
-          <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
-            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
-              <Upload className="h-5 w-5" />
-              <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
-              <input
-                type="file"
-                multiple
-                accept="image/*,.pdf,.svg"
-                className="hidden"
-                onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
-              />
-            </label>
-            <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
-
-            {designs.length > 0 && (
-              <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                {designs.map((d, i) => (
-                  <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
-                    <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
-                    <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
-                    <button
-                      type="button"
-                      onClick={() => setDesigns(designs.filter((_, idx) => idx !== i))}
-                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
-                      aria-label={`Remove ${d.filename}`}
-                    >
-                      <XIcon className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
+        {/* Sizes */}
+        <Section icon={<span className="text-xl">#</span>} title="How many shirts? (per size)">
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+            {inputs.sizes.map((row, i) => {
+              const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
+              return (
+                <div key={row.size} className="flex flex-col items-center gap-1">
+                  <label className="text-xs font-semibold text-gray-700">{row.size}</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={row.quantity || ''}
+                    onChange={(e) => {
+                      const next = inputs.sizes.slice();
+                      next[i] = { ...row, quantity: Math.max(0, parseInt(e.target.value) || 0) };
+                      onPatchInputs({ sizes: next });
+                    }}
+                    placeholder="0"
+                    className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    style={{ fontSize: '16px' }}
+                  />
+                  {upcharge > 0 && (
+                    <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            Total: <strong className="text-gray-900">{liveTotalQty}</strong>
+            {currentTier && currentTier.discount_pct > 0 && (
+              <span className="ml-2 text-xs text-green-700">
+                {Math.round(currentTier.discount_pct * 100)}% volume discount
+              </span>
             )}
-          </Section>
+            {numLocations === 0 && (
+              <span className="ml-2 text-xs text-amber-700">Pick at least one print location below.</span>
+            )}
+          </div>
+        </Section>
 
-          {/* Sizes — per-size quantities; 2XL+ trigger upcharges */}
-          <Section icon={<span className="text-xl">#</span>} title="How many shirts? (per size)">
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-              {inputs.sizes.map((row, i) => {
-                const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
-                return (
-                  <div key={row.size} className="flex flex-col items-center gap-1">
-                    <label className="text-xs font-semibold text-gray-700">{row.size}</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={row.quantity || ''}
-                      onChange={(e) => {
-                        const next = inputs.sizes.slice();
-                        next[i] = { ...row, quantity: Math.max(0, parseInt(e.target.value) || 0) };
-                        update({ sizes: next });
-                      }}
-                      placeholder="0"
-                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      style={{ fontSize: '16px' }}
-                    />
-                    {upcharge > 0 && (
-                      <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 text-sm text-gray-600">
-              Total: <strong className="text-gray-900">{totalQuantity(inputs.sizes)}</strong>
-              {currentTier && currentTier.discount_pct > 0 && (
-                <span className="ml-2 text-xs text-green-700">
-                  {Math.round(currentTier.discount_pct * 100)}% volume discount
-                </span>
-              )}
-            </div>
-          </Section>
+        {/* Color */}
+        <Section icon={<span className="text-xl">🎨</span>} title="Shirt color">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+            {COLOR_OPTIONS.map((c) => (
+              <Chip key={c} active={inputs.color === c} onClick={() => onPatchInputs({ color: c })}>
+                {c}
+              </Chip>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">
+            Other colors available — we'll match it on your final mockup.
+          </p>
+        </Section>
 
-          {/* Color */}
-          <Section icon={<span className="text-xl">🎨</span>} title="Shirt color">
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-              {COLOR_OPTIONS.map((c) => (
-                <Chip key={c} active={inputs.color === c} onClick={() => update({ color: c })}>
-                  {c}
-                </Chip>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">
-              Other colors available — we'll match it on your final mockup.
-            </p>
-          </Section>
+        {/* Garment */}
+        <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {garmentNames.map((name) => (
+              <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
+                {name}
+              </Chip>
+            ))}
+          </div>
+        </Section>
 
-          {/* Garment */}
-          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {garmentNames.map((name) => (
-                <Chip key={name} active={inputs.garmentName === name} onClick={() => update({ garmentName: name })}>
-                  {name}
-                </Chip>
-              ))}
-            </div>
-          </Section>
-
-          {/* Quality tier — hidden when a specific product is picked, since
-              its catalog price overrides the tier-based one. */}
-          {!effectiveProduct && (
+        {/* Quality tier — hidden when a specific product is picked */}
+        {!item.pickedProduct && (
           <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
             <div className="grid grid-cols-3 gap-2">
               {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
-                // Brand hint shown under each tier when garment is T-shirt —
-                // the three canonical tiers map directly to a brand staple.
                 const tshirtBrand: Record<typeof q, string> = {
                   Standard: 'Gildan',
                   Premium: 'Next Level',
@@ -460,7 +630,7 @@ export default function InstantQuotePage() {
                   <button
                     key={q}
                     type="button"
-                    onClick={() => update({ qualityTier: q })}
+                    onClick={() => onPatchInputs({ qualityTier: q })}
                     className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
                       inputs.qualityTier === q ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                     }`}
@@ -472,152 +642,109 @@ export default function InstantQuotePage() {
               })}
             </div>
           </Section>
-          )}
+        )}
 
-          {/* Print method */}
-          <Section icon={<Printer className="h-5 w-5" />} title="Print method">
-            <div className="grid grid-cols-2 gap-2">
-              {options?.print_methods.map((m) => (
-                <Chip
-                  key={m.id}
-                  active={inputs.methodName === m.name}
-                  onClick={() => update({ methodName: m.name as Inputs['methodName'] })}
-                >
-                  {m.name}
-                  {m.name === 'DTF' && (
-                    <span className="ml-1 italic text-xs text-gray-500">(most popular)</span>
-                  )}
-                </Chip>
-              ))}
-            </div>
-          </Section>
+        {/* Print method */}
+        <Section icon={<Printer className="h-5 w-5" />} title="Print method">
+          <div className="grid grid-cols-2 gap-2">
+            {options?.print_methods.map((m) => (
+              <Chip
+                key={m.id}
+                active={inputs.methodName === m.name}
+                onClick={() => onPatchInputs({ methodName: m.name as Inputs['methodName'] })}
+              >
+                {m.name}
+                {m.name === 'DTF' && (
+                  <span className="ml-1 italic text-xs text-gray-500">(most popular)</span>
+                )}
+              </Chip>
+            ))}
+          </div>
+        </Section>
 
-          {/* Print locations */}
-          <Section icon={<Palette className="h-5 w-5" />} title="Where do you want it printed?">
-            <div className="grid grid-cols-3 gap-2">
-              {(['front', 'back', 'sleeve'] as const).map((loc) => (
+        {/* Print locations */}
+        <Section icon={<Palette className="h-5 w-5" />} title="Where do you want it printed?">
+          <div className="grid grid-cols-3 gap-2">
+            {(['front', 'back', 'sleeve'] as const).map((loc) => (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => onPatchInputs({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
+                className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
+                  inputs.locations[loc] ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                }`}
+              >
+                {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
+                {loc}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">Front + Back = 2 locations. Pick any combination.</p>
+        </Section>
+
+        {/* Colors per location — only for screen print */}
+        {isScreenPrint && (
+          <Section icon={<Palette className="h-5 w-5" />} title="How many colors per location?">
+            <div className="grid grid-cols-6 gap-2">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
                 <button
-                  key={loc}
+                  key={n}
                   type="button"
-                  onClick={() => update({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
-                  className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
-                    inputs.locations[loc] ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                  onClick={() => onPatchInputs({ colorsPerLocation: n })}
+                  className={`rounded-xl border-2 py-3 text-base font-bold transition ${
+                    inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
                   }`}
                 >
-                  {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
-                  {loc}
+                  {n}
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-xs text-gray-500">Front + Back = 2 locations. Pick any combination.</p>
+            <p className="mt-2 text-xs text-gray-500">More colors = higher screen-print setup fee.</p>
           </Section>
+        )}
 
-          {/* Colors — only for screen print */}
-          {isScreenPrint && (
-            <Section icon={<Palette className="h-5 w-5" />} title="How many colors per location?">
-              <div className="grid grid-cols-6 gap-2">
-                {[1, 2, 3, 4, 5, 6].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => update({ colorsPerLocation: n })}
-                    className={`rounded-xl border-2 py-3 text-base font-bold transition ${
-                      inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
+        {/* Turnaround */}
+        <Section icon={<Zap className="h-5 w-5" />} title="When do you need it?">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => onPatchInputs({ rush: false })}
+              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
+                !inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+              }`}
+            >
+              <div>Standard</div>
+              <div className="text-[10px] mt-0.5 text-gray-500">{options?.settings.standard_turnaround ?? 10} days</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => onPatchInputs({ rush: true })}
+              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
+                inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+              }`}
+            >
+              <div>Rush</div>
+              <div className="text-[10px] mt-0.5 text-gray-500">
+                1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
               </div>
-              <p className="mt-2 text-xs text-gray-500">More colors = higher screen-print setup fee.</p>
-            </Section>
-          )}
-
-          {/* Turnaround */}
-          <Section icon={<Zap className="h-5 w-5" />} title="When do you need it?">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => update({ rush: false })}
-                className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                  !inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
-                }`}
-              >
-                <div>Standard</div>
-                <div className="text-[10px] mt-0.5 text-gray-500">{options?.settings.standard_turnaround ?? 10} days</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => update({ rush: true })}
-                className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                  inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
-                }`}
-              >
-                <div>Rush</div>
-                <div className="text-[10px] mt-0.5 text-gray-500">
-                  1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
-                </div>
-              </button>
-            </div>
-          </Section>
-        </div>
-
-        {/* CTAs — Save + Lock-in are wired in later phases. */}
-        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setSaveOpen('save')}
-            disabled={!calc}
-            className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-orange-400 hover:bg-gray-50 disabled:opacity-50 transition"
-          >
-            Save Quote (email me)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSaveOpen('lock-in')}
-            disabled={!calc}
-            className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
-          >
-            Lock In Order — 50% deposit
-          </button>
-        </div>
-
-        {/* Disclaimer */}
-        <p className="mt-6 text-center text-xs text-gray-500">
-          Estimate only. Final price confirmed after we review your artwork. Tax + shipping calculated at checkout.
-        </p>
-      </main>
-
-      {saveOpen && calc && (
-        <SaveQuoteModal
-          inputs={inputs}
-          numLocations={numLocations}
-          intent={saveOpen}
-          calcTotal={calc.total}
-          designUrls={designs.map((d) => d.url)}
-          catalogProduct={effectiveProduct}
-          onClose={() => setSaveOpen(false)}
-        />
-      )}
-      {productPickerOpen && (
-        <ProductPickerModal
-          onPick={(p) => { setPickedProduct(p); setProductPickerOpen(false); }}
-          onClose={() => setProductPickerOpen(false)}
-        />
-      )}
-    </Layout>
+            </button>
+          </div>
+        </Section>
+      </div>
+    </div>
   );
 }
 
+/* ────────────────────────────────────────────────────────────────────── */
+/*  SaveQuoteModal — collects email and POSTs the multi-item payload      */
+/* ────────────────────────────────────────────────────────────────────── */
+
 function SaveQuoteModal({
-  inputs, numLocations, intent, calcTotal, designUrls, catalogProduct, onClose,
+  items, intent, grandTotal, onClose,
 }: {
-  inputs: Inputs;
-  numLocations: number;
+  items: ItemDraft[];
   intent: 'save' | 'lock-in';
-  calcTotal: number;
-  designUrls: string[];
-  catalogProduct: CatalogProduct | null;
+  grandTotal: number;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -626,7 +753,7 @@ function SaveQuoteModal({
   const [saving, setSaving] = useState(false);
 
   const isLockIn = intent === 'lock-in';
-  const depositAmount = calcTotal / 2;
+  const depositAmount = grandTotal / 2;
 
   async function submit() {
     if (!email || !/.+@.+\..+/.test(email)) {
@@ -635,9 +762,41 @@ function SaveQuoteModal({
     }
     setSaving(true);
     try {
-      // Step 1: persist the quote (same call as the save flow). Always run
-      // this even on lock-in so we have a permanent record + the customer
-      // gets the saved-quote email.
+      const payloadItems = items.map((item) => {
+        const numLocations = Object.values(item.inputs.locations).filter(Boolean).length;
+        const designUrls = item.designs.map((d) => d.url);
+        const cp = item.pickedProduct;
+        return {
+          design_url: designUrls[0] || null,
+          extra_design_urls: designUrls.slice(1),
+          inputs: {
+            sizes: item.inputs.sizes.filter((s) => s.quantity > 0),
+            color: item.inputs.color,
+            garmentName: item.inputs.garmentName,
+            qualityTier: item.inputs.qualityTier,
+            methodName: item.inputs.methodName,
+            numLocations,
+            colorsPerLocation: item.inputs.colorsPerLocation,
+            rush: item.inputs.rush,
+            // Non-API fields, included so the email can show 'Front + Sleeve' etc.
+            locations: item.inputs.locations,
+            // Server uses productSsId to re-look up the price (custom_price
+            // ?? base_price × 2) and override the tier-based garment_cost.
+            ...(cp?.ss_id ? { productSsId: cp.ss_id } : {}),
+            // Snapshot of the picked product for the saved-quote email + admin.
+            ...(cp ? {
+              catalog_product: {
+                ss_id: cp.ss_id,
+                name: cp.name,
+                brand: cp.brand,
+                category: cp.category,
+                image_url: cp.image_url || cp.imageUrl,
+              },
+            } : {}),
+          },
+        };
+      });
+
       const saveRes = await fetch('/api/quote/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -645,36 +804,7 @@ function SaveQuoteModal({
           customer_name: name || null,
           customer_email: email,
           notes: notes || null,
-          // First uploaded URL (if any) becomes design_url for backwards
-          // compatibility with admin renderers; the rest go into
-          // extra_design_urls (JSONB array) on the quote row.
-          design_url: designUrls[0] || null,
-          extra_design_urls: designUrls.slice(1),
-          inputs: {
-            sizes: inputs.sizes.filter((s) => s.quantity > 0),
-            color: inputs.color,
-            garmentName: inputs.garmentName,
-            qualityTier: inputs.qualityTier,
-            methodName: inputs.methodName,
-            numLocations,
-            colorsPerLocation: inputs.colorsPerLocation,
-            rush: inputs.rush,
-            // Non-API fields, included so the email can show 'Front + Sleeve' etc.
-            locations: inputs.locations,
-            // Server uses productSsId to re-look up the price (custom_price
-            // ?? base_price × 2) and override the tier-based garment_cost.
-            ...(catalogProduct?.ss_id ? { productSsId: catalogProduct.ss_id } : {}),
-            // Snapshot of the picked product for the saved-quote email + admin.
-            ...(catalogProduct ? {
-              catalog_product: {
-                ss_id: catalogProduct.ss_id,
-                name: catalogProduct.name,
-                brand: catalogProduct.brand,
-                category: catalogProduct.category,
-                image_url: catalogProduct.image_url || catalogProduct.imageUrl,
-              },
-            } : {}),
-          },
+          items: payloadItems,
         }),
       });
       const saveBody = await saveRes.json();
@@ -686,7 +816,7 @@ function SaveQuoteModal({
         return;
       }
 
-      // Step 2 (lock-in only): create Stripe Checkout Session and redirect.
+      // Lock-in: create Stripe Checkout Session and redirect.
       const lockRes = await fetch('/api/quote/lock-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -712,8 +842,8 @@ function SaveQuoteModal({
         </h3>
         <p className="mt-1 text-sm text-gray-500">
           {isLockIn
-            ? `We'll save your quote, then take you to Stripe for the 50% deposit ($${depositAmount.toFixed(2)}). Balance due before pickup or shipment.`
-            : `We'll email you the breakdown so you have it on file.`}
+            ? `${items.length} product${items.length === 1 ? '' : 's'} · we'll save your quote, then take you to Stripe for the 50% deposit ($${depositAmount.toFixed(2)}). Balance due before pickup or shipment.`
+            : `${items.length} product${items.length === 1 ? '' : 's'} · we'll email you the breakdown so you have it on file.`}
         </p>
 
         <div className="mt-5 space-y-3">
@@ -781,7 +911,7 @@ function SaveQuoteModal({
 /*  Sub-components                                                         */
 /* ────────────────────────────────────────────────────────────────────── */
 
-function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; onClear?: () => void }) {
+function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; onClear: () => void }) {
   const img = product.image_url || product.imageUrl;
   const wholesale = Number(product.base_price || 0);
   const yourPrice = product.custom_price != null && Number(product.custom_price) > 0
@@ -805,22 +935,13 @@ function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; 
           <p className="text-xs text-gray-700 mt-0.5">Your price: <strong>${yourPrice.toFixed(2)}</strong> per shirt</p>
         )}
       </div>
-      {onClear ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Clear
-        </button>
-      ) : (
-        <Link
-          to="/shop"
-          className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Change
-        </Link>
-      )}
+      <button
+        type="button"
+        onClick={onClear}
+        className="flex-shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+      >
+        Clear
+      </button>
     </div>
   );
 }
@@ -901,16 +1022,21 @@ function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) =
 }
 
 function PriceCard({
-  calc, quantity, loading, hasInputs, numLocations, tier,
+  items, calcs, itemValidity, loading, grandTotal, grandQuantity, turnaroundDays, allValid,
 }: {
-  calc?: CalcResponse;
-  quantity: number;
+  items: ItemDraft[];
+  calcs: Array<CalcResponse | null>;
+  itemValidity: boolean[];
   loading: boolean;
-  hasInputs: boolean;
-  numLocations: number;
-  tier: QuantityTier | null;
+  grandTotal: number;
+  grandQuantity: number;
+  turnaroundDays: number;
+  allValid: boolean;
 }) {
-  if (!hasInputs) {
+  const hasAnyInputs = grandQuantity > 0 && itemValidity.some(Boolean);
+  const perShirtAvg = grandQuantity > 0 ? grandTotal / grandQuantity : 0;
+
+  if (!hasAnyInputs) {
     return (
       <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
         <div className="flex items-baseline justify-between">
@@ -924,80 +1050,107 @@ function PriceCard({
           </div>
         </div>
         <p className="mt-3 text-xs text-gray-500">
-          {numLocations === 0
-            ? 'Pick at least one print location.'
-            : 'Enter quantities to see your price update live.'}
+          Enter quantities and pick at least one print location to see your price update live.
         </p>
       </div>
     );
   }
-  if (!calc) {
-    return (
-      <div className="rounded-2xl border-2 border-gray-200 p-6 flex items-center justify-center gap-2 text-gray-400">
-        <Loader2 className="h-5 w-5 animate-spin" /> Calculating...
-      </div>
-    );
-  }
+
   return (
     <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
       <div className="flex items-baseline justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-orange-700/70">Per shirt</div>
+          <div className="text-xs uppercase tracking-wider text-orange-700/70">
+            {items.length === 1 ? 'Per shirt' : `Avg per shirt · ${items.length} products`}
+          </div>
           <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">
-            ${calc.per_shirt.toFixed(2)}
+            ${perShirtAvg.toFixed(2)}
             {loading && <Loader2 className="inline ml-2 h-4 w-4 animate-spin text-orange-400" />}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-wider text-orange-700/70">Total</div>
+          <div className="text-xs uppercase tracking-wider text-orange-700/70">Grand total</div>
           <div className="font-display text-2xl sm:text-3xl font-bold text-gray-900">
-            ${calc.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-3 text-sm">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
         <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
-          {calc.turnaround_days} day turnaround
+          {turnaroundDays} day turnaround
         </span>
-        {tier && tier.discount_pct > 0 && (
-          <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
-            {Math.round(tier.discount_pct * 100)}% volume discount
+        <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
+          {grandQuantity} pieces total
+        </span>
+        {!allValid && (
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800 border border-amber-200">
+            Some products need quantities + a location
           </span>
         )}
       </div>
 
-      {/* Collapsible breakdown */}
-      <details className="mt-4 group">
-        <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
-          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-          Price breakdown
-        </summary>
-        <dl className="mt-3 space-y-1 text-sm">
-          <Row
-            label="Garment"
-            sub={`$${calc.breakdown.garment_cost_per_piece.toFixed(2)} × ${quantity}`}
-            value={calc.breakdown.garment_cost_per_piece * quantity}
-          />
-          <Row
-            label="Print"
-            sub={`$${calc.breakdown.print_cost_per_piece.toFixed(2)} × ${calc.breakdown.num_locations} location${calc.breakdown.num_locations === 1 ? '' : 's'} × ${quantity}`}
-            value={calc.breakdown.print_cost_per_piece * calc.breakdown.num_locations * quantity}
-          />
-          {calc.breakdown.setup > 0 && <Row label="Setup" value={calc.breakdown.setup} />}
-          {calc.breakdown.quantity_discount > 0 && (
-            <Row label={`Volume discount (${Math.round(calc.breakdown.discount_pct * 100)}% off)`} value={-calc.breakdown.quantity_discount} negative />
-          )}
-          {calc.breakdown.rush_surcharge > 0 && (
-            <Row
-              label={`Rush surcharge (+${calc.breakdown.base > 0 ? Math.round((calc.breakdown.rush_surcharge / calc.breakdown.base) * 100) : 0}%)`}
-              value={calc.breakdown.rush_surcharge}
-            />
-          )}
-          <Row label={`Subtotal × ${calc.breakdown.markup_multiplier} markup`} value={calc.total} bold />
-        </dl>
-      </details>
+      {/* Per-item breakdown when there's more than one item */}
+      {items.length > 1 && (
+        <details className="mt-4 group" open>
+          <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
+            <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+            Items
+          </summary>
+          <dl className="mt-3 space-y-1 text-sm">
+            {items.map((it, i) => {
+              const calc = calcs[i];
+              const qty = totalQuantity(it.inputs.sizes);
+              const label = `${i + 1}. ${it.pickedProduct?.name || `${it.inputs.qualityTier} ${it.inputs.garmentName}`}`;
+              const sub = `${qty} pcs · ${it.inputs.color} · ${it.inputs.methodName}`;
+              return (
+                <Row key={it.id} label={label} sub={sub} value={calc?.total || 0} />
+              );
+            })}
+            <Row label="Grand total" value={grandTotal} bold />
+          </dl>
+        </details>
+      )}
+
+      {/* Single-item breakdown — only show when exactly one item */}
+      {items.length === 1 && calcs[0] && (
+        <SingleItemBreakdown calc={calcs[0]} quantity={grandQuantity} />
+      )}
     </div>
+  );
+}
+
+function SingleItemBreakdown({ calc, quantity }: { calc: CalcResponse; quantity: number }) {
+  return (
+    <details className="mt-4 group">
+      <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
+        <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+        Price breakdown
+      </summary>
+      <dl className="mt-3 space-y-1 text-sm">
+        <Row
+          label="Garment"
+          sub={`$${calc.breakdown.garment_cost_per_piece.toFixed(2)} × ${quantity}`}
+          value={calc.breakdown.garment_cost_per_piece * quantity}
+        />
+        <Row
+          label="Print"
+          sub={`$${calc.breakdown.print_cost_per_piece.toFixed(2)} × ${calc.breakdown.num_locations} location${calc.breakdown.num_locations === 1 ? '' : 's'} × ${quantity}`}
+          value={calc.breakdown.print_cost_per_piece * calc.breakdown.num_locations * quantity}
+        />
+        {calc.breakdown.setup > 0 && <Row label="Setup" value={calc.breakdown.setup} />}
+        {calc.breakdown.quantity_discount > 0 && (
+          <Row label={`Volume discount (${Math.round(calc.breakdown.discount_pct * 100)}% off)`} value={-calc.breakdown.quantity_discount} negative />
+        )}
+        {calc.breakdown.rush_surcharge > 0 && (
+          <Row
+            label={`Rush surcharge (+${calc.breakdown.base > 0 ? Math.round((calc.breakdown.rush_surcharge / calc.breakdown.base) * 100) : 0}%)`}
+            value={calc.breakdown.rush_surcharge}
+          />
+        )}
+        <Row label={`Subtotal × ${calc.breakdown.markup_multiplier} markup`} value={calc.total} bold />
+      </dl>
+    </details>
   );
 }
 
