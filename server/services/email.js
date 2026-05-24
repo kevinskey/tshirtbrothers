@@ -535,10 +535,12 @@ export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrl
   });
 }
 
-// ── Instant Quote Calculator (Phase 4) ──────────────────────────────────────
+// ── Instant Quote Calculator ────────────────────────────────────────────────
 
-function instantQuoteSummaryRows({ inputs, calc }) {
-  const { num_locations, colors_per_location, base, setup, quantity_discount, discount_pct, rush_surcharge, markup_multiplier } = calc.breakdown;
+// Build the detailRow string for one line item in a multi-item quote.
+function instantQuoteItemRows(item) {
+  const { inputs, calc, pickedProductMeta } = item;
+  const { num_locations, colors_per_location } = calc.breakdown;
   const locationsLabel = (() => {
     const locs = [];
     if (inputs.locations?.front) locs.push('Front');
@@ -546,33 +548,61 @@ function instantQuoteSummaryRows({ inputs, calc }) {
     if (inputs.locations?.sleeve) locs.push('Sleeve');
     return locs.length ? locs.join(' + ') : `${num_locations} location${num_locations === 1 ? '' : 's'}`;
   })();
-  const rows = [
-    ['Quantity', String(inputs.quantity)],
-    ['Garment', `${inputs.garmentName} — ${inputs.qualityTier}`],
-    ['Print method', inputs.methodName],
-    ['Locations', locationsLabel],
-  ];
+  const productLabel = pickedProductMeta
+    ? `${pickedProductMeta.name} — ${inputs.methodName}`
+    : `${inputs.qualityTier} ${inputs.garmentName} — ${inputs.methodName}`;
+  let html = '';
+  html += detailRow('Product', productLabel);
+  if (inputs.color) html += detailRow('Color', inputs.color);
+  html += detailRow('Quantity', String(calc.quantity));
+  html += detailRow('Locations', locationsLabel);
   if (inputs.methodName === 'Screen Print') {
-    rows.push(['Colors per location', String(colors_per_location)]);
+    html += detailRow('Colors per location', String(colors_per_location));
   }
-  rows.push(['Turnaround', inputs.rush ? `Rush — ${calc.turnaround_days} days` : `Standard — ${calc.turnaround_days} days`]);
-  rows.push(['', '']); // spacer
-  rows.push(['Base (garment + print)', formatCurrency(base)]);
-  if (setup > 0) rows.push(['Setup', formatCurrency(setup)]);
-  if (quantity_discount > 0) rows.push([`Volume discount (${Math.round(discount_pct * 100)}% off)`, '−' + formatCurrency(quantity_discount)]);
-  if (rush_surcharge > 0) rows.push(['Rush surcharge', formatCurrency(rush_surcharge)]);
-  rows.push([`Markup × ${markup_multiplier}`, '']);
-  rows.push(['Per shirt', formatCurrency(calc.per_shirt)]);
-  rows.push(['Total', formatCurrency(calc.total)]);
-  return rows;
+  html += detailRow('Turnaround', inputs.rush
+    ? `Rush — ${calc.turnaround_days} days`
+    : `Standard — ${calc.turnaround_days} days`);
+  html += detailRow('Per shirt', formatCurrency(calc.per_shirt));
+  html += detailRow('Item total', formatCurrency(calc.total));
+  return html;
 }
 
-export async function sendInstantQuoteToCustomer({ quote, inputs, calc }) {
-  const subject = `Your T-Shirt Brothers quote — ${formatCurrency(calc.total)} for ${inputs.quantity} ${inputs.garmentName.toLowerCase()}s`;
+// Render the full per-item section. Single item drops the header label.
+function instantQuoteItemsHtml(items) {
+  if (items.length === 1) {
+    return detailsTable(instantQuoteItemRows(items[0]));
+  }
+  return items.map((item, i) =>
+    `<p style="font-weight:600;color:${BRAND_DARK};margin:20px 0 6px;font-size:14px;">Item ${i + 1} of ${items.length}</p>` +
+    detailsTable(instantQuoteItemRows(item)),
+  ).join('');
+}
+
+// Grand-total table shown only when there's more than one item.
+function instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items }) {
+  if (items.length === 1) return '';
+  return detailsTable(
+    detailRow('Total pieces', String(grandQuantity)) +
+    detailRow('Grand total', `<strong>${formatCurrency(grandTotal)}</strong>`),
+  );
+}
+
+function instantQuoteItemNoun(items) {
+  if (items.length === 1) {
+    const g = items[0].inputs.garmentName || 'shirt';
+    return `${items[0].calc.quantity} ${g.toLowerCase()}${items[0].calc.quantity === 1 ? '' : 's'}`;
+  }
+  const totalQty = items.reduce((s, it) => s + it.calc.quantity, 0);
+  return `${totalQty} pieces across ${items.length} products`;
+}
+
+export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, grandQuantity }) {
+  const subject = `Your T-Shirt Brothers quote — ${formatCurrency(grandTotal)} for ${instantQuoteItemNoun(items)}`;
   const body = `
     <p>Hi ${quote.customer_name || 'there'},</p>
     <p>Thanks for using our instant-quote tool — here's the price you saw:</p>
-    ${detailsTable(instantQuoteSummaryRows({ inputs, calc }))}
+    ${instantQuoteItemsHtml(items)}
+    ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">
       This is an estimate based on the inputs above. We'll review your artwork and confirm the final price before any work starts. Tax and shipping are calculated at checkout.
     </p>
@@ -588,13 +618,14 @@ export async function sendInstantQuoteToCustomer({ quote, inputs, calc }) {
   });
 }
 
-export async function sendInstantQuoteToAdmin({ quote, inputs, calc }) {
-  const subject = `New instant quote: ${quote.customer_name || quote.customer_email} — ${formatCurrency(calc.total)}`;
+export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQuantity }) {
+  const subject = `New instant quote: ${quote.customer_name || quote.customer_email} — ${formatCurrency(grandTotal)}`;
   const body = `
     <p><strong>${quote.customer_name || '(no name)'} &lt;${quote.customer_email}&gt;</strong> just saved an instant quote.</p>
-    ${detailsTable(instantQuoteSummaryRows({ inputs, calc }))}
+    ${instantQuoteItemsHtml(items)}
+    ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${primaryButton('Open in Admin', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
-    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Quote ID #${quote.id} · design_type=instant-quote</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Quote ID #${quote.id} · ${items.length} item${items.length === 1 ? '' : 's'} · design_type=instant-quote</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,

@@ -258,39 +258,100 @@ router.post('/calculate', async (req, res, next) => {
 /* ---------------------------------------------------------------------------
  * POST /api/quote/save — persist a calculated quote, email customer + admin.
  *
- * Recomputes server-side from the same inputs to make sure the saved price
- * matches what the customer was shown (and to defeat any client tampering).
+ * Accepts an `items` array (each entry is one line item: inputs + uploaded
+ * designs). Recomputes every item server-side so the saved price matches
+ * what the customer was shown and the client can't tamper. Header row goes
+ * into `quotes`; one row per item goes into `quote_items` so the admin
+ * editor sees them all.
  * ------------------------------------------------------------------------- */
 router.post('/save', async (req, res, next) => {
+  const client = await pool.connect();
   try {
-    const { inputs, customer_name, customer_email, notes, design_url, extra_design_urls } = req.body;
-    if (!inputs || typeof inputs !== 'object') {
-      return res.status(400).json({ error: 'inputs object is required' });
+    const { items, customer_name, customer_email, notes } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items array is required' });
     }
     if (!customer_email || !/.+@.+\..+/.test(customer_email)) {
       return res.status(400).json({ error: 'customer_email is required' });
     }
 
-    // Recompute server-side. If the customer picked a specific catalog
-    // product, look up its price here too so the saved quote uses the
-    // authoritative DB value (the client can't tamper with the price).
     const tables = await loadPricingTables();
-    const effectiveInputs = { ...inputs };
-    if (effectiveInputs.productSsId) {
-      const picked = await resolvePickedProductPrice(effectiveInputs.productSsId);
-      if (picked) effectiveInputs.pickedProduct = picked;
-    }
-    let calc;
-    try {
-      calc = computeQuote(effectiveInputs, tables);
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
+
+    // Compute each item server-side. Server is the source of truth for
+    // catalog product price (custom_price ?? base_price × 2).
+    const itemRows = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (!item || typeof item !== 'object' || !item.inputs || typeof item.inputs !== 'object') {
+        return res.status(400).json({ error: `items[${i}].inputs is required` });
+      }
+      const effectiveInputs = { ...item.inputs };
+      let pickedProductMeta = null;
+      if (effectiveInputs.productSsId) {
+        const picked = await resolvePickedProductPrice(effectiveInputs.productSsId);
+        if (picked) {
+          effectiveInputs.pickedProduct = picked;
+          pickedProductMeta = picked;
+        }
+      }
+      let calc;
+      try {
+        calc = computeQuote(effectiveInputs, tables);
+      } catch (err) {
+        return res.status(400).json({ error: `items[${i}]: ${err.message}` });
+      }
+      itemRows.push({
+        index: i,
+        inputs: item.inputs,
+        pickedProductMeta,
+        calc,
+        design_url: item.design_url || null,
+        extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+      });
     }
 
-    // Stash the full input set + price snapshot. inputs_json column was
-    // added by migration instant_quote_save_columns.sql.
-    const productName = `${inputs.qualityTier} ${inputs.garmentName} — ${inputs.methodName}`;
-    const result = await pool.query(
+    const grandTotal = itemRows.reduce((s, r) => s + r.calc.total, 0);
+    const grandQuantity = itemRows.reduce((s, r) => s + r.calc.quantity, 0);
+    const perShirtAvg = grandQuantity > 0
+      ? Math.round((grandTotal / grandQuantity) * 100) / 100
+      : 0;
+
+    // Header product_name on the legacy quotes row. Single-item keeps the
+    // pre-refactor format so admin renderers that read it unchanged still
+    // display something natural.
+    let headerProductName;
+    if (itemRows.length === 1) {
+      const inp = itemRows[0].inputs;
+      const picked = itemRows[0].pickedProductMeta;
+      headerProductName = picked
+        ? `${picked.name} — ${inp.methodName}`
+        : `${inp.qualityTier} ${inp.garmentName} — ${inp.methodName}`;
+    } else {
+      headerProductName = `Multi-product quote (${itemRows.length} items)`;
+    }
+
+    // First item's design_url + extras populate the legacy header columns
+    // so admin renderers that haven't been multi-item-ified still show
+    // something useful. The full per-item designs live in quote_items.
+    const firstItem = itemRows[0];
+
+    // inputs_json stores the full multi-item payload so the email builder
+    // and admin can rebuild a human-readable summary later.
+    const inputsJson = {
+      items: itemRows.map((r) => ({
+        inputs: r.inputs,
+        calc: r.calc,
+        picked_product: r.pickedProductMeta || null,
+        design_url: r.design_url,
+        extra_design_urls: r.extra_design_urls,
+      })),
+      grand_total: grandTotal,
+      grand_quantity: grandQuantity,
+    };
+
+    await client.query('BEGIN');
+
+    const headerRes = await client.query(
       `INSERT INTO quotes
         (customer_name, customer_email, product_name, quantity,
          design_type, inputs_json, calculated_price,
@@ -301,23 +362,64 @@ router.post('/save', async (req, res, next) => {
       [
         customer_name || null,
         customer_email,
-        productName,
-        calc.quantity,
-        JSON.stringify(inputs),
-        calc.total,
-        design_url || null,
-        JSON.stringify(Array.isArray(extra_design_urls) ? extra_design_urls : []),
-        calc.total,
+        headerProductName,
+        grandQuantity,
+        JSON.stringify(inputsJson),
+        grandTotal,
+        firstItem.design_url || null,
+        JSON.stringify(firstItem.extra_design_urls),
+        grandTotal,
         notes || null,
-      ]
+      ],
     );
-    const quote = result.rows[0];
+    const quote = headerRes.rows[0];
+
+    for (const r of itemRows) {
+      const inp = r.inputs;
+      let productId = null;
+      if (inp.productSsId) {
+        const { rows } = await client.query(
+          'SELECT id FROM products WHERE ss_id = $1 LIMIT 1',
+          [String(inp.productSsId)],
+        );
+        productId = rows[0]?.id || null;
+      }
+      const itemProductName = r.pickedProductMeta
+        ? r.pickedProductMeta.name
+        : `${inp.qualityTier} ${inp.garmentName}`;
+      const printAreas = [];
+      if (inp.locations?.front) printAreas.push('front');
+      if (inp.locations?.back) printAreas.push('back');
+      if (inp.locations?.sleeve) printAreas.push('sleeve');
+
+      await client.query(
+        `INSERT INTO quote_items
+          (quote_id, position, product_id, product_name, color, sizes, quantity,
+           print_areas, design_url, unit_price, line_total)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11)`,
+        [
+          quote.id,
+          r.index,
+          productId,
+          itemProductName,
+          inp.color || null,
+          JSON.stringify(Array.isArray(inp.sizes) ? inp.sizes : []),
+          r.calc.quantity,
+          JSON.stringify(printAreas),
+          r.design_url || null,
+          r.calc.per_shirt,
+          r.calc.total,
+        ],
+      );
+    }
+
+    await client.query('COMMIT');
 
     // Fire emails — non-blocking from the customer's perspective; if either
     // fails we log but still return success since the row is persisted.
     Promise.allSettled([
-      sendInstantQuoteToCustomer({ quote, inputs, calc }),
-      sendInstantQuoteToAdmin({ quote, inputs, calc }),
+      sendInstantQuoteToCustomer({ quote, items: itemRows, grandTotal, grandQuantity }),
+      sendInstantQuoteToAdmin({ quote, items: itemRows, grandTotal, grandQuantity }),
     ]).then((results) => {
       results.forEach((r, i) => {
         if (r.status === 'rejected') {
@@ -326,8 +428,13 @@ router.post('/save', async (req, res, next) => {
       });
     });
 
-    res.json({ id: quote.id, total: calc.total, per_shirt: calc.per_shirt });
-  } catch (err) { next(err); }
+    res.json({ id: quote.id, total: grandTotal, per_shirt: perShirtAvg, items: itemRows.length });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 });
 
 /* ---------------------------------------------------------------------------
