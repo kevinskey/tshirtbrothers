@@ -442,17 +442,17 @@ export default function InstantQuotePage() {
 
   return (
     <Layout>
-      {/* Hero */}
-      <section className="bg-gray-900 text-white py-12 sm:py-16 text-center">
+      {/* Hero — compact on mobile, full size on tablet+ */}
+      <section className="bg-gray-900 text-white py-5 sm:py-12 md:py-16 text-center">
         <div className="container mx-auto px-4">
-          <h1 className="font-display text-3xl sm:text-4xl md:text-5xl font-bold">Instant Quote</h1>
-          <p className="mt-3 text-gray-400 max-w-xl mx-auto text-base sm:text-lg">
-            Add as many products as you need — see the price update in real time.
+          <h1 className="font-display text-xl sm:text-3xl md:text-5xl font-bold">Instant Quote</h1>
+          <p className="mt-1 sm:mt-3 text-gray-400 max-w-xl mx-auto text-xs sm:text-base md:text-lg">
+            Add multiple products — price updates live.
           </p>
         </div>
       </section>
 
-      <main className="container mx-auto px-4 py-8 max-w-3xl">
+      <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl">
         {/* ─── Sticky grand-total card ─── */}
         <PriceCard
           items={items}
@@ -1306,54 +1306,54 @@ function PriceCard({
 
   if (!hasAnyInputs) {
     return (
-      <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
+      <div className="rounded-xl sm:rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-3 sm:p-6">
         <div className="flex items-baseline justify-between">
           <div>
-            <div className="text-xs uppercase tracking-wider text-orange-700/70">Per {singleNoun}</div>
-            <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">$0.00</div>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider text-orange-700/70">Per {singleNoun}</div>
+            <div className="font-display text-xl sm:text-3xl md:text-4xl font-bold text-gray-900">$0.00</div>
           </div>
           <div className="text-right">
-            <div className="text-xs uppercase tracking-wider text-orange-700/70">Total</div>
-            <div className="font-display text-2xl sm:text-3xl font-bold text-gray-900">$0.00</div>
+            <div className="text-[10px] sm:text-xs uppercase tracking-wider text-orange-700/70">Total</div>
+            <div className="font-display text-lg sm:text-2xl md:text-3xl font-bold text-gray-900">$0.00</div>
           </div>
         </div>
-        <p className="mt-3 text-xs text-gray-500">
-          Enter quantities and pick at least one print location to see your price update live.
+        <p className="mt-2 sm:mt-3 text-[11px] sm:text-xs text-gray-500">
+          Enter quantities + a print location for live pricing.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
+    <div className="rounded-xl sm:rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-3 sm:p-6">
       <div className="flex items-baseline justify-between">
         <div>
-          <div className="text-xs uppercase tracking-wider text-orange-700/70">
+          <div className="text-[10px] sm:text-xs uppercase tracking-wider text-orange-700/70">
             {items.length === 1 ? `Per ${singleNoun}` : `Avg per ${singleNoun} · ${items.length} products`}
           </div>
-          <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">
+          <div className="font-display text-xl sm:text-3xl md:text-4xl font-bold text-gray-900">
             ${perShirtAvg.toFixed(2)}
             {loading && <Loader2 className="inline ml-2 h-4 w-4 animate-spin text-orange-400" />}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-xs uppercase tracking-wider text-orange-700/70">Grand total</div>
-          <div className="font-display text-2xl sm:text-3xl font-bold text-gray-900">
+          <div className="text-[10px] sm:text-xs uppercase tracking-wider text-orange-700/70">Grand total</div>
+          <div className="font-display text-lg sm:text-2xl md:text-3xl font-bold text-gray-900">
             ${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
-          {turnaroundDays} day turnaround
+      <div className="mt-2 sm:mt-3 flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+        <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
+          {turnaroundDays}-day turnaround
         </span>
-        <span className="rounded-full bg-white px-3 py-1 text-gray-700 border border-orange-200">
-          {grandQuantity} pieces total
+        <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
+          {grandQuantity} pieces
         </span>
         {!allValid && (
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800 border border-amber-200">
-            Some products need quantities + a location
+          <span className="rounded-full bg-amber-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-amber-800 border border-amber-200">
+            Add qty + location to remaining
           </span>
         )}
       </div>
