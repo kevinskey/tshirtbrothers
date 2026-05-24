@@ -7,7 +7,14 @@ const client = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
 const FROM_PHONE = process.env.TWILIO_PHONE_NUMBER || '';
 const ADMIN_PHONE = process.env.ADMIN_PHONE || '';
 
-async function sendSMS(to, body) {
+// Loose US-formatted numbers get an automatic +1; anything starting with +
+// is left alone so international numbers still work.
+function toE164(to) {
+  const t = String(to).trim();
+  return t.startsWith('+') ? t : '+1' + t.replace(/\D/g, '');
+}
+
+export async function sendSMS(to, body) {
   if (!client || !FROM_PHONE) {
     console.log('[SMS] Twilio not configured, skipping:', body);
     return null;
@@ -16,7 +23,7 @@ async function sendSMS(to, body) {
     const message = await client.messages.create({
       body,
       from: FROM_PHONE,
-      to,
+      to: toE164(to),
     });
     console.log(`[SMS] Sent to ${to}: ${message.sid}`);
     return message.sid;
@@ -24,6 +31,30 @@ async function sendSMS(to, body) {
     console.error('[SMS] Failed:', err.message);
     return null;
   }
+}
+
+// Same as sendSMS but bubbles up errors instead of swallowing them — used
+// by the admin "share mockup" flow where the admin needs to know the SMS
+// actually went out.
+export async function sendSMSOrThrow(to, body) {
+  if (!client || !FROM_PHONE) {
+    throw new Error('Twilio not configured (set TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER).');
+  }
+  const message = await client.messages.create({
+    body,
+    from: FROM_PHONE,
+    to: toE164(to),
+  });
+  console.log(`[SMS] Sent to ${to}: ${message.sid}`);
+  return message.sid;
+}
+
+export async function sendMockupShareSms(phone, mockup, approveUrl, opts = {}) {
+  const { message } = opts;
+  const productName = mockup.product_name ? ` (${mockup.product_name})` : '';
+  const prefix = message ? message.trim() + '\n\n' : '';
+  const body = `${prefix}TShirt Brothers: Your mockup${productName} is ready. View & approve: ${approveUrl}`;
+  return sendSMSOrThrow(phone, body);
 }
 
 // Notify admin of new quote request

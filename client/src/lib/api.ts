@@ -677,6 +677,19 @@ export async function sendMockupForApproval(id: number) {
   });
 }
 
+export async function shareMockup(
+  id: number,
+  payload: { method: 'email' | 'sms'; to: string; message?: string | null },
+) {
+  return authRequest<Mockup & { approve_url: string; sent_to: string; method: 'email' | 'sms' }>(
+    `/admin/mockups/${id}/share`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
 export async function convertMockupToQuote(id: number, data: { quantity?: number; sizes?: Record<string, number>; color?: string; print_areas?: string[] }) {
   return authRequest<{ mockup_id: number; quote: Quote }>(`/admin/mockups/${id}/convert-to-quote`, {
     method: 'POST',
