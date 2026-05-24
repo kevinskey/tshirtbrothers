@@ -405,6 +405,59 @@ export async function sendPaidInvoiceReceipt(invoice) {
   }
 }
 
+// Minimal HTML escape for admin-supplied custom messages so a stray < or "
+// doesn't break the email layout (or worse).
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// Share a mockup with an arbitrary recipient (not necessarily the customer
+// on file). Mirrors sendMockupForApproval but parameterizes the recipient
+// and accepts an optional admin message that gets prepended to the body.
+export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {}) {
+  const { message, recipientName } = opts;
+  const productImg = mockup.product_image_url || '';
+  const graphic = mockup.graphic_url || '';
+  const placement = typeof mockup.placement === 'string'
+    ? JSON.parse(mockup.placement)
+    : (mockup.placement || { x: 35, y: 30, width: 30 });
+
+  const customMessageBlock = message
+    ? `<div style="margin:0 0 20px;font-size:15px;color:#374151;background:#f9fafb;border-left:3px solid ${BRAND_ORANGE};padding:12px 16px;border-radius:4px;white-space:pre-wrap;">${escapeHtml(message)}</div>`
+    : '';
+
+  const greetingName = recipientName || mockup.customer_name || 'there';
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Your Mockup from T-Shirt Brothers</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(greetingName)},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Here is the mockup of your design on the product. Take a look and let us know if it's approved, or what you'd like changed.</p>
+    ${customMessageBlock}
+    ${mockup.preview_image_url
+      ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
+      : `
+        <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+          ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
+          ${graphic ? `<img src="${graphic}" alt="Your design" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
+        </div>
+      `}
+    <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
+    ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notes:</strong> ${mockup.notes}</p>` : ''}
+    ${primaryButton('View & Approve Mockup', approveUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+
+  await resend.emails.send({
+    from: FROM_EMAIL,
+    to: [toEmail],
+    subject: 'Your Mockup - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
+    html: baseLayout('Your Mockup', body),
+  });
+  console.log(`[Email] Mockup share sent to ${toEmail}`);
+}
+
 export async function sendMockupForApproval(mockup, approveUrl) {
   const productImg = mockup.product_image_url || '';
   const graphic = mockup.graphic_url || '';

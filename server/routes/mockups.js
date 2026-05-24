@@ -290,6 +290,61 @@ router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res,
   } catch (err) { next(err); }
 });
 
+// POST /admin/mockups/:id/share - send the mockup to an arbitrary recipient
+// via email or SMS. Unlike /send, this does not require customer_email on
+// the row: the admin supplies the recipient inline. Marks the mockup as
+// 'sent' so it still shows up in the sent/approved pipeline.
+router.post('/admin/mockups/:id/share', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { method, to, message } = req.body || {};
+    if (method !== 'email' && method !== 'sms') {
+      return res.status(400).json({ error: "method must be 'email' or 'sms'" });
+    }
+    const recipient = typeof to === 'string' ? to.trim() : '';
+    if (!recipient) return res.status(400).json({ error: 'to is required' });
+    if (method === 'email' && !/.+@.+\..+/.test(recipient)) {
+      return res.status(400).json({ error: 'invalid email address' });
+    }
+    if (method === 'sms') {
+      const digits = recipient.replace(/\D/g, '');
+      if (digits.length < 10) return res.status(400).json({ error: 'invalid phone number' });
+    }
+
+    const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    let m = rows[0];
+
+    // Make sure there's a flattened composite to show before sending.
+    if (!m.preview_image_url && m.product_image_url && m.graphic_url) {
+      m = await regeneratePreviewForMockup(m);
+    }
+
+    const token = m.approve_token || crypto.randomBytes(16).toString('hex');
+    const updated = await pool.query(
+      `UPDATE mockups SET approve_token = $1, status = 'sent', updated_at = NOW()
+       WHERE id = $2 RETURNING *`,
+      [token, req.params.id],
+    );
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const approveUrl = `${domain}/mockup/${token}`;
+
+    try {
+      if (method === 'email') {
+        const { sendMockupShareEmail } = await import('../services/email.js');
+        await sendMockupShareEmail(updated.rows[0], recipient, approveUrl, { message });
+      } else {
+        const { sendMockupShareSms } = await import('../services/sms.js');
+        await sendMockupShareSms(recipient, updated.rows[0], approveUrl, { message });
+      }
+    } catch (err) {
+      console.error(`[mockup share] ${method} failed:`, err.message);
+      return res.status(502).json({ error: `Failed to send ${method}: ${err.message}` });
+    }
+
+    res.json({ ...updated.rows[0], approve_url: approveUrl, sent_to: recipient, method });
+  } catch (err) { next(err); }
+});
+
 // POST /admin/mockups/:id/convert-to-quote
 router.post('/admin/mockups/:id/convert-to-quote', authenticate, adminOnly, async (req, res, next) => {
   try {

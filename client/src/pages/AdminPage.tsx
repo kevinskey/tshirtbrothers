@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
+import { toast } from 'sonner';
 import { useGooglePlacesAutocomplete } from '@/lib/googlePlaces';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -96,7 +97,7 @@ import {
   fetchMockups,
   createMockup,
   updateMockup,
-  sendMockupForApproval,
+  shareMockup,
   convertMockupToQuote,
   deleteMockup,
   regenerateMockupPreview,
@@ -1040,6 +1041,7 @@ export default function AdminPage() {
     enabled: mockupModalOpen && mockupBrowseOpen,
   });
   const [mockupAfterSend, setMockupAfterSend] = useState<string | null>(null);
+  const [shareMockupTarget, setShareMockupTarget] = useState<Mockup | null>(null);
   const [editingMockup, setEditingMockup] = useState<Mockup | null>(null);
 
   // Load settings into form when fetched
@@ -1640,16 +1642,6 @@ export default function AdminPage() {
       alert(err?.message || 'Save failed');
     } finally {
       setMockupBusy(false);
-    }
-  }
-
-  async function handleSendMockup(id: number) {
-    try {
-      const result = await sendMockupForApproval(id);
-      setMockupAfterSend(result.approve_url);
-      queryClient.invalidateQueries({ queryKey: ['mockups'] });
-    } catch (err: any) {
-      alert(err?.message || 'Send failed');
     }
   }
 
@@ -5699,12 +5691,11 @@ export default function AdminPage() {
                               Edit
                             </button>
                             <button
-                              onClick={() => handleSendMockup(m.id)}
-                              disabled={!m.customer_email}
-                              className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                              title={m.customer_email ? 'Email the approval link to the customer' : 'No customer email on file'}
+                              onClick={() => setShareMockupTarget(m)}
+                              className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
+                              title="Email or text this mockup to anyone"
                             >
-                              Send for Approval
+                              Share
                             </button>
                             {/* Re-render only makes sense for legacy mockups
                                 whose preview comes from server compose
@@ -5738,6 +5729,15 @@ export default function AdminPage() {
             </div>
           );
         })()}
+
+        {/* Mockup share modal — ad-hoc email/SMS send. */}
+        {shareMockupTarget && (
+          <ShareMockupModal
+            mockup={shareMockupTarget}
+            onClose={() => setShareMockupTarget(null)}
+            onSent={(url) => { setMockupAfterSend(url); setShareMockupTarget(null); mockupsQuery.refetch(); }}
+          />
+        )}
 
         {/* Mockup create/edit modal — hoisted out of the Mockups section so
             it can also open from the Create Invoice screen. */}
@@ -7395,5 +7395,149 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+function ShareMockupModal({
+  mockup, onClose, onSent,
+}: {
+  mockup: Mockup;
+  onClose: () => void;
+  onSent: (approveUrl: string) => void;
+}) {
+  const [method, setMethod] = useState<'email' | 'sms'>('email');
+  const [to, setTo] = useState<string>(mockup.customer_email || '');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  // Re-prefill (or clear) the recipient when the admin toggles email/SMS.
+  // Phone isn't on the mockup row today, so SMS starts blank.
+  function switchMethod(next: 'email' | 'sms') {
+    setMethod(next);
+    setTo(next === 'email' ? (mockup.customer_email || '') : '');
+  }
+
+  async function submit() {
+    const recipient = to.trim();
+    if (!recipient) { toast.error(`Enter ${method === 'email' ? 'an email' : 'a phone number'}`); return; }
+    if (method === 'email' && !/.+@.+\..+/.test(recipient)) { toast.error('Invalid email'); return; }
+    if (method === 'sms' && recipient.replace(/\D/g, '').length < 10) { toast.error('Invalid phone number'); return; }
+    setSending(true);
+    try {
+      const result = await shareMockup(mockup.id, {
+        method,
+        to: recipient,
+        message: message.trim() || null,
+      });
+      toast.success(`${method === 'email' ? 'Email' : 'Text'} sent to ${recipient}`);
+      onSent(result.approve_url);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send');
+      setSending(false);
+    }
+  }
+
+  const previewUrl = mockup.preview_image_url || mockup.product_image_url;
+  const SMS_LIMIT = 140;
+  const smsOverLimit = method === 'sms' && message.length > SMS_LIMIT;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 py-8"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            {previewUrl && (
+              <img src={previewUrl} alt="" className="h-12 w-12 rounded-lg object-contain bg-gray-50 border border-gray-200" />
+            )}
+            <div className="min-w-0">
+              <h3 className="font-display text-lg font-bold text-gray-900 truncate">Share mockup</h3>
+              <p className="text-xs text-gray-500 truncate">{mockup.name || mockup.product_name || 'Mockup'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 flex-shrink-0">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Method toggle */}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => switchMethod('email')}
+            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+              method === 'email' ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-300'
+            }`}
+          >
+            Email
+          </button>
+          <button
+            type="button"
+            onClick={() => switchMethod('sms')}
+            className={`rounded-lg border-2 px-3 py-2 text-sm font-medium transition ${
+              method === 'sms' ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-300'
+            }`}
+          >
+            Text (SMS)
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">
+              {method === 'email' ? 'Email address' : 'Phone number'}
+            </label>
+            <input
+              type={method === 'email' ? 'email' : 'tel'}
+              autoFocus
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder={method === 'email' ? 'name@example.com' : '(470) 555-0123'}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">
+              Message <span className="text-gray-400 normal-case">(optional)</span>
+              {method === 'sms' && (
+                <span className={`ml-2 ${smsOverLimit ? 'text-red-600' : 'text-gray-400'}`}>
+                  {message.length}/{SMS_LIMIT}
+                </span>
+              )}
+            </label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder={method === 'email' ? 'Optional note shown above the mockup…' : 'Optional text shown before the link…'}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col-reverse sm:flex-row gap-2 sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={sending}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={sending || smsOverLimit}
+            className="rounded-lg bg-orange-600 px-5 py-2 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+          >
+            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {sending ? 'Sending…' : `Send ${method === 'email' ? 'email' : 'text'}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
