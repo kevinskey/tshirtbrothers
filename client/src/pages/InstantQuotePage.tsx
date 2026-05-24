@@ -58,6 +58,8 @@ type Inputs = {
   rush: boolean;
 };
 
+type CatalogColor = string | { hex?: string; name?: string };
+
 type CatalogProduct = {
   id?: number | string;
   ss_id?: string;
@@ -68,6 +70,10 @@ type CatalogProduct = {
   imageUrl?: string;
   base_price?: number | string | null;
   custom_price?: number | string | null;
+  // products.colors / products.sizes from the DB — when present, the quote
+  // form restricts its choices to what the picked product actually comes in.
+  colors?: CatalogColor[];
+  sizes?: string[];
 };
 
 // One line item the customer is configuring. A quote is an ordered list of
@@ -114,6 +120,81 @@ function categoryToGarmentName(category?: string): Inputs['garmentName'] {
   if (c.includes('tank')) return 'Tank';
   if (c.includes('hat') || c.includes('cap') || c.includes('beanie') || c.includes('headwear')) return 'Hat';
   return 'T-shirt';
+}
+
+// Hats are one-size — the per-size grid doesn't apply. Detect from
+// garmentName so the form can switch to a single quantity input.
+function isOneSizeGarment(garmentName?: string): boolean {
+  const n = (garmentName || '').toLowerCase();
+  return n.includes('hat') || n.includes('cap') || n.includes('beanie');
+}
+
+// User-facing noun for "per shirt" / "per hat" / "Hat color" etc.
+function garmentNoun(garmentName?: string): string {
+  const n = (garmentName || '').toLowerCase();
+  if (n.includes('hat') || n.includes('cap') || n.includes('beanie')) return 'hat';
+  if (n.includes('hood')) return 'hoodie';
+  if (n.includes('tank')) return 'tank';
+  if (n.includes('polo')) return 'polo';
+  if (n.includes('sweatshirt')) return 'sweatshirt';
+  if (n.includes('long')) return 'long sleeve';
+  return 'shirt';
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const STANDARD_SHIRT_SIZES = ['S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
+
+// Pull the size list the form should offer for an item. When a catalog
+// product is picked, restrict to that product's actual sizes; otherwise
+// fall back to the standard shirt grid (or "One Size" for hats).
+function availableSizesFor(
+  product: CatalogProduct | null,
+  garmentName: string,
+): string[] {
+  if (product?.sizes && Array.isArray(product.sizes) && product.sizes.length > 0) {
+    return product.sizes.map(String);
+  }
+  if (isOneSizeGarment(garmentName)) return ['One Size'];
+  return STANDARD_SHIRT_SIZES;
+}
+
+// Same idea for colors. products.colors can be ["Black","Navy",...] or
+// [{hex,name},...] — normalize to a string list of names.
+function availableColorsFor(product: CatalogProduct | null): string[] {
+  if (product?.colors && Array.isArray(product.colors) && product.colors.length > 0) {
+    const names = product.colors
+      .map((c) => (typeof c === 'string' ? c : (c?.name || c?.hex || '')))
+      .filter((s): s is string => !!s);
+    if (names.length > 0) return names;
+  }
+  return [...COLOR_OPTIONS];
+}
+
+// Reshape the sizes array to match the target size list (from the picked
+// product, or the default grid). Preserves quantities for sizes that
+// survive; sums quantities for removed sizes into the first surviving row
+// so a user who switches products doesn't lose their entered numbers.
+function normalizeSizesForProduct(
+  product: CatalogProduct | null,
+  garmentName: string,
+  sizes: Inputs['sizes'],
+): Inputs['sizes'] {
+  const target = availableSizesFor(product, garmentName);
+  const qtyMap = new Map<string, number>();
+  for (const s of sizes) {
+    qtyMap.set(s.size, (qtyMap.get(s.size) || 0) + (Number(s.quantity) || 0));
+  }
+  let leftover = 0;
+  for (const [sz, q] of qtyMap.entries()) {
+    if (!target.includes(sz)) leftover += q;
+  }
+  return target.map((sz, i) => ({
+    size: sz,
+    quantity: (qtyMap.get(sz) || 0) + (i === 0 ? leftover : 0),
+  }));
 }
 
 function genItemId(): string {
@@ -175,16 +256,27 @@ export default function InstantQuotePage() {
   });
 
   // Once URL product resolves, snap first item's pickedProduct + garmentName
-  // onto it — but only the first time, so a user who manually changes either
-  // isn't reset.
+  // onto it AND restrict sizes/colors to the product's actual options.
+  // Only runs once, so a user who manually changes either isn't reset.
   const [urlProductSyncDone, setUrlProductSyncDone] = useState(false);
   useEffect(() => {
     if (!urlProductSyncDone && urlCatalogProduct) {
       const mapped = categoryToGarmentName(urlCatalogProduct.category);
-      setItems((prev) => prev.map((it, i) => i === 0
-        ? { ...it, pickedProduct: urlCatalogProduct, inputs: { ...it.inputs, garmentName: mapped } }
-        : it,
-      ));
+      const colors = availableColorsFor(urlCatalogProduct);
+      setItems((prev) => prev.map((it, i) => {
+        if (i !== 0) return it;
+        const nextColor = colors.includes(it.inputs.color) ? it.inputs.color : (colors[0] || it.inputs.color);
+        return {
+          ...it,
+          pickedProduct: urlCatalogProduct,
+          inputs: {
+            ...it.inputs,
+            garmentName: mapped,
+            color: nextColor,
+            sizes: normalizeSizesForProduct(urlCatalogProduct, mapped, it.inputs.sizes),
+          },
+        };
+      }));
       setUrlProductSyncDone(true);
     }
   }, [urlCatalogProduct, urlProductSyncDone]);
@@ -268,7 +360,18 @@ export default function InstantQuotePage() {
   const canSave = items.length > 0 && allItemsValid && allCalcsReady && grandTotal > 0;
 
   function patchInputs(itemId: string, patch: Partial<Inputs>) {
-    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, inputs: { ...it.inputs, ...patch } } : it)));
+    setItems((prev) => prev.map((it) => {
+      if (it.id !== itemId) return it;
+      const nextInputs = { ...it.inputs, ...patch };
+      // Garment-type change (e.g. T-shirt → Hat) reshapes the sizes array
+      // so the per-size grid switches to a single qty input and back.
+      // When a product is picked we keep its size list — the chip selector
+      // for garment is hidden in that case anyway.
+      if (patch.garmentName && patch.garmentName !== it.inputs.garmentName) {
+        nextInputs.sizes = normalizeSizesForProduct(it.pickedProduct, patch.garmentName, it.inputs.sizes);
+      }
+      return { ...it, inputs: nextInputs };
+    }));
   }
 
   function patchItem(itemId: string, patch: Partial<ItemDraft>) {
@@ -356,7 +459,13 @@ export default function InstantQuotePage() {
               calc={calcQueries[i]?.data || null}
               uploadingCount={uploadingByItem[item.id] || 0}
               onPatchInputs={(patch) => patchInputs(item.id, patch)}
-              onClearProduct={() => patchItem(item.id, { pickedProduct: null })}
+              onClearProduct={() => patchItem(item.id, {
+                pickedProduct: null,
+                inputs: {
+                  ...item.inputs,
+                  sizes: normalizeSizesForProduct(null, item.inputs.garmentName, item.inputs.sizes),
+                },
+              })}
               onRemoveDesign={(idx) => patchItem(item.id, {
                 designs: item.designs.filter((_, k) => k !== idx),
               })}
@@ -412,7 +521,26 @@ export default function InstantQuotePage() {
       {productPickerItemId && (
         <ProductPickerModal
           onPick={(p) => {
-            patchItem(productPickerItemId, { pickedProduct: p });
+            // Picking from the catalog snaps garmentName onto the product's
+            // category and reshapes sizes to the product's actual available
+            // sizes (or "One Size" for hats). If the previously-selected
+            // color isn't offered by this product, swap to the first one.
+            const mapped = categoryToGarmentName(p.category);
+            const colors = availableColorsFor(p);
+            setItems((prev) => prev.map((it) => {
+              if (it.id !== productPickerItemId) return it;
+              const nextColor = colors.includes(it.inputs.color) ? it.inputs.color : (colors[0] || it.inputs.color);
+              return {
+                ...it,
+                pickedProduct: p,
+                inputs: {
+                  ...it.inputs,
+                  garmentName: mapped,
+                  color: nextColor,
+                  sizes: normalizeSizesForProduct(p, mapped, it.inputs.sizes),
+                },
+              };
+            }));
             setProductPickerItemId(null);
           }}
           onClose={() => setProductPickerItemId(null)}
@@ -447,6 +575,26 @@ function ItemCard({
   const isScreenPrint = inputs.methodName === 'Screen Print';
   const liveTotalQty = totalQuantity(inputs.sizes);
   const numLocations = Object.values(inputs.locations).filter(Boolean).length;
+
+  // User-facing noun ('hat' / 'shirt' / 'hoodie' …) derived from the
+  // garment type, used to localize "per shirt" / "Shirt color" etc.
+  const noun = garmentNoun(inputs.garmentName);
+  // When a catalog product is picked, restrict the size grid and color
+  // chips to what that product actually comes in. Otherwise fall through
+  // to the default shirt grid / palette.
+  const sizeList = useMemo(() => availableSizesFor(item.pickedProduct, inputs.garmentName), [item.pickedProduct, inputs.garmentName]);
+  const colorList = useMemo(() => availableColorsFor(item.pickedProduct), [item.pickedProduct]);
+  const isOneSize = sizeList.length === 1;
+
+  // When the size grid changes (product pick, garment change), prune
+  // inputs.sizes to only the supported sizes — keeps the displayed total
+  // honest if a stray size entry survived a reshape.
+  const visibleSizeRows = useMemo(() => {
+    return sizeList.map((sz) => {
+      const row = inputs.sizes.find((r) => r.size === sz);
+      return { size: sz, quantity: row?.quantity || 0 };
+    });
+  }, [sizeList, inputs.sizes]);
 
   const garmentNames = useMemo(() => {
     if (!options) return [];
@@ -496,7 +644,7 @@ function ItemCard({
 
       {/* Catalog product banner (manual pick or URL-loaded on item 0) */}
       {item.pickedProduct && (
-        <SelectedProductBanner product={item.pickedProduct} onClear={onClearProduct} />
+        <SelectedProductBanner product={item.pickedProduct} noun={noun} onClear={onClearProduct} />
       )}
 
       <div className="space-y-6">
@@ -508,7 +656,7 @@ function ItemCard({
               onClick={onOpenPicker}
               className="text-sm text-orange-700 hover:text-orange-800 hover:underline"
             >
-              Quoting a specific shirt? <span className="underline">Browse the catalog</span>
+              Quoting a specific {noun}? <span className="underline">Browse the catalog</span>
             </button>
           </div>
         )}
@@ -548,35 +696,57 @@ function ItemCard({
           )}
         </Section>
 
-        {/* Sizes */}
-        <Section icon={<span className="text-xl">#</span>} title="How many shirts? (per size)">
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-            {inputs.sizes.map((row, i) => {
-              const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
-              return (
-                <div key={row.size} className="flex flex-col items-center gap-1">
-                  <label className="text-xs font-semibold text-gray-700">{row.size}</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={0}
-                    value={row.quantity || ''}
-                    onChange={(e) => {
-                      const next = inputs.sizes.slice();
-                      next[i] = { ...row, quantity: Math.max(0, parseInt(e.target.value) || 0) };
-                      onPatchInputs({ sizes: next });
-                    }}
-                    placeholder="0"
-                    className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    style={{ fontSize: '16px' }}
-                  />
-                  {upcharge > 0 && (
-                    <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        {/* Quantity — one-size garments (hats) get a single input; others
+            get the per-size grid restricted to the product's actual sizes. */}
+        <Section
+          icon={<span className="text-xl">#</span>}
+          title={isOneSize ? `How many ${noun}s?` : `How many ${noun}s? (per size)`}
+        >
+          {isOneSize ? (
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={visibleSizeRows[0]?.quantity || ''}
+              onChange={(e) => {
+                const qty = Math.max(0, parseInt(e.target.value) || 0);
+                onPatchInputs({ sizes: [{ size: sizeList[0] || 'One Size', quantity: qty }] });
+              }}
+              placeholder="0"
+              className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          ) : (
+            <div className={`grid gap-2 ${visibleSizeRows.length <= 4 ? 'grid-cols-4' : 'grid-cols-4 sm:grid-cols-8'}`}>
+              {visibleSizeRows.map((row) => {
+                const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
+                return (
+                  <div key={row.size} className="flex flex-col items-center gap-1">
+                    <label className="text-xs font-semibold text-gray-700">{row.size}</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={row.quantity || ''}
+                      onChange={(e) => {
+                        const qty = Math.max(0, parseInt(e.target.value) || 0);
+                        const next = visibleSizeRows.map((r) =>
+                          r.size === row.size ? { ...r, quantity: qty } : r,
+                        );
+                        onPatchInputs({ sizes: next });
+                      }}
+                      placeholder="0"
+                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      style={{ fontSize: '16px' }}
+                    />
+                    {upcharge > 0 && (
+                      <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="mt-3 text-sm text-gray-600">
             Total: <strong className="text-gray-900">{liveTotalQty}</strong>
             {currentTier && currentTier.discount_pct > 0 && (
@@ -591,29 +761,34 @@ function ItemCard({
         </Section>
 
         {/* Color */}
-        <Section icon={<span className="text-xl">🎨</span>} title="Shirt color">
+        <Section icon={<span className="text-xl">🎨</span>} title={`${capitalize(noun)} color`}>
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {COLOR_OPTIONS.map((c) => (
+            {colorList.map((c) => (
               <Chip key={c} active={inputs.color === c} onClick={() => onPatchInputs({ color: c })}>
                 {c}
               </Chip>
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            Other colors available — we'll match it on your final mockup.
+            {item.pickedProduct
+              ? `Colors shown are what this ${noun} comes in.`
+              : `Other colors available — we'll match it on your final mockup.`}
           </p>
         </Section>
 
-        {/* Garment */}
-        <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {garmentNames.map((name) => (
-              <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
-                {name}
-              </Chip>
-            ))}
-          </div>
-        </Section>
+        {/* Garment — only when no specific catalog product is picked; the
+            picked product determines the garment type. */}
+        {!item.pickedProduct && (
+          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {garmentNames.map((name) => (
+                <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
+                  {name}
+                </Chip>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Quality tier — hidden when a specific product is picked */}
         {!item.pickedProduct && (
@@ -911,7 +1086,7 @@ function SaveQuoteModal({
 /*  Sub-components                                                         */
 /* ────────────────────────────────────────────────────────────────────── */
 
-function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; onClear: () => void }) {
+function SelectedProductBanner({ product, noun, onClear }: { product: CatalogProduct; noun: string; onClear: () => void }) {
   const img = product.image_url || product.imageUrl;
   const wholesale = Number(product.base_price || 0);
   const yourPrice = product.custom_price != null && Number(product.custom_price) > 0
@@ -932,7 +1107,7 @@ function SelectedProductBanner({ product, onClear }: { product: CatalogProduct; 
         </p>
         <p className="font-display text-sm font-semibold text-gray-900 truncate">{product.name}</p>
         {yourPrice != null && (
-          <p className="text-xs text-gray-700 mt-0.5">Your price: <strong>${yourPrice.toFixed(2)}</strong> per shirt</p>
+          <p className="text-xs text-gray-700 mt-0.5">Your price: <strong>${yourPrice.toFixed(2)}</strong> per {noun}</p>
         )}
       </div>
       <button
@@ -1035,13 +1210,16 @@ function PriceCard({
 }) {
   const hasAnyInputs = grandQuantity > 0 && itemValidity.some(Boolean);
   const perShirtAvg = grandQuantity > 0 ? grandTotal / grandQuantity : 0;
+  // Use the (single) item's noun when there's only one — keeps "per hat"
+  // when quoting a hat. Mixed quotes fall back to "per piece".
+  const singleNoun = items.length === 1 && items[0] ? garmentNoun(items[0].inputs.garmentName) : 'piece';
 
   if (!hasAnyInputs) {
     return (
       <div className="rounded-2xl bg-gradient-to-br from-orange-50 to-orange-50 border-2 border-orange-200 p-6">
         <div className="flex items-baseline justify-between">
           <div>
-            <div className="text-xs uppercase tracking-wider text-orange-700/70">Per shirt</div>
+            <div className="text-xs uppercase tracking-wider text-orange-700/70">Per {singleNoun}</div>
             <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">$0.00</div>
           </div>
           <div className="text-right">
@@ -1061,7 +1239,7 @@ function PriceCard({
       <div className="flex items-baseline justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-orange-700/70">
-            {items.length === 1 ? 'Per shirt' : `Avg per shirt · ${items.length} products`}
+            {items.length === 1 ? `Per ${singleNoun}` : `Avg per ${singleNoun} · ${items.length} products`}
           </div>
           <div className="font-display text-3xl sm:text-4xl font-bold text-gray-900">
             ${perShirtAvg.toFixed(2)}
