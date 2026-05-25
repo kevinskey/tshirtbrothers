@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import {
-  Shirt,
   Scissors,
   Trophy,
   Layers,
@@ -12,18 +11,21 @@ import {
   Truck,
   Package,
   CheckCircle2,
+  Shirt,
 } from 'lucide-react';
 
 const badges = ['Lightning Fast', 'Quality Guaranteed', 'Local Experts'];
 
+// NOTE: image URLs are Unsplash placeholders. Swap with TSB-shot product
+// photos once available — keep aspect ratio close to 4:3.
 const services = [
   {
-    title: 'Support Local',
+    title: 'Custom Apparel',
     description:
       'From single custom pieces to large team orders, we print vibrant, long-lasting designs on premium garments. Screen printing, DTG, and heat transfer options available for every budget and timeline.',
+    image:
+      'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80',
     icon: Shirt,
-    bgColor: 'bg-red-50',
-    iconColor: 'text-red-600',
     items: [
       'T-Shirts & Tank Tops',
       'Hoodies & Sweatshirts',
@@ -39,9 +41,9 @@ const services = [
     title: 'Embroidery',
     description:
       'Professional embroidery adds a polished, premium feel to any garment or accessory. Our state-of-the-art machines handle intricate logos and text with precision stitching that lasts.',
+    image:
+      'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=1200&q=80',
     icon: Scissors,
-    bgColor: 'bg-blue-50',
-    iconColor: 'text-blue-600',
     items: [
       'Polo Shirts',
       'Caps & Hats',
@@ -57,9 +59,9 @@ const services = [
     title: 'DTF Print Transfers',
     description:
       "Just need the prints? We'll send you ready-to-press DTF transfer films — no garments, no sizes, just the artwork on transfer film. Bring your own apparel and press them yourself, or drop the films at any local printer.",
+    image:
+      'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=1200&q=80',
     icon: Layers,
-    bgColor: 'bg-emerald-50',
-    iconColor: 'text-emerald-600',
     items: [
       'Single transfers or bulk runs',
       'Multiple designs per order',
@@ -75,9 +77,9 @@ const services = [
     title: 'Premium Products',
     description:
       'Go beyond apparel with our full catalog of customizable products. From corporate awards to personalized gifts, we use laser engraving and sublimation to deliver stunning results.',
+    image:
+      'https://images.unsplash.com/photo-1567427361984-0cbe7396fc6c?auto=format&fit=crop&w=1200&q=80',
     icon: Trophy,
-    bgColor: 'bg-amber-50',
-    iconColor: 'text-amber-600',
     items: [
       'Trophies & Awards',
       'Custom Mugs',
@@ -87,7 +89,7 @@ const services = [
     ],
     whyChoose: ['Laser precision', 'Premium materials', 'Gift packaging'],
     cta: { label: 'Browse Catalog', to: '/shop' },
-    reverse: false,
+    reverse: true,
   },
 ];
 
@@ -119,20 +121,23 @@ export default function ServicesPage() {
   return (
     <Layout>
       {/* Hero */}
-      <section className="bg-gray-900 text-white py-20 text-center">
+      <section className="bg-gray-950 text-white py-12 sm:py-16 text-center">
         <div className="container mx-auto px-4">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">
-            Our Services
+          <h1
+            className="text-4xl sm:text-5xl md:text-6xl text-white tracking-tight"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+          >
+            Our <span className="text-orange-500">Services</span>
           </h1>
-          <p className="mt-4 text-gray-400 max-w-2xl mx-auto text-lg">
+          <p className="mt-4 text-gray-300 max-w-2xl mx-auto text-base sm:text-lg">
             From custom apparel to professional signage, we bring your vision to
             life with precision and care.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-3 flex-wrap">
+          <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
             {badges.map((badge) => (
               <span
                 key={badge}
-                className="bg-white/10 rounded-full px-4 py-1.5 text-xs font-medium"
+                className="bg-orange-500/10 text-orange-300 border border-orange-500/30 rounded-full px-3 py-1 text-xs font-semibold"
               >
                 {badge}
               </span>
@@ -142,75 +147,93 @@ export default function ServicesPage() {
       </section>
 
       {/* Service Cards */}
-      <section className="py-20">
-        <div className="container mx-auto px-4 space-y-16">
+      <section className="py-12 sm:py-16">
+        <div className="container mx-auto px-4 space-y-12 sm:space-y-14">
           {services.map((service) => {
             const Icon = service.icon;
             return (
               <div
                 key={service.title}
-                className={`grid md:grid-cols-2 gap-10 items-center ${
+                className={`grid md:grid-cols-2 gap-6 sm:gap-10 items-center ${
                   service.reverse ? 'md:[direction:rtl]' : ''
                 }`}
               >
-                {/* Visual */}
+                {/* Visual — real photo with fallback icon overlay */}
                 <div
-                  className={`${service.bgColor} rounded-2xl aspect-square md:aspect-[4/3] flex items-center justify-center ${
+                  className={`relative overflow-hidden rounded-2xl aspect-[4/3] bg-gradient-to-br from-gray-900 to-gray-800 ${
                     service.reverse ? 'md:[direction:ltr]' : ''
                   }`}
                 >
-                  <Icon
-                    className={`${service.iconColor} w-24 h-24 opacity-40`}
-                    strokeWidth={1}
+                  <img
+                    src={service.image}
+                    alt={service.title}
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // If the Unsplash image 404s, hide it and let the
+                      // gradient + icon below show through.
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
                   />
+                  {/* Subtle overlay + icon badge so the photo doesn't fight
+                      the headline next to it */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-gray-900 shadow">
+                    <Icon className="h-3.5 w-3.5 text-orange-500" />
+                    {service.title}
+                  </div>
                 </div>
 
                 {/* Content */}
                 <div className={service.reverse ? 'md:[direction:ltr]' : ''}>
-                  <h2 className="font-display text-2xl font-bold">
+                  <h2
+                    className="text-2xl sm:text-3xl text-gray-900 tracking-tight"
+                    style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 800 }}
+                  >
                     {service.title}
                   </h2>
-                  <p className="mt-3 text-gray-600 leading-relaxed">
+                  <p className="mt-2 text-gray-600 text-sm sm:text-base leading-relaxed">
                     {service.description}
                   </p>
 
-                  <div className="mt-6">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                      What We Print:
-                    </span>
-                    <ul className="mt-2 space-y-1.5">
-                      {service.items.map((item) => (
-                        <li
-                          key={item}
-                          className="flex items-center gap-2 text-sm text-gray-700"
-                        >
-                          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="mt-5">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-                      Why Choose Us:
-                    </span>
-                    <ul className="mt-2 space-y-1.5">
-                      {service.whyChoose.map((reason) => (
-                        <li
-                          key={reason}
-                          className="flex items-center gap-2 text-sm text-gray-700"
-                        >
-                          <ShieldCheck className="w-4 h-4 text-red-500 shrink-0" />
-                          {reason}
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                        What We Print
+                      </span>
+                      <ul className="mt-1.5 space-y-1">
+                        {service.items.map((item) => (
+                          <li
+                            key={item}
+                            className="flex items-start gap-1.5 text-sm text-gray-700"
+                          >
+                            <CheckCircle2 className="mt-0.5 w-3.5 h-3.5 text-orange-500 shrink-0" />
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-500">
+                        Why Choose Us
+                      </span>
+                      <ul className="mt-1.5 space-y-1">
+                        {service.whyChoose.map((reason) => (
+                          <li
+                            key={reason}
+                            className="flex items-start gap-1.5 text-sm text-gray-700"
+                          >
+                            <ShieldCheck className="mt-0.5 w-3.5 h-3.5 text-orange-500 shrink-0" />
+                            {reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
 
                   <Link
                     to={service.cta.to}
-                    className="mt-6 inline-block bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold px-5 py-2.5 text-sm shadow-md shadow-orange-500/20 transition-colors"
                   >
                     {service.cta.label}
                   </Link>
@@ -222,29 +245,37 @@ export default function ServicesPage() {
       </section>
 
       {/* How It Works */}
-      <section className="bg-gray-50 py-20">
+      <section className="bg-gray-50 py-12 sm:py-16 border-y border-gray-200">
         <div className="container mx-auto px-4">
-          <h2 className="font-display text-3xl font-bold text-center">
-            How It Works
+          <h2
+            className="text-3xl sm:text-4xl text-gray-900 text-center tracking-tight"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+          >
+            How It <span className="text-orange-500">Works</span>
           </h2>
-          <p className="mt-3 text-gray-500 text-center max-w-xl mx-auto">
-            Getting custom gear has never been easier. Three simple steps and
-            you're done.
+          <p className="mt-2 text-gray-600 text-center max-w-xl mx-auto text-sm sm:text-base">
+            Three simple steps and you're done.
           </p>
 
-          <div className="mt-12 grid md:grid-cols-3 gap-8">
+          <div className="mt-8 grid md:grid-cols-3 gap-6 sm:gap-8">
             {steps.map((step) => {
               const StepIcon = step.icon;
               return (
-                <div key={step.number} className="text-center">
-                  <div className="mx-auto w-14 h-14 rounded-full bg-red-600 text-white flex items-center justify-center font-display text-xl font-bold">
+                <div
+                  key={step.number}
+                  className="relative rounded-2xl bg-white border border-gray-200 px-6 py-7 text-center hover:border-orange-300 hover:shadow-md transition"
+                >
+                  <div className="mx-auto w-12 h-12 rounded-full bg-orange-500 text-white flex items-center justify-center font-extrabold text-lg">
                     {step.number}
                   </div>
-                  <StepIcon className="mx-auto mt-4 w-8 h-8 text-gray-400" />
-                  <h3 className="mt-3 font-display text-lg font-semibold">
+                  <StepIcon className="mx-auto mt-3 w-7 h-7 text-gray-400" />
+                  <h3
+                    className="mt-2 text-lg text-gray-900"
+                    style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 700 }}
+                  >
                     {step.title}
                   </h3>
-                  <p className="mt-2 text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
+                  <p className="mt-1.5 text-sm text-gray-600 leading-relaxed">
                     {step.description}
                   </p>
                 </div>
@@ -255,45 +286,49 @@ export default function ServicesPage() {
       </section>
 
       {/* Local Delivery */}
-      <section className="py-20">
+      <section className="py-12 sm:py-16">
         <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid md:grid-cols-2 gap-5">
             {/* Local Express */}
-            <div className="border border-gray-200 rounded-2xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                  <MapPin className="w-5 h-5 text-green-600" />
+            <div className="rounded-2xl border border-gray-200 p-6 sm:p-7 hover:border-orange-300 transition">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center">
+                  <MapPin className="w-5 h-5 text-orange-500" />
                 </div>
-                <h3 className="font-display text-xl font-bold">
+                <h3
+                  className="text-xl text-gray-900"
+                  style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 800 }}
+                >
                   Local Express Service
                 </h3>
               </div>
               <p className="text-gray-600 text-sm leading-relaxed">
-                Free delivery within 5 miles of our shop. Same-day and next-day
-                options available for local customers. We proudly serve the
-                Greater Houston area with fast, reliable delivery.
+                Free local pickup at our Fairburn, GA shop. Same-day and
+                next-day options available for the Atlanta metro area.
               </p>
-              <p className="mt-3 text-green-600 font-semibold text-sm">
-                Free within 5 miles
+              <p className="mt-3 text-orange-600 font-bold text-sm">
+                Free pickup in Fairburn, GA
               </p>
             </div>
 
             {/* Nationwide */}
-            <div className="border border-gray-200 rounded-2xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Package className="w-5 h-5 text-blue-600" />
+            <div className="rounded-2xl border border-gray-200 p-6 sm:p-7 hover:border-orange-300 transition">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center">
+                  <Package className="w-5 h-5 text-orange-500" />
                 </div>
-                <h3 className="font-display text-xl font-bold">
+                <h3
+                  className="text-xl text-gray-900"
+                  style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 800 }}
+                >
                   Nationwide Shipping
                 </h3>
               </div>
               <p className="text-gray-600 text-sm leading-relaxed">
                 We ship anywhere in the United States with trusted carriers.
-                Standard, expedited, and overnight shipping options to fit your
-                timeline and budget.
+                Standard, expedited, and overnight options to fit your timeline.
               </p>
-              <p className="mt-3 text-blue-600 font-semibold text-sm">
+              <p className="mt-3 text-orange-600 font-bold text-sm">
                 Free shipping on orders over $150
               </p>
             </div>
@@ -302,25 +337,27 @@ export default function ServicesPage() {
       </section>
 
       {/* Bottom CTA */}
-      <section className="bg-gray-900 text-white py-16 text-center">
+      <section className="bg-gray-950 text-white py-12 sm:py-14 text-center">
         <div className="container mx-auto px-4">
-          <h2 className="font-display text-3xl font-bold">
-            Ready to Get Started?
+          <h2
+            className="text-3xl sm:text-4xl tracking-tight"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+          >
+            Ready to <span className="text-orange-500">Get Started?</span>
           </h2>
-          <p className="mt-3 text-gray-400 max-w-lg mx-auto">
-            Contact us today for a free quote or start designing online right
-            now.
+          <p className="mt-2 text-gray-300 max-w-lg mx-auto text-sm sm:text-base">
+            Contact us today for a free quote or start designing online.
           </p>
-          <div className="mt-6 flex items-center justify-center gap-4 flex-wrap">
+          <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
             <Link
               to="/design"
-              className="bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
+              className="bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg px-6 py-3 text-sm shadow-md shadow-orange-500/25 transition-colors"
             >
               Start Designing
             </Link>
             <Link
-              to="/contact"
-              className="border border-white/20 hover:bg-white/10 text-white font-semibold rounded-lg px-6 py-3 text-sm transition-colors"
+              to="/quote"
+              className="border border-white/30 hover:bg-white/10 text-white font-bold rounded-lg px-6 py-3 text-sm transition-colors"
             >
               Get a Quote
             </Link>
