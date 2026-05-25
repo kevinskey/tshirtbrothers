@@ -60,6 +60,47 @@
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
+  <!-- Vertical (use-case) landing pages. -->
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/churches</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/family-reunions</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/teams</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/schools</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/businesses</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/greek-life</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/fundraisers</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/shirts-for/birthdays</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
   <!-- Local-city landing pages (one per service-area city). -->
   <url>
     <loc>https://tshirtbrothers.com/custom-shirts/atlanta</loc>

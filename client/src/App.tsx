@@ -32,6 +32,7 @@ import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import CityLandingPage from '@/pages/CityLandingPage';
+import VerticalLandingPage from '@/pages/VerticalLandingPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
@@ -67,6 +68,7 @@ function App() {
           <Route path="/blog" element={<BlogPage />} />
           <Route path="/local-businesses" element={<LocalBusinessesPage />} />
           <Route path="/custom-shirts/:citySlug" element={<CityLandingPage />} />
+          <Route path="/shirts-for/:verticalSlug" element={<VerticalLandingPage />} />
           <Route path="/blog/:slug" element={<BlogPostPage />} />
           <Route path="/design" element={<DesignStudioPage />} />
           <Route path="/account" element={<AccountPage />} />
