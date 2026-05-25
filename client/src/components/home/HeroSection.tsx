@@ -90,7 +90,7 @@ export default function HeroSection() {
               className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl text-gray-900 leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              Custom Apparel,<br />
+              Support Local,<br />
               <span className="text-orange-500">Done Right.</span>
             </h1>
             <p className="mt-5 text-base sm:text-lg text-gray-600">
