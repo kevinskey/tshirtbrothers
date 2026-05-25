@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS quotes (
   -- fired. NULL = not yet sent. Used to dedupe so flipping status to
   -- completed twice doesn't re-spam the customer.
   review_request_sent_at TIMESTAMPTZ,
+  -- Timestamp of when the abandoned-quote follow-up email fired (a
+  -- quote was saved as pending but the customer never locked it in).
+  -- NULL = eligible for follow-up. Set after send so we never re-spam.
+  follow_up_sent_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

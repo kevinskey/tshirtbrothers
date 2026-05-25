@@ -29,6 +29,7 @@ import instantQuoteRouter, { adminRouter as instantQuotePricingAdminRouter } fro
 import favoritesRouter from './routes/favorites.js';
 import heroSlidesRouter, { adminRouter as heroSlidesAdminRouter } from './routes/heroSlides.js';
 import reviewsRouter from './routes/reviews.js';
+import { startScheduler } from './services/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -100,6 +101,7 @@ app.listen(PORT, () => {
   runBootMigrations().catch((err) => {
     console.error('[migrations] fatal:', err);
   });
+  startScheduler();
 });
 
 // Apply every SQL file in ./migrations on boot. All migrations use

@@ -311,6 +311,39 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
 }
 
 /**
+ * Sends an "are you still interested?" follow-up for quotes that were
+ * saved but never locked in. Caller (job in services/scheduler.js)
+ * checks follow_up_sent_at before invoking.
+ */
+export async function sendAbandonedQuoteFollowUp(quote) {
+  const lockInUrl = `${DOMAIN}/quote?id=${quote.id}&token=${quote.accept_token || ''}`;
+  const total = quote.estimated_price ? formatCurrency(Number(quote.estimated_price)) : null;
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Still thinking it over?</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">We saved the custom-print quote you started yesterday. Whenever you're ready, you can pick it back up — or tweak the design, quantity, or colors and watch the price update live.</p>
+    ${total ? detailsTable(
+      detailRow('Product', quote.product_name || 'Custom Apparel') +
+      detailRow('Quantity', quote.quantity) +
+      detailRow('Estimated Total', total)
+    ) : ''}
+    ${primaryButton('Open My Quote', lockInUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392. — Kevin</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: 'Your TShirt Brothers quote is saved · Ready when you are',
+      html: baseLayout('Quote Saved', body),
+    });
+    console.log(`[Email] Abandoned-quote follow-up sent to ${quote.customer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send abandoned-quote follow-up:', err);
+  }
+}
+
+/**
  * Sends a "leave us a Google review" follow-up email when an order is
  * marked completed. Designed to fire ONCE per quote — caller checks the
  * review_request_sent_at column before invoking.
