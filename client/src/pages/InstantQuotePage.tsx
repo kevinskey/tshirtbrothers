@@ -517,11 +517,11 @@ export default function InstantQuotePage() {
 
   return (
     <Layout>
-      {/* Hero — compact on mobile, full size on tablet+ */}
-      <section className="bg-gray-900 text-white py-5 sm:py-12 md:py-16 text-center">
+      {/* Hero — compact at every breakpoint; desktop used to be huge. */}
+      <section className="bg-gray-900 text-white py-5 sm:py-6 md:py-8 text-center">
         <div className="container mx-auto px-4">
-          <h1 className="font-display text-xl sm:text-3xl md:text-5xl font-bold">Instant Quote</h1>
-          <p className="mt-1 sm:mt-3 text-gray-400 max-w-xl mx-auto text-xs sm:text-base md:text-lg">
+          <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold">Instant Quote</h1>
+          <p className="mt-1 text-gray-400 max-w-xl mx-auto text-xs sm:text-sm">
             Add multiple products — price updates live.
           </p>
         </div>
