@@ -16,15 +16,30 @@ import {
 
 const badges = ['Lightning Fast', 'Quality Guaranteed', 'Local Experts'];
 
-// NOTE: image URLs are Unsplash placeholders. Swap with TSB-shot product
-// photos once available — keep aspect ratio close to 4:3.
-const services = [
+// Each service visual is one of:
+//   - kind: 'photo' with an SS Activewear product image (stable URL, on-brand)
+//   - kind: 'graphic' with a brand-orange gradient + large icon + a few
+//     decorative chips, used when no single product photo represents the
+//     service (DTF transfers, awards/promo)
+type ServiceVisual =
+  | { kind: 'photo'; src: string }
+  | { kind: 'graphic'; gradient: string; chips: string[] };
+
+const services: Array<{
+  title: string;
+  description: string;
+  visual: ServiceVisual;
+  icon: typeof Shirt;
+  items: string[];
+  whyChoose: string[];
+  cta: { label: string; to: string };
+  reverse: boolean;
+}> = [
   {
     title: 'Custom Apparel',
     description:
       'From single custom pieces to large team orders, we print vibrant, long-lasting designs on premium garments. Screen printing, DTG, and heat transfer options available for every budget and timeline.',
-    image:
-      'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=1200&q=80',
+    visual: { kind: 'photo', src: 'https://www.ssactivewear.com/Images/Style/16_fm.jpg' },
     icon: Shirt,
     items: [
       'T-Shirts & Tank Tops',
@@ -41,8 +56,7 @@ const services = [
     title: 'Embroidery',
     description:
       'Professional embroidery adds a polished, premium feel to any garment or accessory. Our state-of-the-art machines handle intricate logos and text with precision stitching that lasts.',
-    image:
-      'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=1200&q=80',
+    visual: { kind: 'photo', src: 'https://www.ssactivewear.com/Images/Style/15274_fm.jpg' },
     icon: Scissors,
     items: [
       'Polo Shirts',
@@ -59,8 +73,11 @@ const services = [
     title: 'DTF Print Transfers',
     description:
       "Just need the prints? We'll send you ready-to-press DTF transfer films — no garments, no sizes, just the artwork on transfer film. Bring your own apparel and press them yourself, or drop the films at any local printer.",
-    image:
-      'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?auto=format&fit=crop&w=1200&q=80',
+    visual: {
+      kind: 'graphic',
+      gradient: 'from-orange-500 via-orange-600 to-rose-600',
+      chips: ['Full Color', 'Heat-Press Ready', 'No Minimums'],
+    },
     icon: Layers,
     items: [
       'Single transfers or bulk runs',
@@ -74,11 +91,14 @@ const services = [
     reverse: false,
   },
   {
-    title: 'Premium Products',
+    title: 'Promo & Awards',
     description:
       'Go beyond apparel with our full catalog of customizable products. From corporate awards to personalized gifts, we use laser engraving and sublimation to deliver stunning results.',
-    image:
-      'https://images.unsplash.com/photo-1567427361984-0cbe7396fc6c?auto=format&fit=crop&w=1200&q=80',
+    visual: {
+      kind: 'graphic',
+      gradient: 'from-amber-500 via-orange-500 to-orange-700',
+      chips: ['Trophies', 'Mugs', 'Drinkware', 'Gifts'],
+    },
     icon: Trophy,
     items: [
       'Trophies & Awards',
@@ -158,26 +178,37 @@ export default function ServicesPage() {
                   service.reverse ? 'md:[direction:rtl]' : ''
                 }`}
               >
-                {/* Visual — real photo with fallback icon overlay */}
+                {/* Visual — either an SS Activewear product photo or a
+                    branded gradient graphic with decorative chips. */}
                 <div
-                  className={`relative overflow-hidden rounded-2xl aspect-[4/3] bg-gradient-to-br from-gray-900 to-gray-800 ${
-                    service.reverse ? 'md:[direction:ltr]' : ''
-                  }`}
+                  className={`relative overflow-hidden rounded-2xl aspect-[4/3] ${
+                    service.visual.kind === 'photo' ? 'bg-gray-100' : `bg-gradient-to-br ${service.visual.gradient}`
+                  } ${service.reverse ? 'md:[direction:ltr]' : ''}`}
                 >
-                  <img
-                    src={service.image}
-                    alt={service.title}
-                    loading="lazy"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      // If the Unsplash image 404s, hide it and let the
-                      // gradient + icon below show through.
-                      (e.currentTarget as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                  {/* Subtle overlay + icon badge so the photo doesn't fight
-                      the headline next to it */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/10 to-transparent" />
+                  {service.visual.kind === 'photo' ? (
+                    <img
+                      src={service.visual.src}
+                      alt={service.title}
+                      loading="lazy"
+                      className="w-full h-full object-contain p-4"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
+                      <Icon className="h-20 w-20 opacity-90" strokeWidth={1.5} />
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 px-4">
+                        {service.visual.chips.map((chip) => (
+                          <span
+                            key={chip}
+                            className="rounded-full bg-white/25 backdrop-blur px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Service-name pill anchored top-left for instant
+                      recognition regardless of which visual mode rendered. */}
                   <div className="absolute top-3 left-3 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-gray-900 shadow">
                     <Icon className="h-3.5 w-3.5 text-orange-500" />
                     {service.title}
