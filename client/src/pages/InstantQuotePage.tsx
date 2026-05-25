@@ -375,6 +375,20 @@ export default function InstantQuotePage() {
       if (incomingDesigns.length > 0) {
         next.designs = [...incomingDesigns, ...it.designs];
       }
+      // Mockup-driven handoff: derive print locations directly from
+      // which sides were rendered. Studio already knows where the
+      // design lives, so the customer shouldn't have to re-tick the
+      // Front/Back boxes on the quote form.
+      if (state.mockupUrl || state.mockupUrlBack) {
+        next.inputs = {
+          ...(next.inputs ?? it.inputs),
+          locations: {
+            front: !!state.mockupUrl,
+            back: !!state.mockupUrlBack,
+            sleeve: false,
+          },
+        };
+      }
       return next;
     }));
     setDesignStudioHandoffDone(true);
@@ -1064,7 +1078,11 @@ function ItemCard({
         </Section>
 
         {/* Color — fabric-swatch photos from SSActiveWear when the picked
-            product has them, otherwise a flat hex circle. */}
+            product has them, otherwise a flat hex circle. Hidden when
+            the item came from a customer mockup; the studio already
+            captured the color and reshowing this would let the price
+            disagree with the mockup the customer just approved. */}
+        {!(item.mockupUrl || item.mockupUrlBack) && (
         <Section icon={<span className="text-xl">🎨</span>} title={`${capitalize(noun)} color`}>
           <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {colorList.map((c) => {
@@ -1110,9 +1128,12 @@ function ItemCard({
               : `Other colors available — we'll match on your final mockup.`}
           </p>
         </Section>
+        )}
 
-        {/* Upload — comes after Type/Size/Color so the customer picks what
-            they're getting before adding artwork. */}
+        {/* Upload — hidden when a Studio mockup is attached. The mockup
+            already carries the customer's finished art, so prompting
+            for a separate file would invite a mismatch. */}
+        {!(item.mockupUrl || item.mockupUrlBack) && (
         <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
           <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
             <Upload className="h-5 w-5" />
@@ -1148,6 +1169,7 @@ function ItemCard({
             </ul>
           )}
         </Section>
+        )}
 
         {/* Print method */}
         <Section icon={<Printer className="h-5 w-5" />} title="Print method">
@@ -1167,7 +1189,10 @@ function ItemCard({
           </div>
         </Section>
 
-        {/* Print locations */}
+        {/* Print locations — hidden when a Studio mockup is attached;
+            the handoff already derived front/back from which sides of
+            the mockup were captured. */}
+        {!(item.mockupUrl || item.mockupUrlBack) && (
         <Section icon={<Palette className="h-5 w-5" />} title="Where do you want it printed?">
           <div className="grid grid-cols-3 gap-2">
             {(['front', 'back', 'sleeve'] as const).map((loc) => (
@@ -1186,6 +1211,7 @@ function ItemCard({
           </div>
           <p className="mt-2 text-xs text-gray-500">Front + Back = 2 locations. Pick any combination.</p>
         </Section>
+        )}
 
         {/* Colors per location — only for screen print */}
         {isScreenPrint && (
