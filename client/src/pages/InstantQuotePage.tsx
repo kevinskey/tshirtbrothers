@@ -319,7 +319,13 @@ export default function InstantQuotePage() {
   useEffect(() => {
     if (designStudioHandoffDone) return;
     const state = location.state as
-      | { fromDesignStudio?: boolean; product?: CatalogProduct; color?: { name?: string; hex?: string } | string | null; mockupUrl?: string | null }
+      | {
+          fromDesignStudio?: boolean;
+          product?: CatalogProduct;
+          color?: { name?: string; hex?: string } | string | null;
+          mockupUrl?: string | null;
+          graphicUrl?: string | null;
+        }
       | null;
     if (!state?.fromDesignStudio) return;
     setItems((prev) => prev.map((it, i) => {
@@ -341,9 +347,20 @@ export default function InstantQuotePage() {
           sizes: normalizeSizesForProduct(state.product, mapped, it.inputs.sizes),
         };
       }
+      // Mockup goes into both the preview banner AND the upload list so
+      // the customer sees it and it ships with the saved quote. Graphic
+      // (design only, transparent BG) joins the upload list so the shop
+      // has the production-ready art file.
+      const incomingDesigns: Array<{ url: string; filename: string }> = [];
       if (state.mockupUrl) {
         next.mockupUrl = state.mockupUrl;
-        next.designs = [{ url: state.mockupUrl, filename: 'design-studio-mockup.png' }, ...it.designs];
+        incomingDesigns.push({ url: state.mockupUrl, filename: 'mockup.png' });
+      }
+      if (state.graphicUrl) {
+        incomingDesigns.push({ url: state.graphicUrl, filename: 'graphic.png' });
+      }
+      if (incomingDesigns.length > 0) {
+        next.designs = [...incomingDesigns, ...it.designs];
       }
       return next;
     }));
