@@ -3176,7 +3176,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-16 md:pb-16 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center justify-start md:justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-16 md:pb-16 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
