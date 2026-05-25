@@ -347,10 +347,11 @@ export default function InstantQuotePage() {
           sizes: normalizeSizesForProduct(state.product, mapped, it.inputs.sizes),
         };
       }
-      // Mockup goes into both the preview banner AND the upload list so
-      // the customer sees it and it ships with the saved quote. Graphic
-      // (design only, transparent BG) joins the upload list so the shop
-      // has the production-ready art file.
+      // Mockup is shown only in the "Your mockup" preview banner — it's
+      // added to designs[] so it ships with the saved quote, but the
+      // upload grid filters it out by URL to avoid a duplicate thumbnail.
+      // Graphic (design only, transparent BG) joins the upload list so
+      // the shop has the production-ready art file.
       const incomingDesigns: Array<{ url: string; filename: string }> = [];
       if (state.mockupUrl) {
         next.mockupUrl = state.mockupUrl;
@@ -1094,21 +1095,23 @@ function ItemCard({
           </label>
           <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
 
-          {item.designs.length > 0 && (
+          {item.designs.some((d) => d.url !== item.mockupUrl) && (
             <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {item.designs.map((d, i) => (
-                <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
-                  <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
-                  <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveDesign(i)}
-                    className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
-                    aria-label={`Remove ${d.filename}`}
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                  </button>
-                </li>
+                d.url === item.mockupUrl ? null : (
+                  <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
+                    <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
+                    <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveDesign(i)}
+                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
+                      aria-label={`Remove ${d.filename}`}
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                )
               ))}
             </ul>
           )}
