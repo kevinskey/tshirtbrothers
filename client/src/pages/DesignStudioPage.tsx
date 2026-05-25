@@ -468,6 +468,12 @@ export default function DesignStudioPage() {
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  // Shapes panel — settings applied to the *next* shape the user drops.
+  // 'outline' renders fill=none, stroke=shapeColor at shapeStrokeWidth%
+  // of the SVG viewBox. 'fill' renders fill=shapeColor with no stroke.
+  const [shapeFillMode, setShapeFillMode] = useState<'fill' | 'outline'>('fill');
+  const [shapeColor, setShapeColor] = useState<string>('#111827');
+  const [shapeStrokeWidth, setShapeStrokeWidth] = useState<number>(4);
 
   // Tracks the iOS / Android soft-keyboard height. fixed-position elements
   // are anchored to the layout viewport, so without this the bottom Add-Text
@@ -2825,42 +2831,125 @@ export default function DesignStudioPage() {
   // user can resize / recolor / restroke via the existing image-style
   // floating toolbar (the shape uses the same x/y/width/rotation/opacity
   // wiring images do, plus shapeType/color/strokeColor/strokeWidth).
+  const SHAPE_PALETTE = [
+    '#111827', '#FFFFFF', '#EF4444', '#F97316', '#F59E0B', '#84CC16',
+    '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899',
+  ];
   const shapesPanelContent = (
-    <div className="p-4">
-      <p className="text-xs text-gray-500 mb-3">Tap a shape to add it to the canvas.</p>
-      <div className="grid grid-cols-3 gap-2">
-        {([
-          { type: 'rect',     label: 'Rectangle', icon: Square },
-          { type: 'circle',   label: 'Circle',    icon: Circle },
-          { type: 'triangle', label: 'Triangle',  icon: Triangle },
-          { type: 'line',     label: 'Line',      icon: Minus },
-          { type: 'star',     label: 'Star',      icon: Star },
-          { type: 'heart',    label: 'Heart',     icon: Heart },
-        ] as const).map(s => (
-          <button
-            key={s.type}
-            type="button"
-            onClick={() => {
-              addDesignElement({
-                type: 'shape',
-                shapeType: s.type,
-                x: 35,
-                y: 22,
-                width: 30,
-                // Default height = width (square aspect). User changes by
-                // dragging a corner; Shift preserves the original ratio.
-                height: 30,
-                content: '',
-                color: '#ec4899',
-                rotation: 0,
-              });
-            }}
-            className="flex flex-col items-center gap-1 p-3 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition"
-          >
-            <s.icon className="h-7 w-7 text-gray-700" />
-            <span className="text-[10px] font-medium text-gray-700">{s.label}</span>
-          </button>
-        ))}
+    <div className="p-4 space-y-4">
+      {/* Fill vs Outline toggle */}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Style</p>
+        <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-gray-100 p-1">
+          {(['fill', 'outline'] as const).map(mode => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setShapeFillMode(mode)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition ${
+                shapeFillMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Color */}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Color</p>
+        <div className="grid grid-cols-6 gap-1.5">
+          {SHAPE_PALETTE.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setShapeColor(c)}
+              aria-label={`Use color ${c}`}
+              className={`relative h-7 w-full rounded-md border transition ${
+                shapeColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="color"
+            value={shapeColor}
+            onChange={(e) => setShapeColor(e.target.value)}
+            className="h-7 w-7 cursor-pointer rounded border border-gray-300"
+            aria-label="Pick a custom color"
+          />
+          <span className="text-xs text-gray-500">Custom</span>
+        </div>
+      </div>
+
+      {/* Line width — only meaningful for outline + line shapes */}
+      <div>
+        <div className="flex items-baseline justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Line width</p>
+          <span className="text-xs font-medium text-gray-700">{shapeStrokeWidth}px</span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={20}
+          value={shapeStrokeWidth}
+          onChange={(e) => setShapeStrokeWidth(Number(e.target.value))}
+          className="mt-1 w-full accent-blue-600"
+        />
+        <p className="mt-0.5 text-[10px] text-gray-400">Applies to outline shapes and the line tool.</p>
+      </div>
+
+      {/* Shape grid */}
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Shape</p>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { type: 'rect',     label: 'Rectangle', icon: Square },
+            { type: 'circle',   label: 'Circle',    icon: Circle },
+            { type: 'triangle', label: 'Triangle',  icon: Triangle },
+            { type: 'line',     label: 'Line',      icon: Minus },
+            { type: 'star',     label: 'Star',      icon: Star },
+            { type: 'heart',    label: 'Heart',     icon: Heart },
+          ] as const).map(s => {
+            // Line shape is intrinsically a stroke — fill mode doesn't
+            // apply, so we always use shapeColor as the stroke.
+            const isLine = s.type === 'line';
+            const useOutline = isLine || shapeFillMode === 'outline';
+            return (
+              <button
+                key={s.type}
+                type="button"
+                onClick={() => {
+                  addDesignElement({
+                    type: 'shape',
+                    shapeType: s.type,
+                    x: 35,
+                    y: 22,
+                    width: 30,
+                    // Default height = width (square aspect). User changes by
+                    // dragging a corner; Shift preserves the original ratio.
+                    height: 30,
+                    content: '',
+                    color: useOutline ? 'transparent' : shapeColor,
+                    strokeColor: useOutline ? shapeColor : undefined,
+                    strokeWidth: useOutline ? shapeStrokeWidth : undefined,
+                    rotation: 0,
+                  });
+                }}
+                className="flex flex-col items-center gap-1 p-3 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition"
+              >
+                <s.icon
+                  className="h-7 w-7 text-gray-700"
+                  style={useOutline ? { color: shapeColor } : { color: shapeColor, fill: shapeColor }}
+                />
+                <span className="text-[10px] font-medium text-gray-700">{s.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
