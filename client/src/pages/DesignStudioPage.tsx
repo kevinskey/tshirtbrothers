@@ -406,7 +406,11 @@ type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 
 type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
 type ViewName = 'front' | 'back' | 'sleeve';
 
-// const DEFAULT_PRODUCT_ID = '39'; // Gildan Unisex Ultra Cotton T-Shirt
+// Default product when none is passed via ?product=. Use the basic flat
+// product photo (Gildan 5000 Heavy Cotton) rather than the Softstyle
+// (ss_id 39), which ships with a model photo that distracts from the
+// design surface and recolors awkwardly on swatch change.
+const DEFAULT_PRODUCT_SSID = 'G500';
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -1376,7 +1380,7 @@ export default function DesignStudioPage() {
   useEffect(() => {
     if (hasLoadedProduct.current) return;
     hasLoadedProduct.current = true;
-    const targetId = initialProductId || '39';
+    const targetId = initialProductId || DEFAULT_PRODUCT_SSID;
     // Catalog historically passed the SS style id, but a stale build (or a
     // sample fallback row) can pass the DB serial id instead. Try by-ssid
     // first; if that 404s, fall back to /products/:id. Either way we land
@@ -1502,6 +1506,26 @@ export default function DesignStudioPage() {
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   const displayImage = currentView === 'back' ? backImage : frontImage;
+
+  // When loading the default product (no ?product= override) and the user
+  // hasn't picked a color yet, snap to "Black" once the colorways resolve.
+  // Catalog colorways are usually ordered White → other, which means we'd
+  // otherwise land on White by default.
+  const hasPickedDefaultBlack = useRef(false);
+  useEffect(() => {
+    if (hasPickedDefaultBlack.current) return;
+    if (initialProductId) return; // user came in with a specific product
+    if (userPickedColor) return;
+    if (!productColors.length) return;
+    const blackIdx = productColors.findIndex(
+      (c) => typeof c.name === 'string' && /^black$/i.test(c.name),
+    );
+    if (blackIdx >= 0 && blackIdx !== selectedColorIdx) {
+      setSelectedColorIdx(blackIdx);
+      setUserPickedColor(true);
+    }
+    hasPickedDefaultBlack.current = true;
+  }, [productColors, initialProductId, userPickedColor, selectedColorIdx]);
 
   /* ---------------------------------------------------------------- */
   /*  Toolbar toggle                                                   */
