@@ -2270,7 +2270,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const leftToolbar = (
-    <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-16 flex-col justify-center border-r border-gray-200 bg-white md:flex">
+    <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-20 flex-col justify-center border-r border-gray-200 bg-white md:flex">
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
@@ -2330,7 +2330,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
-  const desktopPanel = `${panelBase} top-14 bottom-0 left-16 w-64 border-r border-gray-200 hidden md:block`;
+  const desktopPanel = `${panelBase} top-14 bottom-0 left-20 w-96 border-r border-gray-200 hidden md:block`;
   // Mobile sheet: width is pinned via inline style (vpWidth) so we only
   // need left-0 here, not inset-x-0. overflow-x-hidden clips any wide
   // content (the Shapes 3-card grid, etc.) at the panel edge.
@@ -3039,7 +3039,7 @@ export default function DesignStudioPage() {
 
   // Mobile uses a floating top toolbar (no offset). Desktop uses the
   // textSidePanel in the left flyout, so add the 320px offset there.
-  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-64' : '';
+  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-96' : '';
   // On mobile, reserve room only when a bottom sheet (tool / welcome / text
   // panels) is actually open. Otherwise just clear the bottom nav (h-12).
   // The old static `pb-64` ate ~30% of the viewport on phones for nothing.
@@ -3052,7 +3052,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-24 md:pb-20 md:ml-16 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-24 md:pb-20 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -3730,7 +3730,7 @@ export default function DesignStudioPage() {
   // controls without tapping through menus.
   const textSidePanel = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="hidden md:flex fixed top-14 left-16 bottom-0 w-64 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
+      className="hidden md:flex fixed top-14 left-20 bottom-0 w-96 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
       onClick={e => e.stopPropagation()}
     >
       <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
