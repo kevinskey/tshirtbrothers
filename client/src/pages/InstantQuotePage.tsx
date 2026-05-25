@@ -58,7 +58,7 @@ type Inputs = {
   rush: boolean;
 };
 
-type CatalogColor = string | { hex?: string; name?: string };
+type CatalogColor = string | { hex?: string; name?: string; swatch?: string; image?: string };
 
 type CatalogProduct = {
   id?: number | string;
@@ -214,10 +214,13 @@ function availableSizesFor(
   return STANDARD_SHIRT_SIZES;
 }
 
-// Same idea for colors, but return name+hex pairs so the UI can render
-// real swatches. products.colors can arrive as ["Black",...], ["#000",...],
-// or [{hex,name},...] — normalize all three.
-type ColorOption = { name: string; hex: string };
+// Same idea for colors, but return name+hex+swatch tuples so the UI can
+// render real fabric-swatch photos when SSActiveWear gives them, falling
+// back to a flat hex circle otherwise. products.colors can arrive as:
+//   ["Black",...]
+//   ["#000",...]
+//   [{ hex, name, swatch?, image? }, ...]
+type ColorOption = { name: string; hex: string; swatch?: string };
 function availableColorsFor(product: CatalogProduct | null): ColorOption[] {
   if (product?.colors && Array.isArray(product.colors) && product.colors.length > 0) {
     const list = product.colors
@@ -228,7 +231,15 @@ function availableColorsFor(product: CatalogProduct | null): ColorOption[] {
         }
         const name = c?.name || c?.hex || '';
         if (!name) return null;
-        return { name, hex: c?.hex || hexFor(name) };
+        return {
+          name,
+          hex: c?.hex || hexFor(name),
+          // `swatch` is a fabric photo from SSActiveWear; `image` is the
+          // front shot of the garment in that color — both work as a
+          // realistic swatch source. Prefer the dedicated swatch when
+          // present since it's tiny + tightly cropped.
+          swatch: c?.swatch || c?.image,
+        };
       })
       .filter((c): c is ColorOption => c !== null);
     if (list.length > 0) return list;
@@ -925,8 +936,8 @@ function ItemCard({
           </div>
         </Section>
 
-        {/* Color — small swatches using each color's actual hex from the
-            picked product (or the named-palette fallback). */}
+        {/* Color — fabric-swatch photos from SSActiveWear when the picked
+            product has them, otherwise a flat hex circle. */}
         <Section icon={<span className="text-xl">🎨</span>} title={`${capitalize(noun)} color`}>
           <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {colorList.map((c) => {
@@ -940,17 +951,25 @@ function ItemCard({
                   title={c.name}
                   aria-label={c.name}
                   aria-pressed={active}
-                  className={`relative inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                  className={`relative inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center overflow-hidden rounded-full transition focus:outline-none focus:ring-2 focus:ring-orange-500 ${
                     active
                       ? 'ring-2 ring-orange-600 ring-offset-2'
                       : isWhiteish
                         ? 'ring-1 ring-gray-300 hover:ring-gray-500'
                         : 'ring-1 ring-gray-200 hover:ring-gray-400'
                   }`}
-                  style={{ backgroundColor: c.hex }}
+                  style={!c.swatch ? { backgroundColor: c.hex } : undefined}
                 >
+                  {c.swatch && (
+                    <img
+                      src={c.swatch}
+                      alt=""
+                      loading="lazy"
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
                   {active && (
-                    <Check className={`h-3.5 w-3.5 ${isLightHex(c.hex) ? 'text-gray-900' : 'text-white'}`} />
+                    <Check className={`relative h-3.5 w-3.5 drop-shadow ${isLightHex(c.hex) ? 'text-gray-900' : 'text-white'}`} />
                   )}
                 </button>
               );
