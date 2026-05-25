@@ -751,6 +751,51 @@ function ItemCard({
           </div>
         )}
 
+        {/* Garment — first thing the customer picks (unless a specific
+            catalog product is already chosen, in which case the product
+            determines the garment type). */}
+        {!item.pickedProduct && (
+          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {garmentNames.map((name) => (
+                <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
+                  {name}
+                </Chip>
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Quality tier — paired with garment, hidden when a specific
+            product is picked. */}
+        {!item.pickedProduct && (
+          <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
+            <div className="grid grid-cols-3 gap-2">
+              {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
+                const tshirtBrand: Record<typeof q, string> = {
+                  Standard: 'Gildan',
+                  Premium: 'Next Level',
+                  Ultra: 'Comfort Colors',
+                } as const;
+                const brandHint = inputs.garmentName === 'T-shirt' ? tshirtBrand[q] : null;
+                return (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => onPatchInputs({ qualityTier: q })}
+                    className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
+                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                    }`}
+                  >
+                    <div>{q}</div>
+                    {brandHint && <div className="text-[10px] mt-0.5 text-gray-500">{brandHint}</div>}
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+        )}
+
         {/* Upload */}
         <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
           <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
@@ -865,49 +910,6 @@ function ItemCard({
               : `Other colors available — we'll match it on your final mockup.`}
           </p>
         </Section>
-
-        {/* Garment — only when no specific catalog product is picked; the
-            picked product determines the garment type. */}
-        {!item.pickedProduct && (
-          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {garmentNames.map((name) => (
-                <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
-                  {name}
-                </Chip>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Quality tier — hidden when a specific product is picked */}
-        {!item.pickedProduct && (
-          <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
-            <div className="grid grid-cols-3 gap-2">
-              {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
-                const tshirtBrand: Record<typeof q, string> = {
-                  Standard: 'Gildan',
-                  Premium: 'Next Level',
-                  Ultra: 'Comfort Colors',
-                } as const;
-                const brandHint = inputs.garmentName === 'T-shirt' ? tshirtBrand[q] : null;
-                return (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => onPatchInputs({ qualityTier: q })}
-                    className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
-                    }`}
-                  >
-                    <div>{q}</div>
-                    {brandHint && <div className="text-[10px] mt-0.5 text-gray-500">{brandHint}</div>}
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        )}
 
         {/* Print method */}
         <Section icon={<Printer className="h-5 w-5" />} title="Print method">
