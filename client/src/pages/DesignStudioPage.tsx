@@ -2082,7 +2082,7 @@ export default function DesignStudioPage() {
           <ArrowLeft className="h-5 w-5" />
         </Link>
         <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
-        <span className="text-lg font-bold text-gray-900 hidden sm:inline">TShirt Brothers</span>
+        <span className="text-lg font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
       </div>
 
       {/* Center: design name */}
@@ -2100,7 +2100,7 @@ export default function DesignStudioPage() {
           <button
             type="button"
             onClick={() => setIsEditingName(true)}
-            className="text-sm font-medium text-gray-700 hover:text-gray-900 transition px-2 py-1"
+            className="text-sm font-medium text-gray-700 hover:text-gray-900 transition px-2 py-1 whitespace-nowrap"
           >
             {designName}
           </button>
@@ -2330,7 +2330,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
-  const desktopPanel = `${panelBase} top-14 bottom-0 left-20 w-96 border-r border-gray-200 hidden md:block`;
+  const desktopPanel = `${panelBase} top-14 bottom-0 left-20 w-80 border-r border-gray-200 hidden md:block`;
   // Mobile sheet: width is pinned via inline style (vpWidth) so we only
   // need left-0 here, not inset-x-0. overflow-x-hidden clips any wide
   // content (the Shapes 3-card grid, etc.) at the panel edge.
@@ -3039,7 +3039,7 @@ export default function DesignStudioPage() {
 
   // Mobile uses a floating top toolbar (no offset). Desktop uses the
   // textSidePanel in the left flyout, so add the 320px offset there.
-  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-96' : '';
+  const canvasLeftOffset = (activeTool || showWelcome || showTextEditor) ? 'md:ml-80' : '';
   // On mobile, reserve room only when a bottom sheet (tool / welcome / text
   // panels) is actually open. Otherwise just clear the bottom nav (h-12).
   // The old static `pb-64` ate ~30% of the viewport on phones for nothing.
@@ -3730,7 +3730,7 @@ export default function DesignStudioPage() {
   // controls without tapping through menus.
   const textSidePanel = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="hidden md:flex fixed top-14 left-20 bottom-0 w-96 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
+      className="hidden md:flex fixed top-14 left-20 bottom-0 w-80 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
       onClick={e => e.stopPropagation()}
     >
       <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
