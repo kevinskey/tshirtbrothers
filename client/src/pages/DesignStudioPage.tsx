@@ -455,9 +455,16 @@ export default function DesignStudioPage() {
   // sticks around as a no-op so existing setShowWelcome(false) calls
   // don't have to be unwound.
   const [showWelcome, setShowWelcome] = useState(false);
-  // Open AI Design by default so new users land on the recommended path
-  // instead of a blank editor (skip when restoring a saved design).
-  const [activeTool, setActiveTool] = useState<ToolName>(loadState?.loadDesign ? null : 'ai');
+  // Open AI Design by default on desktop so new users land on the
+  // recommended path instead of a blank editor. On mobile leave it
+  // closed — the bottom toolbar is the entry point, and auto-opening a
+  // tool here would slide a sheet over the canvas before the user has
+  // even seen the product. Also skip when restoring a saved design.
+  const [activeTool, setActiveTool] = useState<ToolName>(() => {
+    if (loadState?.loadDesign) return null;
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return null;
+    return 'ai';
+  });
   // AI Design panel state — bare prompt → image, no chat persona.
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
