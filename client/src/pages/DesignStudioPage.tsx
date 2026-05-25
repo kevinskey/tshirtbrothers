@@ -2872,7 +2872,7 @@ export default function DesignStudioPage() {
                     strokeColor: useOutline ? shapeColor : undefined,
                     strokeWidth: useOutline ? shapeStrokeWidth : undefined,
                     rotation: 0,
-                  });
+                  }, { keepPanelOpen: true });
                 }}
                 className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 px-2 py-3 hover:border-blue-500 hover:bg-blue-50 transition"
               >
