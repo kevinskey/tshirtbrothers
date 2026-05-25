@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'sonner';
 
 function ScrollToTop() {
@@ -48,6 +49,7 @@ function GangSheetIdRedirect() {
 
 function App() {
   return (
+    <HelmetProvider>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ScrollToTop />
@@ -85,6 +87,7 @@ function App() {
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>
+    </HelmetProvider>
   );
 }
 

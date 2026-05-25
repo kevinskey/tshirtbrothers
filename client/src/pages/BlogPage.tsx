@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import { fetchBlogPosts, type BlogPost } from '@/lib/api';
 import { Loader2, Calendar, User } from 'lucide-react';
 
@@ -31,6 +32,11 @@ export default function BlogPage() {
 
   return (
     <Layout>
+      <Seo
+        title="Custom Printing Blog · Guides & Tips · TShirt Brothers"
+        description="Custom printing guides, design tips, and behind-the-scenes from an Atlanta print shop. Screen printing, DTF, embroidery, team gear, and more."
+        path="/blog"
+      />
       {/* Header */}
       <section className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white py-20">
         <div className="max-w-6xl mx-auto px-4 text-center">

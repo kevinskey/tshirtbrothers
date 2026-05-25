@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import { Search, Loader2 } from 'lucide-react';
 
 interface BrandInfo {
@@ -29,6 +30,11 @@ export default function BrandsPage() {
 
   return (
     <Layout>
+      <Seo
+        title="All Apparel Brands · Custom Printing in Atlanta · TShirt Brothers"
+        description="Browse every brand we print on — Gildan, Bella+Canvas, Next Level, Comfort Colors, Champion, Independent Trading Co., and more. No minimums, fast turnaround."
+        path="/brands"
+      />
       <section className="py-12">
         <div className="container mx-auto px-4">
           <div className="text-center mb-10">

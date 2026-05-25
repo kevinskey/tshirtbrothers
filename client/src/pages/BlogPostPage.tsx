@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import { fetchBlogPost } from '@/lib/api';
 import { Loader2, ArrowLeft, Calendar, User, Share2, Check } from 'lucide-react';
 
@@ -15,18 +16,11 @@ export default function BlogPostPage() {
     enabled: !!slug,
   });
 
-  // SEO: Update document title and meta description
+  // SEO is handled by <Seo> below; this keeps a tiny fallback for any
+  // crawler that grabs the title before Helmet has a chance to update it.
   useEffect(() => {
-    if (post) {
-      document.title = post.meta_title || `${post.title} | TShirt Brothers Blog`;
-      const metaDesc = document.querySelector('meta[name="description"]');
-      if (metaDesc) {
-        metaDesc.setAttribute('content', post.meta_description || post.excerpt || '');
-      }
-    }
-    return () => {
-      document.title = 'TShirt Brothers';
-    };
+    if (post) document.title = post.meta_title || `${post.title} | TShirt Brothers Blog`;
+    return () => { document.title = 'TShirt Brothers'; };
   }, [post]);
 
   function formatDate(dateStr: string | null) {
@@ -88,6 +82,12 @@ export default function BlogPostPage() {
 
   return (
     <Layout>
+      <Seo
+        title={post.meta_title || `${post.title} | TShirt Brothers Blog`}
+        description={post.meta_description || post.excerpt || ''}
+        path={`/blog/${slug}`}
+        image={post.cover_image || undefined}
+      />
       <article className="max-w-3xl mx-auto px-4 py-12">
         {/* Back link */}
         <Link

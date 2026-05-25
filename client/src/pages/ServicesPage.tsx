@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import {
   Scissors,
   Trophy,
@@ -140,6 +141,11 @@ const steps = [
 export default function ServicesPage() {
   return (
     <Layout>
+      <Seo
+        title="Custom Apparel, Embroidery & DTF Printing in Atlanta · TShirt Brothers"
+        description="Custom apparel, embroidery, DTF transfers, and promo products serving the Atlanta metro. No minimums, same-day rush available, free local pickup in Fairburn, GA."
+        path="/services"
+      />
       {/* Hero */}
       <section className="bg-gray-950 text-white py-12 sm:py-16 text-center">
         <div className="container mx-auto px-4">

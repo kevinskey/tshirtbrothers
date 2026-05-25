@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import {
   fetchLocalBusinesses,
   fetchSouthAtlantaZips,
@@ -47,6 +48,11 @@ export default function LocalBusinessesPage() {
 
   return (
     <Layout>
+      <Seo
+        title="New Businesses in South Atlanta · TShirt Brothers"
+        description="Recently registered businesses across South Atlanta ZIP codes, pulled from public open data. Great for prospecting new clients for custom apparel."
+        path="/local-businesses"
+      />
       <section className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white py-16">
         <div className="max-w-6xl mx-auto px-4 text-center">
           <h1 className="font-display text-4xl md:text-5xl font-bold mb-3">

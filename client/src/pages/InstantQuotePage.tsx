@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import {
   Shirt,
   Layers,
@@ -608,6 +609,11 @@ export default function InstantQuotePage() {
 
   return (
     <Layout>
+      <Seo
+        title="Instant Quote · Custom T-Shirt Printing Calculator · TShirt Brothers"
+        description="See your custom t-shirt, hoodie, or polo price update live. Screen print, DTF, embroidery — pick garment, method, and quantity for an instant quote."
+        path="/quote"
+      />
       {/* Hero — compact at every breakpoint; desktop used to be huge. */}
       <section className="bg-gray-900 text-white py-5 sm:py-6 md:py-8 text-center">
         <div className="container mx-auto px-4">

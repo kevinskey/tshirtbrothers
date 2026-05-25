@@ -6,6 +6,7 @@ import type { FabricRendererBridgeHandle } from '@/components/design-studio/Fabr
 import { LayersPanel } from '@/components/design-studio/LayersPanel';
 import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
 import { FontPicker } from '@/components/design-studio/FontPicker';
+import Seo from '@/components/Seo';
 import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
 import { CropModal } from '@/components/design-studio/CropModal';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
@@ -4054,6 +4055,11 @@ export default function DesignStudioPage() {
 
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-gray-100 flex flex-col touch-manipulation">
+      <Seo
+        title="Design Studio · Custom T-Shirt Designer · TShirt Brothers"
+        description="Free online t-shirt designer. Upload art, add text, generate AI designs, drop shapes — see your mockup live and get an instant quote."
+        path="/design"
+      />
       {headerBar}
       {leftToolbar}
       {bottomToolbar}

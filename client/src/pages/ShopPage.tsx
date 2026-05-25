@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import { Search, Loader2, X, Heart } from 'lucide-react';
 
 function favAuthHeaders(): Record<string, string> {
@@ -319,8 +320,17 @@ export default function ShopPage() {
   const products = useFallback ? filtered : allProducts;
   const totalProducts = data?.pages[0]?.total || data?.pages[0]?.totalProducts || products.length;
 
+  const seoTitle = urlCategory
+    ? `${urlCategory} for Custom Printing · TShirt Brothers Shop`
+    : urlBrand
+      ? `${urlBrand} Apparel for Custom Printing · TShirt Brothers Shop`
+      : 'Shop Blank Apparel for Custom Printing · TShirt Brothers';
+  const seoDesc = urlCategory
+    ? `Browse ${urlCategory} for custom screen printing, DTF, and embroidery. Atlanta-based, no minimums, free local pickup in Fairburn, GA.`
+    : 'Shop Gildan, Bella+Canvas, Next Level, Comfort Colors and more — all printable with screen print, DTF, or embroidery. No minimums.';
   return (
     <Layout>
+      <Seo title={seoTitle} description={seoDesc} path="/shop" />
       <section className="py-12">
         <div className="container mx-auto px-4">
           {/* Header */}
