@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import Layout from '@/components/layout/Layout';
 import {
@@ -83,6 +84,10 @@ type ItemDraft = {
   inputs: Inputs;
   designs: Array<{ url: string; filename: string }>;
   pickedProduct: CatalogProduct | null;
+  // Screenshot of the design canvas captured when the customer clicked
+  // "Get Price" in the Design Studio. Shown as a large preview at the top
+  // of the card so the mockup stays visible alongside the price.
+  mockupUrl?: string | null;
 };
 
 const COLOR_OPTIONS: readonly string[] = [
@@ -304,6 +309,48 @@ export default function InstantQuotePage() {
 
   const [items, setItems] = useState<ItemDraft[]>(() => [newItem(initialInputs)]);
   const [productPickerItemId, setProductPickerItemId] = useState<string | null>(null);
+
+  // Customer arrives from /design with their freshly designed mockup. Read
+  // the navigation payload once and seed the first item: attach the catalog
+  // product if one was picked, swap to the right color, surface the mockup
+  // screenshot, and also drop it into designs[] so it ships with the quote.
+  const location = useLocation();
+  const [designStudioHandoffDone, setDesignStudioHandoffDone] = useState(false);
+  useEffect(() => {
+    if (designStudioHandoffDone) return;
+    const state = location.state as
+      | { fromDesignStudio?: boolean; product?: CatalogProduct; color?: { name?: string; hex?: string } | string | null; mockupUrl?: string | null }
+      | null;
+    if (!state?.fromDesignStudio) return;
+    setItems((prev) => prev.map((it, i) => {
+      if (i !== 0) return it;
+      const next: ItemDraft = { ...it };
+      if (state.product) {
+        next.pickedProduct = state.product;
+        const mapped = categoryToGarmentName(state.product.category);
+        const colors = availableColorsFor(state.product);
+        const colorNames = colors.map((c) => c.name);
+        const incomingColorName = typeof state.color === 'string' ? state.color : state.color?.name;
+        const nextColor = (incomingColorName && colorNames.includes(incomingColorName))
+          ? incomingColorName
+          : (colorNames[0] || it.inputs.color);
+        next.inputs = {
+          ...it.inputs,
+          garmentName: mapped,
+          color: nextColor,
+          sizes: normalizeSizesForProduct(state.product, mapped, it.inputs.sizes),
+        };
+      }
+      if (state.mockupUrl) {
+        next.mockupUrl = state.mockupUrl;
+        next.designs = [{ url: state.mockupUrl, filename: 'design-studio-mockup.png' }, ...it.designs];
+      }
+      return next;
+    }));
+    setDesignStudioHandoffDone(true);
+    // Clear the navigation state so a refresh doesn't re-apply it.
+    window.history.replaceState({}, document.title);
+  }, [location.state, designStudioHandoffDone]);
   const [saveOpen, setSaveOpen] = useState<false | 'save' | 'lock-in'>(false);
   const [uploadingByItem, setUploadingByItem] = useState<Record<string, number>>({});
   // Only one item is expanded at a time — newly-added items auto-expand
@@ -813,6 +860,26 @@ function ItemCard({
           </button>
         )}
       </div>
+
+      {/* Mockup from Design Studio — large preview so the customer's design
+          stays visible alongside the live price. */}
+      {item.mockupUrl && (
+        <div className="mb-4 overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-700 ring-1 ring-orange-200">
+              <Check className="h-3 w-3" /> Your mockup
+            </span>
+            <p className="text-xs text-gray-500">Designed in the Studio</p>
+          </div>
+          <div className="flex items-center justify-center rounded-xl bg-white p-2 ring-1 ring-orange-200">
+            <img
+              src={item.mockupUrl}
+              alt="Your mockup"
+              className="max-h-56 sm:max-h-72 w-auto object-contain"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Catalog product banner (manual pick or URL-loaded on item 0) */}
       {item.pickedProduct && (
