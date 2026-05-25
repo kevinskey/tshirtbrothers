@@ -120,6 +120,36 @@ export default function Footer() {
         </div>
       </div>
 
+      {/* Service-area cities — internal links so Google understands the
+          relationship between the city landing pages and crawls them. */}
+      <div className="border-t border-gray-800/60">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2.5">
+            Service Area
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            {[
+              { slug: 'atlanta',        name: 'Atlanta' },
+              { slug: 'fairburn',       name: 'Fairburn' },
+              { slug: 'tyrone',         name: 'Tyrone' },
+              { slug: 'peachtree-city', name: 'Peachtree City' },
+              { slug: 'fayetteville',   name: 'Fayetteville' },
+              { slug: 'newnan',         name: 'Newnan' },
+              { slug: 'college-park',   name: 'College Park' },
+              { slug: 'union-city',     name: 'Union City' },
+            ].map((c) => (
+              <Link
+                key={c.slug}
+                to={`/custom-shirts/${c.slug}`}
+                className="text-xs text-gray-400 hover:text-white transition-colors"
+              >
+                Custom Shirts {c.name}
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Bottom bar */}
       <div className="border-t border-gray-800">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">

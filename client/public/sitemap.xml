@@ -60,6 +60,47 @@
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
+  <!-- Local-city landing pages (one per service-area city). -->
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/atlanta</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/fairburn</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/tyrone</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/peachtree-city</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/fayetteville</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/newnan</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/college-park</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/custom-shirts/union-city</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
   <!-- Blog posts (published) -->
   <url>
     <loc>https://tshirtbrothers.com/blog/custom-t-shirt-printing-cost-atlanta-2026-price-guide</loc>
