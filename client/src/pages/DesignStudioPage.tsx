@@ -2835,6 +2835,26 @@ export default function DesignStudioPage() {
     '#111827', '#FFFFFF', '#EF4444', '#F97316', '#F59E0B', '#84CC16',
     '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899',
   ];
+  // When a shape element is currently selected, color/line/fill changes
+  // in the panel update that shape live. With nothing selected, the
+  // changes set defaults for the next shape the user drops. selectedEl
+  // is declared further down (after panel content), so we look the
+  // shape up directly from designElements here.
+  const selectedShape = designElements.find((e) => e.id === selectedElementId && e.type === 'shape') ?? null;
+  const selectedShapeId = selectedShape?.id ?? null;
+  const applyShapeStyle = (overrides: { color?: string; strokeWidth?: number; mode?: 'fill' | 'outline' }) => {
+    if (!selectedShape) return;
+    const isLine = selectedShape.shapeType === 'line';
+    const nextColor = overrides.color ?? shapeColor;
+    const nextWidth = overrides.strokeWidth ?? shapeStrokeWidth;
+    const nextMode = overrides.mode ?? shapeFillMode;
+    const useOutline = isLine || nextMode === 'outline';
+    updateElement(selectedShape.id, {
+      color: useOutline ? 'transparent' : nextColor,
+      strokeColor: useOutline ? nextColor : undefined,
+      strokeWidth: useOutline ? nextWidth : undefined,
+    });
+  };
   const shapesPanelContent = (
     <div className="p-4 space-y-5">
       {/* 1. Shape grid */}
@@ -2890,13 +2910,15 @@ export default function DesignStudioPage() {
       {/* 2. Color + fill mode */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Color</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Color {selectedShapeId && <span className="ml-1 text-blue-600 normal-case">· editing selection</span>}
+          </p>
           <div className="flex gap-1 rounded-full bg-gray-100 p-0.5">
             {(['fill', 'outline'] as const).map(mode => (
               <button
                 key={mode}
                 type="button"
-                onClick={() => setShapeFillMode(mode)}
+                onClick={() => { setShapeFillMode(mode); applyShapeStyle({ mode }); }}
                 className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition ${
                   shapeFillMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -2911,7 +2933,7 @@ export default function DesignStudioPage() {
             <button
               key={c}
               type="button"
-              onClick={() => setShapeColor(c)}
+              onClick={() => { setShapeColor(c); applyShapeStyle({ color: c }); }}
               aria-label={`Use color ${c}`}
               className={`relative h-7 w-full rounded-md border transition ${
                 shapeColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'
@@ -2924,7 +2946,7 @@ export default function DesignStudioPage() {
           <input
             type="color"
             value={shapeColor}
-            onChange={(e) => setShapeColor(e.target.value)}
+            onChange={(e) => { setShapeColor(e.target.value); applyShapeStyle({ color: e.target.value }); }}
             className="h-7 w-7 cursor-pointer rounded border border-gray-300"
             aria-label="Pick a custom color"
           />
@@ -2943,7 +2965,7 @@ export default function DesignStudioPage() {
           min={1}
           max={20}
           value={shapeStrokeWidth}
-          onChange={(e) => setShapeStrokeWidth(Number(e.target.value))}
+          onChange={(e) => { const w = Number(e.target.value); setShapeStrokeWidth(w); applyShapeStyle({ strokeWidth: w }); }}
           className="mt-1 w-full accent-blue-600"
         />
         <p className="mt-0.5 text-[10px] text-gray-400">Applies to outline shapes and the line tool.</p>
