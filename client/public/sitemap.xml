@@ -60,4 +60,45 @@
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
+  <!-- Blog posts (published) -->
+  <url>
+    <loc>https://tshirtbrothers.com/blog/custom-t-shirt-printing-cost-atlanta-2026-price-guide</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/custom-printing-in-south-atlanta-your-local-guide-to-tyrone-fairburn-and-beyond</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/screen-printing-vs-dtf-which-is-better-for-your-custom-t-shirts</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/custom-embroidery-vs-screen-printing-when-to-use-each</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/5-best-blank-t-shirts-for-custom-printing-in-2026</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/the-ultimate-guide-to-ordering-custom-t-shirts-for-your-school-fundraiser</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/family-reunion-t-shirt-design-screen-printing-guide-1775997561880</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://tshirtbrothers.com/blog/t-shirt-brothers-new-ai-enhanced-website-1776047843323</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
 </urlset>
