@@ -448,15 +448,15 @@ export default function DesignStudioPage() {
   // cache and the new (or freshly edited) row doesn't appear until the
   // admin clicks Re-render (which incidentally invalidates the cache).
   const studioQueryClient = useQueryClient();
-  // On mobile the welcome panel covers the whole canvas and hides the
-  // t-shirt. Default it to false on small screens so users see the product
-  // immediately and can access tools via the bottom toolbar.
-  const [showWelcome, setShowWelcome] = useState(() => {
-    if (loadState?.loadDesign) return false;
-    if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
-    return true;
-  });
-  const [activeTool, setActiveTool] = useState<ToolName>(null);
+  // Welcome panel is gone — the left rail (Upload, Add Text, Add Art,
+  // Shapes, AI Design, Change Color, Change Products) covers every option
+  // it offered, so showing both at once was pure redundancy. The state
+  // sticks around as a no-op so existing setShowWelcome(false) calls
+  // don't have to be unwound.
+  const [showWelcome, setShowWelcome] = useState(false);
+  // Open AI Design by default so new users land on the recommended path
+  // instead of a blank editor (skip when restoring a saved design).
+  const [activeTool, setActiveTool] = useState<ToolName>(loadState?.loadDesign ? null : 'ai');
   // AI Design panel state — bare prompt → image, no chat persona.
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiGenerating, setAiGenerating] = useState(false);
@@ -3884,53 +3884,6 @@ export default function DesignStudioPage() {
   ) : null;
 
   /* ---------------------------------------------------------------- */
-  /*  Render: Welcome Panel                                            */
-  /* ---------------------------------------------------------------- */
-
-  const welcomePanel = showWelcome ? (
-    <div className="fixed top-14 left-0 right-0 bottom-12 md:left-16 md:right-auto md:bottom-16 md:w-72 bg-white md:border-r border-gray-200 z-20 flex flex-col p-5 overflow-y-auto">
-      <h2 className="text-lg font-bold text-gray-900 mb-4">How do you want to start?</h2>
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        {[
-          { label: 'AI Design', icon: Sparkles, action: () => { setShowWelcome(false); setActiveTool('ai'); }, highlight: true },
-          { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
-          { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
-          { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
-          { label: 'Products', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
-          // Blank Canvas — admin entry, lets them compose art with no
-          // product backdrop so it can be saved straight to the Library.
-          ...(isAdmin ? [{ label: 'Blank', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setBlankCanvasMode(true); setActiveTool('text'); } }] : []),
-        ].map(item => (
-          <button
-            key={item.label}
-            type="button"
-            onClick={item.action}
-            className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 h-20 px-2 transition group ${
-              (item as { highlight?: boolean }).highlight
-                ? 'border-orange-400 bg-orange-50 hover:border-orange-500 hover:bg-orange-100'
-                : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50'
-            }`}
-          >
-            <item.icon className={`h-5 w-5 group-hover:scale-110 transition-transform ${
-              (item as { highlight?: boolean }).highlight ? 'text-orange-500' : 'text-blue-600'
-            }`} />
-            <span className="text-xs font-semibold text-gray-700 text-center leading-tight">{item.label}</span>
-          </button>
-        ))}
-      </div>
-      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-        <p className="text-xs font-bold text-gray-900 mb-1.5">Uploading anytime is simple</p>
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-600 mb-1">
-          <Move className="h-3 w-3 flex-shrink-0 text-blue-500" /> Drag &amp; drop anywhere
-        </div>
-        <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
-          <Upload className="h-3 w-3 flex-shrink-0 text-blue-500" /> Paste from clipboard
-        </div>
-      </div>
-    </div>
-  ) : null;
-
-  /* ---------------------------------------------------------------- */
   /*  Final Render                                                     */
   /* ---------------------------------------------------------------- */
 
@@ -3998,7 +3951,6 @@ export default function DesignStudioPage() {
       {leftToolbar}
       {bottomToolbar}
       {!showWelcome && !showTextEditor && toolPanel}
-      {!showTextEditor && welcomePanel}
       {textToolbar}
       {textSidePanel}
       {imageToolbar}
