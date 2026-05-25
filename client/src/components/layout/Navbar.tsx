@@ -166,13 +166,18 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Sub-nav row (desktop) — floating 3D pill so it reads as a
-          raised toolbar rather than a flat strip. */}
-      <div className="bg-white hidden md:block">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
-          <div className="flex justify-center">
+      {/* Sub-nav row — floating 3D pill. Visible at every breakpoint;
+          on mobile the pill is horizontally scrollable (overflow-x-auto
+          on the wrapper) so all 5 entries stay reachable from the
+          landing page without opening the hamburger. The pill itself
+          stays a single line — no wrap — to preserve the rounded shape. */}
+      <div className="bg-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
+          <div
+            className="flex justify-start sm:justify-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             <div
-              className="inline-flex items-center gap-4 sm:gap-6 px-6 py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
+              className="inline-flex flex-nowrap items-center gap-4 sm:gap-6 px-5 sm:px-6 py-1.5 sm:py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
               style={{
                 boxShadow:
                   'inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 1px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
