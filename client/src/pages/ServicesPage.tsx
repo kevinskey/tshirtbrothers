@@ -18,7 +18,7 @@ const badges = ['Lightning Fast', 'Quality Guaranteed', 'Local Experts'];
 
 const services = [
   {
-    title: 'Custom Apparel',
+    title: 'Support Local',
     description:
       'From single custom pieces to large team orders, we print vibrant, long-lasting designs on premium garments. Screen printing, DTG, and heat transfer options available for every budget and timeline.',
     icon: Shirt,

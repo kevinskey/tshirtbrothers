@@ -759,6 +759,51 @@ router.get('/holiday-promo', publicLimiter, async (req, res) => {
     if (cached) return res.json(cached);
 
     const today = new Date();
+
+    // ────────────────────────────────────────────────────────────────────
+    // Manual override: Memorial Day Week 2026 promo.
+    // Active May 18 – May 31, 2026 (Memorial Day is Mon May 25).
+    // Bypasses the AI generator and seeds the DB so the code redeems at
+    // checkout. Remove this block (or let the window pass) to fall back
+    // to AI-generated promos.
+    // ────────────────────────────────────────────────────────────────────
+    const memDayStart = new Date('2026-05-18T00:00:00Z');
+    const memDayEnd = new Date('2026-06-01T00:00:00Z');
+    if (today >= memDayStart && today < memDayEnd) {
+      const memDay = new Date('2026-05-25T00:00:00Z');
+      const daysUntil = Math.max(0, Math.ceil((memDay - today) / (24 * 60 * 60 * 1000)));
+      const promo = {
+        holiday: 'Memorial Day',
+        days_until: daysUntil,
+        headline: 'Memorial Day T-Shirt Sale',
+        subtext: '20% off custom T-shirts all week — honoring those who served.',
+        discount: '20% OFF T-SHIRTS',
+        code: 'TSBMEM2026',
+        emoji: '🇺🇸',
+        urgency: 'Sale ends Memorial Day weekend.',
+        cta: 'Get a Quote',
+      };
+      try {
+        await pool.query(
+          `INSERT INTO promotions (code, holiday, headline, subtext, discount_type, discount_value, expires_at, active, ai_generated)
+           VALUES ($1, $2, $3, $4, 'percent', 20, $5, TRUE, FALSE)
+           ON CONFLICT (code) DO UPDATE SET
+             holiday = EXCLUDED.holiday,
+             headline = EXCLUDED.headline,
+             subtext = EXCLUDED.subtext,
+             discount_type = EXCLUDED.discount_type,
+             discount_value = EXCLUDED.discount_value,
+             expires_at = EXCLUDED.expires_at,
+             active = TRUE`,
+          [promo.code, promo.holiday, promo.headline, promo.subtext, memDayEnd],
+        );
+      } catch (dbErr) {
+        console.error('[Holiday Promo] seed TSBMEM2026 failed:', dbErr.message);
+      }
+      cache.set(cacheKey, { value: promo, expires: Date.now() + 6 * 60 * 60 * 1000 });
+      return res.json(promo);
+    }
+
     const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
     const system = `You are a marketing expert for T-Shirt Brothers, a custom apparel printing shop.
