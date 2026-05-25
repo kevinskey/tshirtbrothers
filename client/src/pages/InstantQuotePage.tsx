@@ -528,20 +528,8 @@ export default function InstantQuotePage() {
       </section>
 
       <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl">
-        {/* ─── Sticky grand-total card ─── */}
-        <PriceCard
-          items={items}
-          calcs={calcQueries.map((q) => q.data || null)}
-          itemValidity={itemValidity}
-          loading={anyCalcLoading}
-          grandTotal={grandTotal}
-          grandQuantity={grandQuantity}
-          turnaroundDays={grandTurnaroundDays}
-          allValid={allItemsValid}
-        />
-
         {/* ─── Items ─── */}
-        <div className="mt-6 space-y-6">
+        <div className="space-y-6">
           {items.map((item, i) => (
             <ItemCard
               key={item.id}
@@ -580,8 +568,23 @@ export default function InstantQuotePage() {
           <Plus className="h-5 w-5" /> Add another product
         </button>
 
+        {/* ─── Grand-total card — last, right above the CTAs so the
+            customer sees the price they're committing to. ─── */}
+        <div className="mt-8">
+          <PriceCard
+            items={items}
+            calcs={calcQueries.map((q) => q.data || null)}
+            itemValidity={itemValidity}
+            loading={anyCalcLoading}
+            grandTotal={grandTotal}
+            grandQuantity={grandQuantity}
+            turnaroundDays={grandTurnaroundDays}
+            allValid={allItemsValid}
+          />
+        </div>
+
         {/* CTAs */}
-        <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
             onClick={() => setSaveOpen('save')}
