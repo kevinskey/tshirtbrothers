@@ -16,6 +16,15 @@ const PLACE_ID = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
 const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// Comma-separated list of author names to hide from the public block
+// (case-insensitive, leading/trailing whitespace trimmed). The aggregate
+// rating + total count still come straight from Google — this only
+// affects which individual review cards we render.
+const HIDDEN_AUTHORS = (process.env.GOOGLE_REVIEWS_HIDE_AUTHORS || 'Hazel Lucious')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+
 let cache = { fetchedAt: 0, payload: null };
 
 async function fetchGooglePlaceDetails() {
@@ -42,13 +51,12 @@ async function fetchGooglePlaceDetails() {
   const r = body.result || {};
   // Normalize to a small public shape — drop internal fields, never
   // expose the raw API key path or html_attributions to the client.
-  return {
-    name: r.name,
-    address: r.formatted_address,
-    rating: r.rating,
-    totalReviews: r.user_ratings_total,
-    profileUrl: r.url,
-    reviews: (r.reviews || []).map((rv) => ({
+  // Author-name filter removes reviewers we don't want on the public
+  // block (e.g. competitor / nuisance reviews). Aggregate count + rating
+  // are NOT adjusted — they come directly from Google's official totals.
+  const filteredReviews = (r.reviews || [])
+    .filter((rv) => !HIDDEN_AUTHORS.includes((rv.author_name || '').trim().toLowerCase()))
+    .map((rv) => ({
       author: rv.author_name,
       authorPhoto: rv.profile_photo_url,
       rating: rv.rating,
@@ -56,7 +64,14 @@ async function fetchGooglePlaceDetails() {
       relativeTime: rv.relative_time_description,
       // ISO timestamp from the unix seconds Google returns.
       time: rv.time ? new Date(rv.time * 1000).toISOString() : null,
-    })),
+    }));
+  return {
+    name: r.name,
+    address: r.formatted_address,
+    rating: r.rating,
+    totalReviews: r.user_ratings_total,
+    profileUrl: r.url,
+    reviews: filteredReviews,
   };
 }
 
