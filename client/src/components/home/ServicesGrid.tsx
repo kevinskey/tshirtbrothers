@@ -20,7 +20,7 @@ export default function ServicesGrid() {
     <section className="py-14 md:py-20">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <h2 className="font-display text-2xl md:text-3xl font-bold text-center mb-10">
-          Custom T-Shirts &amp; Products for Your Group
+          View our Catalogue
         </h2>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
