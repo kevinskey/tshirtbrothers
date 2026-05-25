@@ -90,7 +90,7 @@ export default function HeroSection() {
               className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl text-gray-900 leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              Support Local,
+              Support Local <span className="text-orange-500">Atlanta</span>,
               <span
                 className="block my-2 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-7xl xl:text-8xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
@@ -100,7 +100,7 @@ export default function HeroSection() {
               <span className="text-orange-500">Done Right.</span>
             </h1>
             <p className="mt-5 text-base sm:text-lg text-gray-600">
-              Local pickup in Fairburn, GA · Shipped nationwide.
+              Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
             </p>
 
             <div className="mt-8 sm:mt-10 flex items-stretch justify-center gap-2 sm:gap-3">
