@@ -1086,8 +1086,17 @@ export default function DesignStudioPage() {
   };
 
   // Download design as image
-  // Navigate to quote with design data pre-filled
-  const handleGetPrice = () => {
+  // Navigate to quote with design data pre-filled. Also capture a screenshot
+  // of the current canvas so the mockup the customer just designed stays
+  // visible on the quote page alongside the price.
+  const handleGetPrice = async () => {
+    let mockupUrl: string | null = null;
+    try {
+      mockupUrl = await captureSideScreenshot('front');
+      if (!mockupUrl) mockupUrl = await captureSideScreenshot('back');
+    } catch (err) {
+      console.warn('[Get Price] mockup screenshot failed:', err);
+    }
     navigate('/quote', {
       state: {
         fromDesignStudio: true,
@@ -1095,6 +1104,7 @@ export default function DesignStudioPage() {
         color: productColors[selectedColorIdx] || null,
         designElements,
         designImage: displayImage,
+        mockupUrl,
       },
     });
   };
