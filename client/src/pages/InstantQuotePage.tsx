@@ -783,7 +783,10 @@ function ItemCard({
   }
 
   return (
-    <div id={`item-card-${item.id}`} className="rounded-2xl border-2 border-orange-200 bg-white p-4 sm:p-6">
+    <div
+      id={`item-card-${item.id}`}
+      className="rounded-2xl border-2 border-orange-500 bg-white p-4 sm:p-6 shadow-sm shadow-orange-500/10"
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
@@ -863,11 +866,15 @@ function ItemCard({
                     type="button"
                     onClick={() => onPatchInputs({ qualityTier: q })}
                     className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
                     }`}
                   >
                     <div>{q}</div>
-                    {brandHint && <div className="text-[10px] mt-0.5 text-gray-500">{brandHint}</div>}
+                    {brandHint && (
+                      <div className={`text-[10px] mt-0.5 ${inputs.qualityTier === q ? 'text-orange-100' : 'text-gray-500'}`}>
+                        {brandHint}
+                      </div>
+                    )}
                   </button>
                 );
               })}
@@ -1034,7 +1041,7 @@ function ItemCard({
               >
                 {m.name}
                 {m.name === 'DTF' && (
-                  <span className="ml-1 italic text-xs text-gray-500">(most popular)</span>
+                  <span className={`ml-1 italic text-xs ${inputs.methodName === m.name ? 'text-orange-100' : 'text-gray-500'}`}>(most popular)</span>
                 )}
               </Chip>
             ))}
@@ -1050,7 +1057,7 @@ function ItemCard({
                 type="button"
                 onClick={() => onPatchInputs({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
                 className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
-                  inputs.locations[loc] ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                  inputs.locations[loc] ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
                 }`}
               >
                 {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
@@ -1071,7 +1078,7 @@ function ItemCard({
                   type="button"
                   onClick={() => onPatchInputs({ colorsPerLocation: n })}
                   className={`rounded-xl border-2 py-3 text-base font-bold transition ${
-                    inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                    inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
                   }`}
                 >
                   {n}
@@ -1089,21 +1096,21 @@ function ItemCard({
               type="button"
               onClick={() => onPatchInputs({ rush: false })}
               className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                !inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                !inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
               }`}
             >
               <div>Standard</div>
-              <div className="text-[10px] mt-0.5 text-gray-500">{options?.settings.standard_turnaround ?? 10} days</div>
+              <div className={`text-[10px] mt-0.5 ${!inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>{options?.settings.standard_turnaround ?? 10} days</div>
             </button>
             <button
               type="button"
               onClick={() => onPatchInputs({ rush: true })}
               className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                inputs.rush ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+                inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
               }`}
             >
               <div>Rush</div>
-              <div className="text-[10px] mt-0.5 text-gray-500">
+              <div className={`text-[10px] mt-0.5 ${inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>
                 1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
               </div>
             </button>
@@ -1553,8 +1560,8 @@ function Row({ label, sub, value, negative, bold }: { label: string; sub?: strin
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-600">{icon}</span>
+      <div className="flex items-center gap-2.5 mb-3">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-100 text-orange-700 ring-1 ring-orange-200">{icon}</span>
         <h2 className="font-display font-bold text-base sm:text-lg text-gray-900">{title}</h2>
       </div>
       {children}
@@ -1568,7 +1575,9 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       type="button"
       onClick={onClick}
       className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-        active ? 'border-orange-600 bg-orange-50 text-orange-700' : 'border-gray-200 hover:border-orange-400'
+        active
+          ? 'border-orange-600 bg-orange-600 text-white shadow-sm'
+          : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
       }`}
     >
       {children}
