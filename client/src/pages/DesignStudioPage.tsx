@@ -46,6 +46,7 @@ import {
   Heart,
   AlignCenter,
   Crop as CropIcon,
+  Tag,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -2198,19 +2199,9 @@ export default function DesignStudioPage() {
         >
           <Redo2 className="h-4 w-4" />
         </button>
-        {/* "Save" (customer design history) is irrelevant in admin mockup
-            modes — hide it so the toolbar has one save action only. */}
-        {!(newMockupMode || editMockupId || attachToInvoiceId) && (
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="hidden sm:flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
-          >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
-        )}
+        {/* Header "Save" button removed — the bottom bar's Save|Share
+            button is the single customer-mode save action. Admin
+            mockup-save variants below remain unique. */}
         {/* Two-state save: edit overrides create so we update in place
             instead of spawning a new mockup row each save. */}
         {attachToInvoiceId && !editMockupId && (
@@ -3480,7 +3471,7 @@ export default function DesignStudioPage() {
           onClick={handleGetPrice}
           className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
         >
-          <Save className="h-4 w-4" /> Get Price
+          <Tag className="h-4 w-4" /> Get Price
         </button>
       </div>
     </div>
