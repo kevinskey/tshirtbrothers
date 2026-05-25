@@ -89,11 +89,11 @@ export default function Navbar() {
 
             {/* Right side actions */}
             <div className="flex items-center gap-1 sm:gap-3 ml-auto flex-shrink-0">
-              {/* Phone — desktop only */}
-              <div className="relative hidden md:block" ref={phoneBtnRef}>
-                <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors px-2 py-2">
-                  <Phone className="h-4 w-4" />
-                  <span className="hidden lg:inline">(470) 622-1392</span>
+              {/* Phone — icon-only on mobile, icon + number on md+. */}
+              <div className="relative" ref={phoneBtnRef}>
+                <button type="button" onClick={() => setPhoneMenu(p => !p)} aria-label="Call or text us" className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors p-2 md:px-2 md:py-2">
+                  <Phone className="h-5 w-5 md:h-4 md:w-4" />
+                  <span className="hidden md:inline">(470) 622-1392</span>
                 </button>
                 {phoneMenu && (() => {
                   const r = phoneBtnRef.current?.getBoundingClientRect();
