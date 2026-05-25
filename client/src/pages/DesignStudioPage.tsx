@@ -3052,7 +3052,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-24 md:pb-20 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-16 md:pb-16 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -3067,7 +3067,7 @@ export default function DesignStudioPage() {
           print rectangle. Generous pb-64 on main gives the scroll container
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
-      <div className="relative w-full max-w-none md:max-w-4xl lg:max-w-5xl xl:max-w-6xl px-0 md:px-6 grid place-items-center" ref={canvasRef}>
+      <div className="relative w-full max-w-none md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-0 md:px-4 grid place-items-center" ref={canvasRef}>
         {/* Product backdrop — fills a square area at the wrapper width.
             Print-zone overlay is positioned in % of THIS box, not of the
             old canvasInches-aspect design surface. */}
@@ -3090,7 +3090,7 @@ export default function DesignStudioPage() {
               ref={productImgRef}
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
-              className="absolute inset-0 w-full h-full object-contain p-0 md:p-4 pointer-events-none"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
               draggable={false}
             />
           ) : blankCanvasMode ? (
