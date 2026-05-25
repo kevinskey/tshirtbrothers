@@ -3323,8 +3323,10 @@ export default function DesignStudioPage() {
       </div>
       </div>
 
-      {/* View Switcher — left column, collapses once a side is chosen */}
-      {selectedProduct && frontImage && (
+      {/* View Switcher — left column, collapses once a side is chosen.
+          Hidden during the welcome panel so it doesn't crowd the start
+          menu. */}
+      {selectedProduct && frontImage && !showWelcome && (
         viewSwitcherOpen ? (
           <div className="absolute left-2 top-20 md:top-24 z-20 flex flex-col gap-2 bg-white/90 backdrop-blur rounded-xl shadow-lg border border-gray-200 p-1.5">
             {(['front', 'back', 'sleeve'] as const).map(view => (
@@ -3886,43 +3888,43 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const welcomePanel = showWelcome ? (
-    <div className="fixed top-14 left-0 right-0 bottom-12 md:left-16 md:right-auto md:bottom-16 md:w-80 bg-white md:border-r border-gray-200 z-20 flex flex-col p-6 overflow-y-auto">
-      <h2 className="text-xl font-bold text-gray-900 mb-6">How do you want to start?</h2>
-      <div className="grid grid-cols-2 gap-3 mb-6">
+    <div className="fixed top-14 left-0 right-0 bottom-12 md:left-16 md:right-auto md:bottom-16 md:w-72 bg-white md:border-r border-gray-200 z-20 flex flex-col p-5 overflow-y-auto">
+      <h2 className="text-lg font-bold text-gray-900 mb-4">How do you want to start?</h2>
+      <div className="grid grid-cols-2 gap-2 mb-4">
         {[
           { label: 'AI Design', icon: Sparkles, action: () => { setShowWelcome(false); setActiveTool('ai'); }, highlight: true },
           { label: 'Uploads', icon: Upload, action: () => { setShowWelcome(false); setActiveTool('upload'); } },
           { label: 'Add Text', icon: Type, action: () => { setShowWelcome(false); setActiveTool('text'); } },
           { label: 'Add Art', icon: Image, action: () => { setShowWelcome(false); setActiveTool('art'); } },
-          { label: 'Change\nProducts', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
+          { label: 'Products', icon: Shirt, action: () => { setShowWelcome(false); setActiveTool('products'); } },
           // Blank Canvas — admin entry, lets them compose art with no
           // product backdrop so it can be saved straight to the Library.
-          ...(isAdmin ? [{ label: 'Blank\nCanvas', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setBlankCanvasMode(true); setActiveTool('text'); } }] : []),
+          ...(isAdmin ? [{ label: 'Blank', icon: FolderOpen, action: () => { setShowWelcome(false); setSelectedProduct(null); setUserPickedColor(false); setSelectedColorIdx(0); setBlankCanvasMode(true); setActiveTool('text'); } }] : []),
         ].map(item => (
           <button
             key={item.label}
             type="button"
             onClick={item.action}
-            className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-4 transition group ${
+            className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border-2 h-20 px-2 transition group ${
               (item as { highlight?: boolean }).highlight
                 ? 'border-orange-400 bg-orange-50 hover:border-orange-500 hover:bg-orange-100'
                 : 'border-gray-200 hover:border-blue-500 hover:bg-blue-50'
             }`}
           >
-            <item.icon className={`h-8 w-8 group-hover:scale-110 transition-transform ${
+            <item.icon className={`h-5 w-5 group-hover:scale-110 transition-transform ${
               (item as { highlight?: boolean }).highlight ? 'text-orange-500' : 'text-blue-600'
             }`} />
-            <span className="text-sm font-semibold text-gray-700 whitespace-pre-line text-center">{item.label}</span>
+            <span className="text-xs font-semibold text-gray-700 text-center leading-tight">{item.label}</span>
           </button>
         ))}
       </div>
-      <div className="mt-auto">
-        <p className="text-sm font-bold text-gray-900 mb-2">Uploading anytime is simple!</p>
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-1">
-          <Move className="h-4 w-4 text-blue-500" /> Drag and drop anywhere
+      <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+        <p className="text-xs font-bold text-gray-900 mb-1.5">Uploading anytime is simple</p>
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-600 mb-1">
+          <Move className="h-3 w-3 flex-shrink-0 text-blue-500" /> Drag &amp; drop anywhere
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Upload className="h-4 w-4 text-blue-500" /> Copy and paste from clipboard
+        <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+          <Upload className="h-3 w-3 flex-shrink-0 text-blue-500" /> Paste from clipboard
         </div>
       </div>
     </div>
