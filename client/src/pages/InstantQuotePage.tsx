@@ -796,41 +796,6 @@ function ItemCard({
           </Section>
         )}
 
-        {/* Upload */}
-        <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
-          <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
-            <Upload className="h-5 w-5" />
-            <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
-            <input
-              type="file"
-              multiple
-              accept="image/*,.pdf,.svg"
-              className="hidden"
-              onChange={(e) => { onUploadFiles(e.target.files); e.target.value = ''; }}
-            />
-          </label>
-          <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
-
-          {item.designs.length > 0 && (
-            <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {item.designs.map((d, i) => (
-                <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
-                  <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
-                  <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveDesign(i)}
-                    className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
-                    aria-label={`Remove ${d.filename}`}
-                  >
-                    <XIcon className="h-3.5 w-3.5" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-
         {/* Quantity — one-size garments (hats) get a single input; others
             get the per-size grid restricted to the product's actual sizes. */}
         <Section
@@ -909,6 +874,42 @@ function ItemCard({
               ? `Colors shown are what this ${noun} comes in.`
               : `Other colors available — we'll match it on your final mockup.`}
           </p>
+        </Section>
+
+        {/* Upload — comes after Type/Size/Color so the customer picks what
+            they're getting before adding artwork. */}
+        <Section icon={<Upload className="h-5 w-5" />} title="Upload your graphic">
+          <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
+            <Upload className="h-5 w-5" />
+            <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
+            <input
+              type="file"
+              multiple
+              accept="image/*,.pdf,.svg"
+              className="hidden"
+              onChange={(e) => { onUploadFiles(e.target.files); e.target.value = ''; }}
+            />
+          </label>
+          <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
+
+          {item.designs.length > 0 && (
+            <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {item.designs.map((d, i) => (
+                <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
+                  <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
+                  <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveDesign(i)}
+                    className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
+                    aria-label={`Remove ${d.filename}`}
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </Section>
 
         {/* Print method */}
