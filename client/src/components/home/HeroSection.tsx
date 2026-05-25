@@ -87,12 +87,12 @@ export default function HeroSection() {
           {/* Headline + CTAs */}
           <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center">
             <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl text-gray-900 leading-[1.05] tracking-tight"
+              className="text-3xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl text-gray-900 leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
               Support Local,
               <span
-                className="block my-1 sm:my-2 text-3xl sm:text-4xl md:text-5xl text-gray-900"
+                className="block my-2 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-7xl xl:text-8xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
               >
                 Custom Printing
