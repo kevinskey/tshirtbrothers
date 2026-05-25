@@ -617,7 +617,11 @@ export default function DesignStudioPage() {
   const [librarySaveOpen, setLibrarySaveOpen] = useState(false);
   // Set when admin chose 'Blank Canvas' from the welcome panel. Suppresses
   // the customer-facing 'Select a product to start designing' empty state.
-  const [blankCanvasMode, setBlankCanvasMode] = useState(false);
+  // blankCanvasMode was toggled from the now-removed welcome panel's
+  // admin-only "Blank" button. The state stays in place (always false)
+  // so the existing conditional render keeps working — the entry point
+  // can be re-added to the left rail if needed.
+  const [blankCanvasMode] = useState(false);
   const [librarySaveName, setLibrarySaveName] = useState('');
   const [librarySaveCategory, setLibrarySaveCategory] = useState('general');
   const [librarySaving, setLibrarySaving] = useState(false);
