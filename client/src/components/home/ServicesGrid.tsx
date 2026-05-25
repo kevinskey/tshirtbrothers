@@ -17,7 +17,7 @@ const categories = [
 
 export default function ServicesGrid() {
   return (
-    <section className="py-14 md:py-20">
+    <section className="py-14 md:py-20 -mt-[45px]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <h2 className="font-display text-2xl md:text-3xl font-bold text-center mb-10">
           View our Catalogue
