@@ -33,6 +33,7 @@ import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import CityLandingPage from '@/pages/CityLandingPage';
 import VerticalLandingPage from '@/pages/VerticalLandingPage';
+import AboutPage from '@/pages/AboutPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
@@ -58,6 +59,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/services" element={<ServicesPage />} />
+          <Route path="/about" element={<AboutPage />} />
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).

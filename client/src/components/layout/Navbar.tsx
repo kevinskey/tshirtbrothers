@@ -23,6 +23,7 @@ const subNavEntries: NavEntry[] = [
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
   { label: 'Services', href: '/services' },
+  { label: 'About', href: '/about' },
 ];
 
 export default function Navbar() {
