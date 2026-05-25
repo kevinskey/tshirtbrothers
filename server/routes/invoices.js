@@ -268,7 +268,7 @@ router.get('/:id/pdf', async (req, res, next) => {
     doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
       .text('6010 Renaissance Parkway', 50, 78)
       .text('Fairburn, GA 30213', 50, 90)
-      .text('(470) 622-4845', 50, 102);
+      .text('(470) 622-1392', 50, 102);
     doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND_DARK).text('INVOICE', 400, 50, { align: 'right' });
     doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(inv.invoice_number, 400, 78, { align: 'right' });
     if (isPaid) {

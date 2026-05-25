@@ -24,11 +24,11 @@ export default function QuoteCTA() {
             <ArrowRight className="h-4 w-4" />
           </Link>
           <a
-            href="tel:+14706224845"
+            href="tel:+14706221392"
             className="inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-900 font-semibold px-6 py-3.5 rounded-lg border border-gray-200 transition-colors text-base"
           >
             <Phone className="h-4 w-4" />
-            (470) 622-4845
+            (470) 622-1392
           </a>
         </div>
 

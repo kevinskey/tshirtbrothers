@@ -86,8 +86,8 @@ export async function smsStatusUpdateToCustomer(quote, newStatus) {
   if (!phone) return;
   const messages = {
     approved: `Great news! Your TShirt Brothers order has been approved and is in production. We'll notify you when it's ready!`,
-    completed: `Your TShirt Brothers order is complete and ready for pickup/delivery! Contact us at (470) 622-4845.`,
-    rejected: `We have an update on your TShirt Brothers quote. Please check your email or call us at (470) 622-4845.`,
+    completed: `Your TShirt Brothers order is complete and ready for pickup/delivery! Contact us at (470) 622-1392.`,
+    rejected: `We have an update on your TShirt Brothers quote. Please check your email or call us at (470) 622-1392.`,
   };
   const msg = messages[newStatus];
   if (msg) await sendSMS(phone, msg);

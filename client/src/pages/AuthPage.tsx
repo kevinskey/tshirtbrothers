@@ -233,7 +233,7 @@ export default function AuthPage() {
 
         <p className="text-center text-[10px] text-gray-400 mt-4">
           By creating an account you agree to our terms of service.
-          <br />Questions? Call <a href="tel:+14706224845" className="text-orange-500">(470) 622-4845</a>
+          <br />Questions? Call <a href="tel:+14706221392" className="text-orange-500">(470) 622-1392</a>
         </p>
       </div>
       </div>

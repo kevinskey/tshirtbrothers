@@ -93,7 +93,7 @@ export default function Navbar() {
               <div className="relative hidden md:block" ref={phoneBtnRef}>
                 <button type="button" onClick={() => setPhoneMenu(p => !p)} className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors px-2 py-2">
                   <Phone className="h-4 w-4" />
-                  <span className="hidden lg:inline">(470) 622-4845</span>
+                  <span className="hidden lg:inline">(470) 622-1392</span>
                 </button>
                 {phoneMenu && (() => {
                   const r = phoneBtnRef.current?.getBoundingClientRect();
@@ -103,8 +103,8 @@ export default function Navbar() {
                     <>
                       <div className="fixed inset-0 z-[9998]" onClick={() => setPhoneMenu(false)} />
                       <div className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]" style={{ top, right }}>
-                        <a href="tel:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
-                        <a href="sms:+14706224845" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
+                        <a href="tel:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
+                        <a href="sms:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
                       </div>
                     </>,
                     document.body,
@@ -278,12 +278,12 @@ export default function Navbar() {
           })}
 
           <a
-            href="sms:+14706224845"
+            href="sms:+14706221392"
             className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
             onClick={() => setMobileOpen(false)}
           >
             <MessageCircle className="h-4 w-4" />
-            Text (470) 622-4845
+            Text (470) 622-1392
           </a>
 
           {/* Account section */}

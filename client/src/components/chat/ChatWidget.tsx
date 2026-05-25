@@ -418,7 +418,7 @@ export default function ChatWidget() {
     } catch (err) {
       setMessages((m) => [...m, {
         role: 'assistant',
-        content: "Sorry, I'm having trouble right now. Please call (470) 622-4845 or email kevin@tshirtbrothers.com.",
+        content: "Sorry, I'm having trouble right now. Please call (470) 622-1392 or email kevin@tshirtbrothers.com.",
       }]);
     } finally {
       setLoading(false);

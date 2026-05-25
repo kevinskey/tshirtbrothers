@@ -85,7 +85,7 @@ export default function InvoiceViewPage() {
         <div className="flex items-start justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">TShirt Brothers</h1>
-            <p className="text-xs text-gray-500">6010 Renaissance Parkway<br />Fairburn, GA 30213<br />(470) 622-4845</p>
+            <p className="text-xs text-gray-500">6010 Renaissance Parkway<br />Fairburn, GA 30213<br />(470) 622-1392</p>
           </div>
           <div className="text-right">
             <h2 className="text-2xl font-bold text-gray-900">INVOICE</h2>

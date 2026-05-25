@@ -85,7 +85,7 @@ async function callDeepSeek({ system, user, responseFormat, temperature = 0.7, m
 const TSB_KNOWLEDGE = `You are a friendly, pleasant assistant for T-Shirt Brothers, a custom apparel printing shop in Fairburn, GA.
 
 COMPANY:
-- Phone: (470) 622-4845
+- Phone: (470) 622-1392
 - Email: kevin@tshirtbrothers.com
 - Address: 6010 Renaissance Parkway, Fairburn, GA 30213 — inside the Dylan Apartment Complex, Building 7000, Suites H-K. The facility is secure, so customers should CALL when they arrive.
 - Hours: 8am-8pm every day EXCEPT Sunday (closed Sundays)
@@ -138,7 +138,7 @@ WEBSITE / CHAT WIDGET QUESTIONS:
 - "How do I unblock the microphone?" / "unblock mic" / "allow microphone" / "mic not working" →
   "Tap the 🔒 lock icon next to the web address, find Microphone, and switch it to Allow — then reload the page. On iPhone, go to Settings → Safari → Microphone. Or just type your question to me — works great either way!"
 - "How does this chat work?" → "I'm the T-Shirt Brothers AI assistant. Ask me anything about our printing services, turnaround, or policies. For exact pricing, click the GET A FREE QUOTE button."
-- "Are you a real person?" → Be honest: "I'm an AI assistant here to answer quick questions. For anything complex, call (470) 622-4845 to talk to a real person."
+- "Are you a real person?" → Be honest: "I'm an AI assistant here to answer quick questions. For anything complex, call (470) 622-1392 to talk to a real person."
 - "Start over" / "reset" / "new conversation" → "No problem! Tap the Start Over button at the bottom of the chat."
 
 COMMON QUESTIONS & ANSWERS:
@@ -168,7 +168,7 @@ TONE & STYLE:
 - NEVER quote exact prices. Instead, direct customers to click the "GET A FREE QUOTE" button
 - NEVER type out URLs like "tshirtbrothers.com/quote" or "/quote" in your replies. Always say: click the "GET A FREE QUOTE" button (use that exact phrase in quotes or bold)
 - Similarly, for design help, tell them to click the "DESIGN STUDIO" button — don't type the URL
-- If someone asks about something we don't offer, politely redirect or suggest they call (470) 622-4845
+- If someone asks about something we don't offer, politely redirect or suggest they call (470) 622-1392
 - When talking about rush orders, mention the 1-week cutoff
 - When talking about embroidery, always mention the stitch count + digitizing requirement
 - Preferred phrasings:
@@ -313,7 +313,7 @@ router.post('/faq', publicLimiter, async (req, res) => {
           '\n\nInstructions when answering catalog questions:\n' +
           '- If results match what they asked about: confirm enthusiastically in 1-2 short sentences. DO NOT list products in your text reply — they will be shown visually as cards below your message.\n' +
           '- Tell them to click the "GET A FREE QUOTE" button for pricing.\n' +
-          "- If nothing matches: say we can likely still source it and direct them to the GET A FREE QUOTE button or to call (470) 622-4845.";
+          "- If nothing matches: say we can likely still source it and direct them to the GET A FREE QUOTE button or to call (470) 622-1392.";
       } else {
         catalogContext = '\n\nCATALOG SEARCH: No exact matches in our current catalog, but we can often special-order items from our S&S Activewear supplier. Direct them to the GET A FREE QUOTE button or to call us.';
       }
@@ -345,7 +345,7 @@ router.post('/faq', publicLimiter, async (req, res) => {
       max_tokens: 500,
     });
 
-    const reply = result.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response. Please call us at (470) 622-4845.";
+    const reply = result.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response. Please call us at (470) 622-1392.";
 
     if (history.length === 0 && !catalogContext) cacheSet(cacheKey, reply);
 
@@ -354,7 +354,7 @@ router.post('/faq', publicLimiter, async (req, res) => {
   } catch (err) {
     console.error('[DeepSeek FAQ] error:', err.message);
     res.status(200).json({
-      reply: "I'm having trouble right now. Please call us at (470) 622-4845 or email kevin@tshirtbrothers.com and we'll help you directly!",
+      reply: "I'm having trouble right now. Please call us at (470) 622-1392 or email kevin@tshirtbrothers.com and we'll help you directly!",
       fallback: true,
     });
   }

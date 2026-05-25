@@ -334,7 +334,7 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
 
     ${primaryButton('Pay Remaining Balance', payUrl)}
 
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">If you have questions, reply to this email or call us at (470) 622-4845.</p>
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">If you have questions, reply to this email or call us at (470) 622-1392.</p>
   `;
 
   try {
@@ -389,7 +389,7 @@ export async function sendPaidInvoiceReceipt(invoice) {
 
     ${primaryButton('View / Print Invoice', invoiceUrl)}
 
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Keep this email as your receipt. Questions? Reply to this email or call (470) 622-4845.</p>
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Keep this email as your receipt. Questions? Reply to this email or call (470) 622-1392.</p>
   `;
   try {
     await resend.emails.send({
@@ -446,7 +446,7 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
     <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
     ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notes:</strong> ${mockup.notes}</p>` : ''}
     ${primaryButton('View & Approve Mockup', approveUrl)}
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
 
   await resend.emails.send({
@@ -482,7 +482,7 @@ export async function sendMockupForApproval(mockup, approveUrl) {
 
     ${primaryButton('View & Approve Mockup', approveUrl)}
 
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
 
   try {

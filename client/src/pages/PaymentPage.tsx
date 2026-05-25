@@ -240,7 +240,7 @@ export function PaymentSuccess() {
             <Link to="/" className="text-sm text-gray-500 hover:text-gray-700">← Return to TShirt Brothers</Link>
           </div>
 
-          <p className="text-center text-xs text-gray-400 mt-6">Questions? Call (470) 622-4845 or email kevin@tshirtbrothers.com</p>
+          <p className="text-center text-xs text-gray-400 mt-6">Questions? Call (470) 622-1392 or email kevin@tshirtbrothers.com</p>
         </div>
       </div>
     </Layout>
@@ -262,7 +262,7 @@ export function PaymentCancel() {
             <Link to="/" className="px-5 py-2.5 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition">
               Return Home
             </Link>
-            <a href="tel:4706224845" className="px-5 py-2.5 border border-gray-200 rounded-lg text-sm font-semibold hover:bg-gray-50 transition">
+            <a href="tel:4706221392" className="px-5 py-2.5 border border-gray-200 rounded-lg text-sm font-semibold hover:bg-gray-50 transition">
               Call Us
             </a>
           </div>

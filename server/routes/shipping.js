@@ -18,7 +18,7 @@ const FROM_ADDRESS = {
   state: 'GA',
   zip: '30213',
   country: 'US',
-  phone: '4706224845',
+  phone: '4706221392',
   email: 'kevin@tshirtbrothers.com',
 };
 
