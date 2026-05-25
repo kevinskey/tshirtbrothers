@@ -311,6 +311,34 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
 }
 
 /**
+ * Sends a "leave us a Google review" follow-up email when an order is
+ * marked completed. Designed to fire ONCE per quote — caller checks the
+ * review_request_sent_at column before invoking.
+ */
+export async function sendReviewRequestEmail(quote) {
+  const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
+  const reviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Loved your order? Tell Google! ⭐⭐⭐⭐⭐</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Now that your order is in your hands, would you take 30 seconds to leave us a quick Google review? It's the single most helpful thing you can do for a small business — and it helps other folks in Atlanta find us.</p>
+    ${primaryButton('Leave a Google Review ⭐', reviewUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Not happy with your order? Just reply to this email and we'll make it right. — Kevin</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: 'Quick favor — 30-second Google review? · TShirt Brothers',
+      html: baseLayout('Leave Us a Review', body),
+    });
+    console.log(`[Email] Review request sent to ${quote.customer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send review request:', err);
+  }
+}
+
+/**
  * Sends balance payment request to customer.
  */
 export async function sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue }) {

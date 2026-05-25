@@ -93,6 +93,18 @@ export async function smsStatusUpdateToCustomer(quote, newStatus) {
   if (msg) await sendSMS(phone, msg);
 }
 
+// Follow-up: ask the customer to leave a Google review after their order
+// is marked completed. Caller is responsible for ensuring this only fires
+// once per order (see quotes.review_request_sent_at).
+export async function smsReviewRequest(quote) {
+  const phone = quote.customer_phone;
+  if (!phone) return;
+  const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
+  const url = `https://search.google.com/local/writereview?placeid=${placeId}`;
+  const msg = `Thanks for the order from TShirt Brothers! If you loved it, would you take 30 sec to leave a Google review? ${url} (Reply STOP to opt out.)`;
+  await sendSMS(phone, msg);
+}
+
 // Send a paid-invoice receipt via SMS
 export async function smsInvoiceReceiptToCustomer(invoice) {
   const phone = invoice.customer_phone;

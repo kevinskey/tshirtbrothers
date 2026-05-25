@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS quotes (
   estimated_price DECIMAL(10, 2),
   status VARCHAR(50) DEFAULT 'pending',
   notes TEXT,
+  -- Timestamp of when the auto "leave us a Google review" email + SMS
+  -- fired. NULL = not yet sent. Used to dedupe so flipping status to
+  -- completed twice doesn't re-spam the customer.
+  review_request_sent_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

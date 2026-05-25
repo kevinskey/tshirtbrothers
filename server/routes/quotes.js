@@ -8,12 +8,14 @@ import {
   sendQuoteAcceptedNotification,
   sendQuoteStatusUpdate,
   sendBalanceDueToCustomer,
+  sendReviewRequestEmail,
 } from '../services/email.js';
 import {
   smsNewQuoteToAdmin,
   smsQuotePriceToCustomer,
   smsQuoteAcceptedToAdmin,
   smsStatusUpdateToCustomer,
+  smsReviewRequest,
 } from '../services/sms.js';
 
 import { uploadObject } from '../services/spaces.js';
@@ -605,6 +607,26 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (['approved', 'completed', 'rejected'].includes(status)) {
       sendQuoteStatusUpdate(quote, status).catch(() => {});
       smsStatusUpdateToCustomer(quote, status).catch(() => {});
+    }
+
+    // Auto review request — fires once per quote when the order is
+    // completed. Dedupe via review_request_sent_at: an admin who flips
+    // status to completed again (e.g. fixing a typo) won't re-send.
+    if (status === 'completed' && !quote.review_request_sent_at) {
+      (async () => {
+        try {
+          await Promise.all([
+            sendReviewRequestEmail(quote).catch(() => {}),
+            smsReviewRequest(quote).catch(() => {}),
+          ]);
+          await pool.query(
+            'UPDATE quotes SET review_request_sent_at = NOW() WHERE id = $1',
+            [quote.id],
+          );
+        } catch (err) {
+          console.error('[review-request] failed:', err.message);
+        }
+      })();
     }
 
     res.json(quote);
