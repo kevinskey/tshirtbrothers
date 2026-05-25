@@ -12,9 +12,9 @@ import {
 // hides the broken <img> and the styled gradient placeholder shows.
 const CDN = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com';
 const PHOTOS = {
-  storefront: `${CDN}/about-storefront.jpg`,
+  storefront: `${CDN}/about-storefront.png`,
   shopInterior: `${CDN}/about-shop-interior.jpg`,
-  pressInAction: `${CDN}/about-press.jpg`,
+  pressInAction: `${CDN}/about-press.png`,
   embroideryMachine: `${CDN}/about-embroidery.jpg`,
   kevin: `${CDN}/about-kevin.jpg`,
   finishedWork: `${CDN}/about-finished-work.jpg`,
