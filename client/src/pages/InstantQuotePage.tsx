@@ -91,6 +91,59 @@ const COLOR_OPTIONS: readonly string[] = [
   'Orange', 'Yellow', 'Pink', 'Sand', 'Brown',
 ];
 
+// Hex fallbacks for the named palette when the catalog product doesn't
+// supply hex values. Keys are lowercased color names.
+const NAMED_COLOR_HEX: Record<string, string> = {
+  black: '#1a1a1a',
+  white: '#ffffff',
+  navy: '#1c2841',
+  'heather gray': '#a8a9ad',
+  'heather grey': '#a8a9ad',
+  gray: '#8e8e8e',
+  grey: '#8e8e8e',
+  charcoal: '#36454f',
+  red: '#b22234',
+  maroon: '#800000',
+  royal: '#2945a3',
+  'royal blue': '#2945a3',
+  forest: '#1e5132',
+  'forest green': '#1e5132',
+  'kelly green': '#4cbb17',
+  kelly: '#4cbb17',
+  green: '#1e8449',
+  purple: '#6b3fa0',
+  orange: '#ed6d2f',
+  yellow: '#f7d800',
+  gold: '#d4af37',
+  pink: '#f4a3b6',
+  'hot pink': '#e91e63',
+  sand: '#c2b280',
+  natural: '#e8dcc4',
+  brown: '#5d4037',
+  tan: '#c19a6b',
+  khaki: '#bdb76b',
+  cream: '#f5f5dc',
+  silver: '#c0c0c0',
+};
+
+function hexFor(name: string): string {
+  const key = name.trim().toLowerCase();
+  if (NAMED_COLOR_HEX[key]) return NAMED_COLOR_HEX[key];
+  if (name.startsWith('#') && /^#[0-9a-f]{3,8}$/i.test(name)) return name;
+  return '#cccccc';
+}
+
+// Decide whether the checkmark on a selected swatch should be dark or
+// light for legibility. Uses the standard luminance formula.
+function isLightHex(hex: string): boolean {
+  const h = hex.replace('#', '');
+  if (h.length < 6) return true;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 186;
+}
+
 const DEFAULT_INPUTS: Inputs = {
   sizes: [
     { size: 'S', quantity: 0 }, { size: 'M', quantity: 0 },
@@ -161,16 +214,26 @@ function availableSizesFor(
   return STANDARD_SHIRT_SIZES;
 }
 
-// Same idea for colors. products.colors can be ["Black","Navy",...] or
-// [{hex,name},...] — normalize to a string list of names.
-function availableColorsFor(product: CatalogProduct | null): string[] {
+// Same idea for colors, but return name+hex pairs so the UI can render
+// real swatches. products.colors can arrive as ["Black",...], ["#000",...],
+// or [{hex,name},...] — normalize all three.
+type ColorOption = { name: string; hex: string };
+function availableColorsFor(product: CatalogProduct | null): ColorOption[] {
   if (product?.colors && Array.isArray(product.colors) && product.colors.length > 0) {
-    const names = product.colors
-      .map((c) => (typeof c === 'string' ? c : (c?.name || c?.hex || '')))
-      .filter((s): s is string => !!s);
-    if (names.length > 0) return names;
+    const list = product.colors
+      .map((c): ColorOption | null => {
+        if (typeof c === 'string') {
+          if (!c.trim()) return null;
+          return { name: c, hex: hexFor(c) };
+        }
+        const name = c?.name || c?.hex || '';
+        if (!name) return null;
+        return { name, hex: c?.hex || hexFor(name) };
+      })
+      .filter((c): c is ColorOption => c !== null);
+    if (list.length > 0) return list;
   }
-  return [...COLOR_OPTIONS];
+  return COLOR_OPTIONS.map((name) => ({ name, hex: hexFor(name) }));
 }
 
 // Reshape the sizes array to match the target size list (from the picked
@@ -266,9 +329,10 @@ export default function InstantQuotePage() {
     if (!urlProductSyncDone && urlCatalogProduct) {
       const mapped = categoryToGarmentName(urlCatalogProduct.category);
       const colors = availableColorsFor(urlCatalogProduct);
+      const colorNames = colors.map((c) => c.name);
       setItems((prev) => prev.map((it, i) => {
         if (i !== 0) return it;
-        const nextColor = colors.includes(it.inputs.color) ? it.inputs.color : (colors[0] || it.inputs.color);
+        const nextColor = colorNames.includes(it.inputs.color) ? it.inputs.color : (colorNames[0] || it.inputs.color);
         return {
           ...it,
           pickedProduct: urlCatalogProduct,
@@ -547,9 +611,10 @@ export default function InstantQuotePage() {
             // color isn't offered by this product, swap to the first one.
             const mapped = categoryToGarmentName(p.category);
             const colors = availableColorsFor(p);
+            const colorNames = colors.map((c) => c.name);
             setItems((prev) => prev.map((it) => {
               if (it.id !== productPickerItemId) return it;
-              const nextColor = colors.includes(it.inputs.color) ? it.inputs.color : (colors[0] || it.inputs.color);
+              const nextColor = colorNames.includes(it.inputs.color) ? it.inputs.color : (colorNames[0] || it.inputs.color);
               return {
                 ...it,
                 pickedProduct: p,
@@ -860,19 +925,43 @@ function ItemCard({
           </div>
         </Section>
 
-        {/* Color */}
+        {/* Color — small swatches using each color's actual hex from the
+            picked product (or the named-palette fallback). */}
         <Section icon={<span className="text-xl">🎨</span>} title={`${capitalize(noun)} color`}>
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {colorList.map((c) => (
-              <Chip key={c} active={inputs.color === c} onClick={() => onPatchInputs({ color: c })}>
-                {c}
-              </Chip>
-            ))}
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
+            {colorList.map((c) => {
+              const active = inputs.color === c.name;
+              const isWhiteish = c.hex.toLowerCase() === '#ffffff' || c.hex.toLowerCase() === '#fff';
+              return (
+                <button
+                  key={c.name}
+                  type="button"
+                  onClick={() => onPatchInputs({ color: c.name })}
+                  title={c.name}
+                  aria-label={c.name}
+                  aria-pressed={active}
+                  className={`relative inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-full transition focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                    active
+                      ? 'ring-2 ring-orange-600 ring-offset-2'
+                      : isWhiteish
+                        ? 'ring-1 ring-gray-300 hover:ring-gray-500'
+                        : 'ring-1 ring-gray-200 hover:ring-gray-400'
+                  }`}
+                  style={{ backgroundColor: c.hex }}
+                >
+                  {active && (
+                    <Check className={`h-3.5 w-3.5 ${isLightHex(c.hex) ? 'text-gray-900' : 'text-white'}`} />
+                  )}
+                </button>
+              );
+            })}
           </div>
           <p className="mt-2 text-xs text-gray-500">
+            <span className="text-gray-700 font-medium">{inputs.color}</span>
+            {' · '}
             {item.pickedProduct
-              ? `Colors shown are what this ${noun} comes in.`
-              : `Other colors available — we'll match it on your final mockup.`}
+              ? `Available colors for this ${noun}.`
+              : `Other colors available — we'll match on your final mockup.`}
           </p>
         </Section>
 
