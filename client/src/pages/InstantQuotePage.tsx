@@ -86,8 +86,11 @@ type ItemDraft = {
   pickedProduct: CatalogProduct | null;
   // Screenshot of the design canvas captured when the customer clicked
   // "Get Price" in the Design Studio. Shown as a large preview at the top
-  // of the card so the mockup stays visible alongside the price.
+  // of the card so the mockup stays visible alongside the price. When the
+  // design uses both sides, `mockupUrlBack` is set too and both render
+  // side-by-side in the preview banner.
   mockupUrl?: string | null;
+  mockupUrlBack?: string | null;
 };
 
 const COLOR_OPTIONS: readonly string[] = [
@@ -325,6 +328,8 @@ export default function InstantQuotePage() {
           color?: { name?: string; hex?: string } | string | null;
           mockupUrl?: string | null;
           graphicUrl?: string | null;
+          mockupUrlBack?: string | null;
+          graphicUrlBack?: string | null;
         }
       | null;
     if (!state?.fromDesignStudio) return;
@@ -347,18 +352,25 @@ export default function InstantQuotePage() {
           sizes: normalizeSizesForProduct(state.product, mapped, it.inputs.sizes),
         };
       }
-      // Mockup is shown only in the "Your mockup" preview banner — it's
-      // added to designs[] so it ships with the saved quote, but the
-      // upload grid filters it out by URL to avoid a duplicate thumbnail.
-      // Graphic (design only, transparent BG) joins the upload list so
-      // the shop has the production-ready art file.
+      // Mockups (front/back) are shown only in the "Your mockup" preview
+      // banner — they're added to designs[] so they ship with the saved
+      // quote, but the upload grid filters them out by URL to avoid
+      // duplicate thumbnails. Graphics (design only, transparent BG) join
+      // the upload list so the shop has the production-ready art files.
       const incomingDesigns: Array<{ url: string; filename: string }> = [];
       if (state.mockupUrl) {
         next.mockupUrl = state.mockupUrl;
-        incomingDesigns.push({ url: state.mockupUrl, filename: 'mockup.png' });
+        incomingDesigns.push({ url: state.mockupUrl, filename: 'mockup-front.png' });
+      }
+      if (state.mockupUrlBack) {
+        next.mockupUrlBack = state.mockupUrlBack;
+        incomingDesigns.push({ url: state.mockupUrlBack, filename: 'mockup-back.png' });
       }
       if (state.graphicUrl) {
-        incomingDesigns.push({ url: state.graphicUrl, filename: 'graphic.png' });
+        incomingDesigns.push({ url: state.graphicUrl, filename: 'graphic-front.png' });
+      }
+      if (state.graphicUrlBack) {
+        incomingDesigns.push({ url: state.graphicUrlBack, filename: 'graphic-back.png' });
       }
       if (incomingDesigns.length > 0) {
         next.designs = [...incomingDesigns, ...it.designs];
@@ -880,8 +892,9 @@ function ItemCard({
       </div>
 
       {/* Mockup from Design Studio — large preview so the customer's design
-          stays visible alongside the live price. */}
-      {item.mockupUrl && (
+          stays visible alongside the live price. When the design has both
+          front and back, render them side-by-side. */}
+      {(item.mockupUrl || item.mockupUrlBack) && (
         <div className="mb-4 overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-3">
           <div className="mb-2 flex items-center gap-2">
             <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-orange-700 ring-1 ring-orange-200">
@@ -889,12 +902,31 @@ function ItemCard({
             </span>
             <p className="text-xs text-gray-500">Designed in the Studio</p>
           </div>
-          <div className="flex items-center justify-center rounded-xl bg-white p-2 ring-1 ring-orange-200">
-            <img
-              src={item.mockupUrl}
-              alt="Your mockup"
-              className="max-h-56 sm:max-h-72 w-auto object-contain"
-            />
+          <div className={`grid gap-3 ${item.mockupUrl && item.mockupUrlBack ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+            {item.mockupUrl && (
+              <div className="flex flex-col items-center rounded-xl bg-white p-2 ring-1 ring-orange-200">
+                <img
+                  src={item.mockupUrl}
+                  alt="Your mockup, front"
+                  className="max-h-56 sm:max-h-72 w-auto object-contain"
+                />
+                {item.mockupUrlBack && (
+                  <span className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-orange-700">Front</span>
+                )}
+              </div>
+            )}
+            {item.mockupUrlBack && (
+              <div className="flex flex-col items-center rounded-xl bg-white p-2 ring-1 ring-orange-200">
+                <img
+                  src={item.mockupUrlBack}
+                  alt="Your mockup, back"
+                  className="max-h-56 sm:max-h-72 w-auto object-contain"
+                />
+                {item.mockupUrl && (
+                  <span className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-orange-700">Back</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1095,10 +1127,10 @@ function ItemCard({
           </label>
           <p className="mt-2 text-xs text-gray-500">Optional — but helps us quote artwork prep accurately and locks in your design when you order. PNG with transparent background works best.</p>
 
-          {item.designs.some((d) => d.url !== item.mockupUrl) && (
+          {item.designs.some((d) => d.url !== item.mockupUrl && d.url !== item.mockupUrlBack) && (
             <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
               {item.designs.map((d, i) => (
-                d.url === item.mockupUrl ? null : (
+                (d.url === item.mockupUrl || d.url === item.mockupUrlBack) ? null : (
                   <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
                     <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
                     <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>

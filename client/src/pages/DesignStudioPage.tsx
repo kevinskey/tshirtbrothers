@@ -1085,79 +1085,103 @@ export default function DesignStudioPage() {
     }
   };
 
-  // Capture the current canvas as TWO PNGs and upload them: the full
-  // mockup (design + product backdrop) and the graphic alone (design on
-  // transparent). Uses Fabric's own exportPNG when the Fabric renderer is
+  // Upload a base64 PNG and return its hosted URL.
+  async function uploadCapturedPng(dataUrl: string | null, label: string): Promise<string | null> {
+    if (!dataUrl) return null;
+    try {
+      const r = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: dataUrl, filename: `${label}-${Date.now()}.png` }),
+      });
+      if (!r.ok) return null;
+      const { url } = await r.json();
+      return url || null;
+    } catch (err) {
+      console.warn(`[Get Price] upload ${label} failed:`, err);
+      return null;
+    }
+  }
+
+  // Capture one side (currently-shown OR temporarily flipped) as TWO PNGs:
+  // the full mockup (design + product backdrop) and the graphic alone (design
+  // on transparent). Uses Fabric's own exportPNG when the Fabric renderer is
   // active — html2canvas misses Fabric-drawn elements because they live on
   // Fabric's internal contexts, which is why "Get Price" previously yielded
   // just the product photo.
-  async function captureMockupAndGraphic(): Promise<{ mockupUrl: string | null; graphicUrl: string | null }> {
+  async function captureSideMockupAndGraphic(side: ViewName): Promise<{ mockupUrl: string | null; graphicUrl: string | null }> {
+    // Temporarily flip the renderer to `side` if we're not already there;
+    // restore in `finally` so the user's editor view doesn't change.
+    const prevView = currentView;
+    const needsFlip = prevView !== side;
+    if (needsFlip) {
+      if (useFabricRenderer && fabricBridgeRef.current) fabricBridgeRef.current.setSide(side);
+      else setCurrentView(side);
+    }
+    const prevSelected = selectedElementId;
+    setSelectedElementId(null);
+    // Two RAFs so the browser actually paints the flipped side / cleared
+    // selection before the capture runs.
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
     let mockupDataUrl: string | null = null;
     let graphicDataUrl: string | null = null;
 
-    if (useFabricRenderer && fabricBridgeRef.current) {
-      try {
-        mockupDataUrl = fabricBridgeRef.current.exportPNG({ transparent: false });
-      } catch (err) { console.warn('[Get Price] fabric mockup export failed:', err); }
-      try {
-        graphicDataUrl = fabricBridgeRef.current.exportPNG({ transparent: true });
-      } catch (err) { console.warn('[Get Price] fabric graphic export failed:', err); }
-    } else {
-      // Legacy DOM-overlay renderer: capture via html2canvas.
-      const surface = designSurfaceRef.current;
-      if (surface) {
-        const prevSelected = selectedElementId;
-        setSelectedElementId(null);
-        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-        try {
-          const html2canvas = (await import('html2canvas')).default;
-          const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false });
-          mockupDataUrl = cvAll.toDataURL('image/png');
-          const productImg = productImgRef.current;
-          if (productImg) {
-            const cvDesign = await html2canvas(surface, {
-              backgroundColor: null, useCORS: true, scale: 2, logging: false,
-              ignoreElements: (el) => el === productImg,
-            });
-            graphicDataUrl = cvDesign.toDataURL('image/png');
+    try {
+      if (useFabricRenderer && fabricBridgeRef.current) {
+        try { mockupDataUrl = fabricBridgeRef.current.exportPNG({ transparent: false }); }
+        catch (err) { console.warn('[Get Price] fabric mockup export failed:', err); }
+        try { graphicDataUrl = fabricBridgeRef.current.exportPNG({ transparent: true }); }
+        catch (err) { console.warn('[Get Price] fabric graphic export failed:', err); }
+      } else {
+        const surface = designSurfaceRef.current;
+        if (surface) {
+          try {
+            const html2canvas = (await import('html2canvas')).default;
+            const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false });
+            mockupDataUrl = cvAll.toDataURL('image/png');
+            const productImg = productImgRef.current;
+            if (productImg) {
+              const cvDesign = await html2canvas(surface, {
+                backgroundColor: null, useCORS: true, scale: 2, logging: false,
+                ignoreElements: (el) => el === productImg,
+              });
+              graphicDataUrl = cvDesign.toDataURL('image/png');
+            }
+          } catch (err) {
+            console.warn('[Get Price] html2canvas capture failed:', err);
           }
-        } catch (err) {
-          console.warn('[Get Price] html2canvas capture failed:', err);
-        } finally {
-          if (prevSelected) setSelectedElementId(prevSelected);
         }
       }
+    } finally {
+      if (needsFlip) {
+        if (useFabricRenderer && fabricBridgeRef.current) fabricBridgeRef.current.setSide(prevView);
+        else setCurrentView(prevView);
+      }
+      if (prevSelected) setSelectedElementId(prevSelected);
     }
 
-    const uploadOne = async (dataUrl: string | null, label: string): Promise<string | null> => {
-      if (!dataUrl) return null;
-      try {
-        const r = await fetch('/api/quotes/upload-design', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: dataUrl, filename: `${label}-${Date.now()}.png` }),
-        });
-        if (!r.ok) return null;
-        const { url } = await r.json();
-        return url || null;
-      } catch (err) {
-        console.warn(`[Get Price] upload ${label} failed:`, err);
-        return null;
-      }
-    };
-
     const [mockupUrl, graphicUrl] = await Promise.all([
-      uploadOne(mockupDataUrl, 'mockup'),
-      uploadOne(graphicDataUrl, 'graphic'),
+      uploadCapturedPng(mockupDataUrl, `mockup-${side}`),
+      uploadCapturedPng(graphicDataUrl, `graphic-${side}`),
     ]);
     return { mockupUrl, graphicUrl };
   }
 
-  // Navigate to quote with design data pre-filled. Also passes the captured
-  // mockup + graphic URLs so the customer sees their design alongside the
-  // live price.
+  // Navigate to quote with design data pre-filled. Captures front + back
+  // separately when both sides have design elements so the customer sees
+  // both mockups alongside the live price.
   const handleGetPrice = async () => {
-    const { mockupUrl, graphicUrl } = await captureMockupAndGraphic();
+    const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
+    const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
+    // Sequential — each capture temporarily flips currentView, so running
+    // them in parallel would race for the renderer state.
+    const front = (hasFront || (!hasFront && !hasBack))
+      ? await captureSideMockupAndGraphic('front')
+      : { mockupUrl: null, graphicUrl: null };
+    const back = hasBack
+      ? await captureSideMockupAndGraphic('back')
+      : { mockupUrl: null, graphicUrl: null };
     navigate('/quote', {
       state: {
         fromDesignStudio: true,
@@ -1165,8 +1189,10 @@ export default function DesignStudioPage() {
         color: productColors[selectedColorIdx] || null,
         designElements,
         designImage: displayImage,
-        mockupUrl,
-        graphicUrl,
+        mockupUrl: front.mockupUrl,
+        graphicUrl: front.graphicUrl,
+        mockupUrlBack: back.mockupUrl,
+        graphicUrlBack: back.graphicUrl,
       },
     });
   };
