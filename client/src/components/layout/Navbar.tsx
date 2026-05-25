@@ -165,10 +165,18 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Sub-nav row (desktop) */}
-      <div className="bg-white border-t border-b border-gray-200 hidden md:block">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2">
-          <div className="flex items-center justify-center gap-4 sm:gap-6 overflow-visible">
+      {/* Sub-nav row (desktop) — floating 3D pill so it reads as a
+          raised toolbar rather than a flat strip. */}
+      <div className="bg-white hidden md:block">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3">
+          <div className="flex justify-center">
+            <div
+              className="inline-flex items-center gap-4 sm:gap-6 px-6 py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
+              style={{
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 1px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
+              }}
+            >
             {subNavEntries.map((entry) => {
               if (isGroup(entry)) {
                 return (
@@ -215,6 +223,7 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            </div>
           </div>
         </div>
       </div>
