@@ -28,6 +28,7 @@ import campaignsRouter, { publicRouter as emailPublicRouter } from './routes/cam
 import instantQuoteRouter, { adminRouter as instantQuotePricingAdminRouter } from './routes/instantQuote.js';
 import favoritesRouter from './routes/favorites.js';
 import heroSlidesRouter, { adminRouter as heroSlidesAdminRouter } from './routes/heroSlides.js';
+import reviewsRouter from './routes/reviews.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,6 +68,7 @@ app.use('/api/admin/gangsheets', gangsheetRouter);
 app.use('/api/admin', embroideryRouter);
 app.use('/api', mockupsRouter);
 app.use('/api/local-businesses', localBusinessesRouter);
+app.use('/api/reviews', reviewsRouter);
 app.use('/api/client-errors', clientErrorsRouter);
 app.use('/api/admin/custom-fonts', customFontsAdminRouter);
 app.use('/api/custom-fonts', customFontsPublicRouter);
