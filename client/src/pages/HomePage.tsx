@@ -4,7 +4,6 @@ import HeroSection from '@/components/home/HeroSection';
 import ServicesGrid from '@/components/home/ServicesGrid';
 import FeaturedBrands from '@/components/home/FeaturedBrands';
 import DeliveryBanner from '@/components/home/DeliveryBanner';
-import TestimonialsSection from '@/components/home/TestimonialsSection';
 import GoogleReviews from '@/components/home/GoogleReviews';
 import BottomCTA from '@/components/home/BottomCTA';
 import HowItWorksSection from '@/components/home/HowItWorksSection';
@@ -31,7 +30,6 @@ export default function HomePage() {
       
       <DeliveryBanner />
       <GoogleReviews />
-      <TestimonialsSection />
       <BottomCTA />
     </Layout>
   );
