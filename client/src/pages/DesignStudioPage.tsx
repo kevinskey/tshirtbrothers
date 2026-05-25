@@ -2326,15 +2326,15 @@ export default function DesignStudioPage() {
             key={tool.name}
             type="button"
             onClick={() => toggleTool(tool.name as ToolName)}
-            className={`relative flex flex-1 flex-col items-center py-2 transition ${
+            className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
               isActive
                 ? (isAi ? 'text-orange-600' : 'text-red-600')
                 : (isAi ? 'text-orange-500' : 'text-gray-500')
             }`}
           >
             {isActive && <div className={`absolute top-0 left-0 right-0 h-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
-            <Icon className="h-5 w-5" />
-            <span className="mt-0.5 text-[10px]">{tool.label}</span>
+            <Icon className="h-5 w-5 shrink-0" />
+            <span className="text-[9px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
         );
       })}
