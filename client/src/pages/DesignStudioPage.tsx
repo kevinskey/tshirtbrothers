@@ -1085,18 +1085,79 @@ export default function DesignStudioPage() {
     }
   };
 
-  // Download design as image
-  // Navigate to quote with design data pre-filled. Also capture a screenshot
-  // of the current canvas so the mockup the customer just designed stays
-  // visible on the quote page alongside the price.
-  const handleGetPrice = async () => {
-    let mockupUrl: string | null = null;
-    try {
-      mockupUrl = await captureSideScreenshot('front');
-      if (!mockupUrl) mockupUrl = await captureSideScreenshot('back');
-    } catch (err) {
-      console.warn('[Get Price] mockup screenshot failed:', err);
+  // Capture the current canvas as TWO PNGs and upload them: the full
+  // mockup (design + product backdrop) and the graphic alone (design on
+  // transparent). Uses Fabric's own exportPNG when the Fabric renderer is
+  // active — html2canvas misses Fabric-drawn elements because they live on
+  // Fabric's internal contexts, which is why "Get Price" previously yielded
+  // just the product photo.
+  async function captureMockupAndGraphic(): Promise<{ mockupUrl: string | null; graphicUrl: string | null }> {
+    let mockupDataUrl: string | null = null;
+    let graphicDataUrl: string | null = null;
+
+    if (useFabricRenderer && fabricBridgeRef.current) {
+      try {
+        mockupDataUrl = fabricBridgeRef.current.exportPNG({ transparent: false });
+      } catch (err) { console.warn('[Get Price] fabric mockup export failed:', err); }
+      try {
+        graphicDataUrl = fabricBridgeRef.current.exportPNG({ transparent: true });
+      } catch (err) { console.warn('[Get Price] fabric graphic export failed:', err); }
+    } else {
+      // Legacy DOM-overlay renderer: capture via html2canvas.
+      const surface = designSurfaceRef.current;
+      if (surface) {
+        const prevSelected = selectedElementId;
+        setSelectedElementId(null);
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        try {
+          const html2canvas = (await import('html2canvas')).default;
+          const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false });
+          mockupDataUrl = cvAll.toDataURL('image/png');
+          const productImg = productImgRef.current;
+          if (productImg) {
+            const cvDesign = await html2canvas(surface, {
+              backgroundColor: null, useCORS: true, scale: 2, logging: false,
+              ignoreElements: (el) => el === productImg,
+            });
+            graphicDataUrl = cvDesign.toDataURL('image/png');
+          }
+        } catch (err) {
+          console.warn('[Get Price] html2canvas capture failed:', err);
+        } finally {
+          if (prevSelected) setSelectedElementId(prevSelected);
+        }
+      }
     }
+
+    const uploadOne = async (dataUrl: string | null, label: string): Promise<string | null> => {
+      if (!dataUrl) return null;
+      try {
+        const r = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: dataUrl, filename: `${label}-${Date.now()}.png` }),
+        });
+        if (!r.ok) return null;
+        const { url } = await r.json();
+        return url || null;
+      } catch (err) {
+        console.warn(`[Get Price] upload ${label} failed:`, err);
+        return null;
+      }
+    };
+
+    const [mockupUrl, graphicUrl] = await Promise.all([
+      uploadOne(mockupDataUrl, 'mockup'),
+      uploadOne(graphicDataUrl, 'graphic'),
+    ]);
+    return { mockupUrl, graphicUrl };
+  }
+
+  // Navigate to quote with design data pre-filled. Also passes the captured
+  // mockup + graphic URLs so the customer sees their design alongside the
+  // live price.
+  const handleGetPrice = async () => {
+    const { mockupUrl, graphicUrl } = await captureMockupAndGraphic();
     navigate('/quote', {
       state: {
         fromDesignStudio: true,
@@ -1105,6 +1166,7 @@ export default function DesignStudioPage() {
         designElements,
         designImage: displayImage,
         mockupUrl,
+        graphicUrl,
       },
     });
   };
