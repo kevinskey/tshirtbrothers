@@ -2836,75 +2836,10 @@ export default function DesignStudioPage() {
     '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#A855F7', '#EC4899',
   ];
   const shapesPanelContent = (
-    <div className="p-4 space-y-4">
-      {/* Fill vs Outline toggle */}
+    <div className="p-4 space-y-5">
+      {/* 1. Shape grid */}
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Style</p>
-        <div className="grid grid-cols-2 gap-1.5 rounded-lg bg-gray-100 p-1">
-          {(['fill', 'outline'] as const).map(mode => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setShapeFillMode(mode)}
-              className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize transition ${
-                shapeFillMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Color */}
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Color</p>
-        <div className="grid grid-cols-6 gap-1.5">
-          {SHAPE_PALETTE.map(c => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setShapeColor(c)}
-              aria-label={`Use color ${c}`}
-              className={`relative h-7 w-full rounded-md border transition ${
-                shapeColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'
-              }`}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-        </div>
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="color"
-            value={shapeColor}
-            onChange={(e) => setShapeColor(e.target.value)}
-            className="h-7 w-7 cursor-pointer rounded border border-gray-300"
-            aria-label="Pick a custom color"
-          />
-          <span className="text-xs text-gray-500">Custom</span>
-        </div>
-      </div>
-
-      {/* Line width — only meaningful for outline + line shapes */}
-      <div>
-        <div className="flex items-baseline justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Line width</p>
-          <span className="text-xs font-medium text-gray-700">{shapeStrokeWidth}px</span>
-        </div>
-        <input
-          type="range"
-          min={1}
-          max={20}
-          value={shapeStrokeWidth}
-          onChange={(e) => setShapeStrokeWidth(Number(e.target.value))}
-          className="mt-1 w-full accent-blue-600"
-        />
-        <p className="mt-0.5 text-[10px] text-gray-400">Applies to outline shapes and the line tool.</p>
-      </div>
-
-      {/* Shape grid */}
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-1.5">Shape</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Shape</p>
         <div className="grid grid-cols-3 gap-2">
           {([
             { type: 'rect',     label: 'Rectangle', icon: Square },
@@ -2939,10 +2874,10 @@ export default function DesignStudioPage() {
                     rotation: 0,
                   });
                 }}
-                className="flex flex-col items-center gap-1 p-3 rounded-lg border border-gray-200 hover:border-blue-500 hover:bg-blue-50 transition"
+                className="flex flex-col items-center gap-1 rounded-lg border border-gray-200 px-2 py-3 hover:border-blue-500 hover:bg-blue-50 transition"
               >
                 <s.icon
-                  className="h-7 w-7 text-gray-700"
+                  className="h-7 w-7"
                   style={useOutline ? { color: shapeColor } : { color: shapeColor, fill: shapeColor }}
                 />
                 <span className="text-[10px] font-medium text-gray-700">{s.label}</span>
@@ -2950,6 +2885,68 @@ export default function DesignStudioPage() {
             );
           })}
         </div>
+      </div>
+
+      {/* 2. Color + fill mode */}
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Color</p>
+          <div className="flex gap-1 rounded-full bg-gray-100 p-0.5">
+            {(['fill', 'outline'] as const).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setShapeFillMode(mode)}
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide transition ${
+                  shapeFillMode === mode ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {mode}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-6 gap-1.5">
+          {SHAPE_PALETTE.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setShapeColor(c)}
+              aria-label={`Use color ${c}`}
+              className={`relative h-7 w-full rounded-md border transition ${
+                shapeColor === c ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'
+              }`}
+              style={{ backgroundColor: c }}
+            />
+          ))}
+        </div>
+        <label className="mt-2 flex items-center gap-2 text-xs text-gray-500">
+          <input
+            type="color"
+            value={shapeColor}
+            onChange={(e) => setShapeColor(e.target.value)}
+            className="h-7 w-7 cursor-pointer rounded border border-gray-300"
+            aria-label="Pick a custom color"
+          />
+          Custom color
+        </label>
+      </div>
+
+      {/* 3. Line width — only meaningful for outline + line shapes */}
+      <div>
+        <div className="flex items-baseline justify-between">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Line width</p>
+          <span className="text-xs font-medium text-gray-700">{shapeStrokeWidth}px</span>
+        </div>
+        <input
+          type="range"
+          min={1}
+          max={20}
+          value={shapeStrokeWidth}
+          onChange={(e) => setShapeStrokeWidth(Number(e.target.value))}
+          className="mt-1 w-full accent-blue-600"
+        />
+        <p className="mt-0.5 text-[10px] text-gray-400">Applies to outline shapes and the line tool.</p>
       </div>
     </div>
   );
