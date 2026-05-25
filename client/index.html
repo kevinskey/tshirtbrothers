@@ -11,6 +11,21 @@
       gtag('js', new Date());
       gtag('config', 'G-CSV96GDJW3');
     </script>
+
+    <!-- Microsoft Clarity — free heatmaps + session recordings.
+         To enable: sign up at clarity.microsoft.com, create a project
+         for tshirtbrothers.com, then replace PASTE_YOUR_CLARITY_PROJECT_ID
+         below with the project ID Clarity gives you (looks like 'abc1234567').
+         The guard noops if the placeholder is still there, so committing
+         this with the placeholder is safe. -->
+    <script>
+      (function(c,l,a,r,i,t,y){
+        if (i.indexOf('PASTE_YOUR_CLARITY') === 0) return;
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+      })(window, document, "clarity", "script", "PASTE_YOUR_CLARITY_PROJECT_ID");
+    </script>
     <link rel="icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
     <link rel="apple-touch-icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
