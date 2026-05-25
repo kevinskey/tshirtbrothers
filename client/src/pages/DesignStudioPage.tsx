@@ -1288,7 +1288,6 @@ export default function DesignStudioPage() {
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [, setFontsReady] = useState(0); // force re-render when fonts load
 
   // --- Drag / resize state ---
@@ -3420,34 +3419,13 @@ export default function DesignStudioPage() {
                 />
               )}
               <span className="text-xs text-gray-500">{productColors[selectedColorIdx]?.name ?? 'White'}</span>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowColorPicker(prev => !prev)}
-                  className="text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
-                >
-                  Change Product Color
-                </button>
-                {showColorPicker && productColors.length > 0 && (
-                  <div className="absolute bottom-full left-0 mb-3 rounded-xl bg-white border border-gray-200 shadow-2xl p-4 min-w-[240px] z-[100]">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Colors</p>
-                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                      {productColors.map((c, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          title={c.name}
-                          onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); setShowColorPicker(false); }}
-                          className={`h-7 w-7 rounded-full border-2 transition ${
-                            selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
-                          }`}
-                          style={{ backgroundColor: c.hex || '#ccc' }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => { setSelectedElementId(null); setActiveTool('details'); }}
+                className="text-xs font-medium text-blue-600 hover:underline whitespace-nowrap"
+              >
+                Change Product Color
+              </button>
             </div>
           </div>
         </div>
