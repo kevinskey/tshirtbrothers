@@ -4,9 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type NavLink = { label: string; href: string };
-type NavEntry = NavLink | { label: string; children: NavLink[] };
-const isGroup = (e: NavEntry): e is { label: string; children: NavLink[] } => 'children' in e;
+type NavLink = { label: string; href: string; desktopOnly?: boolean };
+type NavEntry = NavLink | { label: string; children: NavLink[]; desktopOnly?: boolean };
+const isGroup = (e: NavEntry): e is { label: string; children: NavLink[]; desktopOnly?: boolean } => 'children' in e;
 
 const catalogueLinks: NavLink[] = [
   { label: 'T-Shirts', href: '/shop?category=T-Shirts' },
@@ -18,12 +18,16 @@ const catalogueLinks: NavLink[] = [
   { label: 'All Products', href: '/shop' },
 ];
 
+// desktopOnly entries are hidden from the sub-nav pill on mobile (they
+// still appear in the hamburger menu). Keeps the mobile pill to just the
+// three high-intent CTAs — Design Studio, Catalogue, Get a Quote — so it
+// stays one screen-width without horizontal scrolling.
 const subNavEntries: NavEntry[] = [
   { label: 'Design Studio', href: '/design' },
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
-  { label: 'Services', href: '/services' },
-  { label: 'About', href: '/about' },
+  { label: 'Services', href: '/services', desktopOnly: true },
+  { label: 'About', href: '/about', desktopOnly: true },
 ];
 
 export default function Navbar() {
@@ -184,11 +188,12 @@ export default function Navbar() {
               }}
             >
             {subNavEntries.map((entry) => {
+              const mobileHide = entry.desktopOnly ? 'hidden sm:flex' : '';
               if (isGroup(entry)) {
                 return (
                   <div
                     key={entry.label}
-                    className="relative"
+                    className={cn('relative', mobileHide)}
                     onMouseEnter={() => setDesktopCatalogueOpen(true)}
                     onMouseLeave={() => setDesktopCatalogueOpen(false)}
                   >
@@ -223,7 +228,7 @@ export default function Navbar() {
                 <Link
                   key={entry.label}
                   to={entry.href}
-                  className="text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap"
+                  className={cn('text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap', entry.desktopOnly && 'hidden sm:inline')}
                 >
                   {entry.label}
                 </Link>
