@@ -48,18 +48,19 @@ export default function HeroSection() {
             items-stretch + image self-stretch makes the image card grow to
             match text column height so they read as visually paired
             instead of a short square floating next to tall text. */}
-        <div className="lg:grid lg:grid-cols-2 lg:gap-8 xl:gap-12 lg:items-stretch">
+        <div className="lg:grid lg:grid-cols-2 lg:gap-8 xl:gap-12 lg:items-center">
 
           {/* Hero image card — first in source so mobile renders it on top.
-              At lg, self-stretch + aspect-auto lets the card match the text
-              column's natural height instead of being a fixed square. */}
-          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-stretch relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-auto bg-white">
+              At lg, aspect-[5/4] makes the card shorter than a square so
+              self-center actually moves it down to sit visually paired with
+              the (similarly-tall) text column instead of overflowing it. */}
+          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] bg-white">
             {slides.map((s, i) => {
               const img = (
                 <img
                   src={s.image_url}
                   alt={s.label || ''}
-                  className={`absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                   loading={i === 0 ? 'eager' : 'lazy'}
                 />
               );
