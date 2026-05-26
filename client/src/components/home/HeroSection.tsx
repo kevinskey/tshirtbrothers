@@ -85,14 +85,14 @@ export default function HeroSection() {
           </div>
 
           {/* Headline + CTAs */}
-          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center">
+          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left">
             <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-6xl xl:text-7xl text-gray-900 leading-[1.05] tracking-tight"
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-5xl xl:text-6xl text-gray-900 leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
               Support Local <span className="text-orange-500">Atlanta</span>,
               <span
-                className="block my-2 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-7xl xl:text-8xl text-gray-900"
+                className="block my-2 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-6xl xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
               >
                 Custom Printing
@@ -103,7 +103,7 @@ export default function HeroSection() {
               Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
             </p>
 
-            <div className="mt-8 sm:mt-10 flex items-stretch justify-center gap-2 sm:gap-3">
+            <div className="mt-8 sm:mt-10 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
               <Link
                 to="/quote"
                 className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-3 sm:px-10 sm:py-5 text-sm sm:text-xl font-bold text-white shadow-lg shadow-orange-500/25 transition-colors whitespace-nowrap sm:min-w-[10rem]"
@@ -119,7 +119,7 @@ export default function HeroSection() {
               </Link>
             </div>
 
-            <div className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
+            <div className="mt-8 sm:mt-10 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
               <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
               <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
               <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
