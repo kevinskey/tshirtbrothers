@@ -42,18 +42,18 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-4 sm:pb-16">
-        {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT
-            (Custom Ink desktop hero). Below lg the layout collapses back to
-            image-on-top, text-below — the mobile experience we already tuned
-            and which we explicitly preserve here. */}
-        <div className="lg:grid lg:grid-cols-[5fr_4fr] lg:gap-14 xl:gap-20 lg:items-center">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-4 sm:pb-10">
+        {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT.
+            Mobile collapses back to image-on-top, text-below.
+            items-stretch + image self-stretch makes the image card grow to
+            match text column height so they read as visually paired
+            instead of a short square floating next to tall text. */}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-8 xl:gap-12 lg:items-stretch">
 
           {/* Hero image card — first in source so mobile renders it on top.
-              On desktop, order-2 sends it to the right column.
-              lg:self-center anchors the card to the row middle so it
-              pairs visually with the text column's lg:self-center. */}
-          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-square bg-white">
+              At lg, self-stretch + aspect-auto lets the card match the text
+              column's natural height instead of being a fixed square. */}
+          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-stretch relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-auto bg-white">
             {slides.map((s, i) => {
               const img = (
                 <img
@@ -86,11 +86,11 @@ export default function HeroSection() {
             )}
           </div>
 
-          {/* Headline + CTAs. lg:self-center pins this column's content
-              to the middle of the row independent of the grid container's
-              items-center, so the text always reads as visually paired
-              with the image card next to it (which is also self-centered). */}
-          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left lg:self-center lg:pr-4 xl:pr-8 lg:max-w-[36rem]">
+          {/* Headline + CTAs. self-center vertically aligns the text block
+              with the (now stretched) image card to its right. No max-width
+              or right-padding so the text fills its column and visually
+              sits flush against the gap rather than drifting left. */}
+          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left lg:self-center">
             <h1
               className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
