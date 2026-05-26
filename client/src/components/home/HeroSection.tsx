@@ -47,11 +47,13 @@ export default function HeroSection() {
             (Custom Ink desktop hero). Below lg the layout collapses back to
             image-on-top, text-below — the mobile experience we already tuned
             and which we explicitly preserve here. */}
-        <div className="lg:grid lg:grid-cols-[5fr_4fr] lg:gap-10 lg:items-center">
+        <div className="lg:grid lg:grid-cols-[5fr_4fr] lg:gap-14 xl:gap-20 lg:items-center">
 
           {/* Hero image card — first in source so mobile renders it on top.
-              On desktop, order-2 sends it to the right column. */}
-          <div className="-mx-4 sm:mx-0 lg:order-2 relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-square bg-white">
+              On desktop, order-2 sends it to the right column.
+              lg:self-center anchors the card to the row middle so it
+              pairs visually with the text column's lg:self-center. */}
+          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] lg:aspect-square bg-white">
             {slides.map((s, i) => {
               const img = (
                 <img
@@ -84,8 +86,11 @@ export default function HeroSection() {
             )}
           </div>
 
-          {/* Headline + CTAs */}
-          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left">
+          {/* Headline + CTAs. lg:self-center pins this column's content
+              to the middle of the row independent of the grid container's
+              items-center, so the text always reads as visually paired
+              with the image card next to it (which is also self-centered). */}
+          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left lg:self-center lg:pr-4 xl:pr-8 lg:max-w-[36rem]">
             <h1
               className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
