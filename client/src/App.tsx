@@ -35,6 +35,7 @@ import CityLandingPage from '@/pages/CityLandingPage';
 import VerticalLandingPage from '@/pages/VerticalLandingPage';
 import AboutPage from '@/pages/AboutPage';
 import FaqPage from '@/pages/FaqPage';
+import HomePageEs from '@/pages/HomePageEs';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 const queryClient = new QueryClient({
@@ -59,6 +60,7 @@ function App() {
         <ScrollToTop />
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/es" element={<HomePageEs />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/faq" element={<FaqPage />} />

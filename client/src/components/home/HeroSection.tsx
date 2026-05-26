@@ -124,6 +124,14 @@ export default function HeroSection() {
               <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
               <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
             </div>
+
+            {/* Spanish-language toggle. Small, unobtrusive — only the
+                people who need it will notice it. */}
+            <p className="mt-4 text-xs text-gray-500">
+              <a href="/es" className="text-orange-600 hover:underline font-semibold">
+                ¿Hablas español? Ver en español →
+              </a>
+            </p>
           </div>
 
         </div>

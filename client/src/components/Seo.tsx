@@ -24,12 +24,16 @@ type SeoProps = {
   path: string;
   image?: string;
   noindex?: boolean;
+  // hreflang alternates so Google can match the right language to
+  // each searcher. Pair up English ↔ Spanish (etc) versions of the
+  // same content by passing { en: '/', es: '/es' } on both pages.
+  alternates?: Record<string, string>;
 };
 
 const SITE = 'https://tshirtbrothers.com';
 const DEFAULT_IMAGE = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png';
 
-export default function Seo({ title, description, path, image, noindex }: SeoProps) {
+export default function Seo({ title, description, path, image, noindex, alternates }: SeoProps) {
   const url = `${SITE}${path.startsWith('/') ? path : `/${path}`}`;
   const ogImage = image || DEFAULT_IMAGE;
   return (
@@ -38,6 +42,14 @@ export default function Seo({ title, description, path, image, noindex }: SeoPro
       <meta name="description" content={description} />
       <link rel="canonical" href={url} />
       {noindex && <meta name="robots" content="noindex, nofollow" />}
+      {alternates && Object.entries(alternates).map(([lang, p]) => (
+        <link key={lang} rel="alternate" hrefLang={lang} href={`${SITE}${p.startsWith('/') ? p : `/${p}`}`} />
+      ))}
+      {/* x-default points to the canonical (usually English) version
+          so unmatched locales fall back gracefully. */}
+      {alternates?.['x-default'] && (
+        <link rel="alternate" hrefLang="x-default" href={`${SITE}${alternates['x-default']}`} />
+      )}
 
       {/* Open Graph */}
       <meta property="og:type" content="website" />
