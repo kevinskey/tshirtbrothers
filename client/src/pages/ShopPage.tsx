@@ -559,7 +559,7 @@ export default function ShopPage() {
               <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-gray-50 rounded-xl aspect-square flex items-center justify-center overflow-hidden">
                   {img ? (
-                    <img src={img} alt={p.name} className="w-full h-full object-contain p-6" />
+                    <img src={img} alt={p.name} loading="lazy" className="w-full h-full object-contain p-6" />
                   ) : (
                     <span className="text-gray-400 text-sm">{p.category}</span>
                   )}
@@ -664,6 +664,36 @@ export default function ShopPage() {
           </div>
         );
       })()}
+
+      {/* ItemList + Product schema for everything currently shown.
+          Lets Google understand the catalog page as a list of named
+          products with images and brand — meaningfully improves
+          rich-result eligibility for "Gildan 5000 Atlanta",
+          "Bella+Canvas screen print", and similar long-tail queries. */}
+      {products.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'ItemList',
+              itemListElement: products.slice(0, 50).map((p, i) => ({
+                '@type': 'ListItem',
+                position: i + 1,
+                item: {
+                  '@type': 'Product',
+                  name: p.name,
+                  image: getProductImage(p),
+                  brand: { '@type': 'Brand', name: p.brand || 'TShirt Brothers' },
+                  category: (p as { category?: string }).category || 'Apparel',
+                  sku: getProductId(p),
+                  url: `https://tshirtbrothers.com/shop?product=${encodeURIComponent(getProductId(p))}`,
+                },
+              })),
+            }),
+          }}
+        />
+      )}
     </Layout>
   );
 }

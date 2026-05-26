@@ -1,5 +1,69 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Phone, Mail, MapPin, Clock } from 'lucide-react';
+import { Phone, Mail, MapPin, Clock, Send, CheckCircle2 } from 'lucide-react';
+
+function NewsletterSignup() {
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'ok' | 'err'>('idle');
+  const [errMsg, setErrMsg] = useState('');
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || status === 'submitting') return;
+    setStatus('submitting');
+    setErrMsg('');
+    try {
+      const r = await fetch('/api/newsletter/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), source: 'footer' }),
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body.error || 'Subscription failed.');
+      }
+      setStatus('ok');
+      setEmail('');
+    } catch (err) {
+      setStatus('err');
+      setErrMsg(err instanceof Error ? err.message : 'Subscription failed.');
+    }
+  }
+
+  if (status === 'ok') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-orange-400/30 bg-orange-500/10 px-3 py-2.5 text-sm text-orange-200">
+        <CheckCircle2 className="h-4 w-4 text-orange-400" />
+        Thanks! We&rsquo;ll be in touch.
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={onSubmit} className="flex flex-col gap-2">
+      <div className="flex gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@email.com"
+          required
+          className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 outline-none px-3 py-2 text-sm text-white placeholder-gray-500"
+          disabled={status === 'submitting'}
+        />
+        <button
+          type="submit"
+          disabled={status === 'submitting'}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
+        >
+          <Send className="h-4 w-4" />
+          <span className="hidden sm:inline">Subscribe</span>
+        </button>
+      </div>
+      {status === 'err' && <p className="text-xs text-red-400">{errMsg}</p>}
+      <p className="text-xs text-gray-500">No spam — just print tips, sales, and new product alerts.</p>
+    </form>
+  );
+}
 
 const services = [
   { label: 'Screen Printing', href: '/services#screen-printing' },
@@ -40,6 +104,12 @@ export default function Footer() {
               metro area. From screen printing to DTF transfers, we bring
               your designs to life with quality you can feel.
             </p>
+            <div className="mt-5">
+              <p className="text-xs font-semibold uppercase tracking-wider text-white mb-2">
+                Get sale alerts &amp; print tips
+              </p>
+              <NewsletterSignup />
+            </div>
           </div>
 
           {/* Services column */}
