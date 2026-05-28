@@ -121,6 +121,8 @@ export interface Quote {
     summary?: string;
   } | null;
   items?: QuoteItem[];
+  inputs_json?: unknown | null;
+  balance_paid_at?: string | null;
 }
 
 export interface QuoteItem {
@@ -294,6 +296,44 @@ export async function attachMockupToQuote(
   return authRequest<Quote>(`/quotes/admin/${quoteId}/mockup`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+export interface InstantPriceInput {
+  sizes: Array<{ size: string; quantity: number }>;
+  garmentName: string;
+  qualityTier: string;
+  methodName: string;
+  numLocations: number;
+  colorsPerLocation?: number;
+  rush?: boolean;
+  pickedProduct?: { ss_id: string; name: string; your_price: number } | null;
+}
+
+export interface InstantPriceResult {
+  per_shirt: number;
+  total: number;
+  quantity: number;
+  turnaround_days: number;
+  breakdown: {
+    garment_cost_per_piece: number;
+    print_cost_per_piece: number;
+    num_locations: number;
+    colors_per_location: number;
+    base: number;
+    setup: number;
+    quantity_discount: number;
+    discount_pct: number;
+    rush_surcharge: number;
+    markup_multiplier: number;
+    subtotal: number;
+  };
+}
+
+export async function calculateInstantPrice(input: InstantPriceInput) {
+  return request<InstantPriceResult>('/quote/calculate', {
+    method: 'POST',
+    body: JSON.stringify(input),
   });
 }
 
