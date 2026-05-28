@@ -85,6 +85,7 @@ import {
   deleteBlogPost,
   publishBlogPost,
   sendBalanceRequest,
+  notifyQuoteUpdate,
   calculateQuotePrice,
   bulkImportCustomers,
   fetchEmbroideryJobs,
@@ -6598,6 +6599,26 @@ export default function AdminPage() {
                         className="w-full py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700"
                       >
                         {q.status === 'quoted' ? 'Re-Quote Price' : 'Send Price Quote'}
+                      </button>
+                    )}
+                    {q.status === 'accepted' && (
+                      <button
+                        onClick={async () => {
+                          const note = window.prompt(
+                            'Add a short note for the customer (optional). Will appear in the email body.',
+                            '',
+                          );
+                          if (note === null) return;
+                          try {
+                            await notifyQuoteUpdate(String(q.id), note || undefined);
+                            alert('Updated quote sent to ' + customerEmail + '. No payment was requested.');
+                          } catch (err) {
+                            alert('Failed: ' + (err as Error).message);
+                          }
+                        }}
+                        className="w-full py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700"
+                      >
+                        Email Updated Quote (no payment ask)
                       </button>
                     )}
                     {q.status === 'accepted' && balance > 0 && (
