@@ -287,6 +287,16 @@ export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
   });
 }
 
+export async function attachMockupToQuote(
+  quoteId: string | number,
+  payload: { mockup_image_url?: string; mockup_id?: number },
+) {
+  return authRequest<Quote>(`/quotes/admin/${quoteId}/mockup`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function fetchAdminProducts(search?: string, page = 1) {
   const params = new URLSearchParams({ limit: '50', page: String(page) });
   if (search) params.set('search', search);
