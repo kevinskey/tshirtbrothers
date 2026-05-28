@@ -110,11 +110,13 @@ export default function QuoteItemsEditor({
   const [err, setErr] = useState<string | null>(null);
   const [recalcingIdx, setRecalcingIdx] = useState<number | null>(null);
   const recalcDefaults = useMemo(() => readRecalcDefaults(quote), [quote]);
+  const [rushOverride, setRushOverride] = useState<boolean>(recalcDefaults.rush);
 
   // Reset when a different quote is opened.
   useEffect(() => {
     setDrafts((quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
     setErr(null);
+    setRushOverride(recalcDefaults.rush);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quote.id, quote.items]);
 
@@ -169,7 +171,7 @@ export default function QuoteItemsEditor({
         qualityTier: recalcDefaults.qualityTier,
         methodName: recalcDefaults.methodName,
         colorsPerLocation: recalcDefaults.colorsPerLocation,
-        rush: recalcDefaults.rush,
+        rush: rushOverride,
         numLocations,
       });
       updateDraft(i, {
@@ -223,6 +225,19 @@ export default function QuoteItemsEditor({
         <p className="text-xs font-semibold text-gray-500 uppercase">Line items</p>
         <span className="text-sm font-bold text-gray-900">Total: ${total.toFixed(2)}</span>
       </div>
+
+      <label className="flex items-center gap-2 mb-3 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg cursor-pointer">
+        <input
+          type="checkbox"
+          checked={rushOverride}
+          onChange={(e) => setRushOverride(e.target.checked)}
+          className="w-4 h-4 rounded border-orange-300 text-orange-600 focus:ring-orange-400"
+        />
+        <span className="text-sm text-gray-800">
+          <span className="font-semibold text-orange-700">Rush job</span>
+          <span className="text-gray-600"> — applied on every Recalculate (1–2 day turnaround, +100%)</span>
+        </span>
+      </label>
 
       {drafts.length === 0 && (
         <p className="text-sm text-gray-500 italic mb-3">
@@ -331,7 +346,7 @@ export default function QuoteItemsEditor({
                 {recalcingIdx === i ? (
                   <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Calculating…</>
                 ) : (
-                  <><Calculator className="w-3.5 h-3.5" /> Recalculate with print formula ({recalcDefaults.methodName} · {recalcDefaults.qualityTier} · {Math.max(1, d.print_areas.length)} location{d.print_areas.length === 1 ? '' : 's'})</>
+                  <><Calculator className="w-3.5 h-3.5" /> Recalculate with print formula ({recalcDefaults.methodName} · {recalcDefaults.qualityTier} · {Math.max(1, d.print_areas.length)} location{d.print_areas.length === 1 ? '' : 's'}{rushOverride ? ' · Rush' : ''})</>
                 )}
               </button>
             </div>
