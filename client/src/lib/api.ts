@@ -107,6 +107,7 @@ export interface Quote {
   design_url?: string | null;
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
+  mockup_image_url_back?: string | null;
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
   color?: string;
@@ -291,7 +292,7 @@ export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
 
 export async function attachMockupToQuote(
   quoteId: string | number,
-  payload: { mockup_image_url?: string; mockup_id?: number },
+  payload: { mockup_image_url?: string; mockup_image_url_back?: string | null; mockup_id?: number },
 ) {
   return authRequest<Quote>(`/quotes/admin/${quoteId}/mockup`, {
     method: 'PATCH',

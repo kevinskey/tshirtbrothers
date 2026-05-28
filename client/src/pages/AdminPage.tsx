@@ -6268,9 +6268,22 @@ export default function AdminPage() {
                           </span>
                         )}
                       </p>
-                      <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
-                        <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                      </a>
+                      {q.mockup_image_url && q.mockup_image_url_back ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <a href={q.mockup_image_url} target="_blank" rel="noreferrer" className="block">
+                            <img src={q.mockup_image_url} alt="Mockup front" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                            <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Front</p>
+                          </a>
+                          <a href={q.mockup_image_url_back} target="_blank" rel="noreferrer" className="block">
+                            <img src={q.mockup_image_url_back} alt="Mockup back" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                            <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Back</p>
+                          </a>
+                        </div>
+                      ) : (
+                        <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
+                          <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                        </a>
+                      )}
                       {q.extra_design_urls && q.extra_design_urls.length > 0 && (
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {q.extra_design_urls.map((u, i) => {

@@ -665,21 +665,23 @@ router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, 
 router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { mockup_image_url, mockup_id } = req.body || {};
-    let url = typeof mockup_image_url === 'string' && mockup_image_url ? mockup_image_url : null;
-    if (!url && mockup_id) {
+    const { mockup_image_url, mockup_image_url_back, mockup_id } = req.body || {};
+    let urlFront = typeof mockup_image_url === 'string' && mockup_image_url ? mockup_image_url : null;
+    let urlBack = typeof mockup_image_url_back === 'string' && mockup_image_url_back ? mockup_image_url_back : null;
+    if (mockup_id && (urlFront == null || urlBack == null)) {
       const m = await pool.query(
-        'SELECT preview_image_url FROM mockups WHERE id = $1',
+        'SELECT preview_image_url, preview_image_url_back FROM mockups WHERE id = $1',
         [mockup_id],
       );
       if (m.rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
-      url = m.rows[0].preview_image_url;
+      if (urlFront == null) urlFront = m.rows[0].preview_image_url;
+      if (urlBack == null) urlBack = m.rows[0].preview_image_url_back;
     }
-    if (!url) return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
+    if (!urlFront) return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
 
     const result = await pool.query(
-      'UPDATE quotes SET mockup_image_url = $1 WHERE id = $2 RETURNING *',
-      [url, id],
+      'UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2 WHERE id = $3 RETURNING *',
+      [urlFront, urlBack, id],
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
 
