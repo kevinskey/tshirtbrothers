@@ -1,7 +1,42 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, Loader2, Search } from 'lucide-react';
+import { Plus, Trash2, Loader2, Search, Calculator } from 'lucide-react';
 import type { Product, Quote, QuoteItem } from '@/lib/api';
-import { fetchAdminProducts, replaceQuoteItems } from '@/lib/api';
+import { fetchAdminProducts, replaceQuoteItems, calculateInstantPrice } from '@/lib/api';
+
+// Pull the original instant-quote inputs off a quote so the admin recalc
+// button can re-run the same pricing formula the customer saw. Defensive:
+// older quotes (or admin-created ones) won't have inputs_json; we fall back
+// to sensible defaults (DTF on a Standard T-shirt, 1 color).
+type RecalcDefaults = {
+  garmentName: string;
+  qualityTier: string;
+  methodName: string;
+  colorsPerLocation: number;
+  rush: boolean;
+};
+function readRecalcDefaults(q: Quote): RecalcDefaults {
+  const fallback: RecalcDefaults = {
+    garmentName: 'T-shirt',
+    qualityTier: 'Standard',
+    methodName: 'DTF',
+    colorsPerLocation: 1,
+    rush: false,
+  };
+  const ij = q.inputs_json as
+    | { items?: Array<{ inputs?: Partial<RecalcDefaults> }> }
+    | null
+    | undefined;
+  const first = ij?.items?.[0]?.inputs;
+  if (!first) return fallback;
+  return {
+    garmentName: typeof first.garmentName === 'string' ? first.garmentName : fallback.garmentName,
+    qualityTier: typeof first.qualityTier === 'string' ? first.qualityTier : fallback.qualityTier,
+    methodName: typeof first.methodName === 'string' ? first.methodName : fallback.methodName,
+    colorsPerLocation: Number.isFinite(Number(first.colorsPerLocation))
+      ? Number(first.colorsPerLocation) : fallback.colorsPerLocation,
+    rush: typeof first.rush === 'boolean' ? first.rush : fallback.rush,
+  };
+}
 
 // Internal draft row — sizes/print_areas always arrays in UI state so the
 // JSX never has to handle `unknown`.
@@ -73,6 +108,8 @@ export default function QuoteItemsEditor({
     (quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [recalcingIdx, setRecalcingIdx] = useState<number | null>(null);
+  const recalcDefaults = useMemo(() => readRecalcDefaults(quote), [quote]);
 
   // Reset when a different quote is opened.
   useEffect(() => {
@@ -112,6 +149,38 @@ export default function QuoteItemsEditor({
         : d.sizes.filter((s) => s.size !== size);
       return { ...d, sizes: next };
     }));
+  }
+
+  async function recalcLine(i: number) {
+    const d = drafts[i];
+    if (!d) return;
+    const sizes = d.sizes.filter((s) => s.quantity > 0);
+    if (sizes.length === 0) {
+      setErr('Add sizes before recalculating');
+      return;
+    }
+    const numLocations = Math.max(1, d.print_areas.length);
+    setRecalcingIdx(i);
+    setErr(null);
+    try {
+      const r = await calculateInstantPrice({
+        sizes,
+        garmentName: recalcDefaults.garmentName,
+        qualityTier: recalcDefaults.qualityTier,
+        methodName: recalcDefaults.methodName,
+        colorsPerLocation: recalcDefaults.colorsPerLocation,
+        rush: recalcDefaults.rush,
+        numLocations,
+      });
+      updateDraft(i, {
+        unit_price: String(r.per_shirt),
+        line_total: String(r.total),
+      });
+    } catch (e) {
+      setErr((e as Error).message || 'Recalculate failed');
+    } finally {
+      setRecalcingIdx(null);
+    }
   }
 
   function togglePrintArea(i: number, area: string) {
@@ -253,6 +322,18 @@ export default function QuoteItemsEditor({
                   );
                 })}
               </div>
+              <button
+                type="button"
+                onClick={() => recalcLine(i)}
+                disabled={recalcingIdx === i || draftQuantity(d) === 0}
+                className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg"
+              >
+                {recalcingIdx === i ? (
+                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Calculating…</>
+                ) : (
+                  <><Calculator className="w-3.5 h-3.5" /> Recalculate with print formula ({recalcDefaults.methodName} · {recalcDefaults.qualityTier} · {Math.max(1, d.print_areas.length)} location{d.print_areas.length === 1 ? '' : 's'})</>
+                )}
+              </button>
             </div>
 
             <div>
