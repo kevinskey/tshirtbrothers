@@ -2233,6 +2233,15 @@ export default function AdminPage() {
                       <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                     </div>
                   )}
+                  {q.extra_design_urls && q.extra_design_urls.length > 0 && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {q.extra_design_urls.map((u, i) => (
+                        <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block">
+                          <img src={u} alt={`Extra design ${i + 1}`} className="w-full h-20 object-contain rounded border border-gray-200 bg-gray-50" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   {needed && (
                     <div className="text-xs text-gray-600">
                       <span className="font-medium">Needed:</span> {needed.toLocaleDateString()}
@@ -6242,10 +6251,30 @@ export default function AdminPage() {
                       design_url is still linked through for downloads. */}
                   {(q.mockup_image_url || q.design_url) && (
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                        Design
+                        {q.extra_design_urls && q.extra_design_urls.length > 0 && (
+                          <span className="ml-2 text-orange-600 normal-case">
+                            (+{q.extra_design_urls.length} more)
+                          </span>
+                        )}
+                      </p>
                       <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
                         <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                       </a>
+                      {q.extra_design_urls && q.extra_design_urls.length > 0 && (
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {q.extra_design_urls.map((u, i) => {
+                            const name = decodeURIComponent((u.split('/').pop() || '').replace(/-\d+\.[^.]+$/, ''));
+                            return (
+                              <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" className="block">
+                                <img src={u} alt={name || `Extra design ${i + 1}`} className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                                {name && <p className="mt-1 truncate text-[10px] text-gray-600" title={name}>{name}</p>}
+                              </a>
+                            );
+                          })}
+                        </div>
+                      )}
                       <div className="flex gap-2 mt-2">
                         <button
                           onClick={() => sendQuoteToArtLibrary(q)}
@@ -6715,19 +6744,33 @@ export default function AdminPage() {
                     {/* Design image — show the flattened mockup if we have
                         one; the raw design_url is still the click-through. */}
                     {(priceModalQuote.mockup_image_url || priceModalQuote.design_url) && (
-                      <a
-                        href={priceModalQuote.design_url || priceModalQuote.mockup_image_url || '#'}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-shrink-0"
-                      >
-                        <img
-                          src={priceModalQuote.mockup_image_url || priceModalQuote.design_url || ''}
-                          alt="Customer design"
-                          className="w-28 h-28 rounded-lg border border-gray-200 bg-white object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
-                        />
-                        <span className="text-[10px] text-blue-600 mt-1 block text-center">Click to enlarge</span>
-                      </a>
+                      <div className="flex-shrink-0">
+                        <a
+                          href={priceModalQuote.design_url || priceModalQuote.mockup_image_url || '#'}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <img
+                            src={priceModalQuote.mockup_image_url || priceModalQuote.design_url || ''}
+                            alt="Customer design"
+                            className="w-28 h-28 rounded-lg border border-gray-200 bg-white object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
+                          />
+                          <span className="text-[10px] text-blue-600 mt-1 block text-center">Click to enlarge</span>
+                        </a>
+                        {priceModalQuote.extra_design_urls && priceModalQuote.extra_design_urls.length > 0 && (
+                          <div className="mt-2 flex gap-1 flex-wrap w-28">
+                            {priceModalQuote.extra_design_urls.map((u, i) => (
+                              <a key={`${u}-${i}`} href={u} target="_blank" rel="noopener noreferrer" className="block">
+                                <img
+                                  src={u}
+                                  alt={`Extra design ${i + 1}`}
+                                  className="w-12 h-12 rounded border border-gray-200 bg-white object-contain hover:ring-2 hover:ring-blue-400 transition"
+                                />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">{priceModalQuote.customerName || priceModalQuote.customer_name}</p>
