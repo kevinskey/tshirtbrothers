@@ -106,6 +106,7 @@ import {
   updateAdminNotes,
   fetchAdminCounts,
   fetchQuote,
+  attachMockupToQuote,
 } from '@/lib/api';
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
@@ -797,6 +798,14 @@ export default function AdminPage() {
   const [detailQuote, setDetailQuote] = useState<Quote | Order | null>(null);
   const [adminNotesDraft, setAdminNotesDraft] = useState('');
   const [adminNotesSaving, setAdminNotesSaving] = useState(false);
+  const [mockupPickerOpen, setMockupPickerOpen] = useState(false);
+  const [mockupPickerSearch, setMockupPickerSearch] = useState('');
+  const [mockupAttaching, setMockupAttaching] = useState(false);
+  const mockupPickerQuery = useQuery({
+    queryKey: ['mockups', 'picker'],
+    queryFn: () => fetchMockups(),
+    enabled: mockupPickerOpen,
+  });
 
   // AI helpers (DeepSeek)
   const [aiTriage, setAiTriage] = useState<QuoteTriage | null>(null);
@@ -6291,6 +6300,26 @@ export default function AdminPage() {
                           Download
                         </button>
                       </div>
+                      <button
+                        onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                        className="w-full mt-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <GalleryHorizontal className="w-3.5 h-3.5" />
+                        {q.mockup_image_url ? 'Change mockup' : 'Pick mockup from Studio'}
+                      </button>
+                    </div>
+                  )}
+                  {!(q.mockup_image_url || q.design_url) && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
+                      <p className="text-sm text-gray-500 italic mb-2">No design on this quote yet.</p>
+                      <button
+                        onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                        className="w-full text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <GalleryHorizontal className="w-3.5 h-3.5" />
+                        Pick mockup from Studio
+                      </button>
                     </div>
                   )}
 
@@ -6579,6 +6608,89 @@ export default function AdminPage() {
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Mockup Picker Modal — attach an existing Mockup Studio mockup to
+            the open quote. Closes the drawer when nothing's open. */}
+        {mockupPickerOpen && detailQuote && (() => {
+          const filter = mockupPickerSearch.trim().toLowerCase();
+          const all = mockupPickerQuery.data || [];
+          const withPreview = all.filter((m) => !!m.preview_image_url);
+          const filtered = filter
+            ? withPreview.filter((m) =>
+                (m.name || '').toLowerCase().includes(filter) ||
+                (m.product_name || '').toLowerCase().includes(filter) ||
+                (m.customer_name || '').toLowerCase().includes(filter) ||
+                (m.customer_email || '').toLowerCase().includes(filter))
+            : withPreview;
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setMockupPickerOpen(false)}>
+              <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                  <h3 className="font-display font-semibold text-gray-900">Attach a mockup to Quote #{detailQuote.id}</h3>
+                  <button onClick={() => setMockupPickerOpen(false)} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      value={mockupPickerSearch}
+                      onChange={(e) => setMockupPickerSearch(e.target.value)}
+                      placeholder="Search by mockup name, product, or customer…"
+                      className="w-full text-sm border border-gray-200 rounded-lg pl-9 pr-3 py-2 bg-white"
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                  {mockupPickerQuery.isLoading && (
+                    <div className="flex items-center gap-2 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading mockups…</div>
+                  )}
+                  {!mockupPickerQuery.isLoading && filtered.length === 0 && (
+                    <p className="text-sm text-gray-500 italic">No matching mockups with a saved preview.</p>
+                  )}
+                  <ul className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {filtered.map((m) => (
+                      <li key={m.id}>
+                        <button
+                          type="button"
+                          disabled={mockupAttaching}
+                          onClick={async () => {
+                            if (!detailQuote) return;
+                            setMockupAttaching(true);
+                            try {
+                              const updated = await attachMockupToQuote(detailQuote.id, { mockup_id: m.id });
+                              setDetailQuote(updated as Quote);
+                              queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                              queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+                              toast(`Mockup attached to Quote #${detailQuote.id}`);
+                              setMockupPickerOpen(false);
+                            } catch (err) {
+                              toast((err as Error).message || 'Failed to attach mockup', 'error');
+                            } finally {
+                              setMockupAttaching(false);
+                            }
+                          }}
+                          className="block w-full text-left rounded-lg border border-gray-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-200 transition bg-white overflow-hidden disabled:opacity-50"
+                        >
+                          <img src={m.preview_image_url || ''} alt={m.name || `Mockup #${m.id}`} className="w-full h-32 object-contain bg-gray-50" />
+                          <div className="p-2">
+                            <p className="text-xs font-medium text-gray-900 truncate">{m.name || `Mockup #${m.id}`}</p>
+                            {m.product_name && <p className="text-[11px] text-gray-500 truncate">{m.product_name}</p>}
+                            {(m.customer_name || m.customer_email) && (
+                              <p className="text-[11px] text-gray-400 truncate">{m.customer_name || m.customer_email}</p>
+                            )}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               </div>
             </div>

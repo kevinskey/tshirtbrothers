@@ -657,6 +657,42 @@ router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, 
   }
 });
 
+// PATCH /admin/:id/mockup — attach a Mockup Studio mockup to a quote so it
+// shows up wherever the quote design preview is rendered. Body accepts either
+// a raw mockup_image_url or a mockup_id (or both). When mockup_id is given
+// we mirror the link onto the mockups row so the relationship is queryable
+// from either side.
+router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { mockup_image_url, mockup_id } = req.body || {};
+    let url = typeof mockup_image_url === 'string' && mockup_image_url ? mockup_image_url : null;
+    if (!url && mockup_id) {
+      const m = await pool.query(
+        'SELECT preview_image_url FROM mockups WHERE id = $1',
+        [mockup_id],
+      );
+      if (m.rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
+      url = m.rows[0].preview_image_url;
+    }
+    if (!url) return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
+
+    const result = await pool.query(
+      'UPDATE quotes SET mockup_image_url = $1 WHERE id = $2 RETURNING *',
+      [url, id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+
+    if (mockup_id) {
+      await pool.query('UPDATE mockups SET quote_id = $1 WHERE id = $2', [id, mockup_id]);
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /admin/:id/artwork — strip the customer-uploaded artwork from a
 // quote without touching anything else (line items, status, payments). Used
 // when the admin wants to remove a graphic that came in via a quote — e.g.
