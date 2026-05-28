@@ -8,6 +8,7 @@ import {
   sendQuoteAcceptedNotification,
   sendQuoteStatusUpdate,
   sendBalanceDueToCustomer,
+  sendQuoteUpdatedToCustomer,
   sendReviewRequestEmail,
 } from '../services/email.js';
 import {
@@ -739,6 +740,35 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
     await sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue });
 
     res.json({ success: true, balanceDue });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/notify-update — email the customer the new total after the
+// admin edited the line items. Informational only — doesn't ask for
+// payment now; balance is collected when the order's ready to ship.
+router.post('/admin/notify-update', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { quoteId, message } = req.body || {};
+    if (!quoteId) return res.status(400).json({ error: 'quoteId is required' });
+
+    const result = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = result.rows[0];
+
+    const total = parseFloat(quote.estimated_price || 0);
+    const depositPaid = parseFloat(quote.deposit_amount || 0);
+    const balanceDue = Math.max(0, total - depositPaid);
+
+    await sendQuoteUpdatedToCustomer(quote, {
+      total,
+      depositPaid,
+      balanceDue,
+      adminNote: typeof message === 'string' && message.trim() ? message.trim() : null,
+    });
+
+    res.json({ success: true, total, depositPaid, balanceDue });
   } catch (err) {
     next(err);
   }

@@ -508,6 +508,16 @@ export async function sendBalanceRequest(quoteId: string) {
   });
 }
 
+export async function notifyQuoteUpdate(quoteId: string, message?: string) {
+  return authRequest<{ success: boolean; total: number; depositPaid: number; balanceDue: number }>(
+    '/quotes/admin/notify-update',
+    {
+      method: 'POST',
+      body: JSON.stringify({ quoteId, message }),
+    },
+  );
+}
+
 export interface QuotePriceBreakdown {
   product: {
     name: string;

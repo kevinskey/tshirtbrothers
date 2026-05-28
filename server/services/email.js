@@ -35,8 +35,8 @@ function baseLayout(title, bodyHtml) {
   <!-- Footer -->
   <tr><td style="background:#f9fafb;padding:24px 32px;border-top:1px solid #e5e7eb;">
     <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">T-Shirt Brothers &mdash; Custom Apparel &amp; Screen Printing</p>
-    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">Phone: (555) 123-4567 &bull; Email: info@tshirtbrothers.com</p>
-    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">123 Print Ave, Dallas TX 75001</p>
+    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">Phone: (470) 622-4845 &bull; Email: info@tshirtbrothers.com</p>
+    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">6010 Renaissance Parkway, Fairburn, GA 30213</p>
   </td></tr>
 </table>
 </td></tr>
@@ -408,6 +408,47 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
     console.log('[Email] Balance due sent to ' + quote.customer_email);
   } catch (err) {
     console.error('[Email] Failed to send balance due:', err);
+  }
+}
+
+// Informational update — used when the admin edits a quote after the deposit
+// has been paid (added a print location, a product, switched to rush, etc.).
+// Tells the customer the new total + remaining balance, but the balance is
+// NOT charged now; it gets collected when the order is ready to ship.
+export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, balanceDue, adminNote }) {
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Your order has been updated</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || ''},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We've adjusted the details on your order. Here are the new totals. <strong>No action is needed right now</strong> — the remaining balance will be due when your order is ready to ship, and we'll email you a payment link then.</p>
+
+    ${adminNote ? `<div style="margin:0 0 20px;padding:14px 16px;background:#fff7ed;border-left:4px solid ${BRAND_ORANGE};border-radius:4px;"><p style="margin:0;font-size:14px;color:${BRAND_DARK};white-space:pre-wrap;">${adminNote.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p></div>` : ''}
+
+    ${detailsTable(
+      detailRow('Order', `#${quote.id}`) +
+      detailRow('Product', quote.product_name || 'Custom Apparel') +
+      detailRow('Quantity', String(quote.quantity)) +
+      detailRow('Updated Total', `<strong>${formatCurrency(total)}</strong>`) +
+      detailRow('Deposit Paid', '<span style="color:#16a34a;font-weight:700;">' + formatCurrency(depositPaid) + '</span>') +
+      `<tr>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Balance When Ready</td>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(balanceDue)}</td>
+      </tr>`
+    )}
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: `Order #${quote.id} updated — TShirt Brothers`,
+      html: baseLayout('Order Updated', body),
+    });
+    console.log('[Email] Quote update sent to ' + quote.customer_email);
+  } catch (err) {
+    console.error('[Email] Failed to send quote update:', err);
+    throw err;
   }
 }
 
