@@ -199,7 +199,7 @@ export default function Footer() {
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
               Service Area
             </p>
-            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            <div className="flex flex-wrap gap-2">
               {[
                 { slug: 'atlanta',        name: 'Atlanta' },
                 { slug: 'fairburn',       name: 'Fairburn' },
@@ -213,7 +213,7 @@ export default function Footer() {
                 <Link
                   key={c.slug}
                   to={`/custom-shirts/${c.slug}`}
-                  className="text-xs text-gray-400 hover:text-white transition-colors"
+                  className="inline-flex items-center min-h-[28px] rounded-md px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                 >
                   Custom Shirts {c.name}
                 </Link>
@@ -224,7 +224,7 @@ export default function Footer() {
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
               Shirts For
             </p>
-            <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+            <div className="flex flex-wrap gap-2">
               {[
                 { slug: 'churches',        name: 'Church Shirts' },
                 { slug: 'family-reunions', name: 'Family Reunions' },
@@ -238,7 +238,7 @@ export default function Footer() {
                 <Link
                   key={v.slug}
                   to={`/shirts-for/${v.slug}`}
-                  className="text-xs text-gray-400 hover:text-white transition-colors"
+                  className="inline-flex items-center min-h-[28px] rounded-md px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                 >
                   {v.name}
                 </Link>
