@@ -30,6 +30,7 @@ import favoritesRouter from './routes/favorites.js';
 import heroSlidesRouter, { adminRouter as heroSlidesAdminRouter } from './routes/heroSlides.js';
 import reviewsRouter from './routes/reviews.js';
 import newsletterRouter from './routes/newsletter.js';
+import sitemapRouter from './routes/sitemap.js';
 import { startScheduler } from './services/scheduler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +73,7 @@ app.use('/api', mockupsRouter);
 app.use('/api/local-businesses', localBusinessesRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/newsletter', newsletterRouter);
+app.use('/api', sitemapRouter);
 app.use('/api/client-errors', clientErrorsRouter);
 app.use('/api/admin/custom-fonts', customFontsAdminRouter);
 app.use('/api/custom-fonts', customFontsPublicRouter);
