@@ -1,9 +1,42 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+// Inline the main app CSS bundle into index.html so the page doesn't
+// pay a render-blocking round-trip for it. At ~13 KiB it's small
+// enough that the gzip-compressed HTML stays well under the SPA-shell
+// budget, and on a SPA the HTML re-fetches on every visit anyway, so
+// we're not losing meaningful repeat-visit cache value. Removes the
+// emitted CSS file from the bundle so we don't pay double bytes.
+function inlineAppCss(): Plugin {
+  return {
+    name: 'tsb-inline-app-css',
+    apply: 'build',
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const htmlEntry = Object.values(bundle).find(
+        (a) => a.type === 'asset' && a.fileName === 'index.html',
+      );
+      if (!htmlEntry || htmlEntry.type !== 'asset') return;
+      let html = htmlEntry.source as string;
+
+      const linkRegex = /<link[^>]+rel="stylesheet"[^>]+href="\/?([^"]+\.css)"[^>]*>/g;
+      html = html.replace(linkRegex, (match, hrefPath: string) => {
+        const fileName = hrefPath.startsWith('/') ? hrefPath.slice(1) : hrefPath;
+        const cssAsset = bundle[fileName];
+        if (!cssAsset || cssAsset.type !== 'asset') return match;
+        const css = String(cssAsset.source);
+        delete bundle[fileName];
+        return `<style>${css}</style>`;
+      });
+
+      htmlEntry.source = html;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), inlineAppCss()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
