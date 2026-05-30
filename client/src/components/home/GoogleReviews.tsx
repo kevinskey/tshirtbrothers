@@ -80,7 +80,7 @@ export default function GoogleReviews() {
               </span>
             </div>
           ) : (
-            <div className="mt-3 h-6 animate-pulse bg-gray-200 rounded w-48 mx-auto" />
+            <div className="mt-3 h-7 animate-pulse bg-gray-200 rounded w-48 mx-auto" />
           )}
         </div>
 
