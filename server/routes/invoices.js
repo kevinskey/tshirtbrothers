@@ -11,7 +11,7 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
-const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png';
+const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;

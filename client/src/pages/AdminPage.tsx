@@ -2007,7 +2007,7 @@ export default function AdminPage() {
       {/* Sidebar */}
       <aside className={`fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
         <div className="p-6 border-b border-gray-800 flex items-center gap-3">
-          <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
+          <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
           <h1 className="font-display text-xl font-bold tracking-tight">Admin</h1>
           <Link
             to="/"
@@ -4422,7 +4422,7 @@ export default function AdminPage() {
                 <div className="max-w-2xl mx-auto bg-white rounded-xl border border-gray-200 overflow-hidden shadow-lg">
                   {/* Preview Header */}
                   <div className="bg-gray-900 px-8 py-6 flex items-center justify-between">
-                    <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png" alt="T-Shirt Brothers" className="h-10" />
+                    <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="T-Shirt Brothers" className="h-10" />
                     <span className="text-white text-2xl font-bold">INVOICE</span>
                   </div>
 

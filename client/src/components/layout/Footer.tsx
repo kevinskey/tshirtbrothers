@@ -88,7 +88,7 @@ export default function Footer() {
           <div>
             <Link to="/" className="flex items-center gap-2">
               <img
-                src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
+                src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
                 alt="TShirt Brothers"
                 className="h-10 w-10 object-contain"
               />

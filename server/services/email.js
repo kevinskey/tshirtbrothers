@@ -26,7 +26,7 @@ function baseLayout(title, bodyHtml) {
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
   <!-- Header -->
   <tr><td style="background:${BRAND_DARK};padding:24px 32px;text-align:center;">
-    <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TShirt Brothers" style="height:48px;" />
+    <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TShirt Brothers" style="height:48px;" />
   </td></tr>
   <!-- Body -->
   <tr><td style="padding:32px;">
