@@ -12,8 +12,15 @@ interface HeroSlide {
 
 // Default fallback so the page never renders a totally empty hero — if
 // the API is unreachable or has zero active rows, we still show one slide.
+// v3 is the optimized 1440×960 WebP (~94 KiB, down from a 2,189 KiB PNG)
+// — see server/scripts/optimize-hero-image.js for how it's generated.
+const FALLBACK_WEBP =
+  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/tshirt-ad.webp';
+// Companion AVIF for the fallback; <picture> will prefer it when supported.
+const FALLBACK_AVIF =
+  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/tshirt-ad.avif';
 const FALLBACK_SLIDES: HeroSlide[] = [
-  { id: 0, image_url: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v2/tshirt-ad.png', label: null, link_url: null },
+  { id: 0, image_url: FALLBACK_WEBP, label: null, link_url: null },
 ];
 
 export default function HeroSection() {
@@ -56,20 +63,32 @@ export default function HeroSection() {
               the (similarly-tall) text column instead of overflowing it. */}
           <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] bg-white">
             {slides.map((s, i) => {
+              // Only the fallback slide has a paired AVIF; admin-uploaded
+              // slides keep working as a plain <img> for back-compat.
+              const isFallback = s.image_url === FALLBACK_WEBP;
               const img = (
                 <img
                   src={s.image_url}
                   alt={s.label || ''}
+                  width={1440}
+                  height={960}
                   className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                   loading={i === 0 ? 'eager' : 'lazy'}
+                  decoding={i === 0 ? 'sync' : 'async'}
                 />
               );
+              const picture = isFallback ? (
+                <picture>
+                  <source type="image/avif" srcSet={FALLBACK_AVIF} />
+                  {img}
+                </picture>
+              ) : img;
               // Admin-set link_url makes the slide clickable; otherwise it's
               // a static image so the rotator dots can still steal focus.
               return s.link_url ? (
-                <a key={s.id} href={s.link_url} className="absolute inset-0" aria-label={s.label || `Slide ${i + 1}`}>{img}</a>
+                <a key={s.id} href={s.link_url} className="absolute inset-0" aria-label={s.label || `Slide ${i + 1}`}>{picture}</a>
               ) : (
-                <div key={s.id}>{img}</div>
+                <div key={s.id}>{picture}</div>
               );
             })}
             {/* Dot indicators */}
