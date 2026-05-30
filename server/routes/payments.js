@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
+import crypto from 'crypto';
 import pool from '../db.js';
-import { sendQuoteAcceptedNotification, sendPaidInvoiceReceipt } from '../services/email.js';
+import {
+  sendQuoteAcceptedNotification,
+  sendDepositReceiptToCustomer,
+  sendPaidInvoiceReceipt,
+} from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
 
 const router = Router();
@@ -351,19 +356,25 @@ async function handleCheckoutSessionCompleted(session) {
           await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
         }
       } else {
+        // Backfill accept_token for orders that went through the instant-quote
+        // /lock-in path (which never generates one) so the deposit receipt's
+        // balance-payment link is uniquely tied to this customer's order.
+        const newToken = crypto.randomBytes(32).toString('hex');
         const result = await pool.query(
           `UPDATE quotes SET
             status = 'accepted',
             accepted_at = NOW(),
-            deposit_amount = $1
+            deposit_amount = $1,
+            accept_token = COALESCE(accept_token, $3)
           WHERE id = $2
           RETURNING *`,
-          [session.amount_total / 100, quoteId]
+          [session.amount_total / 100, quoteId, newToken]
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (session.amount_total / 100));
           sendQuoteAcceptedNotification(quote).catch(() => {});
+          sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
         }
       }
@@ -548,19 +559,22 @@ router.get('/success', async (req, res, next) => {
           invoiceForQuote = existing.rows[0] || null;
         }
       } else if (quote.status !== 'accepted') {
+        const newToken = crypto.randomBytes(32).toString('hex');
         const updated = await pool.query(
           `UPDATE quotes SET
              status = 'accepted',
              accepted_at = NOW(),
-             deposit_amount = $1
+             deposit_amount = $1,
+             accept_token = COALESCE(accept_token, $3)
            WHERE id = $2 AND status != 'accepted'
            RETURNING *`,
-          [stripeDetails.amount_total / 100, quoteId],
+          [stripeDetails.amount_total / 100, quoteId, newToken],
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (stripeDetails.amount_total / 100));
           sendQuoteAcceptedNotification(quote).catch(() => {});
+          sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
         }
       }
