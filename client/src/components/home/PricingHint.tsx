@@ -24,7 +24,7 @@ export default function PricingHint() {
           </div>
           <Link
             to="/quote"
-            className="flex-shrink-0 inline-flex items-center justify-center bg-orange-600 hover:bg-orange-700 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors text-sm"
+            className="flex-shrink-0 inline-flex items-center justify-center bg-orange-700 hover:bg-orange-800 text-white font-semibold px-6 py-2.5 rounded-lg transition-colors text-sm"
           >
             Get Your Price
           </Link>
