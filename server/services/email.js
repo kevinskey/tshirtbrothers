@@ -253,6 +253,54 @@ export async function sendQuoteAcceptedNotification(quote) {
   }
 }
 
+// Customer-facing deposit receipt — fired right after the deposit webhook
+// clears. Confirms the deposit, shows the balance still due, and gives the
+// customer a permanent link they can come back to and pay the balance
+// without waiting for the admin to send a reminder. This closes the gap
+// where the deposit webhook only emailed the admin and the customer had
+// no path to settle the rest of the order.
+export async function sendDepositReceiptToCustomer(quote) {
+  const total = Number(quote.estimated_price || 0);
+  const depositPaid = Number(quote.deposit_amount || 0);
+  const balanceDue = Math.max(0, total - depositPaid);
+  const payBalanceUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token || ''}&type=balance`;
+
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#16a34a;">Deposit Received ✓</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Thanks for your order! We've received your deposit and your order is now in production. Below are your totals — save this email so you can pay the remaining balance whenever you're ready.</p>
+
+    ${detailsTable(
+      detailRow('Order', `#${quote.id}`) +
+      detailRow('Product', quote.product_name || 'Custom Apparel') +
+      detailRow('Quantity', String(quote.quantity || 'N/A')) +
+      detailRow('Order Total', formatCurrency(total)) +
+      detailRow('Deposit Paid', '<span style="color:#16a34a;font-weight:700;">' + formatCurrency(depositPaid) + '</span>') +
+      `<tr>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Balance Remaining</td>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(balanceDue)}</td>
+      </tr>`
+    )}
+
+    ${balanceDue > 0 ? primaryButton('Pay Remaining Balance', payBalanceUrl) : ''}
+
+    <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">No rush — you can pay the balance any time before pickup. We'll send a reminder when your order is ready.</p>
+    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: `Deposit received — Order #${quote.id} confirmation`,
+      html: baseLayout('Deposit Received', body),
+    });
+    console.log(`[Email] Deposit receipt sent to ${quote.customer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send deposit receipt:', err);
+  }
+}
+
 /**
  * Sends status update email to customer.
  */
