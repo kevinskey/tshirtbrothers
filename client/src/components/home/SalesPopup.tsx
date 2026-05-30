@@ -138,14 +138,14 @@ export default function SalesPopup() {
           {/* CTA */}
           <a
             href="/quote"
-            className="mt-4 block w-full rounded-xl bg-gradient-to-b from-orange-500 to-orange-600 px-4 py-3 text-center text-sm font-bold text-white shadow-sm transition hover:from-orange-600 hover:to-orange-700 hover:shadow-md active:scale-[0.99]"
+            className="mt-4 block w-full rounded-xl bg-gradient-to-b from-orange-600 to-orange-700 px-4 py-3 text-center text-sm font-bold text-white shadow-sm transition hover:from-orange-700 hover:to-orange-800 hover:shadow-md active:scale-[0.99]"
           >
             {promo.cta || 'Get a Quote'}
           </a>
 
           <button
             onClick={handleDismiss}
-            className="mt-2 block w-full text-center text-xs text-gray-400 hover:text-gray-600"
+            className="mt-2 block w-full text-center text-xs text-gray-600 hover:text-gray-800"
           >
             No thanks
           </button>

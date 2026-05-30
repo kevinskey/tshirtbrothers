@@ -18,7 +18,7 @@ export default function QuoteCTA() {
         <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center items-center">
           <Link
             to="/quote"
-            className="inline-flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 py-3.5 rounded-lg transition-colors shadow-lg shadow-orange-500/25 text-base"
+            className="inline-flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white font-bold px-8 py-3.5 rounded-lg transition-colors shadow-lg shadow-orange-600/25 text-base"
           >
             Get a Quote
             <ArrowRight className="h-4 w-4" />
