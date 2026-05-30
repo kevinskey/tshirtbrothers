@@ -61,7 +61,7 @@ export default function GoogleReviews() {
     <section className="py-12 sm:py-16 bg-gray-50 border-y border-gray-200">
       <div className="container mx-auto px-4">
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-orange-600 mb-2">
+          <div className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-orange-700 mb-2">
             <Star className="h-3.5 w-3.5 fill-orange-500 text-orange-500" />
             Google Reviews
           </div>
@@ -69,7 +69,7 @@ export default function GoogleReviews() {
             className="text-3xl sm:text-4xl text-gray-900 tracking-tight"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
-            What Our <span className="text-orange-500">Customers Say</span>
+            What Our <span className="text-orange-600">Customers Say</span>
           </h2>
           {data ? (
             <div className="mt-3 flex items-center justify-center gap-3 text-gray-700">

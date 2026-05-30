@@ -84,7 +84,7 @@ export default function Navbar() {
                 className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
               />
               <span
-                className="text-base sm:text-xl text-orange-500 leading-[0.95] tracking-tight"
+                className="text-base sm:text-xl text-orange-600 leading-[0.95] tracking-tight"
                 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
               >
                 <span className="block sm:inline">TSHIRT</span>{' '}

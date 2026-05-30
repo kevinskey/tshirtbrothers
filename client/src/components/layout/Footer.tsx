@@ -47,20 +47,20 @@ function NewsletterSignup() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@email.com"
           required
-          className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 outline-none px-3 py-2 text-sm text-white placeholder-gray-500"
+          className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 outline-none px-3 py-2 text-sm text-white placeholder-gray-400"
           disabled={status === 'submitting'}
         />
         <button
           type="submit"
           disabled={status === 'submitting'}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
         >
           <Send className="h-4 w-4" />
           <span className="hidden sm:inline">Subscribe</span>
         </button>
       </div>
       {status === 'err' && <p className="text-xs text-red-400">{errMsg}</p>}
-      <p className="text-xs text-gray-500">No spam — just print tips, sales, and new product alerts.</p>
+      <p className="text-xs text-gray-400">No spam — just print tips, sales, and new product alerts.</p>
     </form>
   );
 }
@@ -196,7 +196,7 @@ export default function Footer() {
       <div className="border-t border-gray-800/60">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid gap-6 md:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
               Service Area
             </p>
             <div className="flex flex-wrap gap-x-3 gap-y-1.5">
@@ -221,7 +221,7 @@ export default function Footer() {
             </div>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-2.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
               Shirts For
             </p>
             <div className="flex flex-wrap gap-x-3 gap-y-1.5">
@@ -250,7 +250,7 @@ export default function Footer() {
 
       {/* Bottom bar */}
       <div className="border-t border-gray-800">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
           <p>&copy; 2026 TShirt Brothers. All rights reserved.</p>
           <div className="flex items-center gap-6">
             <Link to="/privacy" className="hover:text-white transition-colors">

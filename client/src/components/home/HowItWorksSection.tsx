@@ -30,7 +30,7 @@ export default function HowItWorksSection() {
     <section className="py-12 md:py-16 bg-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-10">
-          <p className="text-sm font-semibold text-orange-500 uppercase tracking-wider mb-2">Simple as 1-2-3</p>
+          <p className="text-sm font-semibold text-orange-600 uppercase tracking-wider mb-2">Simple as 1-2-3</p>
           <h2 className="font-display text-2xl md:text-3xl font-bold text-gray-900">
             How It Works
           </h2>
@@ -44,7 +44,7 @@ export default function HowItWorksSection() {
                 <div className={"mx-auto w-16 h-16 rounded-2xl flex items-center justify-center mb-5 shadow-lg " + step.color}>
                   <Icon className="h-7 w-7 text-white" />
                 </div>
-                <div className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-2">
+                <div className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-2">
                   Step {step.num}
                 </div>
                 <h3 className="font-display text-xl font-bold text-gray-900 mb-2">
@@ -61,7 +61,7 @@ export default function HowItWorksSection() {
         <div className="text-center mt-10">
           <Link
             to="/design"
-            className="inline-flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white font-semibold px-8 py-3 rounded-lg transition-colors shadow-lg shadow-orange-500/20"
+            className="inline-flex items-center justify-center bg-orange-600 hover:bg-orange-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors shadow-lg shadow-orange-600/20"
           >
             Start Designing — It&apos;s Free
           </Link>

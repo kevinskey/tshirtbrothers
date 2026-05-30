@@ -96,14 +96,14 @@ export default function HeroSection() {
               className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              <span className="whitespace-nowrap">Support Local <span className="text-orange-500">Atlanta</span>,</span>
+              <span className="whitespace-nowrap">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
                 className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
               >
                 Custom Printing
               </span>
-              <span className="text-orange-500">Done Right.</span>
+              <span className="text-orange-600">Done Right.</span>
             </h1>
             <p className="mt-4 lg:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
               Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
@@ -112,7 +112,7 @@ export default function HeroSection() {
             <div className="mt-6 sm:mt-10 lg:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
               <Link
                 to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-500/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-600 hover:bg-orange-700 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-600/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
                 Get a Free Quote
               </Link>
@@ -133,8 +133,8 @@ export default function HeroSection() {
 
             {/* Spanish-language toggle. Small, unobtrusive — only the
                 people who need it will notice it. */}
-            <p className="mt-4 text-xs text-gray-500">
-              <a href="/es" className="text-orange-600 hover:underline font-semibold">
+            <p className="mt-4 text-xs text-gray-600">
+              <a href="/es" className="text-orange-700 hover:underline font-semibold">
                 ¿Hablas español? Ver en español →
               </a>
             </p>
