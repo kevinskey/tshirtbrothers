@@ -31,7 +31,7 @@ type SeoProps = {
 };
 
 const SITE = 'https://tshirtbrothers.com';
-const DEFAULT_IMAGE = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/tsb-logo.png';
+const DEFAULT_IMAGE = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 export default function Seo({ title, description, path, image, noindex, alternates }: SeoProps) {
   const url = `${SITE}${path.startsWith('/') ? path : `/${path}`}`;

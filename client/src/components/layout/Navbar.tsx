@@ -79,7 +79,7 @@ export default function Navbar() {
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2 flex-shrink-0">
               <img
-                src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png"
+                src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
                 alt="TShirt Brothers"
                 className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
               />

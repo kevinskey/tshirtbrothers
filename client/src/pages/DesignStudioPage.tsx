@@ -2114,7 +2114,7 @@ export default function DesignStudioPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <img src="https://tshirtbrothers.atl1.digitaloceanspaces.com/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
+        <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
         <span className="text-lg font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
       </div>
 
