@@ -14,13 +14,25 @@
 
     <!-- Microsoft Clarity — free heatmaps + session recordings.
          Project ID: wwufy30yoe (TShirt Brothers). Dashboard:
-         https://clarity.microsoft.com/projects -->
+         https://clarity.microsoft.com/projects
+         Deferred to after window 'load' (with a requestIdleCallback
+         shim) so the ~71ms forced reflow Clarity does on init doesn't
+         compete with LCP/FCP. Anything calling clarity() before the
+         script lands queues into c[a].q and replays when it boots. -->
     <script>
-      (function(c,l,a,r,i,t,y){
+      (function(c,l,a,r,i){
         c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-      })(window, document, "clarity", "script", "wwufy30yoe");
+        var load=function(){
+          var t=l.createElement(r);t.async=1;t.src='https://www.clarity.ms/tag/'+i;
+          var y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+        };
+        var schedule=function(){
+          if (c.requestIdleCallback) c.requestIdleCallback(load,{timeout:3000});
+          else setTimeout(load,1500);
+        };
+        if (l.readyState==='complete') schedule();
+        else c.addEventListener('load',schedule,{once:true});
+      })(window, document, 'clarity', 'script', 'wwufy30yoe');
     </script>
     <link rel="icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
     <link rel="apple-touch-icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
