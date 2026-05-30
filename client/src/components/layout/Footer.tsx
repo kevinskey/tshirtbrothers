@@ -54,7 +54,7 @@ function NewsletterSignup() {
           type="submit"
           disabled={status === 'submitting'}
           aria-label="Subscribe to newsletter"
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-700 hover:bg-orange-800 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
         >
           <Send className="h-4 w-4" aria-hidden="true" />
           <span className="hidden sm:inline">Subscribe</span>

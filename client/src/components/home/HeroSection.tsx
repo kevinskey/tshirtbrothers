@@ -131,7 +131,7 @@ export default function HeroSection() {
             <div className="mt-6 sm:mt-10 lg:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
               <Link
                 to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-600 hover:bg-orange-700 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-600/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
                 Get a Free Quote
               </Link>
