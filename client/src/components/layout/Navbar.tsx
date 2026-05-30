@@ -178,7 +178,7 @@ export default function Navbar() {
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
           <div
-            className="flex justify-start sm:justify-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex justify-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             <div
               className="inline-flex flex-nowrap items-center gap-4 sm:gap-6 px-5 sm:px-6 py-1.5 sm:py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
