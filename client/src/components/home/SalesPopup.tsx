@@ -94,9 +94,9 @@ export default function SalesPopup() {
           </div>
 
           {/* Headline */}
-          <h3 className="mt-3 font-display text-xl font-bold leading-tight text-gray-900">
+          <h2 className="mt-3 font-display text-xl font-bold leading-tight text-gray-900">
             {promo.headline}
-          </h3>
+          </h2>
           {promo.subtext && (
             <p className="mt-1.5 text-sm leading-snug text-gray-600">{promo.subtext}</p>
           )}
