@@ -551,6 +551,7 @@ export default function ShopPage() {
                 <button
                   onClick={() => setDetailProduct(null)}
                   className="text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+                  aria-label="Close product details"
                 >
                   <X className="w-5 h-5" />
                 </button>
