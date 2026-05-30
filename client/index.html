@@ -116,13 +116,25 @@
     }
     </script>
 
-    <!-- Fonts -->
+    <!-- Fonts — load the Google Fonts stylesheet non-blocking via the
+         rel=preload + onload swap pattern so it doesn't sit on the
+         critical path delaying LCP. font-display=swap means the page
+         renders with system fallbacks immediately and re-renders when
+         the web fonts arrive. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap"
-      rel="stylesheet"
+      onload="this.onload=null;this.rel='stylesheet'"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap"
+      />
+    </noscript>
   </head>
   <body>
     <!-- SEO: Static content for crawlers that can't run JavaScript -->
