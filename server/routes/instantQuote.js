@@ -274,6 +274,10 @@ router.post('/save', async (req, res, next) => {
     if (!customer_email || !/.+@.+\..+/.test(customer_email)) {
       return res.status(400).json({ error: 'customer_email is required' });
     }
+    const cleanName = typeof customer_name === 'string' ? customer_name.trim() : '';
+    if (!cleanName) {
+      return res.status(400).json({ error: 'customer_name is required' });
+    }
 
     const tables = await loadPricingTables();
 
@@ -360,7 +364,7 @@ router.post('/save', async (req, res, next) => {
        VALUES ($1, $2, $3, $4, 'instant-quote', $5::jsonb, $6, $7, $8::jsonb, $9, $10, 'pending')
        RETURNING id, customer_name, customer_email, created_at`,
       [
-        customer_name || null,
+        cleanName,
         customer_email,
         headerProductName,
         grandQuantity,

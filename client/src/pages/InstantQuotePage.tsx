@@ -1293,6 +1293,10 @@ function SaveQuoteModal({
   const depositAmount = grandTotal / 2;
 
   async function submit() {
+    if (!name.trim()) {
+      toast.error('Enter your name');
+      return;
+    }
     if (!email || !/.+@.+\..+/.test(email)) {
       toast.error('Enter a valid email');
       return;
