@@ -761,26 +761,26 @@ router.get('/holiday-promo', publicLimiter, async (req, res) => {
     const today = new Date();
 
     // ────────────────────────────────────────────────────────────────────
-    // Manual override: Memorial Day Week 2026 promo.
-    // Active May 18 – May 31, 2026 (Memorial Day is Mon May 25).
+    // Manual override: Father's Day 2026 promo.
+    // Active June 1 – June 22, 2026 (Father's Day is Sun June 21).
     // Bypasses the AI generator and seeds the DB so the code redeems at
     // checkout. Remove this block (or let the window pass) to fall back
     // to AI-generated promos.
     // ────────────────────────────────────────────────────────────────────
-    const memDayStart = new Date('2026-05-18T00:00:00Z');
-    const memDayEnd = new Date('2026-06-01T00:00:00Z');
-    if (today >= memDayStart && today < memDayEnd) {
-      const memDay = new Date('2026-05-25T00:00:00Z');
-      const daysUntil = Math.max(0, Math.ceil((memDay - today) / (24 * 60 * 60 * 1000)));
+    const fdStart = new Date('2026-06-01T00:00:00Z');
+    const fdEnd = new Date('2026-06-22T00:00:00Z');
+    if (today >= fdStart && today < fdEnd) {
+      const fathersDay = new Date('2026-06-21T00:00:00Z');
+      const daysUntil = Math.max(0, Math.ceil((fathersDay - today) / (24 * 60 * 60 * 1000)));
       const promo = {
-        holiday: 'Memorial Day',
+        holiday: "Father's Day",
         days_until: daysUntil,
-        headline: 'Memorial Day T-Shirt Sale',
-        subtext: '20% off custom T-shirts all week — honoring those who served.',
-        discount: '20% OFF T-SHIRTS',
-        code: 'TSBMEM2026',
-        emoji: '🇺🇸',
-        urgency: 'Sale ends Memorial Day weekend.',
+        headline: "Father's Day Sale",
+        subtext: '20% off all T-shirts — give Dad something he can wear.',
+        discount: '20% OFF ALL T-SHIRTS',
+        code: 'TSBDAD2026',
+        emoji: '👔',
+        urgency: 'Order early for guaranteed Father\'s Day delivery.',
         cta: 'Get a Quote',
       };
       try {
@@ -795,10 +795,10 @@ router.get('/holiday-promo', publicLimiter, async (req, res) => {
              discount_value = EXCLUDED.discount_value,
              expires_at = EXCLUDED.expires_at,
              active = TRUE`,
-          [promo.code, promo.holiday, promo.headline, promo.subtext, memDayEnd],
+          [promo.code, promo.holiday, promo.headline, promo.subtext, fdEnd],
         );
       } catch (dbErr) {
-        console.error('[Holiday Promo] seed TSBMEM2026 failed:', dbErr.message);
+        console.error('[Holiday Promo] seed TSBDAD2026 failed:', dbErr.message);
       }
       cache.set(cacheKey, { value: promo, expires: Date.now() + 6 * 60 * 60 * 1000 });
       return res.json(promo);
