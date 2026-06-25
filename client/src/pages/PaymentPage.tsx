@@ -3,43 +3,97 @@ import { useSearchParams, Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
-// Checkout page - redirects to Stripe (handles both deposit and balance)
+interface QuoteSummary {
+  id: number;
+  customer_name: string | null;
+  product_name: string | null;
+  estimated_price: number;
+  deposit_amount: number;
+}
+
+// Checkout page — shows a choice between paying the 50% deposit OR
+// paying the full balance in one shot when the customer arrives from
+// the accept-quote email link. The balance email keeps direct redirect
+// (`?type=balance`) so that "Pay remaining balance" button bypasses
+// the choice screen.
 export function PaymentCheckout() {
   const [searchParams] = useSearchParams();
   const quoteId = searchParams.get('quote');
   const token = searchParams.get('token');
-  const type = searchParams.get('type'); // 'balance' or null (deposit)
+  const type = searchParams.get('type'); // 'balance' | 'full' | 'deposit' | null
   const [error, setError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<QuoteSummary | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
+
+  // Pre-decided types skip the choice screen and go straight to Stripe.
+  const skipChoice = type === 'balance' || type === 'deposit' || type === 'full';
+
+  // Start checkout for a given payment type by hitting the matching API.
+  const beginCheckout = (paymentType: 'deposit' | 'full' | 'balance') => {
+    if (!quoteId) return;
+    setRedirecting(true);
+    setError(null);
+    const endpoint =
+      paymentType === 'balance' ? '/api/payments/create-balance-checkout'
+      : paymentType === 'full'  ? '/api/payments/create-full-checkout'
+      :                            '/api/payments/create-checkout';
+    fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quoteId, token }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.checkoutUrl) {
+          window.location.href = data.checkoutUrl;
+        } else {
+          setError(data.error || 'Failed to create checkout session');
+          setRedirecting(false);
+        }
+      })
+      .catch(() => {
+        setError('Failed to connect to payment server');
+        setRedirecting(false);
+      });
+  };
 
   useEffect(() => {
     if (!quoteId) {
       setError('Missing quote ID');
       return;
     }
-
-    const endpoint = type === 'balance'
-      ? '/api/payments/create-balance-checkout'
-      : '/api/payments/create-checkout';
-
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quoteId, token }),
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.checkoutUrl) {
-          window.location.href = data.checkoutUrl;
+    if (skipChoice) {
+      beginCheckout((type as 'balance' | 'deposit' | 'full'));
+      return;
+    }
+    // Load a lightweight quote summary so we can show the two amounts.
+    fetch(`/api/quotes/${quoteId}/public?token=${encodeURIComponent(token || '')}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.id) {
+          setQuote({
+            id: data.id,
+            customer_name: data.customer_name ?? null,
+            product_name: data.product_name ?? null,
+            estimated_price: Number(data.estimated_price || 0),
+            deposit_amount: Number(data.deposit_amount || 0),
+          });
         } else {
-          setError(data.error || 'Failed to create checkout session');
+          setError(data?.error || 'Could not load quote');
         }
       })
-      .catch(() => setError('Failed to connect to payment server'));
+      .catch(() => setError('Could not load quote'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteId, token, type]);
+
+  const total = quote?.estimated_price ?? 0;
+  const depositAmount = total * 0.5;
+  const balanceAmount = total - depositAmount;
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
 
   return (
     <Layout>
-      <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="min-h-[60vh] flex items-center justify-center px-4 py-12">
         {error ? (
           <div className="text-center">
             <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
@@ -47,11 +101,60 @@ export function PaymentCheckout() {
             <p className="text-gray-500 mb-6">{error}</p>
             <Link to="/" className="text-blue-600 font-medium hover:underline">Return Home</Link>
           </div>
-        ) : (
+        ) : skipChoice || redirecting ? (
           <div className="text-center">
             <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-            <h1 className="text-xl font-display font-bold text-gray-900 mb-2">Redirecting to Payment...</h1>
+            <h1 className="text-xl font-display font-bold text-gray-900 mb-2">Redirecting to Payment…</h1>
             <p className="text-gray-500">Please wait while we set up your secure payment.</p>
+          </div>
+        ) : !quote ? (
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-500">Loading your quote…</p>
+          </div>
+        ) : (
+          <div className="w-full max-w-xl">
+            <div className="text-center mb-8">
+              <h1 className="text-2xl md:text-3xl font-display font-bold text-gray-900 mb-2">
+                How would you like to pay?
+              </h1>
+              <p className="text-gray-500">
+                {quote.customer_name ? `Hi ${quote.customer_name}, ` : ''}your quote total is
+                <span className="font-semibold text-gray-900"> {fmt(total)}</span>.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Pay deposit (50%) */}
+              <button
+                onClick={() => beginCheckout('deposit')}
+                className="text-left bg-white border-2 border-gray-200 hover:border-blue-500 rounded-2xl p-5 transition shadow-sm hover:shadow-md"
+              >
+                <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Lock it in</div>
+                <div className="text-2xl font-bold text-gray-900 mt-1">Pay deposit</div>
+                <div className="text-3xl font-display font-bold text-blue-600 mt-3">{fmt(depositAmount)}</div>
+                <div className="text-sm text-gray-500 mt-1">
+                  50% today · {fmt(balanceAmount)} due when your order ships
+                </div>
+              </button>
+
+              {/* Pay in full */}
+              <button
+                onClick={() => beginCheckout('full')}
+                className="text-left bg-blue-600 hover:bg-blue-700 text-white rounded-2xl p-5 transition shadow-sm hover:shadow-md"
+              >
+                <div className="text-sm font-semibold text-blue-100 uppercase tracking-wide">Done in one step</div>
+                <div className="text-2xl font-bold mt-1">Pay in full</div>
+                <div className="text-3xl font-display font-bold mt-3">{fmt(total)}</div>
+                <div className="text-sm text-blue-100 mt-1">
+                  No balance email later — your order is paid and ready
+                </div>
+              </button>
+            </div>
+
+            <p className="text-center text-xs text-gray-400 mt-6">
+              Secure payment by Stripe. Cards, Apple Pay, and Google Pay accepted.
+            </p>
           </div>
         )}
       </div>

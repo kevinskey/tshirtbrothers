@@ -241,6 +241,72 @@ router.post('/create-checkout', async (req, res, next) => {
   }
 });
 
+// POST /create-full-checkout - Create Stripe Checkout session for the
+// full quote amount in one transaction. Customer opts into this from the
+// payment-choice screen instead of paying the 50% deposit and a separate
+// balance later. Behaves like the deposit flow downstream: the webhook
+// marks the quote accepted AND sets deposit_amount = total + balance_paid_at,
+// so /admin and the customer's receipt show "Paid in full" immediately.
+router.post('/create-full-checkout', async (req, res, next) => {
+  try {
+    const { quoteId, token } = req.body;
+
+    if (!quoteId) {
+      return res.status(400).json({ error: 'quoteId is required' });
+    }
+
+    const quoteResult = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
+    if (quoteResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Quote not found' });
+    }
+
+    const quote = quoteResult.rows[0];
+
+    if (token && quote.accept_token && token !== quote.accept_token) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+
+    const total = parseFloat(quote.estimated_price || 0);
+    if (total <= 0) {
+      return res.status(400).json({ error: 'Quote has no price set' });
+    }
+
+    const fullAmountCents = Math.round(total * 100);
+    const stripe = getStripe();
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `Full Payment - ${quote.product_name || 'Custom Printing Order'}`,
+              description: `Quote #${quote.id}. Customer: ${quote.customer_name || 'N/A'}`,
+            },
+            unit_amount: fullAmountCents,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${domain}/payment/success?quote=${quoteId}&session_id={CHECKOUT_SESSION_ID}&type=full`,
+      cancel_url: `${domain}/payment/cancel?quote=${quoteId}`,
+      customer_email: quote.customer_email || undefined,
+      metadata: {
+        quoteId: String(quote.id),
+        customerName: quote.customer_name || '',
+        type: 'full',
+      },
+    });
+
+    res.json({ checkoutUrl: session.url, sessionId: session.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /create-balance-checkout - Create Stripe Checkout session for remaining balance
 router.post('/create-balance-checkout', async (req, res, next) => {
   try {
@@ -354,6 +420,29 @@ async function handleCheckoutSessionCompleted(session) {
         if (result.rows.length > 0) {
           console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
           await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
+        }
+      } else if (paymentType === 'full') {
+        // Full payment from the choice screen — accept the quote AND
+        // mark the balance paid in one shot, then create the paid
+        // invoice + send all notifications (admin + customer receipt).
+        const newToken = crypto.randomBytes(32).toString('hex');
+        const result = await pool.query(
+          `UPDATE quotes SET
+            status = 'accepted',
+            accepted_at = COALESCE(accepted_at, NOW()),
+            deposit_amount = estimated_price,
+            balance_paid_at = NOW(),
+            accept_token = COALESCE(accept_token, $2)
+          WHERE id = $1
+          RETURNING *`,
+          [quoteId, newToken],
+        );
+        if (result.rows.length > 0) {
+          const quote = result.rows[0];
+          console.log('[Stripe] Quote #' + quoteId + ' paid in full: $' + (session.amount_total / 100));
+          await createPaidInvoiceForQuote(quote, session.amount_total);
+          sendQuoteAcceptedNotification(quote).catch(() => {});
+          smsQuoteAcceptedToAdmin(quote).catch(() => {});
         }
       } else {
         // Backfill accept_token for orders that went through the instant-quote
@@ -558,6 +647,37 @@ router.get('/success', async (req, res, next) => {
           );
           invoiceForQuote = existing.rows[0] || null;
         }
+      } else if (paymentType === 'full') {
+        // Full payment fallback when the webhook is slow. Accept the
+        // quote, set deposit_amount = total, mark balance paid in one
+        // shot — same shape as the webhook handler so a refresh after
+        // checkout is idempotent.
+        const newToken = crypto.randomBytes(32).toString('hex');
+        const updated = await pool.query(
+          `UPDATE quotes SET
+             status = 'accepted',
+             accepted_at = COALESCE(accepted_at, NOW()),
+             deposit_amount = estimated_price,
+             balance_paid_at = COALESCE(balance_paid_at, NOW()),
+             accept_token = COALESCE(accept_token, $2)
+           WHERE id = $1 AND (status != 'accepted' OR balance_paid_at IS NULL)
+           RETURNING *`,
+          [quoteId, newToken],
+        );
+        if (updated.rows.length > 0) {
+          quote = updated.rows[0];
+          console.log('[Payment Success] Quote #' + quoteId + ' full payment verified: $' + (stripeDetails.amount_total / 100));
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, stripeDetails.amount_total);
+          sendQuoteAcceptedNotification(quote).catch(() => {});
+          smsQuoteAcceptedToAdmin(quote).catch(() => {});
+        } else {
+          // Already processed — surface the existing invoice.
+          const existing = await pool.query(
+            'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+            [quoteId],
+          );
+          invoiceForQuote = existing.rows[0] || null;
+        }
       } else if (quote.status !== 'accepted') {
         const newToken = crypto.randomBytes(32).toString('hex');
         const updated = await pool.query(
@@ -580,7 +700,7 @@ router.get('/success', async (req, res, next) => {
       }
     }
 
-    if (!invoiceForQuote && paymentType === 'balance') {
+    if (!invoiceForQuote && (paymentType === 'balance' || paymentType === 'full')) {
       const existing = await pool.query(
         'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
         [quoteId],
@@ -598,7 +718,7 @@ router.get('/success', async (req, res, next) => {
       invoice_number: invoiceForQuote?.invoice_number || null,
       amount_total: stripeDetails?.amount_total ?? Math.round(Number(quote.deposit_amount || 0) * 100),
       amount_due:
-        paymentType === 'balance'
+        paymentType === 'balance' || paymentType === 'full'
           ? 0
           : Math.max(0, Number(quote.estimated_price || 0) - Number(quote.deposit_amount || 0)),
       paid_at: new Date().toISOString(),
