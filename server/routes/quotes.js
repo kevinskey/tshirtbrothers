@@ -216,6 +216,33 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
 });
 
 // GET /:id — single quote with items. Admin-only.
+// Public summary for the customer-facing payment-choice page. Requires
+// the accept_token from the original email so we don't leak quote data
+// to anyone who guesses the numeric id. Returns ONLY the fields the
+// payment screen needs — not the admin payload.
+router.get('/:id/public', async (req, res, next) => {
+  try {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ error: 'token is required' });
+    const result = await pool.query(
+      `SELECT id, customer_name, product_name, estimated_price, deposit_amount,
+              balance_paid_at, status, accept_token
+       FROM quotes WHERE id = $1`,
+      [req.params.id],
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const q = result.rows[0];
+    if (!q.accept_token || q.accept_token !== token) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    // Don't echo the token back.
+    const { accept_token: _t, ...safe } = q;
+    res.json(safe);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const result = await pool.query(
