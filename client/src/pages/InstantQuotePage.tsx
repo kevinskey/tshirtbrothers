@@ -1512,6 +1512,8 @@ function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) =
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="border-b border-gray-200 px-4 py-3 flex items-center gap-2">
           <input
+            type="text"
+            enterKeyHint="search"
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}

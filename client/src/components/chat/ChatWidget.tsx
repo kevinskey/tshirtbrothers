@@ -722,6 +722,7 @@ export default function ChatWidget() {
           <form onSubmit={handleSend} className="p-3 border-t border-gray-200 flex gap-2 bg-white sm:rounded-b-2xl flex-shrink-0">
             <input
               type="text"
+              enterKeyHint="send"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={listening ? 'Listening...' : 'Ask a question...'}
