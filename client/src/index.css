@@ -25,6 +25,7 @@
      doesn't jump on focus. This still lets Tailwind's text-sm/xs apply on
      desktop via the media query. */
   @media (max-width: 640px) {
+    input:not([type]),
     input[type='text'],
     input[type='email'],
     input[type='password'],
@@ -36,6 +37,14 @@
     textarea,
     select {
       font-size: 16px !important;
+    }
+
+    /* Legibility floor: 9–11px labels are unreadable on phones. Raise the
+       arbitrary micro-text utilities to 12px on narrow screens only. */
+    .text-\[9px\],
+    .text-\[10px\],
+    .text-\[11px\] {
+      font-size: 12px !important;
     }
   }
 

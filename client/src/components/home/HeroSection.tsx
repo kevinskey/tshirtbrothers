@@ -115,7 +115,9 @@ export default function HeroSection() {
               className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              <span className="whitespace-nowrap">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+              {/* Fluid size below sm: at text-4xl this nowrap line is 386px
+                  wide and overflows a 390px phone, so clamp() scales it. */}
+              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
                 className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
