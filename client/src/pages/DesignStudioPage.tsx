@@ -2095,7 +2095,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const headerBar = (
-    <header className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4">
+    <header className="fixed top-0 left-0 right-0 z-50 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-4">
       {/* Left */}
       <div className="flex items-center gap-3">
         {/* Back: when the studio was launched from admin (new/edit mockup
@@ -2293,7 +2293,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const leftToolbar = (
-    <aside className="fixed left-0 top-14 bottom-16 z-40 hidden w-20 flex-col justify-center border-r border-gray-200 bg-white md:flex">
+    <aside className="fixed left-0 top-16 bottom-16 z-40 hidden w-20 flex-col justify-center border-r border-gray-200 bg-white md:flex">
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
@@ -2353,7 +2353,7 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const panelBase = 'fixed z-30 bg-white shadow-xl overflow-y-auto';
-  const desktopPanel = `${panelBase} top-14 bottom-0 left-20 w-80 border-r border-gray-200 hidden md:block`;
+  const desktopPanel = `${panelBase} top-16 bottom-0 left-20 w-80 border-r border-gray-200 hidden md:block`;
   // Mobile sheet: width is pinned via inline style (vpWidth) so we only
   // need left-0 here, not inset-x-0. overflow-x-hidden clips any wide
   // content (the Shapes 3-card grid, etc.) at the panel edge.
@@ -3177,7 +3177,7 @@ export default function DesignStudioPage() {
 
   const canvas = (
     <main
-      className={`relative flex-1 flex flex-col items-center justify-start md:justify-center bg-gray-100 pt-14 ${mobileBottomPad} md:pt-16 md:pb-16 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
+      className={`relative flex-1 flex flex-col items-center justify-start md:justify-center bg-gray-100 pt-16 ${mobileBottomPad} md:pt-16 md:pb-16 md:ml-20 ${canvasLeftOffset} ${canvasRightOffset} transition-all duration-200 overflow-auto overscroll-contain`}
       onClick={() => {
         // Don't auto-deselect while the Edit Text side panel / toolbar is
         // open — the side panel has its own X to close. Without this, any
@@ -3834,7 +3834,7 @@ export default function DesignStudioPage() {
   // controls without tapping through menus.
   const textSidePanel = showTextEditor && selectedEl && selectedEl.type === 'text' ? (
     <div
-      className="hidden md:flex fixed top-14 left-20 bottom-0 w-80 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
+      className="hidden md:flex fixed top-16 left-20 bottom-0 w-80 z-30 flex-col overflow-y-auto bg-white shadow-xl border-r border-gray-200"
       onClick={e => e.stopPropagation()}
     >
       <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 py-3 border-b border-gray-200">
