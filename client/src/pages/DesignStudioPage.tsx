@@ -36,7 +36,6 @@ import {
   Loader2,
   Move,
   Sparkles,
-  FolderOpen,
   Undo2,
   Redo2,
   Square,
@@ -48,7 +47,6 @@ import {
   AlignCenter,
   Crop as CropIcon,
   Tag,
-  Layers,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -2184,17 +2182,9 @@ export default function DesignStudioPage() {
           <AlignCenter className="h-4 w-4" />
           <span>Center</span>
         </button>
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => { setLibrarySaveName(designName === 'Untitled design' ? '' : designName); setLibrarySaveOpen(true); }}
-            className="hidden md:flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-3.5 py-2 text-sm md:text-base font-medium text-orange-700 hover:bg-orange-100 transition"
-            title="Save the current design to the Art Library (no product required)"
-          >
-            <FolderOpen className="h-4 w-4 md:h-5 md:w-5" />
-            Save to Library
-          </button>
-        )}
+        {/* Save to Library removed from the header — the bottom bar's
+            Save|Share menu already includes the Library option, so the
+            header CTA was redundant. */}
         {/* Undo / redo (Phase 2 PR #11). Lives next to Save so users find
             them where they expect. Disabled when the stack is empty.
             Keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z) work
@@ -2272,17 +2262,8 @@ export default function DesignStudioPage() {
             {savingNewMockup ? 'Saving…' : 'Save Mockup'}
           </button>
         )}
-        {/* Get Price is the customer's quote-flow CTA — admins in mockup
-            mode don't need it taking up toolbar space. */}
-        {!(newMockupMode || editMockupId || attachToInvoiceId) && (
-        <button
-          type="button"
-          onClick={handleGetPrice}
-          className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 md:px-5 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-red-700 transition"
-        >
-          Get Price
-        </button>
-        )}
+        {/* Get Price removed from the header — the bottom bar's Get Price
+            CTA is the single point of entry to the quote flow. */}
       </div>
     </header>
   );
@@ -2293,6 +2274,30 @@ export default function DesignStudioPage() {
 
   const leftToolbar = (
     <aside className="fixed left-0 top-16 bottom-16 z-40 hidden w-20 flex-col justify-center border-r border-gray-200 bg-white md:flex">
+      {/* Sides — first item on the rail. Icon is a mini thumbnail of the
+          current view of the customer's product so they immediately see
+          which side they're designing. Hidden until a product is chosen. */}
+      {selectedProduct && frontImage && !showWelcome && (
+        <button
+          type="button"
+          onClick={() => setViewSwitcherOpen((v) => !v)}
+          className={`relative flex w-full flex-col items-center py-4 transition ${
+            viewSwitcherOpen
+              ? 'text-red-600 bg-red-50'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+          }`}
+        >
+          {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
+          <div className="h-8 w-8 lg:h-9 lg:w-9 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+            <img
+              src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
+              alt={currentView}
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center">Sides</span>
+        </button>
+      )}
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
@@ -2314,24 +2319,6 @@ export default function DesignStudioPage() {
           </button>
         );
       })}
-      {/* Sides — toggles the Front / Back / Sleeve panel that slides out
-          next to the rail. Hidden until a product is chosen so it doesn't
-          spawn an empty picker. */}
-      {selectedProduct && frontImage && !showWelcome && (
-        <button
-          type="button"
-          onClick={() => setViewSwitcherOpen((v) => !v)}
-          className={`relative flex w-full flex-col items-center py-4 transition ${
-            viewSwitcherOpen
-              ? 'text-red-600 bg-red-50'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-          }`}
-        >
-          {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
-          <Layers className="h-6 w-6 lg:h-7 lg:w-7" />
-          <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center">Sides</span>
-        </button>
-      )}
     </aside>
   );
 
@@ -2341,6 +2328,25 @@ export default function DesignStudioPage() {
 
   const bottomToolbar = (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-gray-200 bg-white md:hidden">
+      {selectedProduct && frontImage && !showWelcome && (
+        <button
+          type="button"
+          onClick={() => setViewSwitcherOpen((v) => !v)}
+          className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
+            viewSwitcherOpen ? 'text-red-600' : 'text-gray-500'
+          }`}
+        >
+          {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
+          <div className="h-5 w-5 shrink-0 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+            <img
+              src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
+              alt={currentView}
+              className="h-full w-full object-contain"
+            />
+          </div>
+          <span className="text-[9px] leading-tight text-center">Sides</span>
+        </button>
+      )}
       {tools.map(tool => {
         const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
@@ -2362,19 +2368,6 @@ export default function DesignStudioPage() {
           </button>
         );
       })}
-      {selectedProduct && frontImage && !showWelcome && (
-        <button
-          type="button"
-          onClick={() => setViewSwitcherOpen((v) => !v)}
-          className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
-            viewSwitcherOpen ? 'text-red-600' : 'text-gray-500'
-          }`}
-        >
-          {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
-          <Layers className="h-5 w-5 shrink-0" />
-          <span className="text-[9px] leading-tight text-center">Sides</span>
-        </button>
-      )}
     </nav>
   );
 
