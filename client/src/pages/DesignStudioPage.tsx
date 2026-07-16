@@ -3536,14 +3536,8 @@ export default function DesignStudioPage() {
 
   const bottomBar = (
     <div className="fixed bottom-0 left-0 right-0 z-40 hidden md:flex items-center h-16 bg-white border-t border-gray-200 px-4 gap-4" onClick={e => e.stopPropagation()}>
-      {/* Add Products button */}
-      <button
-        type="button"
-        onClick={() => { setShowWelcome(false); setSelectedElementId(null); setActiveTool('products'); }}
-        className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition"
-      >
-        <span className="text-lg">+</span> Add Products
-      </button>
+      {/* Add Products button removed — the left rail's Change Products
+          tool covers the same action, so having both was redundant. */}
 
       {/* Product thumbnail + info */}
       {selectedProduct && (
@@ -3590,7 +3584,7 @@ export default function DesignStudioPage() {
               type="button"
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-2 rounded-l-lg border-2 border-r-0 border-blue-600 px-4 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition disabled:opacity-50"
+              className="flex items-center gap-2 rounded-l-lg border-2 border-r-0 border-orange-600 px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50 transition disabled:opacity-50"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {isSaving ? 'Saving...' : 'Save'}
@@ -3598,7 +3592,7 @@ export default function DesignStudioPage() {
             <button
               type="button"
               onClick={() => setShowShareMenu(prev => !prev)}
-              className="flex items-center rounded-r-lg border-2 border-blue-600 px-2.5 py-2.5 text-sm font-bold text-blue-600 hover:bg-blue-50 transition"
+              className="flex items-center rounded-r-lg border-2 border-orange-600 px-2.5 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50 transition"
             >
               <ChevronDown className="h-4 w-4" />
             </button>
@@ -3629,7 +3623,7 @@ export default function DesignStudioPage() {
         <button
           type="button"
           onClick={handleGetPrice}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 transition"
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-700 transition"
         >
           <Tag className="h-4 w-4" /> Get Price
         </button>
