@@ -2151,7 +2151,7 @@ export default function DesignStudioPage() {
         {/* Zoom — multiplies the canvas surface width. > 100% overflows
             the canvas main and triggers horizontal + vertical scroll.
             UX-only, doesn't affect saved geometry. */}
-        <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-700">
+        <div className="flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 md:px-2.5 md:py-1.5 text-xs md:text-sm text-gray-700">
           <span className="font-medium">Zoom:</span>
           <HoldRepeatButton
             onPress={() => setCanvasZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -3206,6 +3206,13 @@ export default function DesignStudioPage() {
             touchAction: 'pinch-zoom',
             aspectRatio: '1 / 1',
             width: `${100 * canvasZoom}%`,
+            // Cap by viewport height so the shirt fits vertically instead
+            // of being sized purely by the parent's width. 10rem covers
+            // header (4rem) + a bit of top/bottom breathing room + the
+            // mobile bottom nav. maxWidth mirrors maxHeight so aspect
+            // ratio stays 1:1 even when the vh cap kicks in.
+            maxHeight: `calc((100vh - 10rem) * ${canvasZoom})`,
+            maxWidth: `calc((100vh - 10rem) * ${canvasZoom})`,
             // cqw font scaling now keys off the shirt-photo box itself.
             containerType: 'inline-size',
           }}
