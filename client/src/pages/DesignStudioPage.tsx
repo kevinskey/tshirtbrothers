@@ -2112,7 +2112,7 @@ export default function DesignStudioPage() {
           className="text-gray-500 hover:text-gray-900 transition"
           title="Back"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5 md:h-6 md:w-6" />
         </Link>
         <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 md:h-9 md:w-9 object-contain hidden sm:block" />
         <span className="text-lg md:text-xl font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
@@ -2151,7 +2151,7 @@ export default function DesignStudioPage() {
         {/* Zoom — multiplies the canvas surface width. > 100% overflows
             the canvas main and triggers horizontal + vertical scroll.
             UX-only, doesn't affect saved geometry. */}
-        <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-700">
+        <div className="hidden md:flex items-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-700">
           <span className="font-medium">Zoom:</span>
           <HoldRepeatButton
             onPress={() => setCanvasZoom(z => Math.max(0.5, Math.round((z - 0.1) * 10) / 10))}
@@ -2180,19 +2180,19 @@ export default function DesignStudioPage() {
           onClick={centerAllOnCanvas}
           disabled={designElements.filter(e => (e.side ?? 'front') === currentView).length === 0}
           title="Center all on canvas"
-          className="hidden md:flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          className="hidden md:flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          <AlignCenter className="h-3.5 w-3.5" />
+          <AlignCenter className="h-4 w-4" />
           <span>Center</span>
         </button>
         {isAdmin && (
           <button
             type="button"
             onClick={() => { setLibrarySaveName(designName === 'Untitled design' ? '' : designName); setLibrarySaveOpen(true); }}
-            className="hidden md:flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-100 transition"
+            className="hidden md:flex items-center gap-1.5 rounded-lg border border-orange-300 bg-orange-50 px-3.5 py-2 text-sm md:text-base font-medium text-orange-700 hover:bg-orange-100 transition"
             title="Save the current design to the Art Library (no product required)"
           >
-            <FolderOpen className="h-4 w-4" />
+            <FolderOpen className="h-4 w-4 md:h-5 md:w-5" />
             Save to Library
           </button>
         )}
@@ -2212,9 +2212,9 @@ export default function DesignStudioPage() {
           }}
           disabled={!undoRedo.canUndo}
           title="Undo (⌘Z)"
-          className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          className="hidden sm:flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          <Undo2 className="h-4 w-4" />
+          <Undo2 className="h-4 w-4 md:h-5 md:w-5" />
         </button>
         <button
           type="button"
@@ -2228,9 +2228,9 @@ export default function DesignStudioPage() {
           }}
           disabled={!undoRedo.canRedo}
           title="Redo (⇧⌘Z)"
-          className="hidden sm:flex items-center justify-center w-8 h-8 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          className="hidden sm:flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
         >
-          <Redo2 className="h-4 w-4" />
+          <Redo2 className="h-4 w-4 md:h-5 md:w-5" />
         </button>
         {/* Header "Save" button removed — the bottom bar's Save|Share
             button is the single customer-mode save action. Admin
@@ -2242,7 +2242,7 @@ export default function DesignStudioPage() {
             type="button"
             onClick={handleSaveMockupToInvoice}
             disabled={savingInvoiceMockup}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
             title={`Save mockup and attach to invoice ${attachToInvoiceId}`}
           >
             {savingInvoiceMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2254,7 +2254,7 @@ export default function DesignStudioPage() {
             type="button"
             onClick={handleSaveMockupEdit}
             disabled={savingMockupEdit}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
             title={`Save changes to mockup #${editMockupId}`}
           >
             {savingMockupEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2266,7 +2266,7 @@ export default function DesignStudioPage() {
             type="button"
             onClick={handleSaveNewMockup}
             disabled={savingNewMockup}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
             title="Save as a new mockup (screenshot of what you see here)"
           >
             {savingNewMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -2279,7 +2279,7 @@ export default function DesignStudioPage() {
         <button
           type="button"
           onClick={handleGetPrice}
-          className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 transition"
+          className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-1.5 md:px-5 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-red-700 transition"
         >
           Get Price
         </button>
