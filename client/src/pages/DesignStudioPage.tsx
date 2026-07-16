@@ -2283,12 +2283,12 @@ export default function DesignStudioPage() {
           onClick={() => setViewSwitcherOpen((v) => !v)}
           className={`relative flex w-full flex-col items-center py-4 transition ${
             viewSwitcherOpen
-              ? 'text-red-600 bg-red-50'
-              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+              ? 'text-orange-600 bg-orange-50'
+              : 'text-orange-500 hover:bg-orange-50 hover:text-orange-600'
           }`}
         >
-          {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
-          <div className="h-8 w-8 lg:h-9 lg:w-9 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+          {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
+          <div className="h-[72px] w-[72px] rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
               src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
               alt={currentView}
@@ -2299,7 +2299,6 @@ export default function DesignStudioPage() {
         </button>
       )}
       {tools.map(tool => {
-        const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
@@ -2309,12 +2308,12 @@ export default function DesignStudioPage() {
             onClick={() => toggleTool(tool.name as ToolName)}
             className={`relative flex w-full flex-col items-center py-4 transition ${
               isActive
-                ? (isAi ? 'text-orange-600 bg-orange-50' : 'text-red-600 bg-red-50')
-                : (isAi ? 'text-orange-500 hover:bg-orange-50 hover:text-orange-600' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700')
+                ? 'text-orange-600 bg-orange-50'
+                : 'text-orange-500 hover:bg-orange-50 hover:text-orange-600'
             }`}
           >
-            {isActive && <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
-            <Icon className="h-6 w-6 lg:h-7 lg:w-7" />
+            {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
+            <Icon className="h-[72px] w-[72px]" strokeWidth={1.5} />
             <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
         );
@@ -2333,10 +2332,10 @@ export default function DesignStudioPage() {
           type="button"
           onClick={() => setViewSwitcherOpen((v) => !v)}
           className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
-            viewSwitcherOpen ? 'text-red-600' : 'text-gray-500'
+            viewSwitcherOpen ? 'text-orange-600' : 'text-orange-500'
           }`}
         >
-          {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
+          {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-orange-500" />}
           <div className="h-5 w-5 shrink-0 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
               src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
@@ -2348,7 +2347,6 @@ export default function DesignStudioPage() {
         </button>
       )}
       {tools.map(tool => {
-        const isAi = tool.name === 'ai';
         const isActive = activeTool === tool.name;
         const Icon = tool.icon;
         return (
@@ -2357,12 +2355,10 @@ export default function DesignStudioPage() {
             type="button"
             onClick={() => toggleTool(tool.name as ToolName)}
             className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
-              isActive
-                ? (isAi ? 'text-orange-600' : 'text-red-600')
-                : (isAi ? 'text-orange-500' : 'text-gray-500')
+              isActive ? 'text-orange-600' : 'text-orange-500'
             }`}
           >
-            {isActive && <div className={`absolute top-0 left-0 right-0 h-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
+            {isActive && <div className="absolute top-0 left-0 right-0 h-0.5 bg-orange-500" />}
             <Icon className="h-5 w-5 shrink-0" />
             <span className="text-[9px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
