@@ -11,7 +11,6 @@ import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
 import { CropModal } from '@/components/design-studio/CropModal';
 import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
 import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
-import { CanvasSizeControl } from '@/components/design-studio/CanvasSizeControl';
 import { generateDesignImage } from '@/services/deepseek';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
@@ -2139,12 +2138,10 @@ export default function DesignStudioPage() {
 
       {/* Right */}
       <div className="flex items-center gap-2">
-        <CanvasSizeControl
-          width={canvasInches}
-          height={canvasInchesH}
-          onChangeWidth={setCanvasInches}
-          onChangeHeight={setCanvasInchesH}
-        />
+        {/* Print size control removed — customers didn't need to see the
+            print rectangle W x H picker. The values still exist as state
+            (canvasInches / canvasInchesH) and drive the dimension readout
+            and inches math; they just aren't user-editable here anymore. */}
         {/* Zoom — multiplies the canvas surface width. > 100% overflows
             the canvas main and triggers horizontal + vertical scroll.
             UX-only, doesn't affect saved geometry. */}
