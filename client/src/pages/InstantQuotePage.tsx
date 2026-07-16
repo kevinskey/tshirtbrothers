@@ -719,7 +719,7 @@ export default function InstantQuotePage() {
         </div>
       </section>
 
-      <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl">
+      <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl lg:max-w-5xl">
         {/* ─── Items ─── */}
         <div className="space-y-6">
           {items.map((item, i) => (
