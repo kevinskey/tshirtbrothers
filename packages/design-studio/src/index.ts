@@ -115,3 +115,16 @@ export type {
   FabricRendererBridgeHandle,
   FabricRendererBridgeProps,
 } from './components/design-studio/FabricRendererBridge';
+
+// ─── High-level composite ────────────────────────────────────────────────
+// The preferred entry point for embedding the studio. Takes a product,
+// theme, initial design, and save callback; renders a complete authoring
+// surface. Consumers only reach for the primitives above when they need
+// custom UX beyond what MerchDesignStudio provides.
+export { MerchDesignStudio } from './components/MerchDesignStudio';
+export type {
+  MerchDesignStudioProduct,
+  MerchDesignStudioTheme,
+  MerchDesignStudioProps,
+  MerchDesignStudioHandle,
+} from './components/MerchDesignStudio';

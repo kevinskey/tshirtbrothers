@@ -1,6 +1,6 @@
 {
   "name": "@tshirtbrothers/design-studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fabric.js v6 design studio — canvas engine, serializer, and themeable React components. Shared by the TSB storefront and any consumer (e.g. GleeWorld) that needs a white-label design authoring experience.",
   "private": true,
   "type": "module",
