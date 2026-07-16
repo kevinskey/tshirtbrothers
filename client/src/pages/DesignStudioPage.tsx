@@ -48,6 +48,7 @@ import {
   AlignCenter,
   Crop as CropIcon,
   Tag,
+  Layers,
 } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
@@ -513,12 +514,10 @@ export default function DesignStudioPage() {
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
-  // Open by default on desktop; collapsed-pill by default on phones so it
-  // doesn't overlap the (now larger) product on screen. Tap the pill to expand.
-  const [viewSwitcherOpen, setViewSwitcherOpen] = useState(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) return false;
-    return true;
-  });
+  // Closed by default — customer opens it from the "Sides" button on the
+  // left rail (or the bottom nav on mobile) when they want to switch
+  // between front / back / sleeve.
+  const [viewSwitcherOpen, setViewSwitcherOpen] = useState(false);
   const [designElements, setDesignElements] = useState<DesignElement[]>(
     Array.isArray(loadState?.elements) ? (loadState!.elements as DesignElement[]) : [],
   );
@@ -2315,6 +2314,24 @@ export default function DesignStudioPage() {
           </button>
         );
       })}
+      {/* Sides — toggles the Front / Back / Sleeve panel that slides out
+          next to the rail. Hidden until a product is chosen so it doesn't
+          spawn an empty picker. */}
+      {selectedProduct && frontImage && !showWelcome && (
+        <button
+          type="button"
+          onClick={() => setViewSwitcherOpen((v) => !v)}
+          className={`relative flex w-full flex-col items-center py-4 transition ${
+            viewSwitcherOpen
+              ? 'text-red-600 bg-red-50'
+              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+          }`}
+        >
+          {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-600" />}
+          <Layers className="h-6 w-6 lg:h-7 lg:w-7" />
+          <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center">Sides</span>
+        </button>
+      )}
     </aside>
   );
 
@@ -2345,6 +2362,19 @@ export default function DesignStudioPage() {
           </button>
         );
       })}
+      {selectedProduct && frontImage && !showWelcome && (
+        <button
+          type="button"
+          onClick={() => setViewSwitcherOpen((v) => !v)}
+          className={`relative flex flex-1 min-w-0 flex-col items-center gap-0.5 px-0.5 py-1.5 transition ${
+            viewSwitcherOpen ? 'text-red-600' : 'text-gray-500'
+          }`}
+        >
+          {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-red-600" />}
+          <Layers className="h-5 w-5 shrink-0" />
+          <span className="text-[9px] leading-tight text-center">Sides</span>
+        </button>
+      )}
     </nav>
   );
 
@@ -3459,51 +3489,41 @@ export default function DesignStudioPage() {
       </div>
       </div>
 
-      {/* View Switcher — left column, collapses once a side is chosen.
-          Hidden during the welcome panel so it doesn't crowd the start
-          menu. */}
-      {selectedProduct && frontImage && !showWelcome && (
-        viewSwitcherOpen ? (
-          <div className="absolute left-2 top-20 md:top-24 z-20 flex flex-col gap-2 bg-white/90 backdrop-blur rounded-xl shadow-lg border border-gray-200 p-1.5">
-            {(['front', 'back', 'sleeve'] as const).map(view => (
-              <button
-                key={view}
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  setCurrentView(view);
-                  setViewSwitcherOpen(false);
-                }}
-                className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1 transition ${
-                  currentView === view
-                    ? 'border-red-500 bg-red-50 text-red-600'
-                    : 'border-transparent bg-white text-gray-500 hover:border-gray-300'
-                }`}
-                title={view}
-              >
-                <div className="h-8 w-8 md:h-10 md:w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
-                  {frontImage && (
-                    <img
-                      src={view === 'back' ? (backImage ?? frontImage) : frontImage}
-                      alt={view}
-                      className="h-full w-full object-contain"
-                    />
-                  )}
-                </div>
-                <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          // Tiny pill button to reopen the switcher after it's been dismissed
-          <button
-            type="button"
-            onClick={e => { e.stopPropagation(); setViewSwitcherOpen(true); }}
-            className="absolute left-2 top-20 md:top-24 z-20 bg-white/90 backdrop-blur border border-gray-200 rounded-full shadow px-2 py-1 text-[10px] font-semibold text-gray-600 hover:bg-white capitalize"
-          >
-            {currentView === 'sleeve' ? 'Sleeve' : currentView} ▾
-          </button>
-        )
+      {/* View Switcher — opens when the customer taps the Sides button on
+          the left rail (or the bottom nav on mobile). Positioned flush
+          with the left rail on desktop so it reads as a slide-out from
+          that column. On mobile it hangs above the bottom nav. */}
+      {selectedProduct && frontImage && !showWelcome && viewSwitcherOpen && (
+        <div className="fixed left-2 md:left-20 top-20 md:top-20 z-40 flex flex-col gap-2 bg-white rounded-xl shadow-xl border border-gray-200 p-1.5">
+          {(['front', 'back', 'sleeve'] as const).map(view => (
+            <button
+              key={view}
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                setCurrentView(view);
+                setViewSwitcherOpen(false);
+              }}
+              className={`flex flex-col items-center gap-0.5 rounded-lg border px-1 py-1 transition ${
+                currentView === view
+                  ? 'border-red-500 bg-red-50 text-red-600'
+                  : 'border-transparent bg-white text-gray-500 hover:border-gray-300'
+              }`}
+              title={view}
+            >
+              <div className="h-8 w-8 md:h-10 md:w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+                {frontImage && (
+                  <img
+                    src={view === 'back' ? (backImage ?? frontImage) : frontImage}
+                    alt={view}
+                    className="h-full w-full object-contain"
+                  />
+                )}
+              </div>
+              <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
+            </button>
+          ))}
+        </div>
       )}
     </main>
   );
