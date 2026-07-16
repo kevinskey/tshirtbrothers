@@ -3457,9 +3457,9 @@ export default function DesignStudioPage() {
             // top of canvas) instead of the canvas center, so it lines up
             // with where the design will actually be printed.
             <div className="absolute inset-x-0 top-[22%] flex justify-center pointer-events-none">
-              <div className="border-2 border-dashed border-gray-300 rounded-lg px-8 py-6 flex flex-col items-center gap-1">
-                <Move className="h-5 w-5 text-gray-400" />
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              <div className="border-2 border-dashed border-gray-300 rounded-xl w-[45%] aspect-[16/10] flex flex-col items-center justify-center gap-2">
+                <Move className="h-8 w-8 md:h-10 md:w-10 text-gray-400" />
+                <span className="text-sm md:text-base font-semibold text-gray-400 uppercase tracking-wider">
                   Your Design Here
                 </span>
               </div>
