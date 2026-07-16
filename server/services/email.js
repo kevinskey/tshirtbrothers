@@ -742,6 +742,15 @@ export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrl
 
 // Build the detailRow string for one line item in a multi-item quote.
 function instantQuoteItemRows(item) {
+  // Custom items skip the catalog-shaped rows — no method, sizes, or price.
+  if (item.kind === 'custom' && item.custom) {
+    let html = '';
+    html += detailRow('Product', `Custom: ${item.custom.description}`);
+    html += detailRow('Quantity', String(item.custom.quantity));
+    if (item.custom.notes) html += detailRow('Notes', item.custom.notes);
+    html += detailRow('Price', 'To be quoted after review');
+    return html;
+  }
   const { inputs, calc, pickedProductMeta } = item;
   const { num_locations, colors_per_location } = calc.breakdown;
   const locationsLabel = (() => {
@@ -792,8 +801,13 @@ function instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items }) {
 
 function instantQuoteItemNoun(items) {
   if (items.length === 1) {
-    const g = items[0].inputs.garmentName || 'shirt';
-    return `${items[0].calc.quantity} ${g.toLowerCase()}${items[0].calc.quantity === 1 ? '' : 's'}`;
+    const it = items[0];
+    if (it.kind === 'custom') {
+      const q = it.custom?.quantity || it.calc.quantity;
+      return `${q} custom item${q === 1 ? '' : 's'}`;
+    }
+    const g = it.inputs?.garmentName || 'shirt';
+    return `${it.calc.quantity} ${g.toLowerCase()}${it.calc.quantity === 1 ? '' : 's'}`;
   }
   const totalQty = items.reduce((s, it) => s + it.calc.quantity, 0);
   return `${totalQty} pieces across ${items.length} products`;

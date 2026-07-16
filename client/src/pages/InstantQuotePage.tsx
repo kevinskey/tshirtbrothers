@@ -17,6 +17,7 @@ import {
   X as XIcon,
   Plus,
   Trash2,
+  PenSquare,
 } from 'lucide-react';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -78,11 +79,27 @@ type CatalogProduct = {
   sizes?: string[];
 };
 
+// Fields collected when the customer is quoting something that isn't in our
+// catalog — no size grid, no print method, just a free-form description +
+// quantity that the admin will review and price manually.
+type CustomItemInputs = {
+  description: string;
+  quantity: string;
+  notes: string;
+};
+
+// Which shape of question set the item is currently in. 'unset' shows the
+// initial "Catalog or Custom?" picker; 'catalog' shows the full shirt/print
+// form; 'custom' shows the simplified describe-it form.
+type ItemKind = 'unset' | 'catalog' | 'custom';
+
 // One line item the customer is configuring. A quote is an ordered list of
 // these — the customer can add as many as they want before saving.
 type ItemDraft = {
   id: string;
+  kind: ItemKind;
   inputs: Inputs;
+  custom: CustomItemInputs;
   designs: Array<{ url: string; filename: string }>;
   pickedProduct: CatalogProduct | null;
   // Screenshot of the design canvas captured when the customer clicked
@@ -284,10 +301,12 @@ function genItemId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function newItem(initial?: Partial<Inputs>): ItemDraft {
+function newItem(initial?: Partial<Inputs>, kind: ItemKind = 'unset'): ItemDraft {
   return {
     id: genItemId(),
+    kind,
     inputs: { ...DEFAULT_INPUTS, ...(initial || {}) },
+    custom: { description: '', quantity: '', notes: '' },
     designs: [],
     pickedProduct: null,
   };
@@ -311,7 +330,17 @@ export default function InstantQuotePage() {
     return DEFAULT_INPUTS;
   }, []);
 
-  const [items, setItems] = useState<ItemDraft[]>(() => [newItem(initialInputs)]);
+  // First item: if the URL hints at a specific catalog product/service
+  // (?service=dtf, ?product=<ss_id>), the customer clearly wants a catalog
+  // quote — skip the type picker so their landing UX is unchanged. Otherwise
+  // start at 'unset' so they see "Catalog or Custom?" first.
+  const [items, setItems] = useState<ItemDraft[]>(() => {
+    const params = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+    const hasCatalogHint = !!(params.get('service') || params.get('product'));
+    return [newItem(initialInputs, hasCatalogHint ? 'catalog' : 'unset')];
+  });
   const [productPickerItemId, setProductPickerItemId] = useState<string | null>(null);
 
   // Customer arrives from /design with their freshly designed mockup. Read
@@ -336,7 +365,7 @@ export default function InstantQuotePage() {
     if (!state?.fromDesignStudio) return;
     setItems((prev) => prev.map((it, i) => {
       if (i !== 0) return it;
-      const next: ItemDraft = { ...it };
+      const next: ItemDraft = { ...it, kind: 'catalog' };
       if (state.product) {
         next.pickedProduct = state.product;
         const mapped = categoryToGarmentName(state.product.category);
@@ -438,6 +467,7 @@ export default function InstantQuotePage() {
         const nextColor = colorNames.includes(it.inputs.color) ? it.inputs.color : (colorNames[0] || it.inputs.color);
         return {
           ...it,
+          kind: 'catalog',
           pickedProduct: urlCatalogProduct,
           inputs: {
             ...it.inputs,
@@ -497,7 +527,9 @@ export default function InstantQuotePage() {
           if (!r.ok) throw new Error(body.error || 'Calculation failed');
           return body;
         },
-        enabled: numLocations > 0 && qty > 0,
+        // Only catalog-kind items get live pricing. Custom items are
+        // priced manually by the admin after review, so we skip the fetch.
+        enabled: item.kind === 'catalog' && numLocations > 0 && qty > 0,
         placeholderData: (prev: CalcResponse | undefined) => prev,
       };
     }),
@@ -509,7 +541,10 @@ export default function InstantQuotePage() {
     [calcQueries],
   );
   const grandQuantity = useMemo(
-    () => items.reduce((sum, it) => sum + totalQuantity(it.inputs.sizes), 0),
+    () => items.reduce((sum, it) => {
+      if (it.kind === 'custom') return sum + (parseInt(it.custom.quantity, 10) || 0);
+      return sum + totalQuantity(it.inputs.sizes);
+    }, 0),
     [items],
   );
   const grandTurnaroundDays = useMemo(() => {
@@ -521,13 +556,29 @@ export default function InstantQuotePage() {
   }, [calcQueries, options]);
 
   const anyCalcLoading = calcQueries.some((q) => q.isFetching);
-  // A "valid" item has at least one location AND at least one shirt.
-  const itemValidity = items.map(
-    (it) => totalQuantity(it.inputs.sizes) > 0 && Object.values(it.inputs.locations).some(Boolean),
-  );
+  // A "valid" item depends on its kind:
+  //  - unset:   never valid (customer still has to pick a type)
+  //  - catalog: at least one location + at least one shirt
+  //  - custom:  a description + a positive quantity
+  const itemValidity = items.map((it) => {
+    if (it.kind === 'unset') return false;
+    if (it.kind === 'custom') {
+      return it.custom.description.trim().length > 0
+        && (parseInt(it.custom.quantity, 10) || 0) > 0;
+    }
+    return totalQuantity(it.inputs.sizes) > 0
+      && Object.values(it.inputs.locations).some(Boolean);
+  });
   const allItemsValid = itemValidity.every(Boolean);
-  const allCalcsReady = calcQueries.every((q, i) => !itemValidity[i] || q.data != null);
-  const canSave = items.length > 0 && allItemsValid && allCalcsReady && grandTotal > 0;
+  const allCalcsReady = calcQueries.every((q, i) => {
+    // Custom items don't have a calc; unset items are already invalid.
+    if (items[i]?.kind !== 'catalog') return true;
+    return !itemValidity[i] || q.data != null;
+  });
+  // Save via email works even when the only items are custom (no calculable
+  // price yet). Lock-in requires a real total to charge a deposit against.
+  const canSave = items.length > 0 && allItemsValid && allCalcsReady;
+  const canLockIn = canSave && grandTotal > 0;
 
   function patchInputs(itemId: string, patch: Partial<Inputs>) {
     setItems((prev) => prev.map((it) => {
@@ -546,6 +597,16 @@ export default function InstantQuotePage() {
 
   function patchItem(itemId: string, patch: Partial<ItemDraft>) {
     setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)));
+  }
+
+  function patchCustom(itemId: string, patch: Partial<CustomItemInputs>) {
+    setItems((prev) => prev.map((it) => (
+      it.id === itemId ? { ...it, custom: { ...it.custom, ...patch } } : it
+    )));
+  }
+
+  function setItemKind(itemId: string, kind: ItemKind) {
+    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, kind } : it)));
   }
 
   function addItem() {
@@ -651,6 +712,8 @@ export default function InstantQuotePage() {
               })}
               onUploadFiles={(files) => handleItemFiles(item.id, files)}
               onOpenPicker={() => setProductPickerItemId(item.id)}
+              onPatchCustom={(patch) => patchCustom(item.id, patch)}
+              onSetKind={(kind) => setItemKind(item.id, kind)}
               onRemove={items.length > 1 ? () => removeItem(item.id) : null}
             />
           ))}
@@ -693,8 +756,9 @@ export default function InstantQuotePage() {
           <button
             type="button"
             onClick={() => setSaveOpen('lock-in')}
-            disabled={!canSave}
+            disabled={!canLockIn}
             className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
+            title={!canLockIn && canSave ? 'Deposit unavailable until we price your custom item' : undefined}
           >
             Lock In Order — 50% deposit
           </button>
@@ -753,7 +817,8 @@ export default function InstantQuotePage() {
 function ItemCard({
   index, totalItems, item, options, calc, uploadingCount,
   expanded, onExpand,
-  onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker, onRemove,
+  onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker,
+  onPatchCustom, onSetKind, onRemove,
 }: {
   index: number;
   totalItems: number;
@@ -768,6 +833,8 @@ function ItemCard({
   onRemoveDesign: (idx: number) => void;
   onUploadFiles: (files: FileList | null) => void;
   onOpenPicker: () => void;
+  onPatchCustom: (patch: Partial<CustomItemInputs>) => void;
+  onSetKind: (kind: ItemKind) => void;
   onRemove: (() => void) | null;
 }) {
   const inputs = item.inputs;
@@ -817,14 +884,25 @@ function ItemCard({
   // is in full edit mode.
   if (!expanded) {
     const img = item.pickedProduct?.image_url || item.pickedProduct?.imageUrl;
-    const productLabel = item.pickedProduct
-      ? item.pickedProduct.name
-      : `${inputs.qualityTier} ${inputs.garmentName}`;
-    const locs: string[] = [];
-    if (inputs.locations.front) locs.push('Front');
-    if (inputs.locations.back) locs.push('Back');
-    if (inputs.locations.sleeve) locs.push('Sleeve');
-    const detail = `${liveTotalQty} pcs · ${inputs.color} · ${inputs.methodName}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
+    let productLabel: string;
+    let detail: string;
+    if (item.kind === 'unset') {
+      productLabel = 'Choose product type';
+      detail = 'Tap Edit to pick catalog or custom';
+    } else if (item.kind === 'custom') {
+      const cq = parseInt(item.custom.quantity, 10) || 0;
+      productLabel = item.custom.description.trim() || 'Custom item';
+      detail = `${cq} pcs · custom · priced after review`;
+    } else {
+      productLabel = item.pickedProduct
+        ? item.pickedProduct.name
+        : `${inputs.qualityTier} ${inputs.garmentName}`;
+      const locs: string[] = [];
+      if (inputs.locations.front) locs.push('Front');
+      if (inputs.locations.back) locs.push('Back');
+      if (inputs.locations.sleeve) locs.push('Sleeve');
+      detail = `${liveTotalQty} pcs · ${inputs.color} · ${inputs.methodName}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
+    }
     return (
       <div
         id={`item-card-${item.id}`}
@@ -911,9 +989,122 @@ function ItemCard({
         )}
       </div>
 
+      {/* Initial screen — customer chooses whether this line item is a
+          catalog product or a custom item they'll describe. Skipped when
+          the URL, catalog picker, or Design Studio has already committed
+          the item to catalog. */}
+      {item.kind === 'unset' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => { onSetKind('catalog'); onOpenPicker(); }}
+            className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-gray-200 bg-white p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
+          >
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 group-hover:bg-orange-200">
+              <Shirt className="h-5 w-5" />
+            </div>
+            <div className="font-semibold text-gray-900">From our catalog</div>
+            <div className="text-xs text-gray-500">T-shirts, hoodies, hats, polos — pick garment, sizes, colors for an instant price.</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetKind('custom')}
+            className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-gray-200 bg-white p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
+          >
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 group-hover:bg-orange-200">
+              <PenSquare className="h-5 w-5" />
+            </div>
+            <div className="font-semibold text-gray-900">Custom item</div>
+            <div className="text-xs text-gray-500">Something not in our catalog — describe it and we'll quote it after review.</div>
+          </button>
+        </div>
+      )}
+
+      {/* Custom item form — free-form description + quantity. No live price;
+          admin reviews and sets pricing when they respond. */}
+      {item.kind === 'custom' && (
+        <div className="space-y-5">
+          <button
+            type="button"
+            onClick={() => onSetKind('unset')}
+            className="text-xs text-orange-700 hover:text-orange-800 hover:underline"
+          >
+            ← Change product type
+          </button>
+          <Section icon={<PenSquare className="h-5 w-5" />} title="Describe what you want">
+            <textarea
+              value={item.custom.description}
+              onChange={(e) => onPatchCustom({ description: e.target.value })}
+              placeholder="e.g. Woven satin patches, 3in circle, with our logo embroidered on the front"
+              rows={3}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+              style={{ fontSize: '16px' }}
+            />
+            <p className="mt-2 text-xs text-gray-500">Include material, size, colors, finish — whatever helps us quote accurately.</p>
+          </Section>
+          <Section icon={<span className="text-xl">#</span>} title="How many do you need?">
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              value={item.custom.quantity}
+              onChange={(e) => onPatchCustom({ quantity: e.target.value.replace(/[^0-9]/g, '') })}
+              placeholder="e.g. 50"
+              className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          </Section>
+          <Section icon={<Upload className="h-5 w-5" />} title="Reference photo or artwork (optional)">
+            <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
+              <Upload className="h-5 w-5" />
+              <span>{uploadingCount > 0 ? `Uploading ${uploadingCount}…` : 'Click to add files (PNG, JPG, SVG, PDF)'}</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,.pdf,.svg"
+                className="hidden"
+                onChange={(e) => { onUploadFiles(e.target.files); e.target.value = ''; }}
+              />
+            </label>
+            {item.designs.length > 0 && (
+              <ul className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                {item.designs.map((d, i) => (
+                  <li key={d.url} className="relative rounded-lg border border-gray-200 bg-white p-2">
+                    <img src={d.url} alt={d.filename} className="w-full h-24 object-contain rounded bg-gray-50" />
+                    <p className="mt-1 truncate text-xs text-gray-700">{d.filename}</p>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveDesign(i)}
+                      className="absolute top-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm"
+                      aria-label={`Remove ${d.filename}`}
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+          <Section icon={<span className="text-xl">✎</span>} title="Anything else? (optional)">
+            <textarea
+              value={item.custom.notes}
+              onChange={(e) => onPatchCustom({ notes: e.target.value })}
+              placeholder="Deadline, budget, brand guidelines, etc."
+              rows={2}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+              style={{ fontSize: '16px' }}
+            />
+          </Section>
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900">
+            Custom items are priced after our team reviews your request. Save the quote and we'll email you a price.
+          </div>
+        </div>
+      )}
+
       {/* Mockup from Design Studio — large preview so the customer's design
           stays visible alongside the live price. When the design has both
           front and back, render them side-by-side. */}
+      {item.kind === 'catalog' && (<>
       {(item.mockupUrl || item.mockupUrlBack) && (
         <div className="mb-4 overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-3">
           <div className="mb-2 flex items-center gap-2">
@@ -1268,6 +1459,7 @@ function ItemCard({
           </div>
         </Section>
       </div>
+      </>)}
     </div>
   );
 }
@@ -1304,10 +1496,23 @@ function SaveQuoteModal({
     setSaving(true);
     try {
       const payloadItems = items.map((item) => {
-        const numLocations = Object.values(item.inputs.locations).filter(Boolean).length;
         const designUrls = item.designs.map((d) => d.url);
+        if (item.kind === 'custom') {
+          return {
+            kind: 'custom',
+            design_url: designUrls[0] || null,
+            extra_design_urls: designUrls.slice(1),
+            custom: {
+              description: item.custom.description.trim(),
+              quantity: Math.max(1, parseInt(item.custom.quantity, 10) || 1),
+              notes: item.custom.notes.trim() || null,
+            },
+          };
+        }
+        const numLocations = Object.values(item.inputs.locations).filter(Boolean).length;
         const cp = item.pickedProduct;
         return {
+          kind: 'catalog',
           design_url: designUrls[0] || null,
           extra_design_urls: designUrls.slice(1),
           inputs: {
@@ -1579,8 +1784,10 @@ function PriceCard({
   const hasAnyInputs = grandQuantity > 0 && itemValidity.some(Boolean);
   const perShirtAvg = grandQuantity > 0 ? grandTotal / grandQuantity : 0;
   // Use the (single) item's noun when there's only one — keeps "per hat"
-  // when quoting a hat. Mixed quotes fall back to "per piece".
-  const singleNoun = items.length === 1 && items[0] ? garmentNoun(items[0].inputs.garmentName) : 'piece';
+  // when quoting a hat. Custom items and mixed quotes fall back to "piece".
+  const singleNoun = items.length === 1 && items[0] && items[0].kind === 'catalog'
+    ? garmentNoun(items[0].inputs.garmentName)
+    : 'piece';
 
   if (!hasAnyInputs) {
     return (
@@ -1646,6 +1853,19 @@ function PriceCard({
           <dl className="mt-3 space-y-1 text-sm">
             {items.map((it, i) => {
               const calc = calcs[i];
+              if (it.kind === 'custom') {
+                const cq = parseInt(it.custom.quantity, 10) || 0;
+                const label = `${i + 1}. ${it.custom.description.trim() || 'Custom item'}`;
+                const sub = `${cq} pcs · custom · priced after review`;
+                return (
+                  <Row key={it.id} label={label} sub={sub} value={0} pending />
+                );
+              }
+              if (it.kind === 'unset') {
+                return (
+                  <Row key={it.id} label={`${i + 1}. Not chosen yet`} sub="Pick a product type" value={0} pending />
+                );
+              }
               const qty = totalQuantity(it.inputs.sizes);
               const label = `${i + 1}. ${it.pickedProduct?.name || `${it.inputs.qualityTier} ${it.inputs.garmentName}`}`;
               const sub = `${qty} pcs · ${it.inputs.color} · ${it.inputs.methodName}`;
@@ -1700,7 +1920,7 @@ function SingleItemBreakdown({ calc, quantity }: { calc: CalcResponse; quantity:
   );
 }
 
-function Row({ label, sub, value, negative, bold }: { label: string; sub?: string; value: number; negative?: boolean; bold?: boolean }) {
+function Row({ label, sub, value, negative, bold, pending }: { label: string; sub?: string; value: number; negative?: boolean; bold?: boolean; pending?: boolean }) {
   return (
     <div className={`flex items-baseline justify-between gap-2 ${bold ? 'pt-2 border-t border-orange-200 font-bold text-gray-900' : ''}`}>
       <div>
@@ -1708,7 +1928,7 @@ function Row({ label, sub, value, negative, bold }: { label: string; sub?: strin
         {sub && <span className="ml-1 text-xs text-gray-500">{sub}</span>}
       </div>
       <span className={`tabular-nums ${negative ? 'text-green-700' : ''}`}>
-        {negative ? '−' : ''}${Math.abs(value).toFixed(2)}
+        {pending ? 'TBD' : `${negative ? '−' : ''}$${Math.abs(value).toFixed(2)}`}
       </span>
     </div>
   );

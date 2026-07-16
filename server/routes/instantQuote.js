@@ -282,11 +282,41 @@ router.post('/save', async (req, res, next) => {
     const tables = await loadPricingTables();
 
     // Compute each item server-side. Server is the source of truth for
-    // catalog product price (custom_price ?? base_price × 2).
+    // catalog product price (custom_price ?? base_price × 2). Custom items
+    // skip pricing — the admin sets the price manually after review.
     const itemRows = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (!item || typeof item !== 'object' || !item.inputs || typeof item.inputs !== 'object') {
+      if (!item || typeof item !== 'object') {
+        return res.status(400).json({ error: `items[${i}] is required` });
+      }
+      if (item.kind === 'custom') {
+        if (!item.custom || typeof item.custom !== 'object') {
+          return res.status(400).json({ error: `items[${i}].custom is required for custom items` });
+        }
+        const description = typeof item.custom.description === 'string'
+          ? item.custom.description.trim()
+          : '';
+        const quantity = Math.max(1, parseInt(item.custom.quantity, 10) || 0);
+        if (!description) {
+          return res.status(400).json({ error: `items[${i}]: description is required for custom items` });
+        }
+        if (!quantity) {
+          return res.status(400).json({ error: `items[${i}]: quantity must be at least 1` });
+        }
+        itemRows.push({
+          index: i,
+          kind: 'custom',
+          inputs: null,
+          pickedProductMeta: null,
+          calc: { quantity, per_shirt: 0, total: 0, turnaround_days: 0 },
+          custom: { description, quantity, notes: item.custom.notes || null },
+          design_url: item.design_url || null,
+          extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+        });
+        continue;
+      }
+      if (!item.inputs || typeof item.inputs !== 'object') {
         return res.status(400).json({ error: `items[${i}].inputs is required` });
       }
       const effectiveInputs = { ...item.inputs };
@@ -306,6 +336,7 @@ router.post('/save', async (req, res, next) => {
       }
       itemRows.push({
         index: i,
+        kind: 'catalog',
         inputs: item.inputs,
         pickedProductMeta,
         calc,
@@ -325,11 +356,16 @@ router.post('/save', async (req, res, next) => {
     // display something natural.
     let headerProductName;
     if (itemRows.length === 1) {
-      const inp = itemRows[0].inputs;
-      const picked = itemRows[0].pickedProductMeta;
-      headerProductName = picked
-        ? `${picked.name} — ${inp.methodName}`
-        : `${inp.qualityTier} ${inp.garmentName} — ${inp.methodName}`;
+      const row = itemRows[0];
+      if (row.kind === 'custom') {
+        headerProductName = `Custom: ${row.custom.description.slice(0, 80)}`;
+      } else {
+        const inp = row.inputs;
+        const picked = row.pickedProductMeta;
+        headerProductName = picked
+          ? `${picked.name} — ${inp.methodName}`
+          : `${inp.qualityTier} ${inp.garmentName} — ${inp.methodName}`;
+      }
     } else {
       headerProductName = `Multi-product quote (${itemRows.length} items)`;
     }
@@ -343,7 +379,9 @@ router.post('/save', async (req, res, next) => {
     // and admin can rebuild a human-readable summary later.
     const inputsJson = {
       items: itemRows.map((r) => ({
+        kind: r.kind,
         inputs: r.inputs,
+        custom: r.custom || null,
         calc: r.calc,
         picked_product: r.pickedProductMeta || null,
         design_url: r.design_url,
@@ -379,6 +417,29 @@ router.post('/save', async (req, res, next) => {
     const quote = headerRes.rows[0];
 
     for (const r of itemRows) {
+      if (r.kind === 'custom') {
+        // Custom items have no catalog product, no sizes, no print areas.
+        // The description becomes the product name; unit/line prices stay
+        // NULL so the admin editor prompts them to price it manually.
+        const customNotes = r.custom.notes
+          ? `Custom item. Notes: ${r.custom.notes}`
+          : 'Custom item — priced after review.';
+        await client.query(
+          `INSERT INTO quote_items
+            (quote_id, position, product_id, product_name, color, sizes, quantity,
+             print_areas, design_url, unit_price, line_total, notes)
+           VALUES ($1, $2, NULL, $3, NULL, '[]'::jsonb, $4, '[]'::jsonb, $5, NULL, NULL, $6)`,
+          [
+            quote.id,
+            r.index,
+            r.custom.description,
+            r.custom.quantity,
+            r.design_url || null,
+            customNotes,
+          ],
+        );
+        continue;
+      }
       const inp = r.inputs;
       let productId = null;
       if (inp.productSsId) {
