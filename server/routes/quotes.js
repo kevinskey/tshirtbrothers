@@ -92,6 +92,60 @@ router.post('/', async (req, res, next) => {
       }
     }
 
+    // Auto-add the customer to the users table on quote submission. The
+    // quote form is the primary intake for new leads, so every submission
+    // should land the person in the admin customer list. If a user already
+    // exists for this email we just link the quote to them; otherwise we
+    // create a customer row with a random password_hash (they can reset
+    // via the forgot-password flow later). Failures here are non-fatal —
+    // the quote must still save.
+    if (!userId && customer_email) {
+      try {
+        const existing = await pool.query(
+          'SELECT id, phone FROM users WHERE LOWER(email) = LOWER($1)',
+          [customer_email],
+        );
+        if (existing.rows.length > 0) {
+          userId = existing.rows[0].id;
+          if (!existing.rows[0].phone && customer_phone) {
+            await pool.query(
+              'UPDATE users SET phone = $1 WHERE id = $2',
+              [customer_phone, userId],
+            );
+          }
+        } else {
+          const bcrypt = (await import('bcryptjs')).default;
+          const hash = await bcrypt.hash(
+            Math.random().toString(36).slice(2) + Date.now(),
+            10,
+          );
+          const addr = shipping_address && typeof shipping_address === 'object'
+            ? shipping_address
+            : {};
+          const created = await pool.query(
+            `INSERT INTO users
+               (name, email, phone, password_hash, role,
+                address_street, address_city, address_state, address_zip)
+             VALUES ($1, $2, $3, $4, 'customer', $5, $6, $7, $8)
+             RETURNING id`,
+            [
+              customer_name,
+              customer_email,
+              customer_phone || null,
+              hash,
+              addr.street || null,
+              addr.city || null,
+              addr.state || null,
+              addr.zip || null,
+            ],
+          );
+          userId = created.rows[0].id;
+        }
+      } catch (err) {
+        console.error('[quotes] auto-add customer failed:', err.message);
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO quotes
         (customer_name, customer_email, customer_phone, product_id, product_name, color, sizes, print_areas, design_type, design_url, extra_design_urls, mockup_image_url, quantity, estimated_price, notes, user_id, shipping_address, date_needed, shipping_method)
