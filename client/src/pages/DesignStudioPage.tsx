@@ -2114,8 +2114,8 @@ export default function DesignStudioPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain hidden sm:block" />
-        <span className="text-lg font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
+        <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 md:h-9 md:w-9 object-contain hidden sm:block" />
+        <span className="text-lg md:text-xl font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
       </div>
 
       {/* Center: design name */}
@@ -2133,7 +2133,7 @@ export default function DesignStudioPage() {
           <button
             type="button"
             onClick={() => setIsEditingName(true)}
-            className="text-sm font-medium text-gray-700 hover:text-gray-900 transition px-2 py-1 whitespace-nowrap"
+            className="text-sm md:text-base font-medium text-gray-700 hover:text-gray-900 transition px-2 py-1 whitespace-nowrap"
           >
             {designName}
           </button>
@@ -2310,8 +2310,8 @@ export default function DesignStudioPage() {
             }`}
           >
             {isActive && <div className={`absolute left-0 top-0 bottom-0 w-0.5 ${isAi ? 'bg-orange-500' : 'bg-red-600'}`} />}
-            <Icon className="h-6 w-6" />
-            <span className="mt-1.5 text-[10px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
+            <Icon className="h-6 w-6 lg:h-7 lg:w-7" />
+            <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
         );
       })}
@@ -3474,7 +3474,7 @@ export default function DesignStudioPage() {
                 }`}
                 title={view}
               >
-                <div className="h-8 w-8 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+                <div className="h-8 w-8 md:h-10 md:w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
                   {frontImage && (
                     <img
                       src={view === 'back' ? (backImage ?? frontImage) : frontImage}
@@ -3483,7 +3483,7 @@ export default function DesignStudioPage() {
                     />
                   )}
                 </div>
-                <span className="text-[9px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
+                <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
               </button>
             ))}
           </div>
