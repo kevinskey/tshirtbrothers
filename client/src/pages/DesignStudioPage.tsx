@@ -2288,7 +2288,7 @@ export default function DesignStudioPage() {
           }`}
         >
           {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
-          <div className="h-[72px] w-[72px] rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+          <div className="h-16 w-16 mx-auto rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
               src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
               alt={currentView}
@@ -2313,7 +2313,7 @@ export default function DesignStudioPage() {
             }`}
           >
             {isActive && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
-            <Icon className="h-[72px] w-[72px]" strokeWidth={1.5} />
+            <Icon className="h-16 w-16 mx-auto" strokeWidth={1.5} />
             <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center whitespace-pre-line">{tool.label}</span>
           </button>
         );
