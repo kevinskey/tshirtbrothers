@@ -405,12 +405,11 @@ type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 
 type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
 type ViewName = 'front' | 'back' | 'sleeve';
 
-// Default product when none is passed via ?product=. Use the basic flat
-// product photo (Gildan Unisex Heavy Cotton, S&S style 16 — the
-// classic Gildan 5000) rather than the Softstyle (ss_id 39), which
-// ships with a model photo that distracts from the design surface and
-// recolors awkwardly on swatch change.
-const DEFAULT_PRODUCT_SSID = '16';
+// Default product when none is passed via ?product=. Gildan Softstyle
+// (S&S style 32) — the shop's most popular blank and the featured pin
+// on the catalog. Combined with the auto-pick-black effect below, this
+// gives customers a black Softstyle as the studio's starting canvas.
+const DEFAULT_PRODUCT_SSID = '32';
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
