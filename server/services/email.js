@@ -790,12 +790,17 @@ function instantQuoteItemsHtml(items) {
   ).join('');
 }
 
-// Grand-total table shown only when there's more than one item.
+// Grand-total table shown only when there's more than one item. For a
+// custom-only multi-item quote the total would be $0.00 (misleading), so
+// we omit the total row and show "To be quoted" instead.
 function instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items }) {
   if (items.length === 1) return '';
+  const customOnly = items.every((it) => it.kind === 'custom');
   return detailsTable(
     detailRow('Total pieces', String(grandQuantity)) +
-    detailRow('Grand total', `<strong>${formatCurrency(grandTotal)}</strong>`),
+    detailRow('Grand total', customOnly
+      ? '<em>To be quoted after review</em>'
+      : `<strong>${formatCurrency(grandTotal)}</strong>`),
   );
 }
 
@@ -814,24 +819,42 @@ function instantQuoteItemNoun(items) {
 }
 
 export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, grandQuantity }) {
-  const subject = `Your T-Shirt Brothers quote — ${formatCurrency(grandTotal)} for ${instantQuoteItemNoun(items)}`;
+  // Custom-only quotes have no auto-price and no lock-in path — this is
+  // an acknowledgment ("we got it, price coming"), not a receipt of a
+  // price the customer already saw.
+  const customOnly = items.length > 0 && items.every((it) => it.kind === 'custom');
+
+  const subject = customOnly
+    ? `We got your quote request — pricing coming shortly`
+    : `Your T-Shirt Brothers quote — ${formatCurrency(grandTotal)} for ${instantQuoteItemNoun(items)}`;
+
+  const intro = customOnly
+    ? `<p>Thanks for sending your custom request. Our team will review the details below and email you a price — usually within one business day.</p>`
+    : `<p>Thanks for using our instant-quote tool — here's the price you saw:</p>`;
+
+  const footerNote = customOnly
+    ? `<p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll follow up with a price + a link to accept and pay a 50% deposit. Reply to this email if you need to add anything.</p>`
+    : `<p style="font-size:13px;color:#6b7280;margin-top:18px;">This is an estimate based on the inputs above. We'll review your artwork and confirm the final price before any work starts. Tax and shipping are calculated at checkout.</p>`;
+
+  const cta = customOnly
+    ? ''
+    : primaryButton('Lock in your order', `${DOMAIN}/instant-quote?quote=${quote.id}`);
+
   const body = `
     <p>Hi ${quote.customer_name || 'there'},</p>
-    <p>Thanks for using our instant-quote tool — here's the price you saw:</p>
+    ${intro}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
-    <p style="font-size:13px;color:#6b7280;margin-top:18px;">
-      This is an estimate based on the inputs above. We'll review your artwork and confirm the final price before any work starts. Tax and shipping are calculated at checkout.
-    </p>
+    ${footerNote}
     <p style="font-size:13px;color:#6b7280;">Quote ID: <strong>#${quote.id}</strong> · Saved ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
-    ${primaryButton('Lock in your order', `${DOMAIN}/instant-quote?quote=${quote.id}`)}
+    ${cta}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Reply to this email and one of us will personally walk you through it.</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,
     to: [quote.customer_email],
     subject,
-    html: baseLayout('Your Instant Quote', body),
+    html: baseLayout(customOnly ? 'We got your quote request' : 'Your Instant Quote', body),
   });
 }
 
