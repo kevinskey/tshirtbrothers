@@ -3223,13 +3223,17 @@ export default function DesignStudioPage() {
           className="relative bg-white rounded-2xl shadow-sm overflow-hidden select-none"
           style={{
             touchAction: 'pinch-zoom',
-            aspectRatio: '1 / 1',
+            // Aspect ratio comes from the print inches so the design
+            // surface visually matches whatever print rectangle the
+            // customer picked in the header's Print control.
+            aspectRatio: `${canvasInches} / ${canvasInchesH}`,
             width: `${100 * canvasZoom}%`,
-            // Cap by viewport height so the shirt fits vertically instead
-            // of being sized purely by the parent's width. 10rem covers
+            // Fit the surface inside a viewport-height-based square: both
+            // dimensions capped at (100vh - 10rem) * zoom. 10rem covers
             // header (4rem) + a bit of top/bottom breathing room + the
-            // mobile bottom nav. maxWidth mirrors maxHeight so aspect
-            // ratio stays 1:1 even when the vh cap kicks in.
+            // mobile bottom nav. maxWidth handles wide (landscape) prints
+            // that would otherwise exceed the box; maxHeight handles tall
+            // (portrait) ones. Whichever is more restrictive wins.
             maxHeight: `calc((100vh - 10rem) * ${canvasZoom})`,
             maxWidth: `calc((100vh - 10rem) * ${canvasZoom})`,
             // cqw font scaling now keys off the shirt-photo box itself.
