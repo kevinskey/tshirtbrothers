@@ -1625,24 +1625,25 @@ function SaveQuoteModal({
 
         <div className="mt-5 space-y-3">
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Email *</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Name *</label>
             <input
-              type="email"
+              type="text"
               autoFocus
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Name</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Email *</label>
             <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Optional"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>
