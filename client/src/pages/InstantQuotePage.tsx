@@ -88,10 +88,12 @@ type CustomItemInputs = {
   notes: string;
 };
 
-// Which shape of question set the item is currently in. 'unset' shows the
-// initial "Catalog or Custom?" picker; 'catalog' shows the full shirt/print
-// form; 'custom' shows the simplified describe-it form.
-type ItemKind = 'unset' | 'catalog' | 'custom';
+// Which shape of question set the item is currently in.
+//   unset            — initial Catalog vs. Custom picker
+//   catalog-category — after picking Catalog, choose T-shirts/Hoodies/etc.
+//   catalog          — full shirt/print form (garment preset from category)
+//   custom           — simplified describe-it form
+type ItemKind = 'unset' | 'catalog-category' | 'catalog' | 'custom';
 
 // One line item the customer is configuring. A quote is an ordered list of
 // these — the customer can add as many as they want before saving.
@@ -561,7 +563,7 @@ export default function InstantQuotePage() {
   //  - catalog: at least one location + at least one shirt
   //  - custom:  a description + a positive quantity
   const itemValidity = items.map((it) => {
-    if (it.kind === 'unset') return false;
+    if (it.kind === 'unset' || it.kind === 'catalog-category') return false;
     if (it.kind === 'custom') {
       return it.custom.description.trim().length > 0
         && (parseInt(it.custom.quantity, 10) || 0) > 0;
@@ -607,6 +609,38 @@ export default function InstantQuotePage() {
 
   function setItemKind(itemId: string, kind: ItemKind) {
     setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, kind } : it)));
+  }
+
+  // Pick a category from the catalog-category screen. Categories that map
+  // to an actual catalog garment (T-shirt / Hoodie / Sweatshirt / Hat) drop
+  // into the standard catalog form with garmentName preset. Bags and
+  // Accessories aren't sold as catalog garments here, so they route to the
+  // custom flow with a description hint so the customer knows what to type.
+  function pickItemCategory(itemId: string, categoryKey: string) {
+    setItems((prev) => prev.map((it) => {
+      if (it.id !== itemId) return it;
+      const catalogGarment: Record<string, string | undefined> = {
+        tshirts: 'T-shirt',
+        hoodies: 'Hoodie',
+        sweatshirts: 'Sweatshirt',
+        hats: 'Hat',
+      };
+      const garment = catalogGarment[categoryKey];
+      if (garment) {
+        const nextInputs = { ...it.inputs, garmentName: garment };
+        nextInputs.sizes = normalizeSizesForProduct(null, garment, it.inputs.sizes);
+        return { ...it, kind: 'catalog', inputs: nextInputs };
+      }
+      const seed: Record<string, string> = {
+        bags: 'Bag: ',
+        accessories: 'Accessory: ',
+      };
+      return {
+        ...it,
+        kind: 'custom',
+        custom: { ...it.custom, description: it.custom.description || (seed[categoryKey] || '') },
+      };
+    }));
   }
 
   function addItem() {
@@ -714,6 +748,7 @@ export default function InstantQuotePage() {
               onOpenPicker={() => setProductPickerItemId(item.id)}
               onPatchCustom={(patch) => patchCustom(item.id, patch)}
               onSetKind={(kind) => setItemKind(item.id, kind)}
+              onPickCategory={(cat) => pickItemCategory(item.id, cat)}
               onRemove={items.length > 1 ? () => removeItem(item.id) : null}
             />
           ))}
@@ -837,7 +872,7 @@ function ItemCard({
   index, totalItems, item, options, calc, uploadingCount,
   expanded, onExpand,
   onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker,
-  onPatchCustom, onSetKind, onRemove,
+  onPatchCustom, onSetKind, onPickCategory, onRemove,
 }: {
   index: number;
   totalItems: number;
@@ -854,6 +889,7 @@ function ItemCard({
   onOpenPicker: () => void;
   onPatchCustom: (patch: Partial<CustomItemInputs>) => void;
   onSetKind: (kind: ItemKind) => void;
+  onPickCategory: (categoryKey: string) => void;
   onRemove: (() => void) | null;
 }) {
   const inputs = item.inputs;
@@ -908,6 +944,9 @@ function ItemCard({
     if (item.kind === 'unset') {
       productLabel = 'Choose product type';
       detail = 'Tap Edit to pick catalog or custom';
+    } else if (item.kind === 'catalog-category') {
+      productLabel = 'Pick a category';
+      detail = 'T-shirts, hoodies, hats, bags…';
     } else if (item.kind === 'custom') {
       const cq = parseInt(item.custom.quantity, 10) || 0;
       productLabel = item.custom.description.trim() || 'Custom item';
@@ -1016,14 +1055,14 @@ function ItemCard({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             type="button"
-            onClick={() => { onSetKind('catalog'); onOpenPicker(); }}
+            onClick={() => onSetKind('catalog-category')}
             className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-gray-200 bg-white p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
           >
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 group-hover:bg-orange-200">
               <Shirt className="h-5 w-5" />
             </div>
             <div className="font-semibold text-gray-900">From our catalog</div>
-            <div className="text-xs text-gray-500">T-shirts, hoodies, hats, polos — pick garment, sizes, colors for an instant price.</div>
+            <div className="text-xs text-gray-500">T-shirts, hoodies, sweatshirts, hats, bags, accessories — pick a category to get started.</div>
           </button>
           <button
             type="button"
@@ -1036,6 +1075,44 @@ function ItemCard({
             <div className="font-semibold text-gray-900">Custom item</div>
             <div className="text-xs text-gray-500">Something not in our catalog — describe it and we'll quote it after review.</div>
           </button>
+        </div>
+      )}
+
+      {/* Category picker — second step after the customer chose "catalog".
+          T-shirts / Hoodies / Sweatshirts / Hats drop into the priced form
+          with garmentName preset. Bags / Accessories don't have catalog
+          pricing yet, so they hop into the custom flow with a description
+          seed so the customer knows what shape of text to type. */}
+      {item.kind === 'catalog-category' && (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => onSetKind('unset')}
+            className="text-xs text-orange-700 hover:text-orange-800 hover:underline"
+          >
+            ← Change product type
+          </button>
+          <p className="text-sm text-gray-600">What kind of product are you quoting?</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {[
+              { key: 'tshirts',     label: 'T-shirts',     sub: 'Softstyle, Comfort Colors, Next Level' },
+              { key: 'hoodies',     label: 'Hoodies',      sub: 'Pullover + zip options' },
+              { key: 'sweatshirts', label: 'Sweatshirts',  sub: 'Crewneck fleece' },
+              { key: 'hats',        label: 'Hats',         sub: 'Caps, beanies, snapbacks' },
+              { key: 'bags',        label: 'Bags',         sub: 'Totes, drawstring, backpacks' },
+              { key: 'accessories', label: 'Accessories',  sub: 'Koozies, patches, misc.' },
+            ].map((cat) => (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => onPickCategory(cat.key)}
+                className="group flex flex-col items-start gap-1 rounded-2xl border-2 border-gray-200 bg-white p-4 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
+              >
+                <div className="font-semibold text-gray-900">{cat.label}</div>
+                <div className="text-[11px] text-gray-500 leading-snug">{cat.sub}</div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1898,6 +1975,11 @@ function PriceCard({
               if (it.kind === 'unset') {
                 return (
                   <Row key={it.id} label={`${i + 1}. Not chosen yet`} sub="Pick a product type" value={0} pending />
+                );
+              }
+              if (it.kind === 'catalog-category') {
+                return (
+                  <Row key={it.id} label={`${i + 1}. Not chosen yet`} sub="Pick a category" value={0} pending />
                 );
               }
               const qty = totalQuantity(it.inputs.sizes);
