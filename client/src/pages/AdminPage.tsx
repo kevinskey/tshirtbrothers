@@ -571,6 +571,43 @@ export default function AdminPage() {
     name: '', category: 'Custom', price: '', description: '', image_url: '',
   });
   const [addProductSaving, setAddProductSaving] = useState(false);
+  const [addProductUploading, setAddProductUploading] = useState(false);
+  const addProductFileInputRef = useRef<HTMLInputElement | null>(null);
+  async function handleAddProductImageFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      toast('Please choose an image file', 'error');
+      return;
+    }
+    setAddProductUploading(true);
+    try {
+      const token = localStorage.getItem('tsb_token') || '';
+      const signRes = await fetch('/api/admin/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      if (!signRes.ok) {
+        const j = await signRes.json().catch(() => ({}));
+        toast(j.error || 'Could not start upload', 'error');
+        return;
+      }
+      const { uploadUrl, fileUrl } = await signRes.json();
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type, 'x-amz-acl': 'public-read' },
+        body: file,
+      });
+      if (!putRes.ok) {
+        toast('Upload failed', 'error');
+        return;
+      }
+      setAddProductForm((p) => ({ ...p, image_url: fileUrl }));
+    } catch {
+      toast('Upload error', 'error');
+    } finally {
+      setAddProductUploading(false);
+    }
+  }
   async function submitAddProduct(e: FormEvent) {
     e.preventDefault();
     if (!addProductForm.name.trim()) { toast('Name is required', 'error'); return; }
@@ -7256,14 +7293,59 @@ export default function AdminPage() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-700 block mb-1">Image URL (optional)</label>
-              <input
-                type="url"
-                value={addProductForm.image_url}
-                onChange={(e) => setAddProductForm((p) => ({ ...p, image_url: e.target.value }))}
-                placeholder="https://..."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
-              />
+              <label className="text-xs font-medium text-gray-700 block mb-1">Product image (optional)</label>
+              <div className="flex items-start gap-3">
+                {addProductForm.image_url ? (
+                  <div className="relative">
+                    <img
+                      src={addProductForm.image_url}
+                      alt="Product preview"
+                      className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setAddProductForm((p) => ({ ...p, image_url: '' }))}
+                      className="absolute -top-2 -right-2 bg-white border border-gray-300 rounded-full p-0.5 text-gray-500 hover:text-red-600 shadow"
+                      aria-label="Remove image"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+                    <Upload className="w-6 h-6" />
+                  </div>
+                )}
+                <div className="flex-1 space-y-2">
+                  <input
+                    ref={addProductFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleAddProductImageFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => addProductFileInputRef.current?.click()}
+                    disabled={addProductUploading}
+                    className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {addProductUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                    {addProductUploading ? 'Uploading…' : addProductForm.image_url ? 'Replace image' : 'Upload image'}
+                  </button>
+                  <input
+                    type="url"
+                    value={addProductForm.image_url}
+                    onChange={(e) => setAddProductForm((p) => ({ ...p, image_url: e.target.value }))}
+                    placeholder="…or paste an image URL"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+                  />
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={() => setShowAddProduct(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
