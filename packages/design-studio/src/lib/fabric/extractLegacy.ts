@@ -17,7 +17,7 @@
 
 import { FabricImage, IText, Group, type Canvas as FabricCanvas } from 'fabric';
 import type { FabricObjectWithMeta } from './types';
-import type { DesignElement, ViewSide } from '@/components/design-studio/types';
+import type { DesignElement, ViewSide } from '../../components/design-studio/types';
 
 const LOGICAL = 1000;
 const COORD_SCALE = LOGICAL / 100;

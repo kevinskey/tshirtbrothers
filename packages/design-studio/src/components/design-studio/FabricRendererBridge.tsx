@@ -25,10 +25,10 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react';
 import { FabricImage, IText, Group, Shadow, Gradient } from 'fabric';
 import { FabricDesignCanvas, LOGICAL_CANVAS_SIZE } from './FabricDesignCanvas';
-import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
-import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
+import { hydrateLegacyElements } from '../../lib/fabric/hydrateLegacy';
+import { extractLegacyElements } from '../../lib/fabric/extractLegacy';
 import type { CanvasHandle, ViewSide, UserRole, DesignElement } from './types';
-import type { FabricObjectWithMeta } from '@/lib/fabric/types';
+import type { FabricObjectWithMeta } from '../../lib/fabric/types';
 
 export interface FabricRendererBridgeHandle {
   /** PNG export — used by handleSaveToLibrary in Fabric mode. */

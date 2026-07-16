@@ -1,23 +1,25 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
-import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
-import { LayersPanel } from '@/components/design-studio/LayersPanel';
-import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
-import { FontPicker } from '@/components/design-studio/FontPicker';
+import {
+  useFabricRendererFlag,
+  LayersPanel,
+  useUndoRedo,
+  FontPicker,
+  TextEffectsPanel,
+  CropModal,
+  DimensionReadout,
+  HoldRepeatButton,
+} from '@tshirtbrothers/design-studio';
+import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
-import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
-import { CropModal } from '@/components/design-studio/CropModal';
-import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
-import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
 import { generateDesignImage } from '@/services/deepseek';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
 // is set in the URL — every other visitor pays nothing for it.
 const FabricRendererBridge = lazy(() =>
-  import('@/components/design-studio/FabricRendererBridge').then((m) => ({
+  import('@tshirtbrothers/design-studio/bridge').then((m) => ({
     default: m.FabricRendererBridge,
   })),
 );
