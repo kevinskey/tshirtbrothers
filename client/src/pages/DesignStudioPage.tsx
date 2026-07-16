@@ -3451,12 +3451,21 @@ export default function DesignStudioPage() {
 
           {/* Placeholder when no elements on the current side. Suppressed
               under ?canvas=fabric — the Fabric canvas paints its own
-              background and we don't want a stray overlay catching clicks. */}
+              background and we don't want a stray overlay catching clicks.
+              Anchor the rectangle where the print will actually land:
+                front  → ~3in below the collar (t-shirts, hoodies, sweatshirts)
+                back   → ~5in below the collar
+                sleeve → centered on the sleeve
+              Approximations assume a standard adult shirt ~28in tall,
+              rendered as ~90% of canvas height with the collar landing
+              near ~13% of canvas from top. */}
           {!useFabricRenderer && designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
-            // Anchor the empty-state print rectangle to the chest (~22% from
-            // top of canvas) instead of the canvas center, so it lines up
-            // with where the design will actually be printed.
-            <div className="absolute inset-x-0 top-[28%] flex justify-center pointer-events-none">
+            <div
+              className="absolute inset-x-0 flex justify-center pointer-events-none"
+              style={{
+                top: currentView === 'sleeve' ? '45%' : currentView === 'back' ? '25%' : '18%',
+              }}
+            >
               <div className="border-2 border-dashed border-gray-300 rounded-xl w-[28%] aspect-[3/2] flex flex-col items-center justify-center gap-1">
                 <Move className="h-5 w-5 md:h-6 md:w-6 text-gray-400" />
                 <span className="text-[10px] md:text-xs font-semibold text-gray-400 uppercase tracking-wider text-center px-1">
