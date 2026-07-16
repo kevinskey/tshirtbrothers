@@ -743,26 +743,45 @@ export default function InstantQuotePage() {
           />
         </div>
 
-        {/* CTAs */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setSaveOpen('save')}
-            disabled={!canSave}
-            className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-orange-400 hover:bg-gray-50 disabled:opacity-50 transition"
-          >
-            Save Quote (email me)
-          </button>
-          <button
-            type="button"
-            onClick={() => setSaveOpen('lock-in')}
-            disabled={!canLockIn}
-            className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
-            title={!canLockIn && canSave ? 'Deposit unavailable until we price your custom item' : undefined}
-          >
-            Lock In Order — 50% deposit
-          </button>
-        </div>
+        {/* CTAs. When there's nothing to charge a deposit against (custom-
+            only quotes), collapse to a single "Send Quote to Us" primary
+            button — otherwise the customer sees a disabled Lock-In and
+            wonders whether they're stuck. */}
+        {canLockIn ? (
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setSaveOpen('save')}
+              disabled={!canSave}
+              className="w-full rounded-xl border-2 border-gray-300 px-6 py-4 text-base font-bold text-gray-700 hover:border-orange-400 hover:bg-gray-50 disabled:opacity-50 transition"
+            >
+              Save Quote (email me)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSaveOpen('lock-in')}
+              className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 transition"
+            >
+              Lock In Order — 50% deposit
+            </button>
+          </div>
+        ) : (
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => setSaveOpen('save')}
+              disabled={!canSave}
+              className="w-full rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white hover:bg-orange-700 disabled:opacity-50 transition"
+            >
+              Send Quote to Us for Pricing
+            </button>
+            {canSave && (
+              <p className="mt-2 text-center text-xs text-gray-500">
+                We'll email you a price after our team reviews your custom item — usually within one business day.
+              </p>
+            )}
+          </div>
+        )}
 
         <p className="mt-6 text-center text-xs text-gray-500">
           Estimate only. Final price confirmed after we review your artwork. Tax + shipping calculated at checkout.
@@ -1483,6 +1502,10 @@ function SaveQuoteModal({
 
   const isLockIn = intent === 'lock-in';
   const depositAmount = grandTotal / 2;
+  // If the quote is entirely custom items (nothing has been auto-priced),
+  // reword the modal so the customer knows they're requesting a price
+  // rather than filing an already-known number.
+  const isCustomOnly = !isLockIn && items.length > 0 && items.every((it) => it.kind === 'custom');
 
   async function submit() {
     if (!name.trim()) {
@@ -1557,7 +1580,9 @@ function SaveQuoteModal({
       if (!saveRes.ok) throw new Error(saveBody.error || 'Save failed');
 
       if (!isLockIn) {
-        toast.success(`Quote #${saveBody.id} saved — check your email.`);
+        toast.success(isCustomOnly
+          ? `Quote #${saveBody.id} sent — we'll email you a price shortly.`
+          : `Quote #${saveBody.id} saved — check your email.`);
         onClose();
         return;
       }
@@ -1584,12 +1609,18 @@ function SaveQuoteModal({
     >
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h3 className="font-display text-xl font-bold text-gray-900">
-          {isLockIn ? 'Lock in your order' : 'Save your quote'}
+          {isLockIn
+            ? 'Lock in your order'
+            : isCustomOnly
+              ? 'Send your quote for pricing'
+              : 'Save your quote'}
         </h3>
         <p className="mt-1 text-sm text-gray-500">
           {isLockIn
             ? `${items.length} product${items.length === 1 ? '' : 's'} · we'll save your quote, then take you to Stripe for the 50% deposit ($${depositAmount.toFixed(2)}). Balance due before pickup or shipment.`
-            : `${items.length} product${items.length === 1 ? '' : 's'} · we'll email you the breakdown so you have it on file.`}
+            : isCustomOnly
+              ? `${items.length} custom item${items.length === 1 ? '' : 's'} · our team will review and email you a price, usually within one business day.`
+              : `${items.length} product${items.length === 1 ? '' : 's'} · we'll email you the breakdown so you have it on file.`}
         </p>
 
         <div className="mt-5 space-y-3">
@@ -1645,7 +1676,9 @@ function SaveQuoteModal({
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {isLockIn
               ? (saving ? 'Redirecting...' : `Continue to deposit ($${depositAmount.toFixed(2)})`)
-              : (saving ? 'Saving...' : 'Save & email me')}
+              : isCustomOnly
+                ? (saving ? 'Sending...' : 'Send to us')
+                : (saving ? 'Saving...' : 'Save & email me')}
           </button>
         </div>
       </div>
