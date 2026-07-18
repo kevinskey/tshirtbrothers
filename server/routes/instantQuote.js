@@ -267,7 +267,7 @@ router.post('/calculate', async (req, res, next) => {
 router.post('/save', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { items, customer_name, customer_email, notes } = req.body;
+    const { items, customer_name, customer_email, customer_phone, notes } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'items array is required' });
     }
@@ -277,6 +277,14 @@ router.post('/save', async (req, res, next) => {
     const cleanName = typeof customer_name === 'string' ? customer_name.trim() : '';
     if (!cleanName) {
       return res.status(400).json({ error: 'customer_name is required' });
+    }
+    // Phone is required alongside email — the shop needs a second way to
+    // reach the customer. Digits only for the length check so formatting
+    // like (555) 000-0000 passes; store what the customer actually typed.
+    const cleanPhone = typeof customer_phone === 'string' ? customer_phone.trim() : '';
+    const phoneDigits = cleanPhone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      return res.status(400).json({ error: 'customer_phone is required' });
     }
 
     const tables = await loadPricingTables();
@@ -395,15 +403,16 @@ router.post('/save', async (req, res, next) => {
 
     const headerRes = await client.query(
       `INSERT INTO quotes
-        (customer_name, customer_email, product_name, quantity,
+        (customer_name, customer_email, customer_phone, product_name, quantity,
          design_type, inputs_json, calculated_price,
          design_url, extra_design_urls,
          estimated_price, notes, status)
-       VALUES ($1, $2, $3, $4, 'instant-quote', $5::jsonb, $6, $7, $8::jsonb, $9, $10, 'pending')
+       VALUES ($1, $2, $3, $4, $5, 'instant-quote', $6::jsonb, $7, $8, $9::jsonb, $10, $11, 'pending')
        RETURNING id, customer_name, customer_email, created_at`,
       [
         cleanName,
         customer_email,
+        cleanPhone,
         headerProductName,
         grandQuantity,
         JSON.stringify(inputsJson),

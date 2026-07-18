@@ -1574,6 +1574,7 @@ function SaveQuoteModal({
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -1591,6 +1592,14 @@ function SaveQuoteModal({
     }
     if (!email || !/.+@.+\..+/.test(email)) {
       toast.error('Enter a valid email');
+      return;
+    }
+    // Phone is required alongside email so the shop can always reach the
+    // customer about a quote. 10 digits = US number; allow 11 with a
+    // leading country code, and ignore formatting characters.
+    const phoneDigits = phone.replace(/\D/g, '');
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      toast.error('Enter a valid phone number');
       return;
     }
     setSaving(true);
@@ -1649,6 +1658,7 @@ function SaveQuoteModal({
         body: JSON.stringify({
           customer_name: name || null,
           customer_email: email,
+          customer_phone: phone,
           notes: notes || null,
           items: payloadItems,
         }),
@@ -1721,6 +1731,17 @@ function SaveQuoteModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1">Phone *</label>
+            <input
+              type="tel"
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="(555) 000-0000"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
             />
           </div>

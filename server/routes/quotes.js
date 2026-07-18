@@ -76,6 +76,16 @@ router.post('/', async (req, res, next) => {
       });
     }
 
+    // Phone is required alongside email so the shop can always reach the
+    // customer. Digits only for the length check so formatting like
+    // (555) 000-0000 passes; the raw string is what gets stored.
+    const phoneDigits = typeof customer_phone === 'string'
+      ? customer_phone.replace(/\D/g, '')
+      : '';
+    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+      return res.status(400).json({ error: 'customer_phone is required' });
+    }
+
     // Optionally extract user_id from token if customer is logged in
     let userId = null;
     const authHeader = req.headers.authorization;
