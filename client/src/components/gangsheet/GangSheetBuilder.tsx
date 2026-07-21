@@ -15,7 +15,7 @@ import {
 } from '@/lib/gangsheet/constants';
 import { calculateDPI, getDPIStatus, getImageDimensions, DPI_COLORS } from '@/lib/gangsheet/dpiUtils';
 import { packDesigns, type PackItem } from '@/lib/gangsheet/binPacking';
-import { loadFabricImage } from '@/lib/fabric/loadImage';
+import { loadFabricImage } from '@tshirtbrothers/design-studio';
 
 // Types
 interface DesignSnapshot {

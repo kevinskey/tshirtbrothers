@@ -15,8 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import { Trash2, Upload, AlertCircle, Loader2 } from 'lucide-react';
-import { refreshCustomFonts } from '@/components/design-studio/useCustomFonts';
-import { FONT_CATEGORIES } from '@/components/design-studio/fontCatalog';
+import { refreshCustomFonts, FONT_CATEGORIES } from '@tshirtbrothers/design-studio';
 
 interface CustomFontRow {
   id: number;

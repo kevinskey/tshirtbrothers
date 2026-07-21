@@ -1,0 +1,81 @@
+# Publish @tshirtbrothers/design-studio to GitHub Packages when its version
+# in packages/design-studio/package.json changes on main.
+#
+# The package is source-only distribution (no build step needed — consumers
+# are Vite apps that handle TS/TSX natively). We publish the `src/` tree
+# and package.json verbatim.
+#
+# Version bump workflow:
+#   1. On the feature branch: bump packages/design-studio/package.json version
+#      following semver — patch for internal fixes, minor for additive API,
+#      major for breaking changes to the public API surface (src/index.ts).
+#   2. Merge to main.
+#   3. This workflow diffs against the previous main and publishes if the
+#      version field changed.
+#
+# The published tarball is scoped to @tshirtbrothers on GitHub Packages;
+# consumers authenticate with GITHUB_TOKEN + a scope-mapped .npmrc.
+
+name: Publish @tshirtbrothers/design-studio
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/design-studio/**'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check if version changed
+        id: version_check
+        run: |
+          NEW_VERSION=$(node -p "require('./packages/design-studio/package.json').version")
+          # HEAD~1 is the parent of the merge commit. If the file didn't exist
+          # before (first publish), treat as changed.
+          OLD_VERSION=$(git show HEAD~1:packages/design-studio/package.json 2>/dev/null \
+            | node -e "let s=''; process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).version)}catch{console.log('none')}})" \
+            || echo "none")
+          echo "old=$OLD_VERSION new=$NEW_VERSION"
+          if [ "$NEW_VERSION" != "$OLD_VERSION" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.version_check.outputs.changed == 'true'
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@tshirtbrothers'
+
+      - name: Publish
+        if: steps.version_check.outputs.changed == 'true'
+        working-directory: packages/design-studio
+        run: |
+          # Ensure the "private": true flag doesn't block publish. GitHub
+          # Packages is a private registry; the field's protection is
+          # redundant here. We strip it just-in-time.
+          node -e "const p=require('./package.json');delete p.private;require('fs').writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n')"
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag release
+        if: steps.version_check.outputs.changed == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="design-studio-v${{ steps.version_check.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"

@@ -28,7 +28,7 @@ import { loadFabricImage } from './loadImage';
 import { loadGoogleFonts } from './googleFonts';
 import { buildShapedTextSvg, type ShapeName } from './shapedTextSvg';
 import type { FabricObjectMeta, FabricObjectWithMeta } from './types';
-import type { DesignElement } from '@/components/design-studio/types';
+import type { DesignElement } from '../../components/design-studio/types';
 
 const LOGICAL = 1000;
 const COORD_SCALE = LOGICAL / 100; // percent → px (10)

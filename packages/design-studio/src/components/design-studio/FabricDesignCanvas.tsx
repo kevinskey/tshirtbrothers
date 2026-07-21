@@ -1,14 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Canvas as FabricCanvas } from 'fabric';
-import { exportPng } from '@/lib/fabric/exportPng';
-import { exportSvg } from '@/lib/fabric/exportSvg';
-import { serializeCanvas, deserializeCanvas } from '@/lib/fabric/serializeJson';
-import { loadFabricImage } from '@/lib/fabric/loadImage';
-import { hydrateLegacyElements } from '@/lib/fabric/hydrateLegacy';
-import { extractLegacyElements } from '@/lib/fabric/extractLegacy';
-import { reportClientError } from '@/lib/fabric/reportClientError';
-import { attachSmartGuides } from '@/lib/fabric/smartGuides';
-import type { FabricObjectWithMeta } from '@/lib/fabric/types';
+import { exportPng } from '../../lib/fabric/exportPng';
+import { exportSvg } from '../../lib/fabric/exportSvg';
+import { serializeCanvas, deserializeCanvas } from '../../lib/fabric/serializeJson';
+import { loadFabricImage } from '../../lib/fabric/loadImage';
+import { hydrateLegacyElements } from '../../lib/fabric/hydrateLegacy';
+import { extractLegacyElements } from '../../lib/fabric/extractLegacy';
+import { reportClientError } from '../../lib/fabric/reportClientError';
+import { attachSmartGuides } from '../../lib/fabric/smartGuides';
+import type { FabricObjectWithMeta } from '../../lib/fabric/types';
 import { FabricCanvasContext } from './FabricCanvasContext';
 import type {
   CanvasHandle,

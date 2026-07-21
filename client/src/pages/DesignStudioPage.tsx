@@ -1,23 +1,25 @@
 import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useFabricRendererFlag } from '@/components/design-studio/useFabricRendererFlag';
-import type { FabricRendererBridgeHandle } from '@/components/design-studio/FabricRendererBridge';
-import { LayersPanel } from '@/components/design-studio/LayersPanel';
-import { useUndoRedo } from '@/components/design-studio/useUndoRedo';
-import { FontPicker } from '@/components/design-studio/FontPicker';
+import {
+  useFabricRendererFlag,
+  LayersPanel,
+  useUndoRedo,
+  FontPicker,
+  TextEffectsPanel,
+  CropModal,
+  DimensionReadout,
+  HoldRepeatButton,
+} from '@tshirtbrothers/design-studio';
+import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
-import { TextEffectsPanel } from '@/components/design-studio/TextEffectsPanel';
-import { CropModal } from '@/components/design-studio/CropModal';
-import { DimensionReadout } from '@/components/design-studio/DimensionReadout';
-import { HoldRepeatButton } from '@/components/design-studio/HoldRepeatButton';
 import { generateDesignImage } from '@/services/deepseek';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
 // is set in the URL — every other visitor pays nothing for it.
 const FabricRendererBridge = lazy(() =>
-  import('@/components/design-studio/FabricRendererBridge').then((m) => ({
+  import('@tshirtbrothers/design-studio/bridge').then((m) => ({
     default: m.FabricRendererBridge,
   })),
 );
@@ -90,6 +92,9 @@ interface DesignElement {
   shadow?: { offsetX: number; offsetY: number; blur: number; color: string };
   strokeColor?: string;
   strokeWidth?: number;
+  // Shape-only: when explicitly false the fill is treated as 'none' so the
+  // user gets a true outline-only shape. Defaults to true (filled).
+  fillEnabled?: boolean;
   gradient?: { colorA: string; colorB: string; angle: number };
 }
 
@@ -217,15 +222,16 @@ const SHAPE_VIEWBOX_STAR = '50,5 61.3,38.4 96.4,38.4 67.6,60.5 78.5,93.9 50,73.6
 const SHAPE_VIEWBOX_TRIANGLE = '50,5 95,95 5,95';
 const SHAPE_PATH_HEART = 'M 50,82 C 22,60 5,42 5,28 C 5,12 18,5 30,5 C 38,5 45,9 50,15 C 55,9 62,5 70,5 C 82,5 95,12 95,28 C 95,42 78,60 50,82 Z';
 
-function ShapeSvg({ shape, fill, stroke, strokeWidth, opacity }: {
+function ShapeSvg({ shape, fill, fillEnabled, stroke, strokeWidth, opacity }: {
   shape: 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
   fill: string;
+  fillEnabled?: boolean;
   stroke?: string;
   strokeWidth?: number;
   opacity?: number;
 }) {
   const sw = strokeWidth ?? 0;
-  const fillProp = shape === 'line' ? 'none' : fill;
+  const fillProp = (fillEnabled === false || shape === 'line') ? 'none' : fill;
   // Inset the geometry by half the stroke so the outline doesn't get
   // clipped at the SVG edges. Tiny but visible at thicker strokes.
   const inset = sw / 2;
@@ -3092,6 +3098,8 @@ export default function DesignStudioPage() {
   useEffect(() => { setImgPop(null); }, [selectedElementId]);
   const [textPop, setTextPop] = useState<string | null>(null);
   useEffect(() => { setTextPop(null); }, [selectedElementId]);
+  const [shapePop, setShapePop] = useState<string | null>(null);
+  useEffect(() => { setShapePop(null); }, [selectedElementId]);
   // Crop modal: id of the image element being cropped, null = closed.
   const [croppingElementId, setCroppingElementId] = useState<string | null>(null);
   const croppingElement = croppingElementId
@@ -3099,12 +3107,12 @@ export default function DesignStudioPage() {
     : null;
 
   const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
+    <div className="fixed top-20 right-2 md:right-4 z-40 flex flex-col items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1 py-1.5 max-h-[calc(100vh-6rem)] overflow-y-auto">
 
       {/* Size */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
-        {imgPop === 'sz' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
+        {imgPop === 'sz' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
       </div>
 
       {/* Crop — opens the visual crop modal. Replaces el.content with the
@@ -3123,31 +3131,31 @@ export default function DesignStudioPage() {
       {/* Rotate */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
-        {imgPop === 'rt' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div></div>}
+        {imgPop === 'rt' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div></div>}
       </div>
 
       {/* Corners */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'cr' ? null : 'cr')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'cr' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⬜<span>Corners</span></button>
-        {imgPop === 'cr' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={50} value={selectedEl.borderRadius ?? 0} onChange={e => updateElement(selectedEl.id, { borderRadius: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.borderRadius ?? 0}%</span></div></div>}
+        {imgPop === 'cr' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={50} value={selectedEl.borderRadius ?? 0} onChange={e => updateElement(selectedEl.id, { borderRadius: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.borderRadius ?? 0}%</span></div></div>}
       </div>
 
       {/* Opacity */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'op' ? null : 'op')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'op' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>◐<span>Opacity</span></button>
-        {imgPop === 'op' && <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={e => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div></div>}
+        {imgPop === 'op' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={e => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div></div>}
       </div>
 
       {/* Filter */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'fl' ? null : 'fl')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'fl' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>🎨<span>Filter</span></button>
-        {imgPop === 'fl' && <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
+        {imgPop === 'fl' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
       </div>
 
       {/* Layer */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'ly' ? null : 'ly')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'ly' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>☰<span>Layer</span></button>
-        {imgPop === 'ly' && <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
+        {imgPop === 'ly' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
           <button type="button" onClick={() => { bringToFront(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬆ Front</button>
           <button type="button" onClick={() => { bringForward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↑ Forward</button>
           <button type="button" onClick={() => { sendBackward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↓ Backward</button>
@@ -3155,7 +3163,7 @@ export default function DesignStudioPage() {
         </div>}
       </div>
 
-      <div className="w-px h-7 bg-gray-200 mx-0.5" />
+      <div className="h-px w-7 bg-gray-200 my-0.5" />
 
       {/* Remove BG */}
       <button type="button" disabled={canvasRemovingBg} onClick={() => removeBgOnCanvas(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-14 text-purple-600 hover:bg-purple-50 disabled:opacity-50">✂️<span>{canvasRemovingBg ? '...' : 'Rm BG'}</span></button>
@@ -3166,7 +3174,145 @@ export default function DesignStudioPage() {
       {/* Delete */}
       <button type="button" onClick={() => removeElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-red-600 hover:bg-red-50">🗑<span>Delete</span></button>
 
+      <div className="h-px w-7 bg-gray-200 my-0.5" />
+
+      {/* Done */}
+      <button type="button" onClick={() => setSelectedElementId(null)} className="px-2 py-1.5 rounded-md text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
+    </div>
+  ) : null;
+
+  /* ---------------------------------------------------------------- */
+  /*  Shape toolbar — fill / outline / stroke width / color / size etc */
+  /* ---------------------------------------------------------------- */
+  const shapeToolbar = selectedEl && selectedEl.type === 'shape' ? (
+    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 max-w-[calc(100vw-1rem)] overflow-x-auto">
+      {/* Size */}
+      <div className="relative">
+        <button type="button" onClick={() => setShapePop(shapePop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${shapePop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
+        {shapePop === 'sz' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+            <div className="flex items-center gap-2"><input type="range" min={5} max={100} value={selectedEl.width} onChange={(e) => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div>
+          </div>
+        )}
+      </div>
+
+      {/* Rotate */}
+      <div className="relative">
+        <button type="button" onClick={() => setShapePop(shapePop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${shapePop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
+        {shapePop === 'rt' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+            <div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={(e) => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div>
+          </div>
+        )}
+      </div>
+
       <div className="w-px h-7 bg-gray-200 mx-0.5" />
+
+      {/* Fill on/off toggle */}
+      <button
+        type="button"
+        onClick={() => {
+          const next = !(selectedEl.fillEnabled !== false); // currently filled? -> turn off
+          // Turning fill off without a visible stroke leaves an invisible
+          // shape. Auto-promote the fill color to a stroke so the outline
+          // is visible immediately.
+          const patch: Partial<DesignElement> = { fillEnabled: !next ? false : true };
+          if (!next) {
+            if (!selectedEl.strokeColor) patch.strokeColor = selectedEl.color ?? '#ec4899';
+            if (!selectedEl.strokeWidth || selectedEl.strokeWidth < 1) patch.strokeWidth = 2;
+          }
+          updateElement(selectedEl.id, patch);
+        }}
+        title={selectedEl.fillEnabled === false ? 'Outline only — click to fill' : 'Filled — click for outline only'}
+        className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${selectedEl.fillEnabled === false ? 'text-blue-600 bg-blue-50' : 'text-gray-600 hover:bg-gray-100'}`}
+      >
+        <span className="text-base leading-none">{selectedEl.fillEnabled === false ? '◯' : '●'}</span>
+        <span>{selectedEl.fillEnabled === false ? 'Outline' : 'Filled'}</span>
+      </button>
+
+      {/* Fill color — disabled visually when fillEnabled is false but
+          still accessible so the user can preset a color before turning
+          fill back on. */}
+      <label className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 cursor-pointer ${selectedEl.fillEnabled === false ? 'text-gray-400 hover:bg-gray-100' : 'text-gray-600 hover:bg-gray-100'}`}>
+        <span className="h-4 w-4 rounded-full border border-gray-300" style={{ background: selectedEl.color ?? '#ec4899', opacity: selectedEl.fillEnabled === false ? 0.4 : 1 }} />
+        <span>Fill</span>
+        <input
+          type="color"
+          value={selectedEl.color ?? '#ec4899'}
+          onChange={(e) => updateElement(selectedEl.id, { color: e.target.value })}
+          className="sr-only"
+        />
+      </label>
+
+      <div className="w-px h-7 bg-gray-200 mx-0.5" />
+
+      {/* Stroke color */}
+      <label className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100 cursor-pointer">
+        <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: selectedEl.strokeColor ?? '#111', background: 'transparent' }} />
+        <span>Stroke</span>
+        <input
+          type="color"
+          value={selectedEl.strokeColor ?? '#111111'}
+          onChange={(e) => updateElement(selectedEl.id, { strokeColor: e.target.value })}
+          className="sr-only"
+        />
+      </label>
+
+      {/* Stroke / line width */}
+      <div className="relative">
+        <button type="button" onClick={() => setShapePop(shapePop === 'sw' ? null : 'sw')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${shapePop === 'sw' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+          <span className="text-base leading-none">━</span>
+          <span>Width</span>
+        </button>
+        {shapePop === 'sw' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-52 z-50">
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={20}
+                step={0.5}
+                value={selectedEl.strokeWidth ?? 0}
+                onChange={(e) => updateElement(selectedEl.id, { strokeWidth: Number(e.target.value) })}
+                className="flex-1 accent-blue-600"
+              />
+              <span className="text-xs w-10 text-right tabular-nums">{(selectedEl.strokeWidth ?? 0).toFixed(1)}</span>
+            </div>
+            <p className="mt-2 text-[10px] text-gray-500">Set to 0 for no outline.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Opacity */}
+      <div className="relative">
+        <button type="button" onClick={() => setShapePop(shapePop === 'op' ? null : 'op')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${shapePop === 'op' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>◐<span>Opacity</span></button>
+        {shapePop === 'op' && (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50">
+            <div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={(e) => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div>
+          </div>
+        )}
+      </div>
+
+      {/* Layer */}
+      <div className="relative">
+        <button type="button" onClick={() => setShapePop(shapePop === 'ly' ? null : 'ly')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${shapePop === 'ly' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>☰<span>Layer</span></button>
+        {shapePop === 'ly' && (
+          <div className="absolute top-full right-0 mt-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
+            <button type="button" onClick={() => { bringToFront(selectedEl.id); setShapePop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬆ Front</button>
+            <button type="button" onClick={() => { bringForward(selectedEl.id); setShapePop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↑ Forward</button>
+            <button type="button" onClick={() => { sendBackward(selectedEl.id); setShapePop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↓ Backward</button>
+            <button type="button" onClick={() => { sendToBack(selectedEl.id); setShapePop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬇ Back</button>
+          </div>
+        )}
+      </div>
+
+      <div className="w-px h-7 bg-gray-200 mx-0.5" />
+
+      {/* Duplicate */}
+      <button type="button" onClick={() => duplicateElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100">⧉<span>Copy</span></button>
+
+      {/* Delete */}
+      <button type="button" onClick={() => removeElement(selectedEl.id)} className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-red-600 hover:bg-red-50">🗑<span>Delete</span></button>
 
       {/* Done */}
       <button type="button" onClick={() => setSelectedElementId(null)} className="px-2 py-1.5 rounded-md text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
@@ -3342,6 +3488,7 @@ export default function DesignStudioPage() {
                   <ShapeSvg
                     shape={el.shapeType ?? 'rect'}
                     fill={el.color ?? '#ec4899'}
+                    fillEnabled={el.fillEnabled}
                     stroke={el.strokeColor}
                     strokeWidth={el.strokeWidth}
                     opacity={el.opacity}
@@ -3536,8 +3683,14 @@ export default function DesignStudioPage() {
 
   const bottomBar = (
     <div className="fixed bottom-0 left-0 right-0 z-40 hidden md:flex items-center h-16 bg-white border-t border-gray-200 px-4 gap-4" onClick={e => e.stopPropagation()}>
-      {/* Add Products button removed — the left rail's Change Products
-          tool covers the same action, so having both was redundant. */}
+      {/* Add Products button */}
+      <button
+        type="button"
+        onClick={() => { setShowWelcome(false); setSelectedElementId(null); setActiveTool('products'); }}
+        className="flex items-center gap-2 rounded-lg border-2 border-blue-600 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50 transition"
+      >
+        <span className="text-lg">+</span> Add Products
+      </button>
 
       {/* Product thumbnail + info */}
       {selectedProduct && (
@@ -4086,6 +4239,7 @@ export default function DesignStudioPage() {
       {textToolbar}
       {textSidePanel}
       {imageToolbar}
+      {shapeToolbar}
       {canvas}
       {useFabricRenderer && (
         <LayersPanel
