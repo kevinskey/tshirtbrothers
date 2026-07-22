@@ -256,7 +256,7 @@ export default function GroupStoreProductPage() {
                         fulfillment === 'pickup' ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300'
                       }`}
                     >
-                      <MapPin className="w-4 h-4" /> Pickup at {pickupLoc.name || 'store'}
+                      <MapPin className="w-4 h-4" /> {pickupLoc.name ? `Pickup at ${pickupLoc.name}` : 'Pickup on campus'}
                     </button>
                   </div>
                   {fulfillment === 'pickup' && (pickupLoc.address_line1 || pickupLoc.hours_note) && (
