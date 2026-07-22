@@ -136,6 +136,23 @@ router.get('/', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET a single campaign including its full body_html + example image urls.
+// Used by the "pop out" preview in the admin so we don't ship every email
+// body over the wire on the list request.
+router.get('/:id(\\d+)', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, subject, body_html, example_image_urls, recipient_filter,
+              recipient_count, sent_count, failed_count, status,
+              created_at, sent_at
+         FROM email_campaigns WHERE id = $1`,
+      [req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 // GET aggregate marketing metrics across every campaign — for the
 // dashboard cards. Rates are computed against sent_count, not
 // recipient_count, so a campaign that was only half-sent doesn't
