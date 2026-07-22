@@ -136,7 +136,7 @@ router.post('/', async (req, res, next) => {
 router.patch('/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id)) return next();
     const allowed = ['name', 'brand_json', 'status', 'fulfillment_mode',
                      'pickup_location_json', 'is_fundraiser', 'fundraiser_json',
                      'subdomain'];
@@ -173,7 +173,7 @@ router.patch('/:id', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id)) return next();
     const store = await pool.query(
       `SELECT id, slug, subdomain, name, status, owner_email, brand_json,
               fulfillment_mode, pickup_location_json, is_fundraiser,
@@ -208,7 +208,7 @@ router.get('/:id', async (req, res, next) => {
 router.post('/:id/products', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id)) return next();
 
     const {
       tsb_blank_ss_id, title, slug, retail_price_cents,
@@ -303,7 +303,7 @@ router.get('/mockups', async (req, res, next) => {
 router.post('/:id/products/from-mockup', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id)) return next();
 
     const {
       mockup_id, title, slug, retail_price_cents,
@@ -566,7 +566,7 @@ router.post('/upload-mockup', async (req, res, next) => {
 router.post('/:id/admins', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+    if (!Number.isInteger(id)) return next();
     const { email, name, role } = req.body ?? {};
     if (!email) return res.status(400).json({ error: 'email required' });
     const roleFinal = ['viewer', 'bulk_buyer', 'owner'].includes(role) ? role : 'viewer';
