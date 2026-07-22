@@ -296,39 +296,73 @@ router.patch('/:id/products/:productId', async (req, res, next) => {
 
 // ── S&S catalog picker ───────────────────────────────────────────────────
 // GET /ss-catalog?q=hoodie&brand=Bella&limit=50
-// Reads the local ss_catalog_cache. If empty, falls through to the live
-// S&S API so admins can bootstrap without waiting for the nightly sync.
+//
+// Prefers the app's existing `products` table (populated by the S&S
+// sync in /api/admin/sync-products). Falls back to the ss_catalog_cache
+// table, then to a live S&S API pull for bootstrap. The picker
+// standardizes on { ss_id, brand, name, category, base_cost, colors,
+// sizes, image_url } regardless of source.
 router.get('/ss-catalog', async (req, res, next) => {
   try {
     const q       = req.query.q     ? String(req.query.q).trim().toLowerCase() : '';
     const brand   = req.query.brand ? String(req.query.brand).trim()           : '';
     const limit   = Math.min(Math.max(parseInt(String(req.query.limit ?? '50'), 10), 1), 200);
 
-    const params = [];
-    const where = [];
-    if (q) {
-      params.push(`%${q}%`);
-      where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length})`);
+    // 1) Primary source: the `products` table maintained by S&S sync.
+    {
+      const params = [];
+      const where  = ['ss_id IS NOT NULL'];
+      if (q) {
+        params.push(`%${q}%`);
+        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length})`);
+      }
+      if (brand) {
+        params.push(brand);
+        where.push(`brand = $${params.length}`);
+      }
+      params.push(limit);
+      const primary = await pool.query(
+        `SELECT ss_id, brand, name, category, base_price AS base_cost,
+                colors, sizes, image_url
+           FROM products
+          WHERE ${where.join(' AND ')}
+          ORDER BY brand NULLS LAST, name
+          LIMIT $${params.length}`,
+        params,
+      );
+      if (primary.rows.length > 0) {
+        return res.json({ source: 'products', results: primary.rows });
+      }
     }
-    if (brand) {
-      params.push(brand);
-      where.push(`brand = $${params.length}`);
-    }
-    params.push(limit);
-    const cache = await pool.query(
-      `SELECT ss_id, brand, name, category, base_cost, colors, sizes, image_url
-         FROM ss_catalog_cache
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        ORDER BY brand NULLS LAST, name
-        LIMIT $${params.length}`,
-      params,
-    );
 
-    if (cache.rows.length > 0) {
-      return res.json({ source: 'cache', results: cache.rows });
+    // 2) Secondary: ss_catalog_cache (nightly sync — reserved for future)
+    {
+      const params = [];
+      const where  = [];
+      if (q) {
+        params.push(`%${q}%`);
+        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length})`);
+      }
+      if (brand) {
+        params.push(brand);
+        where.push(`brand = $${params.length}`);
+      }
+      params.push(limit);
+      const cache = await pool.query(
+        `SELECT ss_id, brand, name, category, base_cost, colors, sizes, image_url
+           FROM ss_catalog_cache
+          ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+          ORDER BY brand NULLS LAST, name
+          LIMIT $${params.length}`,
+        params,
+      );
+      if (cache.rows.length > 0) {
+        return res.json({ source: 'cache', results: cache.rows });
+      }
     }
 
-    // Cache miss: hit S&S live and shape into the same result form.
+    // 3) Bootstrap fallback — live S&S API. Rate-limited, don't rely on
+    //    this in normal operation.
     try {
       const live = await fetchProducts({ limit });
       const filtered = (live.products || [])
