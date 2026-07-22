@@ -186,6 +186,42 @@ router.post('/', async (req, res, next) => {
 
     const quote = result.rows[0];
 
+    // Auto-create a placeholder line item so the admin drawer never
+    // shows the "No product on this quote yet" state. The item carries
+    // the top-level product / sizes / quantity / estimated-price
+    // snapshot; admins can then edit or replace it via the line-items
+    // editor. Non-fatal — the quote must still save.
+    try {
+      const perUnit = (
+        estimated_price != null &&
+        Number(estimated_price) > 0 &&
+        Number(quantity) > 0
+      ) ? Number(estimated_price) / Number(quantity) : null;
+      await pool.query(
+        `INSERT INTO quote_items
+           (quote_id, position, product_id, product_name, color,
+            sizes, quantity, print_areas, design_url,
+            unit_price, line_total)
+         VALUES ($1, 0, $2, $3, $4,
+                 $5::jsonb, $6, $7::jsonb, $8,
+                 $9, $10)`,
+        [
+          quote.id,
+          product_id || null,
+          product_name || null,
+          color || null,
+          JSON.stringify(Array.isArray(sizes) ? sizes : []),
+          Number(quantity) || 0,
+          JSON.stringify(Array.isArray(print_areas) ? print_areas : []),
+          design_url || null,
+          perUnit != null ? perUnit.toFixed(2) : null,
+          estimated_price != null && Number(estimated_price) > 0 ? Number(estimated_price).toFixed(2) : null,
+        ],
+      );
+    } catch (err) {
+      console.error(`[quotes] placeholder line item insert failed for quote ${quote.id}:`, err.message);
+    }
+
     // Fire-and-forget: notify admin of new quote
     sendQuoteRequestNotification(quote).catch(() => {});
     smsNewQuoteToAdmin(quote).catch(() => {});
