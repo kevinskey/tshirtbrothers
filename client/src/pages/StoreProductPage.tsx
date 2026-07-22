@@ -64,8 +64,10 @@ export default function StoreProductPage() {
         setStore(s);
         setProduct(p);
         // Preselect first size/color for convenience.
-        if (p.variants_json.sizes?.length) setSize(p.variants_json.sizes[0]);
-        if (p.variants_json.colors?.length) setColor(p.variants_json.colors[0]);
+        const firstSize = p.variants_json.sizes?.[0];
+        const firstColor = p.variants_json.colors?.[0];
+        if (firstSize) setSize(firstSize);
+        if (firstColor) setColor(firstColor);
       } catch (err) {
         console.error('[StoreProductPage] load failed:', err);
       } finally {
