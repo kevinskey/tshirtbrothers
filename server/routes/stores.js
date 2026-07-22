@@ -225,6 +225,177 @@ router.post('/:slug/return-requests', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── POST /api/stores/:slug/designs ───────────────────────────────────────
+// Create a store design. Body: { name, design_json, thumbnail_url? }.
+// Returns the created row.
+router.post('/:slug/designs', async (req, res, next) => {
+  try {
+    const storeId = await findStoreId(req.store_slug);
+    if (!storeId) return res.status(404).json({ error: 'Store not found' });
+    const { name, design_json, thumbnail_url } = req.body ?? {};
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!design_json || typeof design_json !== 'object') {
+      return res.status(400).json({ error: 'design_json (object) is required' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO store_designs (store_id, name, design_json, thumbnail_url)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, thumbnail_url, status, created_at, updated_at`,
+      [storeId, name, design_json, thumbnail_url ?? null],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── PATCH /api/stores/:slug/designs/:id ──────────────────────────────────
+// Update a store design. Any of { name, design_json, thumbnail_url, status }.
+router.patch('/:slug/designs/:id', async (req, res, next) => {
+  try {
+    const storeId = await findStoreId(req.store_slug);
+    if (!storeId) return res.status(404).json({ error: 'Store not found' });
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+
+    const { name, design_json, thumbnail_url, status } = req.body ?? {};
+    const patches = [];
+    const params = [];
+    if (name !== undefined)          { params.push(name);           patches.push(`name = $${params.length}`); }
+    if (design_json !== undefined)   { params.push(design_json);    patches.push(`design_json = $${params.length}`); }
+    if (thumbnail_url !== undefined) { params.push(thumbnail_url);  patches.push(`thumbnail_url = $${params.length}`); }
+    if (status !== undefined) {
+      if (!['draft','approved','published','archived'].includes(status)) {
+        return res.status(400).json({ error: 'invalid status' });
+      }
+      params.push(status); patches.push(`status = $${params.length}`);
+    }
+    if (patches.length === 0) return res.status(400).json({ error: 'no fields to update' });
+
+    params.push(id, storeId);
+    const { rows } = await pool.query(
+      `UPDATE store_designs SET ${patches.join(', ')}
+        WHERE id = $${params.length - 1} AND store_id = $${params.length}
+      RETURNING id, name, thumbnail_url, status, created_at, updated_at`,
+      params,
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Design not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── POST /api/stores/:slug/products ──────────────────────────────────────
+// Publish a store product. Freezes active_agreement_id at publish time —
+// the campaign-scoped override wins if campaign_ref is provided and an
+// active campaign agreement exists, otherwise fall back to the store
+// agreement.
+//
+// Body:
+//   { design_id, tsb_blank_ss_id, title, slug, retail_price_cents,
+//     description?, cover_image?, variants?, campaign_ref?,
+//     opens_at?, closes_at? }
+router.post('/:slug/products', async (req, res, next) => {
+  try {
+    const storeId = await findStoreId(req.store_slug);
+    if (!storeId) return res.status(404).json({ error: 'Store not found' });
+
+    const {
+      design_id, tsb_blank_ss_id, title, slug, retail_price_cents,
+      description, cover_image, variants, campaign_ref, opens_at, closes_at,
+    } = req.body ?? {};
+
+    if (!Number.isInteger(design_id))     return res.status(400).json({ error: 'design_id (int) required' });
+    if (!tsb_blank_ss_id)                 return res.status(400).json({ error: 'tsb_blank_ss_id required' });
+    if (!title || !slug)                  return res.status(400).json({ error: 'title + slug required' });
+    if (!Number.isInteger(retail_price_cents) || retail_price_cents <= 0) {
+      return res.status(400).json({ error: 'retail_price_cents (positive int) required' });
+    }
+
+    // Ownership check on the design — a leaked key can't publish a
+    // product referencing another store's design.
+    const design = await pool.query(
+      `SELECT 1 FROM store_designs WHERE id = $1 AND store_id = $2`,
+      [design_id, storeId],
+    );
+    if (!design.rows[0]) return res.status(404).json({ error: 'Design not found' });
+
+    // Resolve the active agreement: prefer a campaign override if we have
+    // one, otherwise the store-level agreement.
+    let agreementId = null;
+    if (campaign_ref) {
+      const r = await pool.query(
+        `SELECT id FROM store_agreements
+          WHERE store_id = $1 AND kind = 'campaign' AND campaign_ref = $2
+          ORDER BY accepted_at DESC LIMIT 1`,
+        [storeId, campaign_ref],
+      );
+      agreementId = r.rows[0]?.id ?? null;
+    }
+    if (!agreementId) {
+      const r = await pool.query(
+        `SELECT id FROM store_agreements
+          WHERE store_id = $1 AND kind = 'store'
+          ORDER BY accepted_at DESC LIMIT 1`,
+        [storeId],
+      );
+      agreementId = r.rows[0]?.id ?? null;
+    }
+    if (!agreementId) {
+      return res.status(400).json({
+        error: 'No active agreement — accept a store-level agreement (or a campaign override) before publishing',
+      });
+    }
+
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO store_products
+           (store_id, design_id, campaign_ref, tsb_blank_ss_id, title, slug,
+            description, cover_image, retail_price_cents, variants_json,
+            active_agreement_id, opens_at, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         RETURNING id, slug, title, retail_price_cents, active_agreement_id,
+                   is_active, published_at`,
+        [
+          storeId, design_id, campaign_ref ?? null, tsb_blank_ss_id, title, slug,
+          description ?? null, cover_image ?? null, retail_price_cents,
+          variants ?? {}, agreementId, opens_at ?? null, closes_at ?? null,
+        ],
+      );
+      // Mark the design as published so the storefront can filter on it.
+      await pool.query(
+        `UPDATE store_designs SET status = 'published' WHERE id = $1 AND status <> 'published'`,
+        [design_id],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      if (err.code === '23505') {
+        // unique_violation on (store_id, slug)
+        return res.status(409).json({ error: `slug "${slug}" already in use for this store` });
+      }
+      throw err;
+    }
+  } catch (err) { next(err); }
+});
+
+// ── GET /api/stores/:slug/products ───────────────────────────────────────
+// List the store's published products (auth'd — for store admin views).
+router.get('/:slug/products', async (req, res, next) => {
+  try {
+    const storeId = await findStoreId(req.store_slug);
+    if (!storeId) return res.status(404).json({ error: 'Store not found' });
+    const { rows } = await pool.query(
+      `SELECT id, design_id, campaign_ref, tsb_blank_ss_id, title, slug,
+              retail_price_cents, is_active, opens_at, closes_at, published_at
+         FROM store_products
+        WHERE store_id = $1
+        ORDER BY published_at DESC
+        LIMIT 200`,
+      [storeId],
+    );
+    res.json({ products: rows });
+  } catch (err) { next(err); }
+});
+
 // ── GET /api/stores/:slug/payouts ────────────────────────────────────────
 router.get('/:slug/payouts', async (req, res, next) => {
   try {
