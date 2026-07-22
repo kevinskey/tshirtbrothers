@@ -8,6 +8,7 @@ import {
   sendPaidInvoiceReceipt,
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
+import { captureStoreOrder } from '../services/storeOrderCapture.js';
 
 const router = Router();
 
@@ -377,13 +378,124 @@ router.post('/create-balance-checkout', async (req, res, next) => {
   }
 });
 
+// POST /create-store-checkout - Franchise store buyer checkout.
+//
+// Public — a buyer (not the store owner) POSTs to this. We validate the
+// product is currently sellable, then create a Stripe Checkout Session
+// with metadata.store_id + store_product_id so the webhook can route
+// the completion to captureStoreOrder().
+//
+// Body: {
+//   store_slug: string,
+//   product_slug: string,
+//   qty: number,               // default 1
+//   variant?: object,          // e.g. { size: "L", color: "Black" }
+//   buyer_email?: string,
+//   success_url?: string,      // frontend post-purchase redirect
+//   cancel_url?: string,
+// }
+router.post('/create-store-checkout', async (req, res, next) => {
+  try {
+    const {
+      store_slug, product_slug, qty: qtyRaw, variant,
+      buyer_email, success_url, cancel_url,
+    } = req.body ?? {};
+
+    if (!store_slug || !product_slug) {
+      return res.status(400).json({ error: 'store_slug + product_slug required' });
+    }
+    const qty = Math.min(Math.max(parseInt(String(qtyRaw ?? '1'), 10), 1), 100);
+
+    // Load product + store, enforce currently-sellable + validate window.
+    const q = await pool.query(
+      `SELECT sp.id AS product_id, sp.store_id, sp.title, sp.slug, sp.cover_image,
+              sp.retail_price_cents, sp.is_active,
+              sp.opens_at, sp.closes_at,
+              s.name AS store_name, s.slug AS store_slug
+         FROM store_products sp
+         JOIN stores s ON s.id = sp.store_id
+        WHERE s.slug = $1 AND s.status = 'active'
+          AND sp.slug = $2`,
+      [store_slug, product_slug],
+    );
+    const product = q.rows[0];
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    if (!product.is_active) return res.status(410).json({ error: 'Product not currently for sale' });
+    const now = new Date();
+    if (product.opens_at && now < new Date(product.opens_at)) {
+      return res.status(410).json({ error: 'Product not yet on sale' });
+    }
+    if (product.closes_at && now >= new Date(product.closes_at)) {
+      return res.status(410).json({ error: 'Product sale has closed' });
+    }
+
+    const stripe = getStripe();
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+
+    const variantSummary = variant && typeof variant === 'object'
+      ? Object.entries(variant).map(([k, v]) => `${k}: ${v}`).join(', ')
+      : null;
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${product.title}${variantSummary ? ` (${variantSummary})` : ''}`,
+              description: `From ${product.store_name}`,
+              ...(product.cover_image ? { images: [product.cover_image] } : {}),
+            },
+            unit_amount: product.retail_price_cents,
+          },
+          quantity: qty,
+        },
+      ],
+      mode: 'payment',
+      customer_email: buyer_email || undefined,
+      success_url: success_url
+        ? `${success_url}${success_url.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`
+        : `${domain}/store/${store_slug}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancel_url || `${domain}/store/${store_slug}/product/${product_slug}`,
+      // Stripe metadata values must be strings ≤ 500 chars.
+      metadata: {
+        store_id: String(product.store_id),
+        store_slug,
+        store_product_id: String(product.product_id),
+        product_slug,
+        qty: String(qty),
+        ...(variant ? { variant: JSON.stringify(variant).slice(0, 500) } : {}),
+      },
+    });
+
+    res.json({ checkoutUrl: session.url, sessionId: session.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Process a checkout.session.completed event: update the quote/invoice and
 // fire off receipts. Runs after we've already 200'd Stripe so a slow Resend or
 // Twilio call can't blow the webhook's HTTP timeout.
 async function handleCheckoutSessionCompleted(session) {
   const quoteId = session.metadata?.quoteId;
   const invoiceId = session.metadata?.invoice_id;
+  const storeId = session.metadata?.store_id;
   const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+
+  // Franchise-store checkout: distinct metadata shape from quote/invoice
+  // flows. Route to the store capture pipeline (which handles idempotency,
+  // ledger credit, and the outbound order.created webhook) and return —
+  // franchise sessions never hit the quote/invoice branches below.
+  if (storeId) {
+    try {
+      await captureStoreOrder(session);
+    } catch (err) {
+      console.error('[Stripe Webhook] store capture failed:', err);
+    }
+    return;
+  }
 
   // Invoice payment: separate metadata shape from the quote flow. The
   // checkout session is created in routes/invoices.js with metadata
