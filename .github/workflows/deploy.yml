@@ -35,5 +35,11 @@ jobs:
                 git tag "droplet-backup-${ts}" HEAD 2>/dev/null || true
                 git reset --hard origin/main
               fi
+              # Pull BEFORE invoking deploy.sh. Bash loads a script into
+              # memory before executing; if deploy.sh pulls a newer version
+              # of itself mid-run, the running process keeps executing the
+              # stale in-memory copy. Doing the pull here guarantees bash
+              # loads the latest deploy.sh from disk.
+              git pull --ff-only origin main
               bash /var/www/tshirtbrothers/deploy.sh
             '
