@@ -1089,6 +1089,7 @@ export interface SsCatalogItem {
   ss_id: string; brand: string | null; name: string;
   category: string | null; base_cost: number | string | null;
   colors: string[]; sizes: string[]; image_url: string | null;
+  description_html?: string | null;
 }
 
 export async function fetchGroupStores() {

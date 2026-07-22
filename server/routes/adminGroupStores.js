@@ -452,7 +452,8 @@ router.get('/ss-catalog', async (req, res, next) => {
       params.push(limit);
       const primary = await pool.query(
         `SELECT ss_id, brand, name, category, base_price AS base_cost,
-                colors, sizes, image_url
+                colors, sizes, image_url,
+                specifications->>'description' AS description_html
            FROM products
           WHERE ${where.join(' AND ')}
           ORDER BY brand NULLS LAST, name
