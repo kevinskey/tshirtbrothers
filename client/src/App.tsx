@@ -37,6 +37,9 @@ import AboutPage from '@/pages/AboutPage';
 import FaqPage from '@/pages/FaqPage';
 import HomePageEs from '@/pages/HomePageEs';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
+import StoreFrontPage from '@/pages/StoreFrontPage';
+import StoreProductPage from '@/pages/StoreProductPage';
+import StoreSuccessPage from '@/pages/StoreSuccessPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,6 +95,10 @@ function App() {
           <Route path="/payment/checkout" element={<PaymentCheckout />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
           <Route path="/payment/cancel" element={<PaymentCancel />} />
+          {/* Franchise store buyer routes — one storefront per store slug. */}
+          <Route path="/store/:slug" element={<StoreFrontPage />} />
+          <Route path="/store/:slug/product/:productSlug" element={<StoreProductPage />} />
+          <Route path="/store/:slug/success" element={<StoreSuccessPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>

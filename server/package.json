@@ -33,5 +33,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.3"
+  },
+  "optionalDependencies": {
+    "@img/sharp-linux-x64": "^0.33.5"
   }
 }
