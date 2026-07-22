@@ -8,7 +8,8 @@ import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2 } from 'lucid
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin,
-  type GroupStoreDetail, type SsCatalogItem,
+  fetchGroupStoreMockups, addGroupStoreProductFromMockup,
+  type GroupStoreDetail, type SsCatalogItem, type MockupCatalogItem,
 } from '@/lib/api';
 
 function usd(cents: number | null) { return cents == null ? '—' : `$${(cents / 100).toFixed(2)}`; }
@@ -19,6 +20,7 @@ export default function AdminGroupStoreDetailPage() {
   const [data, setData] = useState<GroupStoreDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
+  const [showMockupPicker, setShowMockupPicker] = useState(false);
   const [showAddAdmin, setShowAddAdmin] = useState(false);
 
   const load = async () => {
@@ -85,14 +87,20 @@ export default function AdminGroupStoreDetailPage() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-900">Products ({products.length})</h2>
-            <button onClick={() => setShowPicker(true)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-md text-sm">
-              <Plus className="w-4 h-4" /> Add from S&S catalog
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowMockupPicker(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-md text-sm hover:bg-gray-50">
+                <Plus className="w-4 h-4" /> Add from mockup
+              </button>
+              <button onClick={() => setShowPicker(true)}
+                className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-900 text-white rounded-md text-sm">
+                <Plus className="w-4 h-4" /> Add from S&S catalog
+              </button>
+            </div>
           </div>
           {products.length === 0 ? (
             <div className="bg-white border border-gray-200 rounded-lg p-10 text-center text-gray-500">
-              No products yet. Click <strong>Add from S&S catalog</strong> to curate the first one.
+              No products yet. Click <strong>Add from mockup</strong> to publish an existing design, or <strong>Add from S&S catalog</strong> to build a new one.
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -191,6 +199,9 @@ export default function AdminGroupStoreDetailPage() {
 
       {showPicker && (
         <SsCatalogPicker storeId={storeId} onClose={() => setShowPicker(false)} onAdded={() => { setShowPicker(false); void load(); }} />
+      )}
+      {showMockupPicker && (
+        <MockupPicker storeId={storeId} onClose={() => setShowMockupPicker(false)} onAdded={() => { setShowMockupPicker(false); void load(); }} />
       )}
       {showAddAdmin && (
         <AddAdminModal storeId={storeId} onClose={() => setShowAddAdmin(false)} onAdded={() => { setShowAddAdmin(false); void load(); }} />
@@ -420,6 +431,200 @@ function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => voi
         {busy ? '…' : 'Set'}
       </button>
     </span>
+  );
+}
+
+// ── Mockup picker + publish form ─────────────────────────────────────────
+function MockupPicker({ storeId, onClose, onAdded }: { storeId: number; onClose: () => void; onAdded: () => void }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<MockupCatalogItem[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<MockupCatalogItem | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setBusy(true);
+      try {
+        const data = await fetchGroupStoreMockups(q);
+        setResults(data.mockups);
+      } catch (err) { console.error(err); }
+      finally { setBusy(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-gray-200 flex items-center gap-3">
+          <h2 className="text-lg font-bold text-gray-900 flex-1">Mockups</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-900"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="p-4 border-b border-gray-100">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus
+              placeholder="Search by mockup name, product, or customer…"
+              className="w-full border border-gray-300 rounded-md pl-9 pr-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {busy && <div className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin text-gray-400 mx-auto" /></div>}
+          {!busy && results.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              No mockups yet. Create one in <strong>/admin</strong> → Mockups.
+            </div>
+          )}
+          {!busy && results.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 p-4">
+              {results.map((r) => {
+                const img = r.preview_image_url || r.product_image_url;
+                const canPublish = !!r.product_ss_id;
+                return (
+                  <button key={r.id}
+                    onClick={() => canPublish && setPicked(r)}
+                    disabled={!canPublish}
+                    className={`text-left bg-gray-50 rounded-lg border border-gray-200 overflow-hidden ${
+                      canPublish ? 'hover:bg-gray-100 hover:border-gray-400' : 'opacity-50 cursor-not-allowed'
+                    }`}>
+                    <div className="aspect-square bg-white">
+                      {img ? (
+                        <img src={img} alt="" className="w-full h-full object-contain" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">No image</div>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-sm font-semibold line-clamp-1">{r.name || `Mockup #${r.id}`}</p>
+                      <p className="text-xs text-gray-500 line-clamp-1">
+                        {r.product_name || (canPublish ? 'S&S SKU set' : 'No S&S blank — can\'t publish')}
+                      </p>
+                      {r.customer_name && (
+                        <p className="text-[10px] text-gray-400 line-clamp-1 mt-0.5">For {r.customer_name}</p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {picked && <PublishFromMockupForm storeId={storeId} mockup={picked} onClose={() => setPicked(null)} onAdded={onAdded} />}
+    </div>
+  );
+}
+
+function PublishFromMockupForm({ storeId, mockup, onClose, onAdded }: {
+  storeId: number; mockup: MockupCatalogItem; onClose: () => void; onAdded: () => void;
+}) {
+  const baseCostCents = mockup.product_base_price != null
+    ? Math.round(Number(mockup.product_base_price) * 100)
+    : 0;
+  const [title, setTitle] = useState(mockup.name || mockup.product_name || 'Custom Product');
+  const [slug, setSlug] = useState(
+    (mockup.name || mockup.product_name || 'custom-product')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+  );
+  const [retailDollars, setRetailDollars] = useState(((baseCostCents + 900) / 100).toFixed(2));
+  const [decorationDollars, setDecorationDollars] = useState('5.00');
+  const [description, setDescription] = useState('');
+  const [minQty, setMinQty] = useState(1);
+  const [busy, setBusy] = useState(false);
+
+  const margin = useMemo(() => {
+    const r = Math.round(parseFloat(retailDollars || '0') * 100);
+    const d = Math.round(parseFloat(decorationDollars || '0') * 100);
+    return r - baseCostCents - d;
+  }, [retailDollars, decorationDollars, baseCostCents]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await addGroupStoreProductFromMockup(storeId, {
+        mockup_id: mockup.id,
+        title, slug,
+        retail_price_cents: Math.round(parseFloat(retailDollars) * 100),
+        decoration_cost_cents: Math.round(parseFloat(decorationDollars) * 100),
+        min_qty: minQty,
+        description: description || undefined,
+      });
+      toast.success('Product published from mockup');
+      onAdded();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  const previewImage = mockup.preview_image_url || mockup.product_image_url;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+      <form onSubmit={submit} className="bg-white rounded-lg max-w-lg w-full p-6 space-y-4">
+        <div className="flex items-center gap-3 border-b border-gray-100 pb-3">
+          {previewImage && <img src={previewImage} alt="" className="w-14 h-14 object-contain rounded bg-gray-50" />}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-gray-500 truncate">Mockup #{mockup.id} · {mockup.product_ss_id}</p>
+            <p className="font-semibold truncate">{mockup.name || mockup.product_name}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-900"><X className="w-5 h-5" /></button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Title on store</label>
+            <input required value={title} onChange={(e) => setTitle(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">URL slug</label>
+            <input required value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Retail ($)</label>
+            <input required type="number" step="0.01" value={retailDollars} onChange={(e) => setRetailDollars(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Decoration ($)</label>
+            <input type="number" step="0.01" value={decorationDollars} onChange={(e) => setDecorationDollars(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Blank cost (locked)</label>
+            <input disabled value={baseCostCents ? `$${(baseCostCents / 100).toFixed(2)}` : '—'}
+              className="w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm text-gray-500" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Min qty</label>
+            <input type="number" min={1} value={minQty}
+              onChange={(e) => setMinQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Description</label>
+            <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        <div className={`rounded-md p-3 text-sm ${margin > 0 ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+          Margin per item: <strong>${(margin / 100).toFixed(2)}</strong>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Back</button>
+          <button type="submit" disabled={busy}
+            className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+            {busy ? 'Publishing…' : 'Publish to store'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

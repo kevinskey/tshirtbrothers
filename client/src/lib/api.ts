@@ -1142,6 +1142,49 @@ export async function searchSsCatalog(q: string, brand?: string) {
   );
 }
 
+export interface MockupCatalogItem {
+  id: number;
+  name: string | null;
+  status: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  product_id: number | null;
+  product_name: string | null;
+  product_image_url: string | null;
+  preview_image_url: string | null;
+  graphic_url: string | null;
+  created_at: string;
+  product_ss_id: string | null;
+  product_base_price: number | string | null;
+  product_colors: string[] | null;
+  product_sizes: string[] | null;
+}
+
+export async function fetchGroupStoreMockups(q?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return authRequest<{ mockups: MockupCatalogItem[] }>(
+    `/admin/group-stores/mockups${suffix}`,
+  );
+}
+
+export async function addGroupStoreProductFromMockup(id: number, data: {
+  mockup_id: number;
+  title: string;
+  slug: string;
+  retail_price_cents: number;
+  decoration_cost_cents?: number;
+  min_qty?: number;
+  description?: string;
+  opens_at?: string;
+  closes_at?: string;
+}) {
+  return authRequest(`/admin/group-stores/${id}/products/from-mockup`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
 export async function addGroupStoreAdmin(id: number, data: { email: string; name?: string; role?: string }) {
   return authRequest(`/admin/group-stores/${id}/admins`, {
     method: 'POST', body: JSON.stringify(data),

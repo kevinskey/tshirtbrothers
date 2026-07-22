@@ -264,6 +264,133 @@ router.post('/:id/products', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /mockups ─────────────────────────────────────────────────────────
+// List existing TSB mockups that are candidates for publishing as store
+// products. Only returns mockups with a real preview or product image.
+router.get('/mockups', async (req, res, next) => {
+  try {
+    const q = req.query.q ? String(req.query.q).trim().toLowerCase() : '';
+    const params = [];
+    let where = `(preview_image_url IS NOT NULL OR product_image_url IS NOT NULL)`;
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND (LOWER(name) LIKE $${params.length} OR LOWER(product_name) LIKE $${params.length} OR LOWER(customer_name) LIKE $${params.length})`;
+    }
+    const { rows } = await pool.query(
+      `SELECT m.id, m.name, m.status, m.customer_name, m.customer_email,
+              m.product_id, m.product_name, m.product_image_url,
+              m.preview_image_url, m.graphic_url, m.created_at,
+              p.ss_id AS product_ss_id, p.base_price AS product_base_price,
+              p.colors AS product_colors, p.sizes AS product_sizes
+         FROM mockups m
+         LEFT JOIN products p ON p.id = m.product_id
+        WHERE ${where}
+        ORDER BY m.created_at DESC
+        LIMIT 200`,
+      params,
+    );
+    res.json({ mockups: rows });
+  } catch (err) { next(err); }
+});
+
+// ── POST /:id/products/from-mockup ───────────────────────────────────────
+// Publish a store product using an existing TSB mockup as the source.
+// Body: { mockup_id, title, slug, retail_price_cents,
+//         decoration_cost_cents?, min_qty?, description?,
+//         opens_at?, closes_at? }
+// Resolves the mockup's product to fill blank_cost + variants + ss_id
+// automatically, and uses the composite preview as the cover_image.
+router.post('/:id/products/from-mockup', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
+
+    const {
+      mockup_id, title, slug, retail_price_cents,
+      decoration_cost_cents, min_qty, description,
+      opens_at, closes_at,
+    } = req.body ?? {};
+
+    if (!Number.isInteger(mockup_id)) return res.status(400).json({ error: 'mockup_id (int) required' });
+    if (!title || !slug)  return res.status(400).json({ error: 'title + slug required' });
+    if (!Number.isInteger(retail_price_cents) || retail_price_cents <= 0) {
+      return res.status(400).json({ error: 'retail_price_cents (positive int) required' });
+    }
+
+    // Look up mockup + its underlying product in one shot.
+    const src = await pool.query(
+      `SELECT m.id, m.name, m.product_id, m.product_name,
+              m.product_image_url, m.preview_image_url,
+              p.ss_id, p.base_price, p.colors, p.sizes
+         FROM mockups m
+         LEFT JOIN products p ON p.id = m.product_id
+        WHERE m.id = $1`,
+      [mockup_id],
+    );
+    if (!src.rows[0]) return res.status(404).json({ error: 'Mockup not found' });
+    const m = src.rows[0];
+    if (!m.ss_id) {
+      return res.status(400).json({
+        error: 'Mockup has no S&S blank associated (its product_id does not resolve to an S&S SKU)',
+      });
+    }
+
+    const storeRow = await pool.query(
+      `SELECT id FROM stores WHERE id = $1 AND store_type = 'group'`, [id],
+    );
+    if (!storeRow.rows[0]) return res.status(404).json({ error: 'Group store not found' });
+
+    const agr = await pool.query(
+      `SELECT id FROM store_agreements
+        WHERE store_id = $1 AND kind = 'store'
+        ORDER BY accepted_at DESC LIMIT 1`,
+      [id],
+    );
+    if (!agr.rows[0]) {
+      return res.status(400).json({ error: 'Store missing default agreement' });
+    }
+
+    const blankCostCents =
+      m.base_price != null ? Math.round(Number(m.base_price) * 100) : null;
+    const coverImage = m.preview_image_url || m.product_image_url || null;
+    const variants = {
+      sizes:  Array.isArray(m.sizes)  ? m.sizes  : (m.sizes  ?? []),
+      colors: Array.isArray(m.colors) ? m.colors : (m.colors ?? []),
+    };
+
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO store_products
+           (store_id, tsb_blank_ss_id, title, slug, description, cover_image,
+            retail_price_cents, variants_json, active_agreement_id,
+            blank_cost_cents, decoration_cost_cents, min_qty,
+            opens_at, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         RETURNING id, slug, title, retail_price_cents, min_qty, is_active, published_at`,
+        [
+          id, m.ss_id, title, slug,
+          description ?? null,
+          coverImage,
+          retail_price_cents,
+          variants,
+          agr.rows[0].id,
+          blankCostCents,
+          decoration_cost_cents ?? null,
+          min_qty ?? 1,
+          opens_at ?? null,
+          closes_at ?? null,
+        ],
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      if (err.code === '23505') {
+        return res.status(409).json({ error: `slug "${slug}" already in use for this store` });
+      }
+      throw err;
+    }
+  } catch (err) { next(err); }
+});
+
 // ── PATCH /:id/products/:productId ───────────────────────────────────────
 router.patch('/:id/products/:productId', async (req, res, next) => {
   try {
