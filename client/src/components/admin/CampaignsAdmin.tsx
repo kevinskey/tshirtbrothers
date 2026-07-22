@@ -44,6 +44,16 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) => (
+    ch === '&' ? '&amp;'
+    : ch === '<' ? '&lt;'
+    : ch === '>' ? '&gt;'
+    : ch === '"' ? '&quot;'
+    : '&#39;'
+  ));
+}
+
 const FILTER_LABELS: Record<Filter, string> = {
   all: 'All customers',
   recent_quoted: 'Quoted in last 90 days',
@@ -252,6 +262,55 @@ export default function CampaignsAdmin() {
       alert(`Test email queued — check ${testEmail.trim()} in a moment.`);
     } finally {
       setSendingTest(false);
+    }
+  }
+
+  async function openCampaignPreview(id: number, subject: string) {
+    // Open the popup immediately (synchronous, from the click handler) so
+    // Safari / Chrome don't flag it as a pop-up blocker case. The fetch
+    // that follows just fills in the content.
+    const win = window.open('', `campaign-${id}`, 'width=720,height=900,noopener=no');
+    if (!win) {
+      alert('Popup blocked — please allow popups for this site to preview campaigns.');
+      return;
+    }
+    win.document.title = subject || 'Campaign';
+    win.document.body.innerHTML = `<div style="font-family:system-ui;color:#666;padding:24px;">Loading…</div>`;
+    try {
+      const res = await fetch(`/api/admin/campaigns/${id}`, { headers: authHeaders() });
+      if (!res.ok) throw new Error('Failed to load campaign');
+      const c = await res.json();
+      const bodyHtml: string = c.body_html || '';
+      const meta = [
+        c.sent_at ? `Sent ${new Date(c.sent_at).toLocaleString()}` : `Created ${new Date(c.created_at).toLocaleString()}`,
+        `${c.sent_count} sent`,
+        c.failed_count ? `${c.failed_count} failed` : null,
+        c.status,
+      ].filter(Boolean).join(' · ');
+      // Full HTML so the popup renders exactly like an email client would.
+      const html = `<!doctype html>
+<html><head>
+<meta charset="utf-8" />
+<title>${escapeHtml(c.subject || 'Campaign')}</title>
+<style>
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f4f5; color: #111; }
+  .toolbar { position: sticky; top: 0; z-index: 10; background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 16px; }
+  .toolbar h1 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
+  .toolbar p { margin: 0; font-size: 12px; color: #6b7280; }
+  .email-body { max-width: 640px; margin: 24px auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; }
+</style>
+</head><body>
+<div class="toolbar">
+  <h1>${escapeHtml(c.subject || '(no subject)')}</h1>
+  <p>${escapeHtml(meta)}</p>
+</div>
+<div class="email-body">${bodyHtml || '<p style="color:#9ca3af;">(No body)</p>'}</div>
+</body></html>`;
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    } catch (err) {
+      win.document.body.innerHTML = `<div style="font-family:system-ui;color:#b91c1c;padding:24px;">Failed to load campaign: ${escapeHtml((err as Error).message)}</div>`;
     }
   }
 
@@ -520,8 +579,13 @@ export default function CampaignsAdmin() {
                 const oRate = c.sent_count > 0 ? (c.open_count / c.sent_count) * 100 : 0;
                 const cRate = c.sent_count > 0 ? (c.click_count / c.sent_count) * 100 : 0;
                 return (
-                  <tr key={c.id}>
-                    <td className="px-3 py-2"><div className="max-w-[320px] truncate" title={c.subject}>{c.subject}</div></td>
+                  <tr
+                    key={c.id}
+                    onClick={() => openCampaignPreview(c.id, c.subject)}
+                    className="cursor-pointer hover:bg-gray-50"
+                    title="Click to preview the email"
+                  >
+                    <td className="px-3 py-2"><div className="max-w-[320px] truncate text-red-600 hover:underline" title={c.subject}>{c.subject}</div></td>
                     <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
                       <span className="text-green-700 font-medium">{c.sent_count}</span>
                       {c.failed_count > 0 && <span className="text-red-600 ml-1">/{c.failed_count}f</span>}
