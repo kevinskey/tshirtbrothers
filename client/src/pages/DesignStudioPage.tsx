@@ -14,6 +14,7 @@ import {
 import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
 import { generateDesignImage } from '@/services/deepseek';
+import { useStoreBrand } from '@/hooks/useStoreBrand';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -423,6 +424,12 @@ const DEFAULT_PRODUCT_SSID = '32';
 
 export default function DesignStudioPage() {
   const [searchParams] = useSearchParams();
+  // Franchise-store whitelabel context. When ?store=<slug> is on the URL
+  // (e.g., launched from a GleeWorld tenant's admin), swap the logo /
+  // brand name / back-URL to match the store. Falls back to TSB chrome
+  // when absent or when the brand fetch fails.
+  const { brand: storeBrand } = useStoreBrand();
+  const whitelabelBackUrl = searchParams.get('back') || storeBrand?.brand_json.back_url || null;
   const initialProductId = searchParams.get('product') || '';
   // When set, the studio is acting as the mockup editor for an admin invoice.
   // Shows a "Save Mockup to Invoice" CTA that renders front + (optional) back
@@ -2102,21 +2109,41 @@ export default function DesignStudioPage() {
         {/* Back: when the studio was launched from admin (new/edit mockup
             or attach-to-invoice), go back to the admin section that sent
             us here instead of falling through to the homepage. */}
-        <Link
-          to={
-            attachToInvoiceId
-              ? `/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`
-              : (editMockupId || newMockupMode)
-                ? '/admin?section=mockups'
-                : (loadState?.backTo || '/')
-          }
-          className="text-gray-500 hover:text-gray-900 transition"
-          title="Back"
+        {whitelabelBackUrl ? (
+          // Whitelabel: back to the referring store (external URL).
+          <a
+            href={whitelabelBackUrl}
+            className="text-gray-500 hover:text-gray-900 transition"
+            title="Back"
+          >
+            <ArrowLeft className="h-5 w-5 md:h-6 md:w-6" />
+          </a>
+        ) : (
+          <Link
+            to={
+              attachToInvoiceId
+                ? `/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`
+                : (editMockupId || newMockupMode)
+                  ? '/admin?section=mockups'
+                  : (loadState?.backTo || '/')
+            }
+            className="text-gray-500 hover:text-gray-900 transition"
+            title="Back"
+          >
+            <ArrowLeft className="h-5 w-5 md:h-6 md:w-6" />
+          </Link>
+        )}
+        <img
+          src={storeBrand?.brand_json.logo_url || 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png'}
+          alt={storeBrand?.name || 'TSB'}
+          className="h-8 w-8 md:h-9 md:w-9 object-contain hidden sm:block"
+        />
+        <span
+          className="text-lg md:text-xl font-bold text-gray-900 whitespace-nowrap hidden lg:inline"
+          style={storeBrand?.brand_json.primary_color ? { color: storeBrand.brand_json.primary_color } : undefined}
         >
-          <ArrowLeft className="h-5 w-5 md:h-6 md:w-6" />
-        </Link>
-        <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 md:h-9 md:w-9 object-contain hidden sm:block" />
-        <span className="text-lg md:text-xl font-bold text-gray-900 whitespace-nowrap hidden lg:inline">TShirt Brothers</span>
+          {storeBrand?.name || 'TShirt Brothers'}
+        </span>
       </div>
 
       {/* Center: design name */}
@@ -4228,7 +4255,11 @@ export default function DesignStudioPage() {
   return (
     <div className="h-[100dvh] w-screen overflow-hidden bg-gray-100 flex flex-col touch-manipulation">
       <Seo
-        title="Design Studio · Custom T-Shirt Designer · TShirt Brothers"
+        title={
+          storeBrand
+            ? `Design Studio · ${storeBrand.name}`
+            : 'Design Studio · Custom T-Shirt Designer · TShirt Brothers'
+        }
         description="Free online t-shirt designer. Upload art, add text, generate AI designs, drop shapes — see your mockup live and get an instant quote."
         path="/design"
       />
