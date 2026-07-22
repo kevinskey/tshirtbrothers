@@ -1881,19 +1881,34 @@ export default function AdminPage() {
 
   // Per-size opening markups: items' unit_price flows into the matching
   // size cells so admins start from whatever the customer was already
-  // shown (e.g. the instant-quote calculator result).
+  // shown (e.g. the instant-quote calculator result). When line items
+  // don't carry a unit_price (older quotes, hand-typed submissions),
+  // fall back to `estimated_price / total_quantity` so the modal opens
+  // with the customer's actual quoted price instead of $0.
   function initialMarkups(q: Quote | null): Record<string, string> {
     const seeded: Record<string, string> = {};
-    for (const size of Object.keys(sizeMapForQuote(q))) seeded[size] = '';
-    if (!q?.items) return seeded;
-    for (const it of q.items) {
-      const unit = it.unit_price != null && it.unit_price !== '' ? String(it.unit_price) : '';
-      if (!unit) continue;
-      const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
-      if (sizes.length > 0) {
-        for (const s of sizes) if (s?.size && Number(s.quantity) > 0 && !seeded[s.size]) seeded[s.size] = unit;
-      } else if (Number(it.quantity) > 0 && !seeded[NO_SIZE_KEY]) {
-        seeded[NO_SIZE_KEY] = unit;
+    const sizeMap = sizeMapForQuote(q);
+    for (const size of Object.keys(sizeMap)) seeded[size] = '';
+    if (q?.items) {
+      for (const it of q.items) {
+        const unit = it.unit_price != null && it.unit_price !== '' ? String(it.unit_price) : '';
+        if (!unit) continue;
+        const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
+        if (sizes.length > 0) {
+          for (const s of sizes) if (s?.size && Number(s.quantity) > 0 && !seeded[s.size]) seeded[s.size] = unit;
+        } else if (Number(it.quantity) > 0 && !seeded[NO_SIZE_KEY]) {
+          seeded[NO_SIZE_KEY] = unit;
+        }
+      }
+    }
+    // Fallback: if nothing got seeded but the quote already has an
+    // estimated_price, spread the per-unit average across every empty cell.
+    const totalQty = Object.values(sizeMap).reduce((a, b) => a + Number(b), 0);
+    const est = Number(q?.estimated_price ?? 0);
+    if (est > 0 && totalQty > 0) {
+      const perUnit = (est / totalQty).toFixed(2);
+      for (const key of Object.keys(seeded)) {
+        if (!seeded[key]) seeded[key] = perUnit;
       }
     }
     return seeded;
