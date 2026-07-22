@@ -13,10 +13,13 @@ const router = Router();
 
 // GET /api/store-shop/:slug
 // Store profile for the storefront header (name, public brand fields).
+// For group stores also exposes fulfillment options + fundraiser info.
 router.get('/:slug', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT slug, name, brand_json
+      `SELECT slug, name, brand_json, store_type,
+              fulfillment_mode, pickup_location_json,
+              is_fundraiser, fundraiser_json
          FROM stores
         WHERE slug = $1 AND status = 'active'`,
       [req.params.slug],
@@ -24,6 +27,22 @@ router.get('/:slug', async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ error: 'Store not found' });
     res.set('Cache-Control', 'public, max-age=60');
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// GET /api/store-shop
+// Directory of active group stores. Powers tshirtbrothers.com/stores.
+router.get('/', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT slug, name, brand_json, is_fundraiser, fundraiser_json
+         FROM stores
+        WHERE store_type = 'group' AND status = 'active'
+        ORDER BY name ASC
+        LIMIT 200`,
+    );
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json({ stores: rows });
   } catch (err) { next(err); }
 });
 

@@ -40,6 +40,12 @@ import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentP
 import StoreFrontPage from '@/pages/StoreFrontPage';
 import StoreProductPage from '@/pages/StoreProductPage';
 import StoreSuccessPage from '@/pages/StoreSuccessPage';
+import StoresDirectoryPage from '@/pages/stores/StoresDirectoryPage';
+import GroupStorePage from '@/pages/stores/GroupStorePage';
+import GroupStoreProductPage from '@/pages/stores/GroupStoreProductPage';
+import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
+import AdminGroupStoresPage from '@/pages/admin/AdminGroupStoresPage';
+import AdminGroupStoreDetailPage from '@/pages/admin/AdminGroupStoreDetailPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -99,6 +105,15 @@ function App() {
           <Route path="/store/:slug" element={<StoreFrontPage />} />
           <Route path="/store/:slug/product/:productSlug" element={<StoreProductPage />} />
           <Route path="/store/:slug/success" element={<StoreSuccessPage />} />
+          {/* Group stores — TSB-curated white-label storefronts for schools/orgs. */}
+          <Route path="/stores" element={<StoresDirectoryPage />} />
+          <Route path="/stores/:slug" element={<GroupStorePage />} />
+          <Route path="/stores/:slug/product/:productSlug" element={<GroupStoreProductPage />} />
+          <Route path="/stores/:slug/success" element={<StoreSuccessPage />} />
+          <Route path="/stores/:slug/admin" element={<GroupStoreAdminPage />} />
+          {/* TSB internal admin for group stores */}
+          <Route path="/admin/group-stores" element={<AdminGroupStoresPage />} />
+          <Route path="/admin/group-stores/:id" element={<AdminGroupStoreDetailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>

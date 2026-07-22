@@ -1034,3 +1034,105 @@ export async function updateSettings(settings: Record<string, string>): Promise<
   if (!res.ok) throw new Error('Failed to save settings');
   return res.json();
 }
+
+// ── Group Stores (TSB internal admin) ────────────────────────────────────
+export interface GroupStoreSummary {
+  id: number;
+  slug: string;
+  name: string;
+  status: string;
+  owner_email: string;
+  fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
+  is_fundraiser: boolean;
+  created_at: string;
+  brand_json: Record<string, unknown>;
+  fundraiser_json: Record<string, unknown>;
+  active_product_count: string | number;
+  order_count: string | number;
+  admin_count: string | number;
+}
+
+export interface GroupStoreDetail {
+  store: GroupStoreSummary & {
+    pickup_location_json: Record<string, unknown>;
+  };
+  products: Array<{
+    id: number; tsb_blank_ss_id: string; title: string; slug: string;
+    retail_price_cents: number; blank_cost_cents: number | null;
+    decoration_cost_cents: number | null; min_qty: number;
+    is_active: boolean; opens_at: string | null; closes_at: string | null;
+    cover_image: string | null; published_at: string;
+  }>;
+  admins: Array<{
+    id: number; email: string; name: string | null; role: string;
+    created_at: string; last_login_at: string | null;
+  }>;
+}
+
+export interface SsCatalogItem {
+  ss_id: string; brand: string | null; name: string;
+  category: string | null; base_cost: number | string | null;
+  colors: string[]; sizes: string[]; image_url: string | null;
+}
+
+export async function fetchGroupStores() {
+  return authRequest<{ stores: GroupStoreSummary[] }>('/admin/group-stores/list');
+}
+
+export async function fetchGroupStore(id: number) {
+  return authRequest<GroupStoreDetail>(`/admin/group-stores/${id}`);
+}
+
+export async function createGroupStore(data: {
+  slug: string; name: string; owner_email: string;
+  brand_json?: Record<string, unknown>;
+  fulfillment_mode?: 'ship_only' | 'pickup_only' | 'both';
+  pickup_location_json?: Record<string, unknown>;
+  is_fundraiser?: boolean;
+  fundraiser_json?: Record<string, unknown>;
+  initial_admin?: { email: string; name?: string; role?: 'viewer' | 'bulk_buyer' | 'owner' };
+}) {
+  return authRequest<GroupStoreSummary>('/admin/group-stores', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function updateGroupStore(id: number, data: Record<string, unknown>) {
+  return authRequest<GroupStoreSummary>(`/admin/group-stores/${id}`, {
+    method: 'PATCH', body: JSON.stringify(data),
+  });
+}
+
+export async function addGroupStoreProduct(id: number, data: {
+  tsb_blank_ss_id: string; title: string; slug: string;
+  retail_price_cents: number;
+  description?: string; cover_image?: string;
+  variants?: { sizes?: string[]; colors?: string[] };
+  blank_cost_cents?: number; decoration_cost_cents?: number;
+  min_qty?: number; opens_at?: string; closes_at?: string;
+}) {
+  return authRequest(`/admin/group-stores/${id}/products`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function searchSsCatalog(q: string, brand?: string) {
+  const params = new URLSearchParams();
+  if (q)     params.set('q', q);
+  if (brand) params.set('brand', brand);
+  return authRequest<{ source: string; results: SsCatalogItem[] }>(
+    `/admin/group-stores/ss-catalog?${params.toString()}`,
+  );
+}
+
+export async function addGroupStoreAdmin(id: number, data: { email: string; name?: string; role?: string }) {
+  return authRequest(`/admin/group-stores/${id}/admins`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function removeGroupStoreAdmin(id: number, adminId: number) {
+  return authRequest(`/admin/group-stores/${id}/admins/${adminId}`, {
+    method: 'DELETE',
+  });
+}
