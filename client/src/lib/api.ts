@@ -212,6 +212,20 @@ export async function updateQuoteStatus(id: string, status: string) {
   });
 }
 
+// Partial update for a quote — any of status / notes / customer contact
+// fields. Server accepts them independently so this doubles as the
+// "edit customer email/name/phone" mutation.
+export async function updateQuoteCustomer(id: string, patch: {
+  customer_email?: string;
+  customer_name?: string;
+  customer_phone?: string;
+}) {
+  return authRequest<Quote>(`/quotes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
 export async function fetchQuote(id: string) {
   return authRequest<Quote>(`/quotes/${id}`);
 }
@@ -1137,5 +1151,28 @@ export async function addGroupStoreAdmin(id: number, data: { email: string; name
 export async function removeGroupStoreAdmin(id: number, adminId: number) {
   return authRequest(`/admin/group-stores/${id}/admins/${adminId}`, {
     method: 'DELETE',
+  });
+}
+
+// Upload a store product mockup image to DO Spaces via the admin API.
+// `file` is a browser File (from <input type="file"> / drop event);
+// returns the public URL.
+export async function uploadGroupStoreMockup(file: File, storeSlug: string): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+  const res = await authRequest<{ url: string }>('/admin/group-stores/upload-mockup', {
+    method: 'POST',
+    body: JSON.stringify({ data_url: dataUrl, filename: file.name, store_slug: storeSlug }),
+  });
+  return res.url;
+}
+
+export async function updateGroupStoreProduct(id: number, productId: number, data: Record<string, unknown>) {
+  return authRequest(`/admin/group-stores/${id}/products/${productId}`, {
+    method: 'PATCH', body: JSON.stringify(data),
   });
 }

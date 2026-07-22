@@ -117,6 +117,7 @@ import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
+import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
@@ -6223,9 +6224,7 @@ export default function AdminPage() {
         {/* Quote / Order Detail Drawer */}
         {detailQuote && (() => {
           const q = detailQuote as Quote & { deposit_amount?: number | null; balance_paid_at?: string | null };
-          const customerName = (q as Quote).customer_name || (q as Quote).customerName || '';
           const customerEmail = (q as Quote).customer_email || (q as Quote).customerEmail || '';
-          const customerPhone = (q as Quote).customer_phone || (q as Quote).customerPhone || '';
           const productName = (q as Quote).product_name || (q as Quote).productName || '';
           const createdAt = (q as Quote).created_at || (q as Quote).createdAt || '';
           const shippingAddress = (q as Quote).shipping_address as { street?: string; city?: string; state?: string; zip?: string } | undefined;
@@ -6376,13 +6375,14 @@ export default function AdminPage() {
                     </div>
                   )}
 
-                  {/* Customer */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer</p>
-                    <p className="font-semibold text-gray-900">{customerName}</p>
-                    <a href={`mailto:${customerEmail}`} className="text-sm text-blue-600 block">{customerEmail}</a>
-                    {customerPhone && <a href={`tel:${customerPhone}`} className="text-sm text-blue-600 block">{customerPhone}</a>}
-                  </div>
+                  {/* Customer — inline editor for name / email / phone */}
+                  <QuoteCustomerEditor
+                    quote={q as Quote}
+                    onSaved={(updated) => {
+                      setDetailQuote(updated as Quote);
+                      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                    }}
+                  />
 
                   {/* Line items editor — product, sizes, print areas, pricing
                       all live as editable line items. Customer-submitted

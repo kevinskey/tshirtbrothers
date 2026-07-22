@@ -8,9 +8,11 @@
 // /api/group-store-admin/:slug.
 
 import { Router } from 'express';
+import crypto from 'crypto';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { fetchProducts } from '../services/ssActivewear.js';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -388,6 +390,49 @@ router.get('/ss-catalog', async (req, res, next) => {
       res.json({ source: 'empty', results: [] });
     }
   } catch (err) { next(err); }
+});
+
+// ── POST /upload-mockup ──────────────────────────────────────────────────
+// Body: { data_url: "data:image/png;base64,...", filename?, store_slug? }
+// Uploads a store product mockup to DO Spaces and returns { url }. The
+// image is public-read; store_slug (if provided) namespaces the object
+// key so mockups are grouped per store in the bucket listing.
+router.post('/upload-mockup', async (req, res, next) => {
+  try {
+    const { data_url, filename, store_slug } = req.body ?? {};
+    if (!data_url || typeof data_url !== 'string' || !data_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'data_url (data URL) required' });
+    }
+    const match = data_url.match(/^data:([^;]+);base64,/);
+    const contentType = match?.[1] || 'image/png';
+    if (!/^image\//.test(contentType)) {
+      return res.status(400).json({ error: 'only image/* uploads allowed' });
+    }
+
+    const ext =
+      contentType === 'image/jpeg' ? 'jpg' :
+      contentType === 'image/png'  ? 'png' :
+      contentType === 'image/webp' ? 'webp' :
+      contentType === 'image/gif'  ? 'gif' :
+      contentType === 'image/svg+xml' ? 'svg' : 'bin';
+
+    const safeSlug = String(store_slug || 'store').replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'store';
+    const stamp    = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const rand     = crypto.randomBytes(4).toString('hex');
+    const key      = `store-mockups/${safeSlug}/${stamp}-${rand}.${ext}`;
+
+    const url = await uploadObject({
+      key,
+      body: data_url,
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+
+    res.status(201).json({ url, key, filename: filename ?? null });
+  } catch (err) {
+    console.error('[adminGroupStores] upload-mockup failed:', err.message);
+    next(err);
+  }
 });
 
 // ── POST /:id/admins ─────────────────────────────────────────────────────

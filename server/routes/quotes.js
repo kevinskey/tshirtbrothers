@@ -667,28 +667,38 @@ router.post('/accept/:id', async (req, res, next) => {
 router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, customer_email, customer_name, customer_phone } = req.body;
 
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
-    }
-
+    // Status is optional now — this endpoint accepts partial updates
+    // covering status / notes / customer contact info. At least one
+    // field must be present.
     const validStatuses = ['pending', 'reviewed', 'quoted', 'rejected', 'completed'];
-    if (!validStatuses.includes(status)) {
+    if (status !== undefined && !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(', ')}` });
     }
-
-    let query, params;
-    if (notes !== undefined) {
-      query = 'UPDATE quotes SET status = $1, notes = $2 WHERE id = $3 RETURNING *';
-      params = [status, notes, id];
-    } else {
-      query = 'UPDATE quotes SET status = $1 WHERE id = $2 RETURNING *';
-      params = [status, id];
+    if (customer_email !== undefined && customer_email !== null && customer_email !== '') {
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(customer_email))) {
+        return res.status(400).json({ error: 'customer_email must be a valid email' });
+      }
     }
 
-    const result = await pool.query(query, params);
+    const patches = [];
+    const params = [];
+    const push = (col, val) => { params.push(val); patches.push(`${col} = $${params.length}`); };
+    if (status         !== undefined) push('status',         status);
+    if (notes          !== undefined) push('notes',          notes);
+    if (customer_email !== undefined) push('customer_email', customer_email);
+    if (customer_name  !== undefined) push('customer_name',  customer_name);
+    if (customer_phone !== undefined) push('customer_phone', customer_phone);
+    if (patches.length === 0) {
+      return res.status(400).json({ error: 'no fields to update' });
+    }
 
+    params.push(id);
+    const result = await pool.query(
+      `UPDATE quotes SET ${patches.join(', ')} WHERE id = $${params.length} RETURNING *`,
+      params,
+    );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Quote not found' });
     }
