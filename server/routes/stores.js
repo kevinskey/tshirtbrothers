@@ -20,7 +20,31 @@ import { storeApiKey } from '../middleware/storeApiKey.js';
 
 const router = Router();
 
-// All /stores/:slug/* routes require the store API key.
+// ── Public routes (no auth) ──────────────────────────────────────────────
+// Register BEFORE the storeApiKey middleware so they stay open.
+
+// GET /api/stores/:slug/public-brand
+// Returns only publicly-safe fields (name, brand_json). Used by TSB's
+// whitelabel design studio + storefront to skin the UI for a specific
+// store. Does NOT reveal owner_email, gleeworld_tenant_slug, status, etc.
+router.get('/:slug/public-brand', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT slug, name, brand_json
+         FROM stores
+        WHERE slug = $1 AND status = 'active'`,
+      [req.params.slug],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Store not found' });
+    // Strong caching — brand config changes rarely and the endpoint is
+    // hit on every studio page load.
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Authenticated routes ─────────────────────────────────────────────────
+// All /stores/:slug/* routes below require the store API key.
 router.use('/:slug', storeApiKey);
 
 // Helper: look up store id from slug (single-row).
