@@ -271,19 +271,36 @@ router.get('/mockups', async (req, res, next) => {
   try {
     const q = req.query.q ? String(req.query.q).trim().toLowerCase() : '';
     const params = [];
-    let where = `(preview_image_url IS NOT NULL OR product_image_url IS NOT NULL)`;
+    let where = `(m.preview_image_url IS NOT NULL OR m.product_image_url IS NOT NULL)`;
     if (q) {
       params.push(`%${q}%`);
-      where += ` AND (LOWER(name) LIKE $${params.length} OR LOWER(product_name) LIKE $${params.length} OR LOWER(customer_name) LIKE $${params.length})`;
+      where += ` AND (LOWER(m.name) LIKE $${params.length} OR LOWER(m.product_name) LIKE $${params.length} OR LOWER(m.customer_name) LIKE $${params.length})`;
     }
+    // Resolve the S&S blank in three tiers:
+    //   1) mockup's product_id → products row
+    //   2) if that's NULL, match products.name = mockup.product_name (case-insensitive)
+    //   3) if that misses too, the mockup will still list — the publish
+    //      form will ask the admin to pick an S&S SKU manually.
     const { rows } = await pool.query(
       `SELECT m.id, m.name, m.status, m.customer_name, m.customer_email,
               m.product_id, m.product_name, m.product_image_url,
               m.preview_image_url, m.graphic_url, m.created_at,
-              p.ss_id AS product_ss_id, p.base_price AS product_base_price,
-              p.colors AS product_colors, p.sizes AS product_sizes
+              COALESCE(p_by_id.ss_id, p_by_name.ss_id)             AS product_ss_id,
+              COALESCE(p_by_id.base_price, p_by_name.base_price)   AS product_base_price,
+              COALESCE(p_by_id.colors, p_by_name.colors)           AS product_colors,
+              COALESCE(p_by_id.sizes, p_by_name.sizes)             AS product_sizes,
+              COALESCE(p_by_id.name, p_by_name.name)               AS resolved_product_name
          FROM mockups m
-         LEFT JOIN products p ON p.id = m.product_id
+         LEFT JOIN products p_by_id   ON p_by_id.id = m.product_id
+         LEFT JOIN LATERAL (
+           SELECT p.ss_id, p.base_price, p.colors, p.sizes, p.name
+             FROM products p
+            WHERE m.product_id IS NULL
+              AND m.product_name IS NOT NULL
+              AND LOWER(p.name) = LOWER(m.product_name)
+              AND p.ss_id IS NOT NULL
+            LIMIT 1
+         ) p_by_name ON true
         WHERE ${where}
         ORDER BY m.created_at DESC
         LIMIT 200`,
@@ -317,13 +334,27 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
       return res.status(400).json({ error: 'retail_price_cents (positive int) required' });
     }
 
-    // Look up mockup + its underlying product in one shot.
+    // Look up mockup + its underlying product in one shot. Falls back
+    // to matching by product_name when product_id isn't set (older
+    // mockups didn't always link an S&S row explicitly).
     const src = await pool.query(
       `SELECT m.id, m.name, m.product_id, m.product_name,
               m.product_image_url, m.preview_image_url,
-              p.ss_id, p.base_price, p.colors, p.sizes
+              COALESCE(p_by_id.ss_id, p_by_name.ss_id)           AS ss_id,
+              COALESCE(p_by_id.base_price, p_by_name.base_price) AS base_price,
+              COALESCE(p_by_id.colors, p_by_name.colors)         AS colors,
+              COALESCE(p_by_id.sizes, p_by_name.sizes)           AS sizes
          FROM mockups m
-         LEFT JOIN products p ON p.id = m.product_id
+         LEFT JOIN products p_by_id ON p_by_id.id = m.product_id
+         LEFT JOIN LATERAL (
+           SELECT p.ss_id, p.base_price, p.colors, p.sizes
+             FROM products p
+            WHERE m.product_id IS NULL
+              AND m.product_name IS NOT NULL
+              AND LOWER(p.name) = LOWER(m.product_name)
+              AND p.ss_id IS NOT NULL
+            LIMIT 1
+         ) p_by_name ON true
         WHERE m.id = $1`,
       [mockup_id],
     );
