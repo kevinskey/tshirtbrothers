@@ -122,8 +122,17 @@ export default function GroupStorePage() {
     <div className="min-h-screen bg-white text-gray-900">
       <Seo
         title={`${store.name} · Shop`}
-        description={`Shop official ${store.name} merchandise. Designed and printed by TShirt Brothers in Fairburn, GA.`}
+        description={
+          store.brand_json.tagline
+          || (store.is_fundraiser && store.fundraiser_json.headline)
+          || `Shop official ${store.name} merchandise. Designed and printed by TShirt Brothers in Fairburn, GA.`
+        }
         path={`/stores/${slug}`}
+        image={
+          store.brand_json.hero_url
+          || store.brand_json.logo_url
+          || undefined
+        }
       />
 
       {/* ── Announcement bar ──────────────────────────────────────────── */}

@@ -140,6 +140,44 @@ async function buildSitemap() {
     }));
   }
 
+  // Group storefronts — every active group store gets its own URL so
+  // the prerenderer bakes per-store Open Graph tags into static HTML.
+  // Without this a link preview to /stores/<slug> shows the generic
+  // TSB share card.
+  try {
+    const { rows: groupStores } = await pool.query(
+      `SELECT slug, GREATEST(
+                created_at,
+                (SELECT MAX(created_at) FROM store_products sp WHERE sp.store_id = stores.id),
+                (SELECT MAX(created_at) FROM store_orders   so WHERE so.store_id = stores.id)
+              )::date AS lastmod
+         FROM stores
+        WHERE store_type = 'group' AND status = 'active'
+        ORDER BY slug`,
+    );
+    // Directory page (only if we have at least one active store)
+    if (groupStores.length > 0) {
+      entries.push(urlEntry({
+        loc: `${DOMAIN}/stores`,
+        lastmod: today,
+        changefreq: 'weekly',
+        priority: '0.7',
+      }));
+    }
+    for (const s of groupStores) {
+      entries.push(urlEntry({
+        loc: `${DOMAIN}/stores/${s.slug}`,
+        lastmod: s.lastmod instanceof Date
+          ? s.lastmod.toISOString().slice(0, 10)
+          : String(s.lastmod ?? today),
+        changefreq: 'weekly',
+        priority: '0.8',
+      }));
+    }
+  } catch (err) {
+    console.error('[sitemap] group stores enumeration failed:', err.message);
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset
   xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"

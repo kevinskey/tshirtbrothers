@@ -158,6 +158,7 @@ export default function GroupStoreProductPage() {
         title={`${product.title} · ${store.name}`}
         description={product.description || `${product.title} — ${store.name}. Designed and fulfilled by TShirt Brothers.`}
         path={`/stores/${slug}/product/${productSlug}`}
+        image={product.cover_image || undefined}
       />
 
       <header className="bg-white border-b border-gray-200">
