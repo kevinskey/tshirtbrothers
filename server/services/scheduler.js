@@ -7,6 +7,7 @@
 import cron from 'node-cron';
 import pool from '../db.js';
 import { sendAbandonedQuoteFollowUp } from './email.js';
+import { runPayoutJob } from './storePayoutJob.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
 // AND haven't already been followed up. The 24h floor lets the customer
@@ -49,5 +50,11 @@ export function startScheduler() {
   cron.schedule('5 * * * *', () => {
     runAbandonedQuoteFollowUps();
   });
-  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05)');
+  // Daily at 06:00 UTC. Each franchise store's payout cadence is checked
+  // inside runPayoutJob; nothing fires unless today matches (1st of month
+  // for monthly, Fridays for weekly).
+  cron.schedule('0 6 * * *', () => {
+    runPayoutJob();
+  });
+  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC)');
 }
