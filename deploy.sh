@@ -25,12 +25,16 @@ fi
 echo "==> Installing client deps and building frontend..."
 cd "$APP_DIR/client"
 
-# Guard against npm bug #4828: without a lockfile npm can install rollup
-# without its platform-specific @rollup/rollup-linux-x64-gnu native
-# binary, and the build fails deep in vite. If a previous session left
-# the droplet without a lockfile, restore it from git so npm resolves
-# optional deps correctly. We do NOT touch an existing lockfile — a
-# deliberate edit stays put.
+# Guard against npm bug #4828: a lockfile generated on macOS (dev)
+# doesn't list the Linux rollup native binary as an optional dep, so
+# on Linux the build fails deep in vite. Symptoms include a missing
+# @rollup/rollup-linux-x64-gnu module OR the dir existing but empty
+# (no package.json inside).
+#
+# We restore package-lock.json from git if it was deleted on the
+# droplet, run npm install, then check the actual package.json of
+# the Linux rollup binary. If it's missing, do the recommended npm
+# recovery: nuke lockfile + node_modules + reinstall.
 if [ ! -f package-lock.json ]; then
   echo "==> client/package-lock.json missing; restoring from git"
   git checkout -- package-lock.json || true
@@ -38,13 +42,9 @@ fi
 
 npm install
 
-# Belt-and-suspenders: if the Linux rollup binary still isn't present
-# after install (npm bug #4828), do the recommended nuke-and-reinstall.
-# This only fires when the install was actually broken, so a healthy
-# deploy pays no cost.
-if [ ! -d node_modules/@rollup/rollup-linux-x64-gnu ]; then
-  echo "==> rollup native binary missing; nuking node_modules and reinstalling"
-  rm -rf node_modules
+if [ ! -f node_modules/@rollup/rollup-linux-x64-gnu/package.json ]; then
+  echo "==> rollup native binary missing or empty; nuking lockfile + node_modules and reinstalling"
+  rm -rf node_modules package-lock.json
   npm install
 fi
 
