@@ -3,8 +3,9 @@
 // The "empty" state still reads as a store: a launch banner with
 // email-notify signup and category-preview strip, not a lookbook.
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
+import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import {
   Loader2, ShoppingBag, MapPin, Truck, ShieldCheck, ArrowRight,
   Bell, Target, ChevronRight, Star, Package,
@@ -62,7 +63,7 @@ function tint(hex: string, alpha = 0.08) {
 }
 
 export default function GroupStorePage() {
-  const { slug = '' } = useParams<{ slug: string }>();
+  const slug = useStoreSlug();
   const [store, setStore]       = useState<StoreProfile | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -135,7 +136,7 @@ export default function GroupStorePage() {
       {/* ── Header (real store chrome) ────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
-          <Link to={`/stores/${slug}`} className="flex items-center gap-2 min-w-0">
+          <Link to={storeLink(slug, '/')} className="flex items-center gap-2 min-w-0">
             {store.brand_json.logo_url && (
               <img src={store.brand_json.logo_url} alt="" className="h-9 w-9 object-contain" />
             )}
@@ -147,7 +148,7 @@ export default function GroupStorePage() {
             <a href="#about" className="hover:text-black">About</a>
           </nav>
           <div className="flex-1" />
-          <Link to={`/stores/${slug}/admin`}
+          <Link to={storeLink(slug, '/admin')}
             className="hidden sm:inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-black">
             <Package className="w-4 h-4" /> Admin
           </Link>
@@ -504,7 +505,7 @@ function ProductGrid({ products, slug, primary }: { products: StoreProduct[]; sl
       {products.map((p) => (
         <Link
           key={p.id}
-          to={`/stores/${slug}/product/${p.slug}`}
+          to={storeLink(slug, `/product/${p.slug}`)}
           className="group block"
         >
           <div className="aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-100">

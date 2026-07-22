@@ -78,9 +78,15 @@ export default function AdminGroupStoresPage() {
                     </td>
                     <td className="px-4 py-3">
                       <Link to={`/stores/${s.slug}`} target="_blank" rel="noreferrer"
-                        className="font-mono text-xs text-blue-600 hover:underline">
-                        /{s.slug}
+                        className="font-mono text-xs text-blue-600 hover:underline block">
+                        /stores/{s.slug}
                       </Link>
+                      {s.subdomain && (
+                        <a href={`https://${s.subdomain}.tshirtbrothers.com`} target="_blank" rel="noreferrer"
+                          className="font-mono text-[10px] text-gray-500 hover:underline block mt-0.5">
+                          {s.subdomain}.tshirtbrothers.com
+                        </a>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs uppercase tracking-wider">
                       {s.fulfillment_mode.replace('_', ' ')}
@@ -117,6 +123,7 @@ export default function AdminGroupStoresPage() {
 // ── Create-store modal ───────────────────────────────────────────────────
 function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [slug, setSlug] = useState('');
+  const [subdomain, setSubdomain] = useState('');
   const [name, setName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
   const [primaryColor, setPrimaryColor] = useState('#111827');
@@ -151,6 +158,7 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
       }
       await createGroupStore({
         slug, name, owner_email: ownerEmail,
+        subdomain: subdomain || undefined,
         brand_json: brand,
         fulfillment_mode: fulfillmentMode,
         pickup_location_json: fulfillmentMode === 'ship_only' ? {} :
@@ -185,6 +193,12 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <Field label="URL slug" required hint="tshirtbrothers.com/stores/[slug]">
               <input required value={slug} onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
                 placeholder="spelman-glee"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono" />
+            </Field>
+            <Field label="Subdomain" hint={subdomain ? `${subdomain}.tshirtbrothers.com` : 'Optional — [sub].tshirtbrothers.com (short, no dashes preferred)'}>
+              <input value={subdomain}
+                onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                placeholder="spelmanglee"
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono" />
             </Field>
             <Field label="Contact email" required>

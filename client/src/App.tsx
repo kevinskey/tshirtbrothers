@@ -46,6 +46,7 @@ import GroupStoreProductPage from '@/pages/stores/GroupStoreProductPage';
 import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
 import AdminGroupStoresPage from '@/pages/admin/AdminGroupStoresPage';
 import AdminGroupStoreDetailPage from '@/pages/admin/AdminGroupStoreDetailPage';
+import { getStoreSubdomain } from '@/lib/storeSubdomain';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,7 +62,33 @@ function GangSheetIdRedirect() {
   return <Navigate to={`/admin/gangsheet/${id}`} replace />;
 }
 
+// When the hostname is a group-store subdomain like
+// sandycreekpto.tshirtbrothers.com, mount a stripped-down route tree
+// that renders the storefront at "/" — no /stores/<slug> prefix.
+// getStoreSubdomain() reserves things like admin/api/www so the main
+// site continues to work at its usual hostname.
+function SubdomainApp() {
+  return (
+    <HelmetProvider>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ScrollToTop />
+        <Routes>
+          <Route path="/" element={<GroupStorePage />} />
+          <Route path="/product/:productSlug" element={<GroupStoreProductPage />} />
+          <Route path="/success" element={<StoreSuccessPage />} />
+          <Route path="/admin" element={<GroupStoreAdminPage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </BrowserRouter>
+      <Toaster position="top-right" richColors />
+    </QueryClientProvider>
+    </HelmetProvider>
+  );
+}
+
 function App() {
+  if (getStoreSubdomain()) return <SubdomainApp />;
   return (
     <HelmetProvider>
     <QueryClientProvider client={queryClient}>

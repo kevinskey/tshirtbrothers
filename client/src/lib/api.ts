@@ -1039,6 +1039,7 @@ export async function updateSettings(settings: Record<string, string>): Promise<
 export interface GroupStoreSummary {
   id: number;
   slug: string;
+  subdomain: string | null;
   name: string;
   status: string;
   owner_email: string;
@@ -1054,6 +1055,7 @@ export interface GroupStoreSummary {
 
 export interface GroupStoreDetail {
   store: GroupStoreSummary & {
+    subdomain: string | null;
     pickup_location_json: Record<string, unknown>;
   };
   products: Array<{
@@ -1085,6 +1087,7 @@ export async function fetchGroupStore(id: number) {
 
 export async function createGroupStore(data: {
   slug: string; name: string; owner_email: string;
+  subdomain?: string;
   brand_json?: Record<string, unknown>;
   fulfillment_mode?: 'ship_only' | 'pickup_only' | 'both';
   pickup_location_json?: Record<string, unknown>;

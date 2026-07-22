@@ -20,7 +20,7 @@ router.use(authenticate, adminOnly);
 router.get('/list', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT s.id, s.slug, s.name, s.status, s.owner_email,
+      `SELECT s.id, s.slug, s.subdomain, s.name, s.status, s.owner_email,
               s.fulfillment_mode, s.is_fundraiser, s.created_at,
               s.brand_json, s.fundraiser_json,
               (SELECT COUNT(*) FROM store_products sp WHERE sp.store_id = s.id AND sp.is_active) AS active_product_count,
@@ -42,7 +42,7 @@ router.get('/list', async (req, res, next) => {
 router.post('/', async (req, res, next) => {
   try {
     const {
-      slug, name, owner_email,
+      slug, name, owner_email, subdomain,
       brand_json, fulfillment_mode, pickup_location_json,
       is_fundraiser, fundraiser_json,
       initial_admin,
@@ -53,6 +53,9 @@ router.post('/', async (req, res, next) => {
     if (fulfillment_mode && !['ship_only', 'pickup_only', 'both'].includes(fulfillment_mode)) {
       return res.status(400).json({ error: 'invalid fulfillment_mode' });
     }
+    if (subdomain && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(subdomain)) {
+      return res.status(400).json({ error: 'subdomain must be 2–63 lowercase letters/digits/hyphens' });
+    }
 
     const client = await pool.connect();
     try {
@@ -61,9 +64,10 @@ router.post('/', async (req, res, next) => {
       const storeIns = await client.query(
         `INSERT INTO stores
            (slug, name, owner_email, store_type, status, brand_json,
-            fulfillment_mode, pickup_location_json, is_fundraiser, fundraiser_json)
-         VALUES ($1, $2, $3, 'group', 'active', $4, $5, $6, $7, $8)
-         RETURNING id, slug, name, brand_json, fulfillment_mode,
+            fulfillment_mode, pickup_location_json, is_fundraiser, fundraiser_json,
+            subdomain)
+         VALUES ($1, $2, $3, 'group', 'active', $4, $5, $6, $7, $8, $9)
+         RETURNING id, slug, subdomain, name, brand_json, fulfillment_mode,
                    is_fundraiser, created_at`,
         [
           slug, name, owner_email,
@@ -72,6 +76,7 @@ router.post('/', async (req, res, next) => {
           pickup_location_json ?? {},
           !!is_fundraiser,
           fundraiser_json ?? {},
+          subdomain ? subdomain.toLowerCase() : null,
         ],
       );
       const store = storeIns.rows[0];
@@ -131,7 +136,15 @@ router.patch('/:id', async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
     const allowed = ['name', 'brand_json', 'status', 'fulfillment_mode',
-                     'pickup_location_json', 'is_fundraiser', 'fundraiser_json'];
+                     'pickup_location_json', 'is_fundraiser', 'fundraiser_json',
+                     'subdomain'];
+    if (req.body?.subdomain !== undefined && req.body.subdomain) {
+      const s = String(req.body.subdomain).toLowerCase();
+      if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(s)) {
+        return res.status(400).json({ error: 'subdomain must be 2–63 lowercase letters/digits/hyphens' });
+      }
+      req.body.subdomain = s;
+    }
     const patches = [];
     const params = [];
     for (const key of allowed) {
@@ -160,7 +173,7 @@ router.get('/:id', async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid id' });
     const store = await pool.query(
-      `SELECT id, slug, name, status, owner_email, brand_json,
+      `SELECT id, slug, subdomain, name, status, owner_email, brand_json,
               fulfillment_mode, pickup_location_json, is_fundraiser,
               fundraiser_json, created_at
          FROM stores WHERE id = $1 AND store_type = 'group'`,

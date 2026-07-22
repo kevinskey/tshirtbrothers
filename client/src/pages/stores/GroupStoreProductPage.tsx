@@ -2,6 +2,7 @@
 // selector, Stripe checkout.
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
 import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin } from 'lucide-react';
 
@@ -37,7 +38,9 @@ interface StoreProduct {
 type Fulfillment = 'ship' | 'pickup';
 
 export default function GroupStoreProductPage() {
-  const { slug = '', productSlug = '' } = useParams<{ slug: string; productSlug: string }>();
+  const params = useParams<{ productSlug?: string }>();
+  const productSlug = params.productSlug ?? '';
+  const slug = useStoreSlug();
   const [store, setStore]     = useState<StoreProfile | null>(null);
   const [product, setProduct] = useState<StoreProduct | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,8 +116,8 @@ export default function GroupStoreProductPage() {
           qty,
           variant,
           buyer_email: buyerEmail || undefined,
-          success_url: `${window.location.origin}/stores/${slug}/success?session_id={CHECKOUT_SESSION_ID}`,
-          cancel_url: `${window.location.origin}/stores/${slug}/product/${productSlug}`,
+          success_url: `${window.location.origin}${getStoreSubdomain() ? '/success' : `/stores/${slug}/success`}?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url:  `${window.location.origin}${getStoreSubdomain() ? `/product/${productSlug}` : `/stores/${slug}/product/${productSlug}`}`,
         }),
       });
       const data = await res.json();
@@ -140,7 +143,7 @@ export default function GroupStoreProductPage() {
         <div className="text-center">
           <ShoppingBag className="w-12 h-12 mx-auto text-gray-300" />
           <h1 className="text-xl font-semibold mt-4">Product not found</h1>
-          <Link to={`/stores/${slug}`} className="mt-4 inline-block text-sm text-gray-500 hover:text-gray-900">← Back to store</Link>
+          <Link to={storeLink(slug, "/")} className="mt-4 inline-block text-sm text-gray-500 hover:text-gray-900">← Back to store</Link>
         </div>
       </div>
     );
@@ -162,14 +165,14 @@ export default function GroupStoreProductPage() {
           {store.brand_json.logo_url && (
             <img src={store.brand_json.logo_url} alt="" className="h-10 w-10 object-contain" />
           )}
-          <Link to={`/stores/${slug}`} className="flex-1 min-w-0">
+          <Link to={storeLink(slug, "/")} className="flex-1 min-w-0">
             <h1 className="text-lg font-bold truncate" style={{ color: primary }}>{store.name}</h1>
           </Link>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <Link to={`/stores/${slug}`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-6">
+        <Link to={storeLink(slug, "/")} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-6">
           <ArrowLeft className="w-4 h-4" /> Back to store
         </Link>
 

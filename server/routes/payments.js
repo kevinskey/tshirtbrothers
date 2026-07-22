@@ -407,6 +407,9 @@ router.post('/create-store-checkout', async (req, res, next) => {
     const qty = Math.min(Math.max(parseInt(String(qtyRaw ?? '1'), 10), 1), 100);
 
     // Load product + store, enforce currently-sellable + validate window.
+    // store_slug in the request payload may be either the store's slug
+    // or its subdomain — accept either so a request coming from
+    // <sub>.tshirtbrothers.com works without special-casing.
     const q = await pool.query(
       `SELECT sp.id AS product_id, sp.store_id, sp.title, sp.slug, sp.cover_image,
               sp.retail_price_cents, sp.is_active,
@@ -414,7 +417,8 @@ router.post('/create-store-checkout', async (req, res, next) => {
               s.name AS store_name, s.slug AS store_slug
          FROM store_products sp
          JOIN stores s ON s.id = sp.store_id
-        WHERE s.slug = $1 AND s.status = 'active'
+        WHERE s.status = 'active'
+          AND (s.slug = $1 OR lower(s.subdomain) = lower($1))
           AND sp.slug = $2`,
       [store_slug, product_slug],
     );

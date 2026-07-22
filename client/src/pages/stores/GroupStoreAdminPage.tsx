@@ -5,7 +5,8 @@
 // Session token is stored in localStorage under `tsb_gsa_${slug}`.
 // Group admins cannot edit products, prices, or designs — that's TSB.
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
 import { Loader2, LogOut, ShoppingBag, Target, Package, Users, Plus, Trash2 } from 'lucide-react';
 
@@ -53,7 +54,7 @@ interface Product {
 function usd(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
 
 export default function GroupStoreAdminPage() {
-  const { slug = '' } = useParams<{ slug: string }>();
+  const slug = useStoreSlug();
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY(slug)));
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
@@ -168,7 +169,7 @@ function LoginView({ slug, onLoggedIn }: { slug: string; onLoggedIn: (token: str
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <Seo title={`Admin sign in · ${slug}`} description="" path={`/stores/${slug}/admin`} />
       <div className="w-full max-w-md bg-white rounded-lg border border-gray-200 p-6">
-        <Link to={`/stores/${slug}`} className="text-xs text-gray-500 hover:text-gray-900">← Back to store</Link>
+        <Link to={storeLink(slug, "/")} className="text-xs text-gray-500 hover:text-gray-900">← Back to store</Link>
         <h1 className="mt-3 text-xl font-bold text-gray-900">Store admin sign in</h1>
         <p className="mt-1 text-sm text-gray-500">
           Enter the email address your organization gave TShirt Brothers. We'll send you a 6-digit code.
@@ -225,7 +226,7 @@ function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string;
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-4">
           <div className="flex-1 min-w-0">
-            <Link to={`/stores/${slug}`} className="text-xs text-gray-500 hover:text-gray-900">← Storefront</Link>
+            <Link to={storeLink(slug, "/")} className="text-xs text-gray-500 hover:text-gray-900">← Storefront</Link>
             <h1 className="text-lg font-bold text-gray-900 truncate">Admin · {slug}</h1>
           </div>
           <div className="text-right">

@@ -57,10 +57,20 @@ export default function AdminGroupStoreDetailPage() {
           </Link>
           <div className="flex-1">
             <h1 className="text-2xl font-bold text-gray-900">{store.name}</h1>
-            <Link to={`/stores/${store.slug}`} target="_blank" rel="noreferrer"
-              className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
-              /stores/{store.slug} <ExternalLink className="w-3 h-3" />
-            </Link>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
+              <Link to={`/stores/${store.slug}`} target="_blank" rel="noreferrer"
+                className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
+                /stores/{store.slug} <ExternalLink className="w-3 h-3" />
+              </Link>
+              {store.subdomain ? (
+                <a href={`https://${store.subdomain}.tshirtbrothers.com`} target="_blank" rel="noreferrer"
+                  className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
+                  {store.subdomain}.tshirtbrothers.com <ExternalLink className="w-3 h-3" />
+                </a>
+              ) : (
+                <SubdomainSetter storeId={storeId} onSet={() => void load()} />
+              )}
+            </div>
           </div>
           <button onClick={toggleStatus}
             className={`px-3 py-1.5 text-sm rounded-md border ${
@@ -383,6 +393,33 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
         </div>
       </form>
     </div>
+  );
+}
+
+function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => void }) {
+  const [value, setValue] = useState('');
+  const [busy, setBusy]   = useState(false);
+  const save = async () => {
+    if (!value) return;
+    setBusy(true);
+    try {
+      await updateGroupStore(storeId, { subdomain: value });
+      toast.success('Subdomain set');
+      onSet();
+    } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <span className="inline-flex items-center gap-1 text-xs">
+      <input value={value} onChange={(e) => setValue(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+        placeholder="set subdomain"
+        className="border border-gray-300 rounded px-2 py-0.5 font-mono text-[11px] w-32" />
+      <span className="text-gray-400">.tshirtbrothers.com</span>
+      <button onClick={save} disabled={busy || !value}
+        className="ml-1 px-2 py-0.5 bg-gray-900 text-white rounded text-[10px] disabled:opacity-50">
+        {busy ? '…' : 'Set'}
+      </button>
+    </span>
   );
 }
 
