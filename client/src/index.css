@@ -7,6 +7,27 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes tsb-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.tsb-marquee-track { animation: tsb-marquee 40s linear infinite; }
+
+.tsb-font-display { font-family: 'Fraunces', ui-serif, Georgia, serif; font-optical-sizing: auto; }
+.tsb-font-mono    { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Grain overlay — subtle noise that makes solid brand fills feel printed */
+.tsb-grain {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+    radial-gradient(rgba(0,0,0,0.10) 1px, transparent 1px);
+  background-size: 3px 3px, 5px 5px;
+  background-position: 0 0, 1px 2px;
+  mix-blend-mode: overlay;
+  opacity: 0.55;
+}
+
 @layer base {
   html {
     overflow-x: hidden;
