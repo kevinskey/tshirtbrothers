@@ -38,6 +38,7 @@ import {
   Edit3,
   Upload,
   GalleryHorizontal,
+  Store,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -136,9 +137,10 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   // Dashboard + Pipeline merged into one landing: the Pipeline page now
   // shows the four stat cards above the search/filter list.
   { label: 'Workflow', items: [
-    { key: 'quotes',    label: 'Dashboard',  icon: LayoutDashboard },
-    { key: 'invoices',  label: 'Invoices',   icon: Receipt },
-    { key: 'customers', label: 'Customers',  icon: Users },
+    { key: 'quotes',    label: 'Dashboard',    icon: LayoutDashboard },
+    { key: 'invoices',  label: 'Invoices',     icon: Receipt },
+    { key: 'customers', label: 'Customers',    icon: Users },
+    { key: 'group-stores', label: 'Group Stores', icon: Store, to: '/admin/group-stores' },
   ]},
   { label: 'Catalog', items: [
     { key: 'products',    label: 'Products',     icon: Package },
