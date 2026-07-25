@@ -21,6 +21,7 @@
 
 import { Router } from 'express';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeAdminSession.js';
 import { Resend } from 'resend';
@@ -172,6 +173,85 @@ router.post('/login/verify', async (req, res, next) => {
         name: admin.rows[0].name,
         role: admin.rows[0].role,
       },
+      store: { slug: store.slug, name: store.name },
+    });
+  } catch (err) { next(err); }
+});
+
+// ── POST /sso-exchange ───────────────────────────────────────────────────
+// Trade a GleeWorld-signed JWT for a store_admin_session bearer token.
+// Lets a GleeWorld tenant super-admin who's already logged into
+// gleeworld.org land in the TSB store admin without the email-code
+// dance. GleeWorld signs a short-lived JWT with the shared HMAC secret
+// GLEEWORLD_SSO_SECRET; TSB verifies and mints a session identical to
+// what /login/verify would have produced.
+//
+// JWT payload (all fields required unless noted):
+//   { store_slug, email, name?, iat, exp }
+//   iss is checked to be 'gleeworld' if present (belt-and-suspenders).
+//
+// A store_admin row is upserted for (store_slug, email) — first-time
+// SSO from a given email creates the admin as role='owner' (since we
+// only issue GleeWorld SSO to the tenant super-admin). Existing rows
+// keep their role.
+router.post('/sso-exchange', async (req, res, next) => {
+  try {
+    const secret = process.env.GLEEWORLD_SSO_SECRET;
+    if (!secret) {
+      console.error('[sso-exchange] GLEEWORLD_SSO_SECRET is not set');
+      return res.status(503).json({ error: 'SSO not configured' });
+    }
+    const { token } = req.body ?? {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'token (string) is required' });
+    }
+
+    let payload;
+    try {
+      payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+    } catch (err) {
+      return res.status(401).json({ error: `SSO token invalid: ${err.message}` });
+    }
+    if (payload.iss && payload.iss !== 'gleeworld') {
+      return res.status(401).json({ error: 'SSO token issuer mismatch' });
+    }
+    const { store_slug, email, name } = payload;
+    if (!store_slug || !email) {
+      return res.status(400).json({ error: 'SSO token missing store_slug or email' });
+    }
+
+    const store = await findGroupStore(store_slug);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    // Upsert store_admin. First-time SSO lands as 'owner' — GleeWorld
+    // only issues SSO for the tenant super-admin, so this is safe.
+    // Subsequent SSOs for the same email leave the role untouched (an
+    // owner who's been demoted to viewer stays a viewer).
+    const upserted = await pool.query(
+      `INSERT INTO store_admins (store_id, email, name, role, invited_by_email)
+       VALUES ($1, $2, $3, 'owner', $2)
+       ON CONFLICT (store_id, email) DO UPDATE
+         SET name = COALESCE(EXCLUDED.name, store_admins.name),
+             last_login_at = NOW()
+       RETURNING id, email, name, role`,
+      [store.id, email, name ?? null],
+    );
+    const admin = upserted.rows[0];
+
+    const sessionToken = generateSessionToken();
+    const tokenHash = _hashToken(sessionToken);
+    const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 86400_000);
+
+    await pool.query(
+      `INSERT INTO store_admin_sessions (store_id, admin_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [store.id, admin.id, tokenHash, expiresAt],
+    );
+
+    res.json({
+      token: sessionToken,
+      expires_at: expiresAt.toISOString(),
+      admin: { email: admin.email, name: admin.name, role: admin.role },
       store: { slug: store.slug, name: store.name },
     });
   } catch (err) { next(err); }
