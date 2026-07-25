@@ -173,11 +173,15 @@ export default function GroupStorePage() {
       </header>
 
       {/* ── HERO ──────────────────────────────────────────────────────── */}
+      {/* Tighter than the previous py-16/24 + full-column 4:5 image which
+          rendered as a ~640×800px slab on wide screens. Trimmed vertical
+          padding, capped the visual column so text/image split feels
+          balanced instead of image-dominated. */}
       <section
         className="relative overflow-hidden border-b border-gray-100"
         style={{ background: `linear-gradient(180deg, ${tint(primary, 0.10)} 0%, #ffffff 100%)` }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 md:py-24 grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] gap-8 lg:gap-12 items-center">
           <div>
             {isEmpty && (
               <span
@@ -240,12 +244,12 @@ export default function GroupStorePage() {
           {/* Hero visual */}
           <div className="relative">
             {store.brand_json.hero_url ? (
-              <div className="aspect-[4/5] rounded-2xl overflow-hidden shadow-2xl">
+              <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none">
                 <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
               </div>
             ) : (
               <div
-                className="aspect-[4/5] rounded-2xl shadow-2xl flex items-center justify-center relative overflow-hidden"
+                className="aspect-square rounded-2xl shadow-xl mx-auto max-w-[420px] lg:max-w-none flex items-center justify-center relative overflow-hidden"
                 style={{ background: primary }}
               >
                 {store.brand_json.logo_url ? (
