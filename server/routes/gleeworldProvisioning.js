@@ -220,6 +220,70 @@ router.get('/stores/:slug', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── PATCH /api/gleeworld/stores/:slug ────────────────────────────────────
+// Tenant-safe store settings update. Only fields we want tenants to
+// touch are accepted — hero image, tagline, footer, and fundraiser
+// headline/description/goal. Everything else on `stores` (subdomain,
+// status, fulfillment_mode, store_type, agreement, etc.) stays TSB-
+// controlled. Body:
+//   {
+//     brand?: { hero_url?, tagline?, logo_url?, footer_note? },
+//     fundraiser?: { headline?, description?, goal_cents?, ends_at? }
+//   }
+// Fields set to null clear that key from the JSONB blob. Unspecified
+// keys are left untouched.
+router.patch('/stores/:slug', async (req, res, next) => {
+  try {
+    const { brand, fundraiser } = req.body ?? {};
+    if (!brand && !fundraiser) {
+      return res.status(400).json({ error: 'brand or fundraiser required' });
+    }
+    const storeRow = await pool.query(
+      `SELECT id, brand_json, fundraiser_json FROM stores
+        WHERE slug = $1 AND store_type = 'group'`,
+      [req.params.slug],
+    );
+    if (!storeRow.rows[0]) return res.status(404).json({ error: 'Store not found' });
+    const store = storeRow.rows[0];
+
+    const BRAND_KEYS = new Set(['hero_url', 'tagline', 'logo_url', 'footer_note']);
+    const FUND_KEYS  = new Set(['headline', 'description', 'goal_cents', 'ends_at']);
+
+    let nextBrand = store.brand_json ?? {};
+    if (brand && typeof brand === 'object') {
+      nextBrand = { ...nextBrand };
+      for (const [k, v] of Object.entries(brand)) {
+        if (!BRAND_KEYS.has(k)) continue;
+        if (v === null || v === '') delete nextBrand[k];
+        else nextBrand[k] = v;
+      }
+    }
+
+    let nextFund = store.fundraiser_json ?? {};
+    if (fundraiser && typeof fundraiser === 'object') {
+      nextFund = { ...nextFund };
+      for (const [k, v] of Object.entries(fundraiser)) {
+        if (!FUND_KEYS.has(k)) continue;
+        if (v === null || v === '') delete nextFund[k];
+        else if (k === 'goal_cents') {
+          const n = typeof v === 'number' ? v : parseInt(String(v), 10);
+          if (Number.isFinite(n) && n >= 0) nextFund[k] = n;
+        } else nextFund[k] = v;
+      }
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE stores
+          SET brand_json = $1,
+              fundraiser_json = $2
+        WHERE id = $3
+        RETURNING slug, brand_json, fundraiser_json`,
+      [nextBrand, nextFund, store.id],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 // ── GET /api/gleeworld/stores/:slug/design-drafts ────────────────────────
 // Lists design drafts for a store (all statuses). Used by the GleeWorld
 // Fundraising card to show tenants what they've submitted + what TSB
