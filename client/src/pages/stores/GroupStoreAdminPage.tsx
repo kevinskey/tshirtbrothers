@@ -58,6 +58,49 @@ export default function GroupStoreAdminPage() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY(slug)));
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+
+  // GleeWorld SSO: if we arrived with ?gwsso=<jwt>, trade it for a
+  // store_admin_sessions bearer token so the user lands in the dashboard
+  // already logged in. Runs once on mount; strips the query afterwards
+  // so a page refresh doesn't try to exchange a consumed / expired JWT.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const gwsso = url.searchParams.get('gwsso');
+    if (!gwsso) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/group-store-admin/sso-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: gwsso }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `SSO failed (${res.status})`);
+        if (cancelled) return;
+        localStorage.setItem(STORAGE_KEY(slug), data.token);
+        setToken(data.token);
+        setMe(data.admin ? {
+          id: 0, // /me will fill this in on next render
+          store_id: 0,
+          store_slug: data.store?.slug ?? slug,
+          email: data.admin.email,
+          name: data.admin.name,
+          role: data.admin.role,
+        } : null);
+      } catch (err) {
+        if (!cancelled) setSsoError(err instanceof Error ? err.message : 'SSO failed');
+      } finally {
+        // Strip ?gwsso regardless of outcome — the JWT is single-use and
+        // short-lived, no point keeping it in the address bar.
+        url.searchParams.delete('gwsso');
+        window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // If we have a stored token, validate it by calling /me
   useEffect(() => {
@@ -109,14 +152,14 @@ export default function GroupStoreAdminPage() {
   }
 
   if (!token || !me) {
-    return <LoginView slug={slug} onLoggedIn={handleLogin} />;
+    return <LoginView slug={slug} onLoggedIn={handleLogin} ssoError={ssoError} />;
   }
 
   return <Dashboard slug={slug} token={token} me={me} onLogout={handleLogout} />;
 }
 
 // ── Login view ───────────────────────────────────────────────────────────
-function LoginView({ slug, onLoggedIn }: { slug: string; onLoggedIn: (token: string, me: Me) => void }) {
+function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (token: string, me: Me) => void; ssoError?: string | null }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'email' | 'code'>('email');
@@ -174,6 +217,12 @@ function LoginView({ slug, onLoggedIn }: { slug: string; onLoggedIn: (token: str
         <p className="mt-1 text-sm text-gray-500">
           Enter the email address your organization gave TShirt Brothers. We'll send you a 6-digit code.
         </p>
+
+        {ssoError && (
+          <div className="mt-4 text-sm rounded-md border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2">
+            One-click sign-in didn&apos;t complete: {ssoError}. You can still sign in below.
+          </div>
+        )}
 
         {stage === 'email' && (
           <form onSubmit={requestCode} className="mt-6 space-y-4">
