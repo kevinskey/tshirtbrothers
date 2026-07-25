@@ -1145,6 +1145,19 @@ export default function DesignStudioPage() {
   });
 
   const handleSave = async () => {
+    // Tenant admin (GleeWorld SSO) — the "customer designs library" path
+    // (/api/designs) doesn't apply. Route them into the submit-to-store
+    // flow so the primary Save button does the useful thing.
+    if (storeAdminSession) {
+      const front = designElements.filter(el => (el.side ?? 'front') === 'front');
+      if (front.length === 0) {
+        alert('Add at least one element (text, image, or shape) before submitting.');
+        return;
+      }
+      setLibrarySaveName(designName?.trim() || `${storeAdminSession.slug} design`);
+      setLibrarySaveOpen(true);
+      return;
+    }
     if (!isLoggedIn()) {
       setShowLoginPrompt(true);
       return;
@@ -3856,7 +3869,7 @@ export default function DesignStudioPage() {
               className="flex items-center gap-2 rounded-l-lg border-2 border-r-0 border-orange-600 px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50 transition disabled:opacity-50"
             >
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {isSaving ? 'Saving...' : 'Save'}
+              {isSaving ? (storeAdminSession ? 'Submitting...' : 'Saving...') : (storeAdminSession ? 'Submit' : 'Save')}
             </button>
             <button
               type="button"

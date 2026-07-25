@@ -220,4 +220,29 @@ router.get('/stores/:slug', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /api/gleeworld/stores/:slug/design-drafts ────────────────────────
+// Lists design drafts for a store (all statuses). Used by the GleeWorld
+// Fundraising card to show tenants what they've submitted + what TSB
+// has done with it.
+router.get('/stores/:slug/design-drafts', async (req, res, next) => {
+  try {
+    const storeRow = await pool.query(
+      `SELECT id FROM stores WHERE slug = $1 AND store_type = 'group'`,
+      [req.params.slug],
+    );
+    if (!storeRow.rows[0]) return res.status(404).json({ error: 'Store not found' });
+    const { rows } = await pool.query(
+      `SELECT id, name, image_url, notes, status, review_notes,
+              reviewed_at, reviewed_by_email, approved_product_id,
+              submitted_by_email, created_at, updated_at
+         FROM store_design_drafts
+        WHERE store_id = $1
+        ORDER BY created_at DESC
+        LIMIT 100`,
+      [storeRow.rows[0].id],
+    );
+    res.json({ drafts: rows });
+  } catch (err) { next(err); }
+});
+
 export default router;
