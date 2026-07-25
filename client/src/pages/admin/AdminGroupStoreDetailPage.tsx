@@ -913,19 +913,38 @@ function PendingDesignsSection({ storeId }: { storeId: number }) {
 function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
   storeId: number; draft: DesignDraft; onClose: () => void; onDone: () => void;
 }) {
-  const [ssId, setSsId] = useState('');
+  const [picked, setPicked] = useState<SsCatalogItem | null>(null);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<SsCatalogItem[]>([]);
+  const [searching, setSearching] = useState(false);
   const [priceUsd, setPriceUsd] = useState('25.00');
   const [minQty, setMinQty] = useState('1');
   const [busy, setBusy] = useState(false);
+
+  // Live search over the S&S catalog. Fires on mount too (empty q) so the
+  // most-recently-synced blanks show up immediately — the reviewer usually
+  // wants a familiar Gildan/Bella tee, not to hunt by SKU. Debounced.
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await searchSsCatalog(search, '');
+        setResults(data.results.slice(0, 12));
+      } catch (err) { console.error(err); }
+      finally { setSearching(false); }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!picked) { toast.error('Pick a blank shirt first'); return; }
     const priceCents = Math.round(parseFloat(priceUsd) * 100);
-    if (!ssId.trim()) { toast.error('S&S blank id required'); return; }
     if (!Number.isFinite(priceCents) || priceCents <= 0) { toast.error('Price must be > $0'); return; }
     setBusy(true);
     try {
       const { product } = await approveGroupStoreDesignDraft(storeId, draft.id, {
-        tsb_blank_ss_id: ssId.trim(),
+        tsb_blank_ss_id: picked.ss_id,
         retail_price_cents: priceCents,
         min_qty: parseInt(minQty, 10) || 1,
       });
@@ -935,10 +954,11 @@ function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally { setBusy(false); }
   };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
       <form onClick={(e) => e.stopPropagation()} onSubmit={submit}
-        className="bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+        className="bg-white rounded-xl max-w-2xl w-full p-6 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Publish draft as product</h3>
           <button type="button" onClick={onClose}><X className="w-5 h-5 text-gray-500" /></button>
@@ -950,13 +970,58 @@ function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
             <div className="text-xs text-gray-500 mt-0.5">{draft.submitted_by_email}</div>
           </div>
         </div>
+
         <div>
-          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">S&S blank ID *</label>
-          <input required value={ssId} onChange={(e) => setSsId(e.target.value)}
-            placeholder="e.g. G500 (Gildan 500 Heavy Cotton)"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
-          <p className="text-xs text-gray-500 mt-1">The S&S Activewear style number for the blank to print this design on.</p>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Blank shirt *</label>
+          {picked ? (
+            <div className="flex items-center gap-3 border border-emerald-300 bg-emerald-50 rounded-md p-2">
+              {picked.image_url ? (
+                <img src={picked.image_url} alt="" className="w-14 h-14 object-contain bg-white border border-gray-200 rounded" />
+              ) : (
+                <div className="w-14 h-14 flex items-center justify-center bg-white border border-gray-200 rounded text-gray-300 text-xs">No image</div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-gray-900 truncate">{picked.name}</div>
+                <div className="text-xs text-gray-500">{picked.brand} · {picked.ss_id} · cost ${Number(picked.base_cost || 0).toFixed(2)}</div>
+              </div>
+              <button type="button" onClick={() => setPicked(null)} className="text-xs text-emerald-700 hover:underline">Change</button>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} autoFocus
+                  placeholder="Search style name, brand, or SKU…"
+                  className="w-full border border-gray-300 rounded-md pl-9 pr-3 py-2 text-sm" />
+              </div>
+              <div className="mt-2 border border-gray-200 rounded-md max-h-64 overflow-y-auto bg-white">
+                {searching && (
+                  <div className="p-4 text-center text-xs text-gray-500">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-1" /> Searching…
+                  </div>
+                )}
+                {!searching && results.length === 0 && (
+                  <div className="p-4 text-center text-xs text-gray-500">No results.</div>
+                )}
+                {!searching && results.map((r) => (
+                  <button type="button" key={r.ss_id} onClick={() => setPicked(r)}
+                    className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 text-left border-b border-gray-100 last:border-b-0">
+                    {r.image_url ? (
+                      <img src={r.image_url} alt="" className="w-10 h-10 object-contain bg-white shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 shrink-0 flex items-center justify-center text-gray-300 text-[10px]">No image</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{r.name}</div>
+                      <div className="text-xs text-gray-500">{r.brand} · {r.ss_id} · ${Number(r.base_cost || 0).toFixed(2)}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Retail price ($)</label>
@@ -971,7 +1036,7 @@ function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
         </div>
         <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Cancel</button>
-          <button type="submit" disabled={busy}
+          <button type="submit" disabled={busy || !picked}
             className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-semibold disabled:opacity-50">
             {busy ? 'Publishing…' : 'Publish product'}
           </button>
