@@ -445,7 +445,6 @@ export default function DesignStudioPage() {
     try { return JSON.parse(raw); } catch { return null; }
   });
   const [ssoBusy, setSsoBusy] = useState(false);
-  const [ssoError, setSsoError] = useState<string | null>(null);
   // GleeWorld SSO handoff: ?gwsso=<jwt> lets a signed-in tenant admin
   // drop into the branded studio without an email code. Same pattern as
   // GroupStoreAdminPage: exchange, store, strip.
@@ -475,7 +474,7 @@ export default function DesignStudioPage() {
         localStorage.setItem(STORE_ADMIN_STORAGE_KEY(storeSlugParam), JSON.stringify(session));
         setStoreAdminSession(session);
       } catch (err) {
-        if (!cancelled) setSsoError(err instanceof Error ? err.message : 'SSO failed');
+        if (!cancelled) alert(`One-click sign-in failed: ${err instanceof Error ? err.message : 'unknown'}`);
       } finally {
         url.searchParams.delete('gwsso');
         window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
