@@ -862,7 +862,21 @@ function PendingDesignsSection({ storeId }: { storeId: number }) {
             {drafts.map((d) => (
               <li key={d.id} className="p-4 flex items-start gap-4">
                 <a href={d.image_url} target="_blank" rel="noreferrer" className="shrink-0">
-                  <img src={d.image_url} alt={d.name} className="w-24 h-24 object-contain bg-gray-50 border border-gray-200 rounded" />
+                  <img
+                    src={d.image_url}
+                    alt={d.name}
+                    className="w-24 h-24 object-contain border border-gray-200 rounded"
+                    style={{
+                      // Checkerboard so transparent PNGs (legacy design-only
+                      // library-style captures) render visibly instead of
+                      // looking like an empty tile.
+                      backgroundImage:
+                        'linear-gradient(45deg, #d1d5db 25%, transparent 25%), linear-gradient(-45deg, #d1d5db 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d1d5db 75%), linear-gradient(-45deg, transparent 75%, #d1d5db 75%)',
+                      backgroundSize: '16px 16px',
+                      backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+                      backgroundColor: '#f3f4f6',
+                    }}
+                  />
                 </a>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-900">{d.name}</div>
@@ -920,6 +934,22 @@ function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
   const [priceUsd, setPriceUsd] = useState('25.00');
   const [minQty, setMinQty] = useState('1');
   const [busy, setBusy] = useState(false);
+
+  // If the tenant already picked a blank in the studio, resolve it via
+  // the catalog once so the modal opens with that choice pre-filled and
+  // the reviewer can just hit Publish. They can still 'Change' it.
+  useEffect(() => {
+    if (!draft.tsb_blank_ss_id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await searchSsCatalog(draft.tsb_blank_ss_id!, '');
+        const match = data.results.find((r) => r.ss_id === draft.tsb_blank_ss_id) ?? data.results[0];
+        if (!cancelled && match) setPicked(match);
+      } catch { /* silent — the manual picker still works */ }
+    })();
+    return () => { cancelled = true; };
+  }, [draft.tsb_blank_ss_id]);
 
   // Live search over the S&S catalog. Fires on mount too (empty q) so the
   // most-recently-synced blanks show up immediately — the reviewer usually

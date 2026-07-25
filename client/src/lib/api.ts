@@ -1233,6 +1233,7 @@ export interface DesignDraft {
   reviewed_by_email: string | null;
   approved_product_id: number | null;
   submitted_by_email: string | null;
+  tsb_blank_ss_id: string | null;
   created_at: string;
   updated_at: string;
 }

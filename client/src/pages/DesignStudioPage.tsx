@@ -741,19 +741,28 @@ export default function DesignStudioPage() {
 
     try {
       await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      console.log('[saveToLibrary] capturing surface PNG (excluding product photo)…');
+      // Two capture modes:
+      //   • Store admin (tenant submit) — capture the FULL mockup with
+      //     the product photo behind the design, no tight-crop. This IS
+      //     the preview reviewers see, so it must show the design on the
+      //     shirt.
+      //   • TSB staff (art library) — capture ONLY the design overlay
+      //     (transparent PNG, tight-cropped) since the library asset is
+      //     meant to be re-composited on any product later.
+      const isStoreSubmit = !!storeAdminSession;
+      console.log(`[saveToLibrary] capturing surface PNG (${isStoreSubmit ? 'full mockup' : 'design only'})…`);
       const html2canvas = (await import('html2canvas')).default;
       const productImg = productImgRef.current;
       const cv = await withTimeout(
         html2canvas(surface, {
-          backgroundColor: null,
+          backgroundColor: isStoreSubmit ? '#ffffff' : null,
           useCORS: true,
           scale: 2,
           logging: false,
-          // Tell html2canvas to skip the product photo entirely. Hiding via
-          // visibility:hidden previously made it stall — ignoreElements is
-          // the well-supported way to drop a node before render.
-          ignoreElements: (el) => el === productImg,
+          // For staff library saves, drop the product photo so the
+          // captured PNG is transparent-on-nothing. For tenant submits,
+          // keep it so the mockup shows the design on the shirt.
+          ignoreElements: isStoreSubmit ? undefined : (el) => el === productImg,
         }),
         30_000,
         'render',
@@ -762,8 +771,9 @@ export default function DesignStudioPage() {
       // Auto-crop the captured canvas to the non-transparent bounding box
       // so the library asset is sized to the design, not the full surface.
       // Scans alpha channel for the tightest box of visible pixels and
-      // copies that region into a new canvas.
-      const tight = (() => {
+      // copies that region into a new canvas. Skipped for tenant submits
+      // — the full mockup should stay on the shirt frame.
+      const tight = isStoreSubmit ? cv : (() => {
         const ctx = cv.getContext('2d');
         if (!ctx) return cv;
         let img: ImageData;
@@ -840,6 +850,9 @@ export default function DesignStudioPage() {
               name: librarySaveName.trim(),
               image_url: url,
               notes: null,
+              // Carry the S&S blank the tenant already picked in the studio
+              // through to the reviewer — they shouldn't have to re-pick.
+              tsb_blank_ss_id: selectedProduct?.ss_id ?? null,
             }),
           },
         ), 15_000, 'submit-draft');

@@ -467,7 +467,7 @@ router.post('/:slug/admins', requireRole('owner'), async (req, res, next) => {
 // which is a public unauth endpoint used by the studio).
 router.post('/:slug/design-drafts', async (req, res, next) => {
   try {
-    const { name, image_url, notes, design_json } = req.body ?? {};
+    const { name, image_url, notes, design_json, tsb_blank_ss_id } = req.body ?? {};
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -477,12 +477,13 @@ router.post('/:slug/design-drafts', async (req, res, next) => {
     const { rows } = await pool.query(
       `INSERT INTO store_design_drafts
          (store_id, submitted_by_admin_id, submitted_by_email,
-          name, image_url, notes, design_json, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
-       RETURNING id, name, image_url, status, created_at`,
+          name, image_url, notes, design_json, tsb_blank_ss_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+       RETURNING id, name, image_url, tsb_blank_ss_id, status, created_at`,
       [
         req.store_admin.store_id, req.store_admin.id, req.store_admin.email,
         name.trim(), image_url, notes ?? null, design_json ?? null,
+        tsb_blank_ss_id || null,
       ],
     );
     res.status(201).json(rows[0]);

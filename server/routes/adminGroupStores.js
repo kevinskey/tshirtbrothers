@@ -654,7 +654,7 @@ router.get('/:id/design-drafts', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT id, name, image_url, notes, status, review_notes,
               reviewed_at, reviewed_by_email, approved_product_id,
-              submitted_by_email, created_at, updated_at
+              submitted_by_email, tsb_blank_ss_id, created_at, updated_at
          FROM store_design_drafts
         WHERE ${where}
         ORDER BY created_at DESC
