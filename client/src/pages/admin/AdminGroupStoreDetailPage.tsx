@@ -9,7 +9,8 @@ import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
-  type GroupStoreDetail, type SsCatalogItem, type MockupCatalogItem,
+  fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
+  type GroupStoreDetail, type SsCatalogItem, type MockupCatalogItem, type DesignDraft,
 } from '@/lib/api';
 
 function usd(cents: number | null) { return cents == null ? '—' : `$${(cents / 100).toFixed(2)}`; }
@@ -195,6 +196,8 @@ export default function AdminGroupStoreDetailPage() {
             )}
           </div>
         </section>
+
+        <PendingDesignsSection storeId={storeId} />
       </main>
 
       {showPicker && (
@@ -811,6 +814,166 @@ function AddAdminModal({ storeId, onClose, onAdded }: { storeId: number; onClose
           <button type="submit" disabled={busy}
             className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
             {busy ? 'Adding…' : 'Add admin'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Pending Designs ─────────────────────────────────────────────────────
+// Tenant-submitted designs awaiting review. Each row shows the thumb +
+// submitter; Approve opens a modal that requires only an S&S blank id +
+// retail price (defaults for everything else come from the draft or the
+// existing product-create endpoint). Reject writes a review_notes and
+// flips status.
+function PendingDesignsSection({ storeId }: { storeId: number }) {
+  const [drafts, setDrafts] = useState<DesignDraft[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [approving, setApproving] = useState<DesignDraft | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { drafts } = await fetchGroupStoreDesignDrafts(storeId, 'pending');
+      setDrafts(drafts);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { if (Number.isFinite(storeId)) void load(); }, [storeId]);
+
+  return (
+    <section className="mt-8">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">
+          Pending designs ({loading ? '…' : drafts.length})
+        </h2>
+      </div>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        {loading ? (
+          <div className="p-6 text-sm text-gray-500 text-center">
+            <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading…
+          </div>
+        ) : drafts.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500 text-center">No pending designs.</p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {drafts.map((d) => (
+              <li key={d.id} className="p-4 flex items-start gap-4">
+                <a href={d.image_url} target="_blank" rel="noreferrer" className="shrink-0">
+                  <img src={d.image_url} alt={d.name} className="w-24 h-24 object-contain bg-gray-50 border border-gray-200 rounded" />
+                </a>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-900">{d.name}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    Submitted by {d.submitted_by_email || '—'} · {new Date(d.created_at).toLocaleString()}
+                  </div>
+                  {d.notes && <div className="text-sm text-gray-700 mt-2 italic">"{d.notes}"</div>}
+                </div>
+                <div className="flex flex-col gap-2 shrink-0">
+                  <button
+                    onClick={() => setApproving(d)}
+                    className="px-3 py-1.5 bg-emerald-600 text-white text-sm font-semibold rounded-md hover:bg-emerald-700"
+                  >
+                    Approve → Publish
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const notes = prompt(`Reject "${d.name}"?\nOptional message to the tenant (they'll see it):`);
+                      if (notes === null) return;
+                      try {
+                        await rejectGroupStoreDesignDraft(storeId, d.id, notes || undefined);
+                        toast.success('Rejected');
+                        void load();
+                      } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+                    }}
+                    className="px-3 py-1.5 border border-gray-300 text-gray-700 text-sm rounded-md hover:bg-gray-50"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {approving && (
+        <ApproveDraftModal
+          storeId={storeId}
+          draft={approving}
+          onClose={() => setApproving(null)}
+          onDone={() => { setApproving(null); void load(); }}
+        />
+      )}
+    </section>
+  );
+}
+
+function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
+  storeId: number; draft: DesignDraft; onClose: () => void; onDone: () => void;
+}) {
+  const [ssId, setSsId] = useState('');
+  const [priceUsd, setPriceUsd] = useState('25.00');
+  const [minQty, setMinQty] = useState('1');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const priceCents = Math.round(parseFloat(priceUsd) * 100);
+    if (!ssId.trim()) { toast.error('S&S blank id required'); return; }
+    if (!Number.isFinite(priceCents) || priceCents <= 0) { toast.error('Price must be > $0'); return; }
+    setBusy(true);
+    try {
+      const { product } = await approveGroupStoreDesignDraft(storeId, draft.id, {
+        tsb_blank_ss_id: ssId.trim(),
+        retail_price_cents: priceCents,
+        min_qty: parseInt(minQty, 10) || 1,
+      });
+      toast.success(`Published "${product.title}" (id ${product.id})`);
+      onDone();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <form onClick={(e) => e.stopPropagation()} onSubmit={submit}
+        className="bg-white rounded-xl max-w-md w-full p-6 space-y-4 shadow-xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">Publish draft as product</h3>
+          <button type="button" onClick={onClose}><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+        <div className="flex gap-3">
+          <img src={draft.image_url} alt={draft.name} className="w-16 h-16 object-contain bg-gray-50 border border-gray-200 rounded" />
+          <div>
+            <div className="font-medium text-gray-900">{draft.name}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{draft.submitted_by_email}</div>
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">S&S blank ID *</label>
+          <input required value={ssId} onChange={(e) => setSsId(e.target.value)}
+            placeholder="e.g. G500 (Gildan 500 Heavy Cotton)"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          <p className="text-xs text-gray-500 mt-1">The S&S Activewear style number for the blank to print this design on.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Retail price ($)</label>
+            <input required type="number" step="0.01" min="0.01" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Min qty</label>
+            <input type="number" min="1" step="1" value={minQty} onChange={(e) => setMinQty(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Cancel</button>
+          <button type="submit" disabled={busy}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+            {busy ? 'Publishing…' : 'Publish product'}
           </button>
         </div>
       </form>

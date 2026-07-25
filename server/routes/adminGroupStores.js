@@ -636,4 +636,160 @@ router.delete('/:id/admins/:adminId', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /:id/design-drafts ───────────────────────────────────────────────
+// TSB staff sees all pending (and optionally other-status) design drafts
+// for a group store. Default filter: pending only. Pass ?status=all for
+// the full history.
+router.get('/:id/design-drafts', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+    const status = String(req.query.status ?? 'pending');
+    const params = [id];
+    let where = 'store_id = $1';
+    if (status !== 'all') {
+      params.push(status);
+      where += ` AND status = $${params.length}`;
+    }
+    const { rows } = await pool.query(
+      `SELECT id, name, image_url, notes, status, review_notes,
+              reviewed_at, reviewed_by_email, approved_product_id,
+              submitted_by_email, created_at, updated_at
+         FROM store_design_drafts
+        WHERE ${where}
+        ORDER BY created_at DESC
+        LIMIT 200`,
+      params,
+    );
+    res.json({ drafts: rows });
+  } catch (err) { next(err); }
+});
+
+// ── POST /:id/design-drafts/:draftId/approve ─────────────────────────────
+// Approves a pending draft and publishes it as a store_products row.
+// Body accepts a subset of what /:id/products takes; only tsb_blank_ss_id
+// and retail_price_cents are required so staff can one-click-approve
+// with a default blank + price.
+//   { tsb_blank_ss_id, retail_price_cents,
+//     title?, slug?, description?, min_qty?,
+//     blank_cost_cents?, decoration_cost_cents?,
+//     opens_at?, closes_at?, review_notes? }
+router.post('/:id/design-drafts/:draftId/approve', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const draftId = parseInt(req.params.draftId, 10);
+    if (!Number.isInteger(id) || !Number.isInteger(draftId)) {
+      return res.status(400).json({ error: 'invalid id' });
+    }
+    const {
+      tsb_blank_ss_id, retail_price_cents,
+      title, slug, description, min_qty,
+      blank_cost_cents, decoration_cost_cents,
+      opens_at, closes_at, review_notes,
+    } = req.body ?? {};
+
+    if (!tsb_blank_ss_id) return res.status(400).json({ error: 'tsb_blank_ss_id required' });
+    if (!Number.isInteger(retail_price_cents) || retail_price_cents <= 0) {
+      return res.status(400).json({ error: 'retail_price_cents (positive int) required' });
+    }
+
+    const draftRow = await pool.query(
+      `SELECT id, name, image_url, status FROM store_design_drafts
+        WHERE id = $1 AND store_id = $2`,
+      [draftId, id],
+    );
+    const draft = draftRow.rows[0];
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    if (draft.status !== 'pending') {
+      return res.status(409).json({ error: `Draft already ${draft.status}` });
+    }
+
+    const agr = await pool.query(
+      `SELECT id FROM store_agreements WHERE store_id = $1 AND kind = 'store'
+        ORDER BY accepted_at DESC LIMIT 1`,
+      [id],
+    );
+    if (!agr.rows[0]) {
+      return res.status(400).json({ error: 'Store missing default agreement' });
+    }
+
+    // Defaults: title from draft.name; slug from a slugified draft.name.
+    const finalTitle = (title && String(title).trim()) || draft.name;
+    const finalSlug = (slug && String(slug).trim())
+      || draft.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80)
+      || `draft-${draft.id}`;
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const prodRow = await client.query(
+        `INSERT INTO store_products
+           (store_id, tsb_blank_ss_id, title, slug, description, cover_image,
+            retail_price_cents, variants_json, active_agreement_id,
+            blank_cost_cents, decoration_cost_cents, min_qty,
+            opens_at, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         RETURNING id, slug, title, retail_price_cents, min_qty, is_active`,
+        [
+          id, tsb_blank_ss_id, finalTitle, finalSlug,
+          description ?? null, draft.image_url,
+          retail_price_cents, {}, agr.rows[0].id,
+          blank_cost_cents ?? null, decoration_cost_cents ?? null, min_qty ?? 1,
+          opens_at ?? null, closes_at ?? null,
+        ],
+      );
+      const product = prodRow.rows[0];
+
+      await client.query(
+        `UPDATE store_design_drafts
+            SET status = 'approved',
+                approved_product_id = $1,
+                review_notes = COALESCE($2, review_notes),
+                reviewed_by_email = $3,
+                reviewed_at = NOW(),
+                updated_at = NOW()
+          WHERE id = $4`,
+        [product.id, review_notes ?? null, req.user?.email ?? 'admin', draftId],
+      );
+
+      await client.query('COMMIT');
+      res.json({ draft_id: draftId, product });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      if (err.code === '23505') {
+        return res.status(409).json({ error: `slug "${finalSlug}" already in use for this store` });
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) { next(err); }
+});
+
+// ── POST /:id/design-drafts/:draftId/reject ──────────────────────────────
+// Body: { review_notes? }
+router.post('/:id/design-drafts/:draftId/reject', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const draftId = parseInt(req.params.draftId, 10);
+    if (!Number.isInteger(id) || !Number.isInteger(draftId)) {
+      return res.status(400).json({ error: 'invalid id' });
+    }
+    const { review_notes } = req.body ?? {};
+    const { rowCount, rows } = await pool.query(
+      `UPDATE store_design_drafts
+          SET status = 'rejected',
+              review_notes = $1,
+              reviewed_by_email = $2,
+              reviewed_at = NOW(),
+              updated_at = NOW()
+        WHERE id = $3 AND store_id = $4 AND status = 'pending'
+        RETURNING id, status, review_notes, reviewed_at`,
+      [review_notes ?? null, req.user?.email ?? 'admin', draftId, id],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Draft not found or not pending' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 export default router;

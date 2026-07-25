@@ -422,6 +422,8 @@ const DEFAULT_PRODUCT_SSID = '32';
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+const STORE_ADMIN_STORAGE_KEY = (slug: string) => `tsb_gsa_${slug}`;
+
 export default function DesignStudioPage() {
   const [searchParams] = useSearchParams();
   // Franchise-store whitelabel context. When ?store=<slug> is on the URL
@@ -429,6 +431,60 @@ export default function DesignStudioPage() {
   // brand name / back-URL to match the store. Falls back to TSB chrome
   // when absent or when the brand fetch fails.
   const { brand: storeBrand } = useStoreBrand();
+  const storeSlugParam = searchParams.get('store') || null;
+  const [storeAdminSession, setStoreAdminSession] = useState<{
+    token: string;
+    slug: string;
+    email: string;
+    name: string | null;
+    role: string;
+  } | null>(() => {
+    if (!storeSlugParam) return null;
+    const raw = localStorage.getItem(STORE_ADMIN_STORAGE_KEY(storeSlugParam));
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  });
+  const [ssoBusy, setSsoBusy] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  // GleeWorld SSO handoff: ?gwsso=<jwt> lets a signed-in tenant admin
+  // drop into the branded studio without an email code. Same pattern as
+  // GroupStoreAdminPage: exchange, store, strip.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const gwsso = url.searchParams.get('gwsso');
+    if (!gwsso || !storeSlugParam) return;
+    let cancelled = false;
+    setSsoBusy(true);
+    (async () => {
+      try {
+        const res = await fetch('/api/group-store-admin/sso-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: gwsso }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `SSO failed (${res.status})`);
+        if (cancelled) return;
+        const session = {
+          token: data.token,
+          slug: data.store?.slug ?? storeSlugParam,
+          email: data.admin?.email ?? '',
+          name: data.admin?.name ?? null,
+          role: data.admin?.role ?? 'owner',
+        };
+        localStorage.setItem(STORE_ADMIN_STORAGE_KEY(storeSlugParam), JSON.stringify(session));
+        setStoreAdminSession(session);
+      } catch (err) {
+        if (!cancelled) setSsoError(err instanceof Error ? err.message : 'SSO failed');
+      } finally {
+        url.searchParams.delete('gwsso');
+        window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
+        if (!cancelled) setSsoBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const whitelabelBackUrl = searchParams.get('back') || storeBrand?.brand_json.back_url || null;
   const initialProductId = searchParams.get('product') || '';
   // When set, the studio is acting as the mockup editor for an admin invoice.
@@ -443,14 +499,19 @@ export default function DesignStudioPage() {
   // When set (no edit/attach context), saving creates a brand-new mockup
   // row via the same screenshot flow used elsewhere.
   const newMockupMode = searchParams.get('newMockup') === '1';
-  // Auth gate — require login before designing
+  // Auth gate — require login before designing. Store admins arriving
+  // via the GleeWorld SSO handoff use a store_admin_sessions bearer
+  // (localStorage key tsb_gsa_<slug>) instead of the staff tsb_token,
+  // so allow those through. Skip the redirect while SSO is still
+  // exchanging so a fresh handoff doesn't bounce mid-request.
   const authNav = useNavigate();
   useEffect(() => {
-    const token = localStorage.getItem('tsb_token');
-    if (!token) {
-      authNav('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search) + '&reason=design');
-    }
-  }, [authNav]);
+    if (ssoBusy) return;
+    const staffToken = localStorage.getItem('tsb_token');
+    if (staffToken) return;
+    if (storeAdminSession) return;
+    authNav('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search) + '&reason=design');
+  }, [authNav, ssoBusy, storeAdminSession]);
 
 
   const location = useLocation();
@@ -763,19 +824,47 @@ export default function DesignStudioPage() {
       if (!uploadRes.ok) throw new Error(`Upload failed (HTTP ${uploadRes.status})`);
       const { url } = await uploadRes.json();
 
-      console.log('[saveToLibrary] saving library record…');
-      const saveRes = await withTimeout(fetch('/api/admin/designs-library', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          name: librarySaveName.trim(),
-          image_url: url,
-          category: librarySaveCategory,
-          tags: [],
-        }),
-      }), 15_000, 'save');
-      if (!saveRes.ok) throw new Error(`Library save failed (HTTP ${saveRes.status})`);
-      console.log('[saveToLibrary] done');
+      // Two paths from here:
+      //   - Store admin (GleeWorld SSO): submit to drafts queue for TSB review.
+      //   - Staff (tsb_token): save to admin art library.
+      if (storeAdminSession) {
+        console.log('[saveToLibrary] submitting design to store drafts…');
+        const draftRes = await withTimeout(fetch(
+          `/api/group-store-admin/${encodeURIComponent(storeAdminSession.slug)}/design-drafts`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${storeAdminSession.token}`,
+            },
+            body: JSON.stringify({
+              name: librarySaveName.trim(),
+              image_url: url,
+              notes: null,
+            }),
+          },
+        ), 15_000, 'submit-draft');
+        if (!draftRes.ok) {
+          const j = await draftRes.json().catch(() => ({}));
+          throw new Error(j?.error || `Submit failed (HTTP ${draftRes.status})`);
+        }
+        console.log('[saveToLibrary] draft submitted');
+        alert('Design submitted! TSB will review and publish it to your store shortly.');
+      } else {
+        console.log('[saveToLibrary] saving library record…');
+        const saveRes = await withTimeout(fetch('/api/admin/designs-library', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            name: librarySaveName.trim(),
+            image_url: url,
+            category: librarySaveCategory,
+            tags: [],
+          }),
+        }), 15_000, 'save');
+        if (!saveRes.ok) throw new Error(`Library save failed (HTTP ${saveRes.status})`);
+        console.log('[saveToLibrary] done');
+      }
 
       // Close the dialog silently on success — no extra alert.
       setLibrarySaveOpen(false);
@@ -3797,6 +3886,21 @@ export default function DesignStudioPage() {
               <button onClick={handleDownload} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition">
                 <span>⬇️</span> Download Image
               </button>
+              {(storeAdminSession || isAdmin) && (
+                <>
+                  <div className="border-t border-gray-100 my-1" />
+                  <p className="px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    {storeAdminSession ? 'Store' : 'Admin'}
+                  </p>
+                  <button
+                    onClick={() => { setShowShareMenu(false); setLibrarySaveOpen(true); }}
+                    className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition"
+                  >
+                    <Save className="w-4 h-4 text-orange-600" />
+                    {storeAdminSession ? 'Submit design to store' : 'Save to Art Library'}
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -4351,12 +4455,18 @@ export default function DesignStudioPage() {
             className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl space-y-4"
           >
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-display font-semibold text-gray-900">Save to Art Library</h3>
+              <h3 className="text-lg font-display font-semibold text-gray-900">
+                {storeAdminSession ? 'Submit design to store' : 'Save to Art Library'}
+              </h3>
               <button type="button" onClick={() => setLibrarySaveOpen(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-gray-500">Composes the current front-side elements into a transparent PNG and saves it as an Art Library asset (no product needed).</p>
+            <p className="text-xs text-gray-500">
+              {storeAdminSession
+                ? 'Sends your design to TSB for review. Once approved, TSB will publish it as a product on your store — you\'ll pick the shirt style and price with them.'
+                : 'Composes the current front-side elements into a transparent PNG and saves it as an Art Library asset (no product needed).'}
+            </p>
             <div>
               <label className="text-xs font-medium text-gray-700 block mb-1">Name *</label>
               <input
@@ -4383,7 +4493,7 @@ export default function DesignStudioPage() {
               <button type="button" onClick={() => setLibrarySaveOpen(false)} disabled={librarySaving} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Cancel</button>
               <button type="submit" disabled={librarySaving || !librarySaveName.trim()} className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg disabled:opacity-50 flex items-center gap-2">
                 {librarySaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {librarySaving ? 'Saving…' : 'Save to Library'}
+                {librarySaving ? (storeAdminSession ? 'Submitting…' : 'Saving…') : (storeAdminSession ? 'Submit for review' : 'Save to Library')}
               </button>
             </div>
           </form>
