@@ -256,6 +256,14 @@ router.patch('/stores/:slug', async (req, res, next) => {
       for (const [k, v] of Object.entries(brand)) {
         if (!BRAND_KEYS.has(k)) continue;
         if (v === null || v === '') delete nextBrand[k];
+        else if (typeof v === 'string' && v.startsWith('blob:')) {
+          // Blob URLs are only valid in the browser tab that created
+          // them — persisting one would render as a broken image
+          // everywhere else. Reject rather than store garbage.
+          return res.status(400).json({
+            error: `brand.${k}: blob: URL is only valid in the creating browser tab. Wait for the upload to finish and retry.`,
+          });
+        }
         else nextBrand[k] = v;
       }
     }
