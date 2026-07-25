@@ -49,4 +49,16 @@ CREATE INDEX IF NOT EXISTS store_design_drafts_pending_idx
   ON store_design_drafts (created_at DESC)
   WHERE status = 'pending';
 
+-- The Node API connects as tsbadmin; other store_* tables were created
+-- as that role and inherit ownership. If this migration is applied by a
+-- different role (e.g. `sudo -u postgres psql`), fix ownership so the
+-- API's inserts don't fail with `permission denied for table`.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tsbadmin') THEN
+    EXECUTE 'ALTER TABLE store_design_drafts OWNER TO tsbadmin';
+    EXECUTE 'ALTER SEQUENCE store_design_drafts_id_seq OWNER TO tsbadmin';
+  END IF;
+END $$;
+
 COMMIT;
