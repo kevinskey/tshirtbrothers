@@ -459,4 +459,54 @@ router.post('/:slug/admins', requireRole('owner'), async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── POST /:slug/design-drafts ────────────────────────────────────────────
+// Tenant admin submits a design (composed in the whitelabel studio at
+// /design?store=<slug>) for TSB review. Body:
+//   { name, image_url, notes?, design_json? }
+// image_url is expected to already be uploaded (via /api/quotes/upload-design
+// which is a public unauth endpoint used by the studio).
+router.post('/:slug/design-drafts', async (req, res, next) => {
+  try {
+    const { name, image_url, notes, design_json } = req.body ?? {};
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!image_url || typeof image_url !== 'string') {
+      return res.status(400).json({ error: 'image_url is required' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO store_design_drafts
+         (store_id, submitted_by_admin_id, submitted_by_email,
+          name, image_url, notes, design_json, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+       RETURNING id, name, image_url, status, created_at`,
+      [
+        req.store_admin.store_id, req.store_admin.id, req.store_admin.email,
+        name.trim(), image_url, notes ?? null, design_json ?? null,
+      ],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── GET /:slug/design-drafts ─────────────────────────────────────────────
+// List drafts this store has submitted. Any store admin can see the
+// list; useful for the tenant to see "what am I waiting on TSB for".
+router.get('/:slug/design-drafts', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT d.id, d.name, d.image_url, d.notes, d.status, d.review_notes,
+              d.reviewed_at, d.reviewed_by_email, d.approved_product_id,
+              d.created_at, d.updated_at,
+              d.submitted_by_email
+         FROM store_design_drafts d
+        WHERE d.store_id = $1
+        ORDER BY d.created_at DESC
+        LIMIT 200`,
+      [req.store_admin.store_id],
+    );
+    res.json({ drafts: rows });
+  } catch (err) { next(err); }
+});
+
 export default router;

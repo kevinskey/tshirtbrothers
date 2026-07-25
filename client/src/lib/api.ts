@@ -1220,3 +1220,53 @@ export async function updateGroupStoreProduct(id: number, productId: number, dat
     method: 'PATCH', body: JSON.stringify(data),
   });
 }
+
+// Design drafts — tenant-submitted designs awaiting TSB review.
+export interface DesignDraft {
+  id: number;
+  name: string;
+  image_url: string;
+  notes: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  review_notes: string | null;
+  reviewed_at: string | null;
+  reviewed_by_email: string | null;
+  approved_product_id: number | null;
+  submitted_by_email: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchGroupStoreDesignDrafts(
+  id: number, status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending',
+) {
+  return authRequest<{ drafts: DesignDraft[] }>(
+    `/admin/group-stores/${id}/design-drafts?status=${status}`,
+  );
+}
+
+export async function approveGroupStoreDesignDraft(
+  id: number, draftId: number, data: {
+    tsb_blank_ss_id: string;
+    retail_price_cents: number;
+    title?: string; slug?: string; description?: string;
+    min_qty?: number;
+    blank_cost_cents?: number; decoration_cost_cents?: number;
+    opens_at?: string; closes_at?: string;
+    review_notes?: string;
+  },
+) {
+  return authRequest<{ draft_id: number; product: { id: number; slug: string; title: string } }>(
+    `/admin/group-stores/${id}/design-drafts/${draftId}/approve`,
+    { method: 'POST', body: JSON.stringify(data) },
+  );
+}
+
+export async function rejectGroupStoreDesignDraft(
+  id: number, draftId: number, review_notes?: string,
+) {
+  return authRequest(
+    `/admin/group-stores/${id}/design-drafts/${draftId}/reject`,
+    { method: 'POST', body: JSON.stringify({ review_notes }) },
+  );
+}
