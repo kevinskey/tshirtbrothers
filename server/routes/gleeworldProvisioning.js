@@ -203,7 +203,8 @@ router.get('/stores/:slug', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT id, slug, subdomain, name, store_type, is_fundraiser,
-              status, gleeworld_tenant_slug, created_at
+              status, gleeworld_tenant_slug, created_at,
+              brand_json, fundraiser_json
          FROM stores WHERE slug = $1`,
       [req.params.slug],
     );
