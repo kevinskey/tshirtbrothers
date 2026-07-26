@@ -200,6 +200,66 @@ router.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── DELETE /:id ──────────────────────────────────────────────────────────
+// Permanently remove a group store. Only ever allowed for a store with no
+// financial history: store_ledger, store_orders, store_payouts and
+// store_return_requests are all ON DELETE RESTRICT, so Postgres would
+// refuse anyway — but a 409 with a readable reason beats a raw FK error,
+// and it keeps the "you can't erase money" rule visible in the code.
+//
+// Everything else (products, designs, admins, agreements, sessions, design
+// drafts) is ON DELETE CASCADE and goes with it.
+//
+// `?force=1` is NOT offered on purpose. Retiring is `PATCH {status:'off'}`.
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+
+    const { rows: [store] } = await pool.query(
+      `SELECT id, slug, name, gleeworld_tenant_slug
+         FROM stores WHERE id = $1 AND store_type = 'group'`,
+      [id],
+    );
+    if (!store) return res.status(404).json({ error: 'Group store not found' });
+
+    // One round trip for every RESTRICT-ing dependant.
+    const { rows: [counts] } = await pool.query(
+      `SELECT (SELECT count(*) FROM store_ledger          WHERE store_id = $1) AS ledger,
+              (SELECT count(*) FROM store_orders          WHERE store_id = $1) AS orders,
+              (SELECT count(*) FROM store_payouts         WHERE store_id = $1) AS payouts,
+              (SELECT count(*) FROM store_return_requests WHERE store_id = $1) AS returns`,
+      [id],
+    );
+    const blockers = Object.entries(counts)
+      .filter(([, n]) => Number(n) > 0)
+      .map(([k, n]) => `${n} ${k}`);
+    if (blockers.length > 0) {
+      return res.status(409).json({
+        error: `Can't delete a store with financial history (${blockers.join(', ')}). `
+             + `Set its status to "off" instead — that hides it everywhere and is reversible.`,
+        blockers: counts,
+      });
+    }
+
+    const { rows: [deleted] } = await pool.query(
+      `DELETE FROM stores WHERE id = $1 AND store_type = 'group' RETURNING slug, name`,
+      [id],
+    );
+    if (!deleted) return res.status(404).json({ error: 'Group store not found' });
+
+    // TSB can't reach into GleeWorld's database to clear
+    // gw_tenants.tsb_store_slug, so tell the caller when a link is left
+    // dangling rather than letting it be discovered later as a 404.
+    res.json({
+      deleted: true,
+      slug: deleted.slug,
+      name: deleted.name,
+      gleeworld_tenant_slug: store.gleeworld_tenant_slug || null,
+    });
+  } catch (err) { next(err); }
+});
+
 // ── POST /:id/products ───────────────────────────────────────────────────
 // Publish a curated product to a group store. Body:
 //   { tsb_blank_ss_id, title, slug, retail_price_cents,

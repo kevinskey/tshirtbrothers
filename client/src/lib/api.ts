@@ -1121,6 +1121,17 @@ export async function updateGroupStore(id: number, data: Record<string, unknown>
   });
 }
 
+/** Permanently delete a group store. Rejects with 409 if it has any
+ *  financial history — retire it with `updateGroupStore(id, {status:'off'})`
+ *  instead. Returns the GleeWorld tenant slug when the store was linked,
+ *  so the caller can warn that the link needs clearing on that side. */
+export async function deleteGroupStore(id: number) {
+  return authRequest<{
+    deleted: true; slug: string; name: string;
+    gleeworld_tenant_slug: string | null;
+  }>(`/admin/group-stores/${id}`, { method: 'DELETE' });
+}
+
 export async function addGroupStoreProduct(id: number, data: {
   tsb_blank_ss_id: string; title: string; slug: string;
   retail_price_cents: number;

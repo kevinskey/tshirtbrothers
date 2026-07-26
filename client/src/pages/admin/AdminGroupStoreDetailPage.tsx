@@ -2,14 +2,15 @@
 // lists products, and offers an S&S catalog picker to publish new
 // products. Route: /admin/group-stores/:id.
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2 } from 'lucide-react';
+import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangle } from 'lucide-react';
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
+  deleteGroupStore,
   type GroupStoreDetail, type SsCatalogItem, type MockupCatalogItem, type DesignDraft,
 } from '@/lib/api';
 
@@ -51,6 +52,14 @@ export default function AdminGroupStoreDetailPage() {
     } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
   };
 
+  const setStatus = async (next: 'active' | 'paused' | 'off') => {
+    try {
+      await updateGroupStore(storeId, { status: next });
+      toast.success(next === 'off' ? 'Store retired' : `Store ${next}`);
+      void load();
+    } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
@@ -85,6 +94,12 @@ export default function AdminGroupStoreDetailPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
+        <DangerZone
+          store={store}
+          productCount={products.length}
+          onRetire={() => void setStatus('off')}
+          onReactivate={() => void setStatus('active')}
+        />
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-900">Products ({products.length})</h2>
@@ -1073,5 +1088,121 @@ function ApproveDraftModal({ storeId, draft, onClose, onDone }: {
         </div>
       </form>
     </div>
+  );
+}
+
+// ── Danger zone ──────────────────────────────────────────────────────────
+// Two different operations, deliberately not the same button:
+//
+//   Retire  → status 'off'. Reversible, keeps every row. This is what you
+//             want ~always; a store that ever sold anything can ONLY be
+//             retired, because the ledger/orders/payouts/returns FKs are
+//             ON DELETE RESTRICT.
+//   Delete  → gone, along with its products, designs, admins, agreements
+//             and design drafts (all CASCADE). The API refuses with 409 if
+//             any financial history exists, so this is only ever reachable
+//             for a store that never traded — a test store, basically.
+//
+// Delete requires typing the slug. No native confirm() dialog: those block
+// the whole page and are trivially muscle-memoried through.
+function DangerZone({ store, productCount, onRetire, onReactivate }: {
+  store: { id: number; slug: string; name: string; status: string };
+  productCount: number;
+  onRetire: () => void;
+  onReactivate: () => void;
+}) {
+  const navigate = useNavigate();
+  const [confirmSlug, setConfirmSlug] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [open, setOpen] = useState(false);
+  const armed = confirmSlug.trim() === store.slug;
+
+  const doDelete = async () => {
+    if (!armed) return;
+    setDeleting(true);
+    try {
+      const res = await deleteGroupStore(store.id);
+      toast.success(`Deleted "${res.name}"`);
+      if (res.gleeworld_tenant_slug) {
+        // The link lives in GleeWorld's database, which TSB can't write to.
+        toast.warning(
+          `GleeWorld tenant "${res.gleeworld_tenant_slug}" still points at this store — `
+          + `clear its store link there, or its Fundraising page will 404.`,
+          { duration: 12000 },
+        );
+      }
+      navigate('/admin/group-stores');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-3 text-sm text-gray-500 hover:text-gray-900"
+      >
+        <AlertTriangle className="w-4 h-4" />
+        <span className="font-medium">Danger zone</span>
+        <span className="ml-auto text-xs">{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-gray-200 px-4 py-4 space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">
+                {store.status === 'off' ? 'Reactivate store' : 'Retire store'}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
+                {store.status === 'off'
+                  ? 'Bring it back to active — it reappears in the directory and can take orders again.'
+                  : 'Sets status to “off”: hidden from the store directory and closed to orders, but every product, design and order stays put. Reversible at any time.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={store.status === 'off' ? onReactivate : onRetire}
+              className={`shrink-0 px-3 py-1.5 text-sm rounded-md border ${
+                store.status === 'off'
+                  ? 'border-green-300 text-green-700 hover:bg-green-50'
+                  : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {store.status === 'off' ? 'Reactivate' : 'Retire'}
+            </button>
+          </div>
+
+          <div className="border-t border-gray-100 pt-4">
+            <div className="text-sm font-semibold text-red-700">Delete permanently</div>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-xl">
+              Removes the store along with its {productCount} product{productCount === 1 ? '' : 's'},
+              design drafts, store admins and agreements. Blocked if the store has any orders,
+              ledger entries, payouts or returns — retire it instead. This cannot be undone.
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <input
+                value={confirmSlug}
+                onChange={(e) => setConfirmSlug(e.target.value)}
+                placeholder={`Type "${store.slug}" to confirm`}
+                className="flex-1 max-w-xs border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+              />
+              <button
+                type="button"
+                onClick={doDelete}
+                disabled={!armed || deleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-md text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {deleting ? 'Deleting…' : 'Delete store'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
