@@ -1,24 +1,37 @@
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import HeroSection from '@/components/home/HeroSection';
-import AttractionsGrid from '@/components/home/AttractionsGrid';
-import PlanVisit from '@/components/home/PlanVisit';
-import EatsAndParties from '@/components/home/EatsAndParties';
+import ServicesGrid from '@/components/home/ServicesGrid';
+import FeaturedBrands from '@/components/home/FeaturedBrands';
+import DeliveryBanner from '@/components/home/DeliveryBanner';
 import GoogleReviews from '@/components/home/GoogleReviews';
+import BottomCTA from '@/components/home/BottomCTA';
+import HowItWorksSection from '@/components/home/HowItWorksSection';
+import PricingHint from '@/components/home/PricingHint';
+import QuoteCTA from '@/components/home/QuoteCTA';
+import SalesPopup from '@/components/home/SalesPopup';
 
 export default function HomePage() {
   return (
     <Layout>
       <Seo
-        title="Swing & Fling · Mini Golf, Axe Throwing & Good Food in South Atlanta"
-        description="South Atlanta's premier outdoor entertainment venue — 18-hole mini golf, axe throwing, ninja stars, and food truck bites. No reservations needed, just swing by!"
+        title="Custom T-Shirt Printing in Atlanta · Screen Print, DTF, Embroidery · TShirt Brothers"
+        description="Custom t-shirts, hoodies, and apparel printed in Atlanta. Screen printing, DTF, embroidery — no minimums, 2–7 day turnaround, free local pickup in Fairburn, GA."
         path="/"
+        alternates={{ en: '/', es: '/es', 'x-default': '/' }}
       />
       <HeroSection />
-      <AttractionsGrid />
-      <EatsAndParties />
-      <PlanVisit />
+      <SalesPopup />
+      
+      <ServicesGrid />
+      <QuoteCTA />
+      <HowItWorksSection />
+      <PricingHint />
+      <FeaturedBrands />
+      
+      <DeliveryBanner />
       <GoogleReviews />
+      <BottomCTA />
     </Layout>
   );
 }

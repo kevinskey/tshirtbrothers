@@ -57,7 +57,7 @@ export default function Seo({ title, description, path, image, noindex, alternat
       <meta property="og:description" content={description} />
       <meta property="og:url" content={url} />
       <meta property="og:image" content={ogImage} />
-      <meta property="og:site_name" content="Swing & Fling" />
+      <meta property="og:site_name" content="TShirt Brothers" />
       <meta property="og:locale" content="en_US" />
 
       {/* Twitter */}

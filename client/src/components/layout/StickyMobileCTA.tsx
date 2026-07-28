@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Flag, PartyPopper } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
+import { Tag, Sparkles } from 'lucide-react';
 
 // Mobile-only bottom action bar. Mounts inside Layout so it appears on
 // every public marketing page automatically. Two intentional UX choices:
@@ -16,7 +16,7 @@ import { Flag, PartyPopper } from 'lucide-react';
 //      that would visually collide. Hiding here is cheaper than
 //      conditionally not rendering Layout for those pages.
 
-const HIDE_ON_PATHS = ['/quote', '/design', '/auth'];
+const HIDE_ON_PATHS = ['/quote', '/design'];
 
 export default function StickyMobileCTA() {
   const { pathname } = useLocation();
@@ -50,19 +50,19 @@ export default function StickyMobileCTA() {
       // iOS safe-area inset so the bar clears the home indicator.
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-2 mb-2 flex gap-2 rounded-2xl bg-fling-ink/95 backdrop-blur border border-white/10 shadow-2xl shadow-black/30 p-2">
-        <a
-          href="/#plan-visit"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-fling-green hover:bg-fling-teal px-3 py-3 text-sm font-bold text-white"
+      <div className="mx-2 mb-2 flex gap-2 rounded-2xl bg-gray-950/95 backdrop-blur border border-white/10 shadow-2xl shadow-black/30 p-2">
+        <Link
+          to="/quote"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-orange-500 hover:bg-orange-600 px-3 py-3 text-sm font-bold text-white"
         >
-          <Flag className="h-4 w-4" /> Plan Your Visit
-        </a>
-        <a
-          href="/#parties"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-fling-pink hover:bg-fling-purple px-3 py-3 text-sm font-bold text-white"
+          <Tag className="h-4 w-4" /> Get a Quote
+        </Link>
+        <Link
+          to="/design"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 px-3 py-3 text-sm font-bold text-white"
         >
-          <PartyPopper className="h-4 w-4" /> Book a Party
-        </a>
+          <Sparkles className="h-4 w-4" /> Design
+        </Link>
       </div>
     </div>
   );
