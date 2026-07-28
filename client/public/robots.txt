@@ -4,4 +4,4 @@ Disallow: /admin
 Disallow: /auth
 Disallow: /api/
 
-Sitemap: https://swing-fling.com/sitemap.xml
+Sitemap: https://tshirtbrothers.com/sitemap.xml
