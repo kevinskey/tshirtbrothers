@@ -147,7 +147,7 @@ export default function GoogleReviews() {
               '@context': 'https://schema.org',
               '@type': 'LocalBusiness',
               name: 'Swing & Fling',
-              url: 'https://tshirtbrothers.com',
+              url: 'https://swing-fling.com',
               aggregateRating: {
                 '@type': 'AggregateRating',
                 ratingValue: data.rating,

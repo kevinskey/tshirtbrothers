@@ -30,7 +30,7 @@ type SeoProps = {
   alternates?: Record<string, string>;
 };
 
-const SITE = 'https://tshirtbrothers.com';
+const SITE = 'https://swing-fling.com';
 const DEFAULT_IMAGE = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 export default function Seo({ title, description, path, image, noindex, alternates }: SeoProps) {
