@@ -32,8 +32,8 @@ function NewsletterSignup() {
 
   if (status === 'ok') {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-orange-400/30 bg-orange-500/10 px-3 py-2.5 text-sm text-orange-200">
-        <CheckCircle2 className="h-4 w-4 text-orange-400" />
+      <div className="flex items-center gap-2 rounded-lg border border-fling-green/30 bg-fling-green/10 px-3 py-2.5 text-sm text-fling-green">
+        <CheckCircle2 className="h-4 w-4 text-fling-green" />
         Thanks! We&rsquo;ll be in touch.
       </div>
     );
@@ -47,89 +47,86 @@ function NewsletterSignup() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@email.com"
           required
-          className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 outline-none px-3 py-2 text-sm text-white placeholder-gray-400"
+          className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-fling-green focus:ring-1 focus:ring-fling-green outline-none px-3 py-2 text-sm text-white placeholder-gray-400"
           disabled={status === 'submitting'}
         />
         <button
           type="submit"
           disabled={status === 'submitting'}
           aria-label="Subscribe to newsletter"
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-700 hover:bg-orange-800 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-fling-green hover:bg-fling-teal disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
         >
           <Send className="h-4 w-4" aria-hidden="true" />
           <span className="hidden sm:inline">Subscribe</span>
         </button>
       </div>
       {status === 'err' && <p className="text-xs text-red-400">{errMsg}</p>}
-      <p className="text-xs text-gray-400">No spam — just print tips, sales, and new product alerts.</p>
+      <p className="text-xs text-gray-400">No spam — just event news, specials, and party ideas.</p>
     </form>
   );
 }
 
-const services = [
-  { label: 'Screen Printing', href: '/services#screen-printing' },
-  { label: 'DTF Transfers', href: '/services#dtf' },
-  { label: 'Embroidery', href: '/services#embroidery' },
-  { label: 'Custom Vinyl', href: '/services#vinyl' },
+const attractions = [
+  { label: '18-Hole Mini Golf', href: '/#attractions' },
+  { label: 'Axe Throwing', href: '/#attractions' },
+  { label: 'Ninja Stars', href: '/#attractions' },
+  { label: 'Eats & Treats', href: '/#eats' },
 ];
 
 const quickLinks = [
-  { label: 'Design Studio', href: '/design' },
-  { label: 'Get a Quote', href: '/quote' },
-  { label: 'Browse Catalog', href: '/shop' },
+  { label: 'Plan Your Visit', href: '/#plan-visit' },
+  { label: 'Book a Party/Event', href: '/#parties' },
+  { label: 'Reviews', href: '/#reviews' },
   { label: 'My Account', href: '/account' },
 ];
 
 export default function Footer() {
   return (
-    <footer className="bg-gray-950 text-white">
+    <footer className="bg-fling-ink text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-[1.5fr_1fr_1fr_1fr]">
           {/* Brand column */}
           <div>
-            <Link to="/" className="flex items-center gap-2">
-              <img
-                src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
-                alt="TShirt Brothers"
-                className="h-10 w-10 object-contain"
-              />
+            <Link to="/" className="flex items-center gap-2" aria-label="Swing & Fling home">
               <span
-                className="text-lg font-bold text-white"
-                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+                className="text-2xl tracking-tight"
+                style={{ fontFamily: "'Fraunces', Georgia, serif", fontWeight: 900 }}
               >
-                TShirt Brothers
+                <span className="text-fling-green">Swing</span>
+                <span className="mx-1 text-gray-500">&amp;</span>
+                <span className="text-fling-pink">Fling</span>
               </span>
             </Link>
             <p className="mt-4 text-sm leading-relaxed text-gray-400">
-              Premium custom apparel printing serving the south Atlanta
-              metro area. From screen printing to DTF transfers, we bring
-              your designs to life with quality you can feel.
+              South Atlanta&rsquo;s premier outdoor entertainment venue — mini
+              golf, axe throwing, ninja stars, and food truck bites. No
+              reservations needed, just swing by!
             </p>
             <div className="mt-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-white mb-2">
-                Get sale alerts &amp; print tips
+                Get event news &amp; specials
               </p>
               <NewsletterSignup />
             </div>
           </div>
 
-          {/* Services column */}
+          {/* Attractions column */}
           <div>
             <h3
               className="text-sm font-semibold uppercase tracking-wider text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Services
+              Attractions
             </h3>
             <ul className="mt-4 space-y-3">
-              {services.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    to={item.href}
-                    className="text-sm text-gray-400 hover:text-white transition-colors"
+              {attractions.map((item) => (
+                <li key={item.label}>
+                  <a
+                    href={item.href}
+                    className="text-sm text-gray-400 hover:text-fling-green transition-colors"
                   >
                     {item.label}
-                  </Link>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -145,13 +142,13 @@ export default function Footer() {
             </h3>
             <ul className="mt-4 space-y-3">
               {quickLinks.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    to={item.href}
-                    className="text-sm text-gray-400 hover:text-white transition-colors"
+                <li key={item.label}>
+                  <a
+                    href={item.href}
+                    className="text-sm text-gray-400 hover:text-fling-pink transition-colors"
                   >
                     {item.label}
-                  </Link>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -174,85 +171,27 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-2.5 text-sm text-gray-400">
                 <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                <a href="mailto:kevin@tshirtbrothers.com" className="hover:text-white transition-colors">
-                  kevin@tshirtbrothers.com
+                <a href="mailto:hello@swingandfling.com" className="hover:text-white transition-colors">
+                  hello@swingandfling.com
                 </a>
               </li>
               <li className="flex items-start gap-2.5 text-sm text-gray-400">
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                <span>6010 Renaissance Pkwy, Fairburn, GA 30213</span>
+                <span>South Atlanta, GA</span>
               </li>
               <li className="flex items-start gap-2.5 text-sm text-gray-400">
                 <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                <span>Mon&ndash;Sat 8AM&ndash;8PM</span>
+                <span>Open daily &middot; Afternoons &amp; evenings</span>
               </li>
             </ul>
           </div>
         </div>
       </div>
 
-      {/* Service-area cities + use-case verticals — internal links so
-          Google understands the relationship between the landing pages
-          and crawls them. */}
-      <div className="border-t border-gray-800/60">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid gap-6 md:grid-cols-2">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
-              Service Area
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { slug: 'atlanta',        name: 'Atlanta' },
-                { slug: 'fairburn',       name: 'Fairburn' },
-                { slug: 'tyrone',         name: 'Tyrone' },
-                { slug: 'peachtree-city', name: 'Peachtree City' },
-                { slug: 'fayetteville',   name: 'Fayetteville' },
-                { slug: 'newnan',         name: 'Newnan' },
-                { slug: 'college-park',   name: 'College Park' },
-                { slug: 'union-city',     name: 'Union City' },
-              ].map((c) => (
-                <Link
-                  key={c.slug}
-                  to={`/custom-shirts/${c.slug}`}
-                  className="inline-flex items-center min-h-[28px] rounded-md px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-                >
-                  Custom Shirts {c.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
-              Shirts For
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { slug: 'churches',        name: 'Church Shirts' },
-                { slug: 'family-reunions', name: 'Family Reunions' },
-                { slug: 'teams',           name: 'Team Jerseys' },
-                { slug: 'schools',         name: 'Schools' },
-                { slug: 'businesses',      name: 'Businesses' },
-                { slug: 'greek-life',      name: 'Greek Life' },
-                { slug: 'fundraisers',     name: 'Fundraisers' },
-                { slug: 'birthdays',       name: 'Birthdays' },
-              ].map((v) => (
-                <Link
-                  key={v.slug}
-                  to={`/shirts-for/${v.slug}`}
-                  className="inline-flex items-center min-h-[28px] rounded-md px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-                >
-                  {v.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Bottom bar */}
-      <div className="border-t border-gray-800">
+      <div className="border-t border-white/10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-          <p>&copy; 2026 TShirt Brothers. All rights reserved.</p>
+          <p>&copy; 2026 Swing &amp; Fling. All rights reserved.</p>
           <div className="flex items-center gap-6">
             <Link to="/privacy" className="hover:text-white transition-colors">
               Privacy Policy

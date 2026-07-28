@@ -58,18 +58,18 @@ export default function GoogleReviews() {
   if (isError) return null;
 
   return (
-    <section className="py-12 sm:py-16 bg-gray-50 border-y border-gray-200">
+    <section id="reviews" className="scroll-mt-24 py-12 sm:py-16 bg-gray-50 border-y border-gray-200">
       <div className="container mx-auto px-4">
         <div className="text-center max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-orange-700 mb-2">
-            <Star className="h-3.5 w-3.5 fill-orange-500 text-orange-500" />
-            Google Reviews
+          <div className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-fling-purple mb-2">
+            <Star className="h-3.5 w-3.5 fill-fling-purple text-fling-purple" />
+            Real Reviews From Real People &middot; It&rsquo;s Real Fun at Swing &amp; Fling!
           </div>
           <h2
-            className="text-3xl sm:text-4xl text-gray-900 tracking-tight"
-            style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+            className="text-3xl sm:text-4xl text-fling-ink tracking-tight"
+            style={{ fontFamily: "'Space Grotesk', system-ui, sans-serif", fontWeight: 700 }}
           >
-            What Our <span className="text-orange-600">Customers Say</span>
+            Real People. Real Reviews. <span className="text-fling-pink">Real Fun</span> at Swing &amp; Fling.
           </h2>
           {data ? (
             <div className="mt-3 flex items-center justify-center gap-3 text-gray-700">
@@ -95,7 +95,7 @@ export default function GoogleReviews() {
             : data?.reviews.slice(0, 6).map((rv, i) => (
                 <article
                   key={i}
-                  className="rounded-2xl bg-white border border-gray-200 p-5 hover:border-orange-300 hover:shadow-md transition"
+                  className="rounded-2xl bg-white border border-gray-200 p-5 hover:border-fling-pink hover:shadow-md transition"
                 >
                   <div className="flex items-center gap-3">
                     {rv.authorPhoto ? (
@@ -106,7 +106,7 @@ export default function GoogleReviews() {
                         className="h-9 w-9 rounded-full object-cover bg-gray-100"
                       />
                     ) : (
-                      <div className="h-9 w-9 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-sm font-bold">
+                      <div className="h-9 w-9 rounded-full bg-fling-pink/15 text-fling-pink flex items-center justify-center text-sm font-bold">
                         {rv.author.slice(0, 1)}
                       </div>
                     )}
@@ -129,7 +129,7 @@ export default function GoogleReviews() {
               href={data.profileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 hover:border-orange-500 hover:text-orange-600 px-5 py-2.5 text-sm font-bold text-gray-700 transition"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 hover:border-fling-purple hover:text-fling-purple px-5 py-2.5 text-sm font-bold text-gray-700 transition"
             >
               Read all {data.totalReviews} reviews on Google →
             </a>
@@ -146,7 +146,7 @@ export default function GoogleReviews() {
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'LocalBusiness',
-              name: 'TShirt Brothers',
+              name: 'Swing & Fling',
               url: 'https://tshirtbrothers.com',
               aggregateRating: {
                 '@type': 'AggregateRating',

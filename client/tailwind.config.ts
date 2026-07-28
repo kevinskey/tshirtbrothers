@@ -17,6 +17,21 @@ const config: Config = {
           dark: '#ea580c',
           light: '#fff7ed',
         },
+        // Swing & Fling venue palette — a deliberately playful, multi-color
+        // set. Each nav tab / attraction card leans on a different one so the
+        // homepage reads as fun-and-colorful (mini golf greens, sky blues,
+        // sunny yellows, axe-throwing reds).
+        fling: {
+          green: '#16a34a',
+          teal: '#14b8a6',
+          blue: '#0ea5e9',
+          yellow: '#facc15',
+          orange: '#f97316',
+          pink: '#ec4899',
+          purple: '#8b5cf6',
+          red: '#ef4444',
+          ink: '#0f172a',
+        },
         brand: {
           black: '#0a0a0a',
           gray: {
