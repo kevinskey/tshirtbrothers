@@ -205,7 +205,7 @@ export default function HomePageEs() {
             '@context': 'https://schema.org',
             '@type': 'WebPage',
             inLanguage: 'es',
-            url: 'https://tshirtbrothers.com/es',
+            url: 'https://gleeworld.org/es',
             name: 'Estampado de Camisetas Personalizadas en Atlanta · TShirt Brothers',
           }),
         }}

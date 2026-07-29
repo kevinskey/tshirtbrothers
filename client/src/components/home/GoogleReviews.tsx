@@ -147,7 +147,7 @@ export default function GoogleReviews() {
               '@context': 'https://schema.org',
               '@type': 'LocalBusiness',
               name: 'TShirt Brothers',
-              url: 'https://tshirtbrothers.com',
+              url: 'https://gleeworld.org',
               aggregateRating: {
                 '@type': 'AggregateRating',
                 ratingValue: data.rating,

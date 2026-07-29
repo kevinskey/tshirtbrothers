@@ -688,7 +688,7 @@ export default function ShopPage() {
                   brand: { '@type': 'Brand', name: p.brand || 'TShirt Brothers' },
                   category: (p as { category?: string }).category || 'Apparel',
                   sku: getProductId(p),
-                  url: `https://tshirtbrothers.com/shop?product=${encodeURIComponent(getProductId(p))}`,
+                  url: `https://gleeworld.org/shop?product=${encodeURIComponent(getProductId(p))}`,
                 },
               })),
             }),
