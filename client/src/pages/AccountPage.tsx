@@ -242,6 +242,18 @@ export default function AccountPage() {
                       <p className={`font-bold ${balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>${balance.toFixed(2)}</p>
                     </div>
                   </div>
+                  {/* A balance the customer can see but not pay is a support
+                      call (2026-08-14: "no button to pay balance"). Same
+                      link the balance email carries — the checkout page
+                      validates the token server-side. */}
+                  {balance > 0 && q.status === 'accepted' && (
+                    <a
+                      href={`/payment/checkout?quote=${q.id}&token=${q.accept_token || ''}&type=balance`}
+                      className="mt-3 flex items-center justify-center w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm rounded-lg py-2.5 transition-colors"
+                    >
+                      Pay Balance — ${balance.toFixed(2)}
+                    </a>
+                  )}
                 </div>
               );
             })}

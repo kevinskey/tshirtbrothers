@@ -100,6 +100,10 @@ export interface Quote {
   quantity: number;
   status: 'pending' | 'reviewed' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
   estimated_price?: number | null;
+  /** The quote's accept/pay token — returned only by /me/quotes (the
+   *  customer's own orders), so the Account page can build the same
+   *  pay-balance link the emails use. */
+  accept_token?: string | null;
   notes?: string;
   sizes?: unknown;
   print_areas?: unknown;
