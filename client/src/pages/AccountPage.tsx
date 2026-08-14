@@ -4,7 +4,7 @@ import { User, FileText, Palette, Package, Save, Lock, Loader2 } from 'lucide-re
 import Layout from '@/components/layout/Layout';
 
 interface Profile { id: number; email: string; name: string; phone: string; role: string; created_at: string; }
-interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; }
+interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; accept_token: string | null; }
 interface Design { id: number; name: string; product_name: string; thumbnail: string | null; mockup_url: string | null; created_at: string; }
 
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
