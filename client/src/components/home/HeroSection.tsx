@@ -78,7 +78,7 @@ export default function HeroSection() {
               <span className="text-orange-600">Done Right.</span>
             </h1>
             <p className="mt-2 sm:mt-3 text-sm sm:text-base text-gray-600">
-              Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
+              Now Shipping Nationwide!
             </p>
 
             <div className="mt-4 sm:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">

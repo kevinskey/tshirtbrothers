@@ -68,16 +68,6 @@ export default function Navbar() {
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-1.5">
           <div className="flex items-center gap-3">
-            {/* Always-visible hamburger (mobile + desktop, like Custom Ink) */}
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Toggle menu"
-            >
-              {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2 flex-shrink-0">
               <img
@@ -149,6 +139,16 @@ export default function Navbar() {
               >
                 <ShoppingCart className="h-5 w-5" />
               </Link>
+
+              {/* Hamburger — far right of the header (all breakpoints) */}
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                onClick={() => setMobileOpen(!mobileOpen)}
+                aria-label="Toggle menu"
+              >
+                {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              </button>
             </div>
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function Navbar() {
       <div
         className={cn(
           'bg-white border-b border-gray-200 max-h-[80vh] overflow-y-auto',
-          'sm:absolute sm:left-4 sm:top-full sm:w-80 sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-2xl sm:max-h-[70vh]',
+          'sm:absolute sm:right-4 sm:top-full sm:w-80 sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-2xl sm:max-h-[70vh]',
           mobileOpen ? 'block' : 'hidden'
         )}
       >
