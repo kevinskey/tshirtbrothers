@@ -698,7 +698,7 @@ export default function InstantQuotePage() {
         <div className="container mx-auto px-4">
           <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold">Instant Quote</h1>
           <p className="mt-1 text-gray-400 max-w-xl mx-auto text-xs sm:text-sm">
-            Add multiple products — price updates live.
+            Pick a product, tell us how many — your price updates live.
           </p>
         </div>
       </section>
@@ -910,14 +910,11 @@ function ItemCard({
       productLabel = item.custom.description.trim() || 'Custom item';
       detail = `${cq} pcs · custom · priced after review`;
     } else {
-      productLabel = item.pickedProduct
-        ? item.pickedProduct.name
-        : `${inputs.qualityTier} ${inputs.garmentName}`;
+      productLabel = item.pickedProduct ? item.pickedProduct.name : inputs.garmentName;
       const locs: string[] = [];
       if (inputs.locations.front) locs.push('Front');
       if (inputs.locations.back) locs.push('Back');
-      if (inputs.locations.sleeve) locs.push('Sleeve');
-      detail = `${liveTotalQty} pcs · ${inputs.color} · ${inputs.methodName}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
+      detail = `${liveTotalQty} pcs · ${inputs.color}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
     }
     return (
       <div
@@ -1758,17 +1755,17 @@ function PriceCard({
         </span>
         {!allValid && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-amber-800 border border-amber-200">
-            Add qty + location to remaining
+            Add a quantity to the remaining items
           </span>
         )}
       </div>
 
       {/* Per-item breakdown when there's more than one item */}
       {items.length > 1 && (
-        <details className="mt-4 group" open>
+        <details className="mt-4 group">
           <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
             <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-            Items
+            See details
           </summary>
           <dl className="mt-3 space-y-1 text-sm">
             {items.map((it, i) => {
@@ -1787,8 +1784,8 @@ function PriceCard({
                 );
               }
               const qty = totalQuantity(it.inputs.sizes);
-              const label = `${i + 1}. ${it.pickedProduct?.name || `${it.inputs.qualityTier} ${it.inputs.garmentName}`}`;
-              const sub = `${qty} pcs · ${it.inputs.color} · ${it.inputs.methodName}`;
+              const label = `${i + 1}. ${it.pickedProduct?.name || it.inputs.garmentName}`;
+              const sub = `${qty} pcs · ${it.inputs.color}`;
               return (
                 <Row key={it.id} label={label} sub={sub} value={calc?.total || 0} />
               );
