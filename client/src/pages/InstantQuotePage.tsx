@@ -6,13 +6,10 @@ import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import {
   Shirt,
-  Layers,
   Palette,
-  Printer,
   ChevronDown,
   Loader2,
   Check,
-  Zap,
   Upload,
   X as XIcon,
   Plus,
@@ -880,9 +877,7 @@ function ItemCard({
   onRemove: (() => void) | null;
 }) {
   const inputs = item.inputs;
-  const isScreenPrint = inputs.methodName === 'Screen Print';
   const liveTotalQty = totalQuantity(inputs.sizes);
-  const numLocations = Object.values(inputs.locations).filter(Boolean).length;
 
   // User-facing noun ('hat' / 'shirt' / 'hoodie' …) derived from the
   // garment type, used to localize "per shirt" / "Shirt color" etc.
@@ -892,27 +887,6 @@ function ItemCard({
   // to the default shirt grid / palette.
   const sizeList = useMemo(() => availableSizesFor(item.pickedProduct, inputs.garmentName), [item.pickedProduct, inputs.garmentName]);
   const colorList = useMemo(() => availableColorsFor(item.pickedProduct), [item.pickedProduct]);
-  const isOneSize = sizeList.length === 1;
-
-  // When the size grid changes (product pick, garment change), prune
-  // inputs.sizes to only the supported sizes — keeps the displayed total
-  // honest if a stray size entry survived a reshape.
-  const visibleSizeRows = useMemo(() => {
-    return sizeList.map((sz) => {
-      const row = inputs.sizes.find((r) => r.size === sz);
-      return { size: sz, quantity: row?.quantity || 0 };
-    });
-  }, [sizeList, inputs.sizes]);
-
-  const garmentNames = useMemo(() => {
-    if (!options) return [];
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const g of options.garments) {
-      if (!seen.has(g.name)) { seen.add(g.name); out.push(g.name); }
-    }
-    return out;
-  }, [options]);
 
   const currentTier = useMemo(() => {
     if (!options) return null;
@@ -1144,6 +1118,20 @@ function ItemCard({
           stays visible alongside the live price. When the design has both
           front and back, render them side-by-side. */}
       {item.kind === 'catalog' && (<>
+      {/* Garment chip + change — returns to the card picker. State is
+          preserved, so tapping a different card keeps qty/color/art. */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1.5 text-sm font-semibold text-orange-800">
+          <Shirt className="h-4 w-4" /> {item.pickedProduct?.name || inputs.garmentName}
+        </span>
+        <button
+          type="button"
+          onClick={() => onSetKind('unset')}
+          className="text-xs text-orange-700 hover:text-orange-800 hover:underline"
+        >
+          change
+        </button>
+      </div>
       {(item.mockupUrl || item.mockupUrlBack) && (
         <div className="mb-4 overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-3">
           <div className="mb-2 flex items-center gap-2">
@@ -1200,117 +1188,30 @@ function ItemCard({
           </div>
         )}
 
-        {/* Garment — first thing the customer picks (unless a specific
-            catalog product is already chosen, in which case the product
-            determines the garment type). */}
-        {!item.pickedProduct && (
-          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {garmentNames.map((name) => (
-                <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
-                  {name}
-                </Chip>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Quality tier — paired with garment, hidden when a specific
-            product is picked. */}
-        {!item.pickedProduct && (
-          <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
-            <div className="grid grid-cols-3 gap-2">
-              {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
-                const tshirtBrand: Record<typeof q, string> = {
-                  Standard: 'Gildan',
-                  Premium: 'Next Level',
-                  Ultra: 'Comfort Colors',
-                } as const;
-                const brandHint = inputs.garmentName === 'T-shirt' ? tshirtBrand[q] : null;
-                return (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => onPatchInputs({ qualityTier: q })}
-                    className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-                    }`}
-                  >
-                    <div>{q}</div>
-                    {brandHint && (
-                      <div className={`text-[10px] mt-0.5 ${inputs.qualityTier === q ? 'text-orange-100' : 'text-gray-500'}`}>
-                        {brandHint}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        )}
-
-        {/* Quantity — one-size garments (hats) get a single input; others
-            get the per-size grid restricted to the product's actual sizes. */}
-        <Section
-          icon={<span className="text-xl">#</span>}
-          title={isOneSize ? `How many ${noun}s?` : `How many ${noun}s? (per size)`}
-        >
-          {isOneSize ? (
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={visibleSizeRows[0]?.quantity || ''}
-              onChange={(e) => {
-                const qty = Math.max(0, parseInt(e.target.value) || 0);
-                onPatchInputs({ sizes: [{ size: sizeList[0] || 'One Size', quantity: qty }] });
-              }}
-              placeholder="0"
-              className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-              style={{ fontSize: '16px' }}
-            />
-          ) : (
-            <div className={`grid gap-2 ${visibleSizeRows.length <= 4 ? 'grid-cols-4' : 'grid-cols-4 sm:grid-cols-8'}`}>
-              {visibleSizeRows.map((row) => {
-                const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
-                return (
-                  <div key={row.size} className="flex flex-col items-center gap-1">
-                    <label className="text-xs font-semibold text-gray-700">{row.size}</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={row.quantity || ''}
-                      onChange={(e) => {
-                        const qty = Math.max(0, parseInt(e.target.value) || 0);
-                        const next = visibleSizeRows.map((r) =>
-                          r.size === row.size ? { ...r, quantity: qty } : r,
-                        );
-                        onPatchInputs({ sizes: next });
-                      }}
-                      placeholder="0"
-                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      style={{ fontSize: '16px' }}
-                    />
-                    {upcharge > 0 && (
-                      <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="mt-3 text-sm text-gray-600">
-            Total: <strong className="text-gray-900">{liveTotalQty}</strong>
+        {/* Quantity — one total. Size breakdown is collected after the
+            quote is accepted, so the customer isn't blocked on it here. */}
+        <Section icon={<span className="text-xl">#</span>} title={`How many ${noun}s?`}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={liveTotalQty || ''}
+            onChange={(e) => {
+              const qty = Math.max(0, parseInt(e.target.value) || 0);
+              onPatchInputs({ sizes: [{ size: sizeList[0] || 'S', quantity: qty }] });
+            }}
+            placeholder="e.g. 24"
+            className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+            style={{ fontSize: '16px' }}
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            We'll collect your size breakdown when you approve the quote.
             {currentTier && currentTier.discount_pct > 0 && (
-              <span className="ml-2 text-xs text-green-700">
-                {Math.round(currentTier.discount_pct * 100)}% volume discount
+              <span className="ml-2 text-green-700 font-medium">
+                {Math.round(currentTier.discount_pct * 100)}% volume discount applied
               </span>
             )}
-            {numLocations === 0 && (
-              <span className="ml-2 text-xs text-amber-700">Pick at least one print location below.</span>
-            )}
-          </div>
+          </p>
         </Section>
 
         {/* Color — fabric-swatch photos from SSActiveWear when the picked
@@ -1407,96 +1308,40 @@ function ItemCard({
         </Section>
         )}
 
-        {/* Print method */}
-        <Section icon={<Printer className="h-5 w-5" />} title="Print method">
-          <div className="grid grid-cols-2 gap-2">
-            {options?.print_methods.map((m) => (
-              <Chip
-                key={m.id}
-                active={inputs.methodName === m.name}
-                onClick={() => onPatchInputs({ methodName: m.name as Inputs['methodName'] })}
-              >
-                {m.name}
-                {m.name === 'DTF' && (
-                  <span className={`ml-1 italic text-xs ${inputs.methodName === m.name ? 'text-orange-100' : 'text-gray-500'}`}>(most popular)</span>
-                )}
-              </Chip>
-            ))}
-          </div>
-        </Section>
-
-        {/* Print locations — hidden when a Studio mockup is attached;
-            the handoff already derived front/back from which sides of
-            the mockup were captured. */}
+        {/* Print sides — single choice. Sleeve prints and multi-location
+            combos are handled by the shop after review. */}
         {!(item.mockupUrl || item.mockupUrlBack) && (
-        <Section icon={<Palette className="h-5 w-5" />} title="Where do you want it printed?">
+        <Section icon={<Palette className="h-5 w-5" />} title="Print on the…">
           <div className="grid grid-cols-3 gap-2">
-            {(['front', 'back', 'sleeve'] as const).map((loc) => (
-              <button
-                key={loc}
-                type="button"
-                onClick={() => onPatchInputs({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
-                className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
-                  inputs.locations[loc] ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-                }`}
-              >
-                {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
-                {loc}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">Front + Back = 2 locations. Pick any combination.</p>
-        </Section>
-        )}
-
-        {/* Colors per location — only for screen print */}
-        {isScreenPrint && (
-          <Section icon={<Palette className="h-5 w-5" />} title="How many colors per location?">
-            <div className="grid grid-cols-6 gap-2">
-              {[1, 2, 3, 4, 5, 6].map((n) => (
+            {([
+              ['front', 'Front'],
+              ['back', 'Back'],
+              ['both', 'Front + Back'],
+            ] as const).map(([key, label]) => {
+              const active = key === 'both'
+                ? inputs.locations.front && inputs.locations.back
+                : key === 'front'
+                  ? inputs.locations.front && !inputs.locations.back
+                  : inputs.locations.back && !inputs.locations.front;
+              return (
                 <button
-                  key={n}
+                  key={key}
                   type="button"
-                  onClick={() => onPatchInputs({ colorsPerLocation: n })}
-                  className={`rounded-xl border-2 py-3 text-base font-bold transition ${
-                    inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+                  onClick={() => onPatchInputs({
+                    locations: { front: key !== 'back', back: key !== 'front', sleeve: false },
+                  })}
+                  className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
+                    active ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
                   }`}
                 >
-                  {n}
+                  {active && <Check className="inline h-3.5 w-3.5 mr-1" />}
+                  {label}
                 </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">More colors = higher screen-print setup fee.</p>
-          </Section>
-        )}
-
-        {/* Turnaround */}
-        <Section icon={<Zap className="h-5 w-5" />} title="When do you need it?">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onPatchInputs({ rush: false })}
-              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                !inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              <div>Standard</div>
-              <div className={`text-[10px] mt-0.5 ${!inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>{options?.settings.standard_turnaround ?? 10} days</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => onPatchInputs({ rush: true })}
-              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              <div>Rush</div>
-              <div className={`text-[10px] mt-0.5 ${inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>
-                1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
-              </div>
-            </button>
+              );
+            })}
           </div>
         </Section>
+        )}
       </div>
       </>)}
     </div>
@@ -2021,18 +1866,3 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-        active
-          ? 'border-orange-600 bg-orange-600 text-white shadow-sm'
-          : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
