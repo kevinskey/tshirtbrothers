@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
+import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavLink = { label: string; href: string; desktopOnly?: boolean };
@@ -35,8 +34,6 @@ export default function Navbar() {
   const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [phoneMenu, setPhoneMenu] = useState(false);
-  const phoneBtnRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -55,10 +52,10 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 bg-white">
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
       <Link
-        to="/shop"
+        to="/sale"
         className="block bg-gray-900 text-white text-center text-xs sm:text-sm py-2.5 sm:py-0.5 px-2 sm:px-4 whitespace-nowrap overflow-hidden hover:bg-gray-800 transition-colors"
       >
-        15% Off T-shirts, Athletics &amp; Polos — Prices as Marked.<sup>*</sup>{' '}
+        15% Off All Gildan Tees &amp; Hoodies — Prices as Marked.<sup>*</sup>{' '}
         <span className="font-bold underline">Shop Sale</span>
       </Link>
 
@@ -84,31 +81,9 @@ export default function Navbar() {
               </span>
             </Link>
 
-            {/* Right side actions */}
+            {/* Right side actions — phone contact lives in the hamburger
+                menu's "Text us" entry, not the header. */}
             <div className="flex items-center gap-1 sm:gap-3 ml-auto flex-shrink-0">
-              {/* Phone — icon-only on mobile, icon + number on md+. */}
-              <div className="relative" ref={phoneBtnRef}>
-                <button type="button" onClick={() => setPhoneMenu(p => !p)} aria-label="Call or text us" className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors p-2 md:px-2 md:py-2">
-                  <Phone className="h-5 w-5 md:h-4 md:w-4" />
-                  <span className="hidden md:inline">(470) 622-1392</span>
-                </button>
-                {phoneMenu && (() => {
-                  const r = phoneBtnRef.current?.getBoundingClientRect();
-                  const top = r ? r.bottom + 8 : 64;
-                  const right = r ? window.innerWidth - r.right : 16;
-                  return createPortal(
-                    <>
-                      <div className="fixed inset-0 z-[9998]" onClick={() => setPhoneMenu(false)} />
-                      <div className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]" style={{ top, right }}>
-                        <a href="tel:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
-                        <a href="sms:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
-                      </div>
-                    </>,
-                    document.body,
-                  );
-                })()}
-              </div>
-
               {/* Favorites (heart) */}
               <Link
                 to={isLoggedIn ? '/favorites' : '/auth'}

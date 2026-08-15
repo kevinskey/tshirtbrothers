@@ -1058,7 +1058,9 @@ function ItemCard({
       {item.kind === 'unset' && (
         <div>
           <p className="mb-3 text-sm text-gray-600">What are you quoting?</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {/* One card per row on phones (icon left, text right, chevron
+              affordance); sm+ goes back to a 3-up grid of stacked cards. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { key: 'tshirt',     icon: '👕', label: 'T-shirt',        sub: 'Softstyle, Comfort Colors, Next Level' },
               { key: 'hoodie',     icon: '🧥', label: 'Hoodie',         sub: 'Pullover + zip options' },
@@ -1070,11 +1072,14 @@ function ItemCard({
                 key={card.key}
                 type="button"
                 onClick={() => onPickType(card.key)}
-                className="group flex flex-col items-start gap-1.5 rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40 active:scale-[0.99]"
+                className="group flex items-center gap-4 rounded-2xl border-2 border-gray-300 bg-white p-4 text-left shadow-sm transition hover:border-orange-500 hover:bg-orange-50/40 active:scale-[0.99] sm:flex-col sm:items-start sm:gap-1.5 sm:p-5"
               >
-                <span className="text-2xl" aria-hidden="true">{card.icon}</span>
-                <span className="font-semibold text-gray-900">{card.label}</span>
-                <span className="text-[11px] text-gray-500 leading-snug">{card.sub}</span>
+                <span className="text-3xl sm:text-2xl" aria-hidden="true">{card.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-display text-lg sm:text-base font-bold text-gray-900">{card.label}</span>
+                  <span className="block text-xs sm:text-[11px] text-gray-500 leading-snug">{card.sub}</span>
+                </span>
+                <ChevronDown className="h-5 w-5 -rotate-90 text-gray-400 group-hover:text-orange-600 sm:hidden" aria-hidden="true" />
               </button>
             ))}
           </div>

@@ -17,6 +17,7 @@ function ScrollToTop() {
 import HomePage from '@/pages/HomePage';
 import ServicesPage from '@/pages/ServicesPage';
 import ShopPage from '@/pages/ShopPage';
+import SalePage from '@/pages/SalePage';
 import InstantQuotePage from '@/pages/InstantQuotePage';
 import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
@@ -101,6 +102,7 @@ function App() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/shop" element={<ShopPage />} />
+          <Route path="/sale" element={<SalePage />} />
           <Route path="/brands" element={<BrandsPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.

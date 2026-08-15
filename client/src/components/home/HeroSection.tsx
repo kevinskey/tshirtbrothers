@@ -55,7 +55,10 @@ export default function HeroSection() {
             two CTA buttons sit above the fold on phones; the slide image
             follows. (Source order = mobile order; the lg grid auto-places
             text into column 1 and image into column 2.) */}
-        <div className="lg:grid lg:grid-cols-2 lg:gap-8 xl:gap-12 lg:items-center">
+        {/* Asymmetric 5/7 split — the text column only needs ~5 columns,
+            so giving the image the rest closes the dead gap between them
+            on wide desktops. */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-6 xl:gap-8 lg:items-center">
 
           {/* Headline + CTAs — first in source so phones lead with the
               actions, not the promo slide. self-center vertically aligns
