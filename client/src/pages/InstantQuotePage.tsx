@@ -744,17 +744,16 @@ export default function InstantQuotePage() {
         description="See your custom t-shirt, hoodie, or polo price update live. Screen print, DTF, embroidery — pick garment, method, and quantity for an instant quote."
         path="/quote"
       />
-      {/* Hero — compact at every breakpoint; desktop used to be huge. */}
-      <section className="bg-gray-900 text-white py-5 sm:py-6 md:py-8 text-center">
-        <div className="container mx-auto px-4">
-          <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold">Instant Quote</h1>
-          <p className="mt-1 text-gray-400 max-w-xl mx-auto text-xs sm:text-sm">
-            Pick a product, tell us how many — your price updates live.
-          </p>
-        </div>
-      </section>
-
-      <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl lg:max-w-5xl">
+      {/* No hero band — the site header already eats most of the first
+          viewport, so the page title is one compact line and the product
+          cards (the real CTA) start above the fold. */}
+      <main className="container mx-auto px-4 pt-3 pb-6 sm:pt-4 sm:pb-8 max-w-3xl lg:max-w-5xl">
+        <h1 className="font-display text-lg sm:text-xl font-bold text-gray-900 mb-2 sm:mb-3">
+          Instant Quote
+          <span className="ml-2 font-sans font-normal text-xs sm:text-sm text-gray-500">
+            pick a product — price updates live
+          </span>
+        </h1>
         {/* ─── Items ─── */}
         <div className="space-y-6">
           {items.map((item, i) => (
