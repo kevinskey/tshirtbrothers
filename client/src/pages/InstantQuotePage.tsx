@@ -554,6 +554,9 @@ export default function InstantQuotePage() {
   }, [calcQueries, options]);
 
   const anyCalcLoading = calcQueries.some((q) => q.isFetching);
+  // Surface the first calc failure (e.g. pricing service down, bad input
+  // combo) in the price card instead of silently leaving the total at $0.
+  const calcError = calcQueries.find((q) => q.isError)?.error as Error | undefined;
   // A "valid" item depends on its kind:
   //  - unset:   never valid (customer still has to pick a type)
   //  - catalog: at least one location + at least one shirt
@@ -571,7 +574,10 @@ export default function InstantQuotePage() {
   const allCalcsReady = calcQueries.every((q, i) => {
     // Custom items don't have a calc; unset items are already invalid.
     if (items[i]?.kind !== 'catalog') return true;
-    return !itemValidity[i] || q.data != null;
+    // An errored calc still counts as "ready" — the customer can submit
+    // and the quote goes through admin review for manual pricing, same as
+    // a custom item, instead of getting permanently stuck.
+    return !itemValidity[i] || q.data != null || q.isError === true;
   });
   // Save via email works even when the only items are custom (no calculable
   // price yet). Lock-in requires a real total to charge a deposit against.
@@ -613,7 +619,19 @@ export default function InstantQuotePage() {
   function pickItemType(itemId: string, key: string) {
     setItems((prev) => prev.map((it) => {
       if (it.id !== itemId) return it;
-      if (key === 'other') return { ...it, kind: 'custom' };
+      // Strip a previously-attached catalog product / Design Studio mockup
+      // from an item, filtering the matching URLs out of designs[] too —
+      // used whenever the card pick makes that attachment stale.
+      const clearAttachment = (draft: ItemDraft): ItemDraft => ({
+        ...draft,
+        pickedProduct: null,
+        mockupUrl: null,
+        mockupUrlBack: null,
+        designs: draft.designs.filter((d) => d.url !== draft.mockupUrl && d.url !== draft.mockupUrlBack),
+      });
+      if (key === 'other') {
+        return { ...clearAttachment(it), kind: 'custom' };
+      }
       const garments: Record<string, string> = {
         tshirt: 'T-shirt',
         hoodie: 'Hoodie',
@@ -621,6 +639,27 @@ export default function InstantQuotePage() {
         hat: 'Hat',
       };
       const g = garments[key] || 'T-shirt';
+
+      // Does whatever's already attached (catalog product, or a bare
+      // Design Studio mockup) still depict this garment? If not, the
+      // attachment is stale — clear it so we don't silently keep showing a
+      // hoodie mockup on a shirt quote (or vice versa).
+      const productMismatch = it.pickedProduct != null
+        && categoryToGarmentName(it.pickedProduct.category) !== g;
+      const mockupOnlyMismatch = it.pickedProduct == null
+        && (it.mockupUrl || it.mockupUrlBack)
+        && it.inputs.garmentName !== g;
+
+      if (productMismatch || mockupOnlyMismatch) {
+        const cleared = clearAttachment(it);
+        const nextInputs = {
+          ...cleared.inputs,
+          garmentName: g,
+          sizes: normalizeSizesForProduct(null, g, it.inputs.sizes),
+        };
+        return { ...cleared, kind: 'catalog', inputs: nextInputs };
+      }
+
       const nextInputs = { ...it.inputs, garmentName: g };
       nextInputs.sizes = normalizeSizesForProduct(it.pickedProduct, g, it.inputs.sizes);
       return { ...it, kind: 'catalog', inputs: nextInputs };
@@ -628,7 +667,10 @@ export default function InstantQuotePage() {
   }
 
   function addItem() {
-    const next = newItem();
+    // New items inherit the first item's print method so a customer who
+    // landed via ?service=embroidery doesn't silently get item 2 priced
+    // as DTF the moment they pick a garment card.
+    const next = newItem({ methodName: items[0]?.inputs.methodName || DEFAULT_INPUTS.methodName });
     setItems((prev) => [...prev, next]);
     setExpandedItemId(next.id);
     // Wait for the new card to render, then scroll it into view at the top
@@ -759,6 +801,7 @@ export default function InstantQuotePage() {
             grandQuantity={grandQuantity}
             turnaroundDays={grandTurnaroundDays}
             allValid={allItemsValid}
+            calcError={calcError?.message || null}
           />
         </div>
 
@@ -1437,6 +1480,13 @@ function SaveQuoteModal({
         };
       });
 
+      // The quick form collects total quantity per size, not a confirmed
+      // size breakdown — flag that for the shop so it isn't mistaken for a
+      // customer-confirmed size split.
+      const sizeNote = items.some((it) => it.kind === 'catalog')
+        ? 'Sizes not collected on the quick form — quantities are totals; confirm size breakdown with customer.'
+        : '';
+
       const saveRes = await fetch('/api/quote/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1444,7 +1494,7 @@ function SaveQuoteModal({
           customer_name: name || null,
           customer_email: email,
           customer_phone: phone,
-          notes: notes || null,
+          notes: [sizeNote, notes.trim()].filter(Boolean).join('\n') || null,
           items: payloadItems,
         }),
       });
@@ -1687,7 +1737,7 @@ function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) =
 }
 
 function PriceCard({
-  items, calcs, itemValidity, loading, grandTotal, grandQuantity, turnaroundDays, allValid,
+  items, calcs, itemValidity, loading, grandTotal, grandQuantity, turnaroundDays, allValid, calcError,
 }: {
   items: ItemDraft[];
   calcs: Array<CalcResponse | null>;
@@ -1697,6 +1747,7 @@ function PriceCard({
   grandQuantity: number;
   turnaroundDays: number;
   allValid: boolean;
+  calcError: string | null;
 }) {
   const hasAnyInputs = grandQuantity > 0 && itemValidity.some(Boolean);
   const perShirtAvg = grandQuantity > 0 ? grandTotal / grandQuantity : 0;
@@ -1720,7 +1771,7 @@ function PriceCard({
           </div>
         </div>
         <p className="mt-2 sm:mt-3 text-[11px] sm:text-xs text-gray-500">
-          Enter quantities + a print location for live pricing.
+          Enter a quantity for live pricing.
         </p>
       </div>
     );
@@ -1753,12 +1804,27 @@ function PriceCard({
         <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
           {grandQuantity} pieces
         </span>
+        {/* Read-only method callout — kept out of the always-visible rows
+            per spec (jargon lives behind "See details"/"Price breakdown"),
+            but a single catalog item has no such collapsible section of
+            its own, so it surfaces here instead. */}
+        {items.length === 1 && items[0] && items[0].kind === 'catalog' && (
+          <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
+            {items[0].inputs.methodName} printing
+          </span>
+        )}
         {!allValid && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-amber-800 border border-amber-200">
-            Add a quantity to the remaining items
+            Finish the remaining items to see your full price
           </span>
         )}
       </div>
+
+      {calcError && (
+        <p className="mt-3 text-sm text-red-700">
+          We couldn't price this automatically ({calcError}). You can still send the quote — we'll price it by hand.
+        </p>
+      )}
 
       {/* Per-item breakdown when there's more than one item */}
       {items.length > 1 && (
@@ -1785,7 +1851,7 @@ function PriceCard({
               }
               const qty = totalQuantity(it.inputs.sizes);
               const label = `${i + 1}. ${it.pickedProduct?.name || it.inputs.garmentName}`;
-              const sub = `${qty} pcs · ${it.inputs.color}`;
+              const sub = `${qty} pcs · ${it.inputs.color} · ${it.inputs.methodName}`;
               return (
                 <Row key={it.id} label={label} sub={sub} value={calc?.total || 0} />
               );
