@@ -49,19 +49,73 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4 pb-6 sm:pt-4 sm:pb-10">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-2 pb-6 sm:pt-4 sm:pb-10">
         {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT.
-            Mobile collapses back to image-on-top, text-below.
-            items-stretch + image self-stretch makes the image card grow to
-            match text column height so they read as visually paired
-            instead of a short square floating next to tall text. */}
+            Below lg the TEXT block renders first so the headline and the
+            two CTA buttons sit above the fold on phones; the slide image
+            follows. (Source order = mobile order; the lg grid auto-places
+            text into column 1 and image into column 2.) */}
         <div className="lg:grid lg:grid-cols-2 lg:gap-8 xl:gap-12 lg:items-center">
 
-          {/* Hero image card — first in source so mobile renders it on top.
-              At lg, aspect-[5/4] makes the card shorter than a square so
-              self-center actually moves it down to sit visually paired with
-              the (similarly-tall) text column instead of overflowing it. */}
-          <div className="-mx-4 sm:mx-0 lg:order-2 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[5/4] bg-white">
+          {/* Headline + CTAs — first in source so phones lead with the
+              actions, not the promo slide. self-center vertically aligns
+              the text block with the image card to its right on lg. */}
+          <div className="text-center lg:text-left lg:self-center">
+            <h1
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
+              style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+            >
+              {/* Fluid size below sm: at text-4xl this nowrap line is 386px
+                  wide and overflows a 390px phone, so clamp() scales it. */}
+              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+              <span
+                className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
+                style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
+              >
+                Custom Printing
+              </span>
+              <span className="text-orange-600">Done Right.</span>
+            </h1>
+            <p className="mt-3 lg:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
+              Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
+            </p>
+
+            <div className="mt-4 sm:mt-8 lg:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
+              <Link
+                to="/quote"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+              >
+                Get a Free Quote
+              </Link>
+              <Link
+                to="/design"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+              >
+                <Palette className="h-4 w-4 sm:h-6 sm:w-6 lg:h-4 lg:w-4" />
+                Design Studio
+              </Link>
+            </div>
+
+            <div className="mt-4 sm:mt-8 lg:mt-5 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
+              <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
+              <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
+              <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
+            </div>
+
+            {/* Spanish-language toggle. Small, unobtrusive — only the
+                people who need it will notice it. */}
+            <p className="mt-3 text-xs text-gray-600">
+              <a href="/es" className="text-orange-700 hover:underline font-semibold">
+                ¿Hablas español? Ver en español →
+              </a>
+            </p>
+          </div>
+
+          {/* Hero image card — second in source so it drops below the fold
+              on phones. aspect-[3/2] matches the 1440×960 slides exactly,
+              killing the white letterbox bands object-contain used to leave
+              inside the old 5/4 box. */}
+          <div className="mt-5 lg:mt-0 -mx-4 sm:mx-0 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[3/2] bg-white">
             {slides.map((s, i) => {
               // Only the fallback slide has a paired AVIF; admin-uploaded
               // slides keep working as a plain <img> for back-compat.
@@ -104,61 +158,6 @@ export default function HeroSection() {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Headline + CTAs. self-center vertically aligns the text block
-              with the (now stretched) image card to its right. No max-width
-              or right-padding so the text fills its column and visually
-              sits flush against the gap rather than drifting left. */}
-          <div className="mt-3 sm:mt-14 lg:mt-0 lg:order-1 text-center lg:text-left lg:self-center">
-            <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
-              style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
-            >
-              {/* Fluid size below sm: at text-4xl this nowrap line is 386px
-                  wide and overflows a 390px phone, so clamp() scales it. */}
-              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
-              <span
-                className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
-                style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
-              >
-                Custom Printing
-              </span>
-              <span className="text-orange-600">Done Right.</span>
-            </h1>
-            <p className="mt-4 lg:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
-              Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
-            </p>
-
-            <div className="mt-6 sm:mt-10 lg:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
-              <Link
-                to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
-              >
-                Get a Free Quote
-              </Link>
-              <Link
-                to="/design"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
-              >
-                <Palette className="h-4 w-4 sm:h-6 sm:w-6 lg:h-4 lg:w-4" />
-                Design Studio
-              </Link>
-            </div>
-
-            <div className="mt-6 sm:mt-10 lg:mt-5 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
-              <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
-              <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
-              <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
-            </div>
-
-            {/* Spanish-language toggle. Small, unobtrusive — only the
-                people who need it will notice it. */}
-            <p className="mt-4 text-xs text-gray-600">
-              <a href="/es" className="text-orange-700 hover:underline font-semibold">
-                ¿Hablas español? Ver en español →
-              </a>
-            </p>
           </div>
 
         </div>
