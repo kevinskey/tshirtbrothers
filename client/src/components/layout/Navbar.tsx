@@ -49,9 +49,9 @@ export default function Navbar() {
   const isLoggedIn = !!localStorage.getItem('tsb_token');
 
   return (
-    {/* overflow-x-hidden used to guard the (removed) scrollable sub-nav
-        pill; it must stay off now so the sm+ hamburger dropdown — an
-        absolutely positioned card below this sticky nav — isn't clipped. */}
+    // overflow-x-hidden used to guard the (removed) scrollable sub-nav
+    // pill; it must stay off now so the sm+ hamburger dropdown — an
+    // absolutely positioned card below this sticky nav — isn't clipped.
     <nav className="sticky top-0 z-50 bg-white">
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
       <Link
