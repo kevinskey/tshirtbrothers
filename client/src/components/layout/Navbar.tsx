@@ -33,7 +33,6 @@ const subNavEntries: NavEntry[] = [
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
-  const [desktopCatalogueOpen, setDesktopCatalogueOpen] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [phoneMenu, setPhoneMenu] = useState(false);
@@ -50,7 +49,10 @@ export default function Navbar() {
   const isLoggedIn = !!localStorage.getItem('tsb_token');
 
   return (
-    <nav className="sticky top-0 z-50 bg-white overflow-x-hidden">
+    {/* overflow-x-hidden used to guard the (removed) scrollable sub-nav
+        pill; it must stay off now so the sm+ hamburger dropdown — an
+        absolutely positioned card below this sticky nav — isn't clipped. */}
+    <nav className="sticky top-0 z-50 bg-white">
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
       <Link
         to="/shop"
@@ -171,79 +173,13 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Sub-nav row — floating 3D pill. Visible at every breakpoint;
-          on mobile the pill is horizontally scrollable (overflow-x-auto
-          on the wrapper) so all 5 entries stay reachable from the
-          landing page without opening the hamburger. The pill itself
-          stays a single line — no wrap — to preserve the rounded shape. */}
-      <div className="bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
-          <div
-            className="flex justify-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <div
-              className="inline-flex flex-nowrap items-center gap-4 sm:gap-6 px-5 sm:px-6 py-1.5 sm:py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
-              style={{
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 1px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
-              }}
-            >
-            {subNavEntries.map((entry) => {
-              const mobileHide = entry.desktopOnly ? 'hidden sm:flex' : '';
-              if (isGroup(entry)) {
-                return (
-                  <div
-                    key={entry.label}
-                    className={cn('relative', mobileHide)}
-                    onMouseEnter={() => setDesktopCatalogueOpen(true)}
-                    onMouseLeave={() => setDesktopCatalogueOpen(false)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => { setDesktopCatalogueOpen(false); navigate('/shop'); }}
-                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap cursor-pointer bg-transparent border-0 p-0"
-                    >
-                      {entry.label}
-                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
-                    </button>
-                    {desktopCatalogueOpen && (
-                      <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50">
-                        <div className="bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56">
-                          {entry.children.map((c) => (
-                            <Link
-                              key={c.label}
-                              to={c.href}
-                              onClick={() => setDesktopCatalogueOpen(false)}
-                              className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                            >
-                              {c.label}
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <Link
-                  key={entry.label}
-                  to={entry.href}
-                  className={cn('text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap', entry.desktopOnly && 'hidden sm:inline')}
-                >
-                  {entry.label}
-                </Link>
-              );
-            })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile/hamburger menu */}
+      {/* Hamburger menu. Mobile: full-width in-flow block (normal pattern).
+          sm+: a compact card anchored under the hamburger's side of the
+          header — desktop never gets a full-width dropdown. */}
       <div
         className={cn(
           'bg-white border-b border-gray-200 max-h-[80vh] overflow-y-auto',
+          'sm:absolute sm:left-4 sm:top-full sm:w-80 sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-2xl sm:max-h-[70vh]',
           mobileOpen ? 'block' : 'hidden'
         )}
       >
