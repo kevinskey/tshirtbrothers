@@ -561,6 +561,29 @@ export default function InstantQuotePage() {
     return m || (options?.settings.standard_turnaround ?? 0);
   }, [calcQueries, options]);
 
+  // ─── Date needed → rush derivation ───
+  // One date for the whole order. When it lands inside the standard
+  // turnaround window, every item is priced with the rush surcharge —
+  // the customer picks a date, never a "rush vs standard" jargon choice.
+  const [dateNeeded, setDateNeeded] = useState<string>('');
+  const standardDays = options?.settings.standard_turnaround ?? 10;
+  const rushDays = options?.settings.rush_turnaround ?? 2;
+  const rushPct = Math.round((options?.settings.rush_surcharge_pct ?? 0.25) * 100);
+  const daysUntilNeeded = useMemo(() => {
+    if (!dateNeeded) return null;
+    const need = new Date(`${dateNeeded}T00:00:00`);
+    if (Number.isNaN(need.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((need.getTime() - today.getTime()) / 86_400_000);
+  }, [dateNeeded]);
+  const rushNeeded = daysUntilNeeded !== null && daysUntilNeeded < standardDays;
+  useEffect(() => {
+    setItems((prev) => prev.some((it) => it.inputs.rush !== rushNeeded)
+      ? prev.map((it) => ({ ...it, inputs: { ...it.inputs, rush: rushNeeded } }))
+      : prev);
+  }, [rushNeeded]);
+
   const anyCalcLoading = calcQueries.some((q) => q.isFetching);
   // Surface the first calc failure (e.g. pricing service down, bad input
   // combo) in the price card instead of silently leaving the total at $0.
@@ -679,7 +702,10 @@ export default function InstantQuotePage() {
     // New items inherit the first item's print method so a customer who
     // landed via ?service=embroidery doesn't silently get item 2 priced
     // as DTF the moment they pick a garment card.
-    const next = newItem({ methodName: items[0]?.inputs.methodName || DEFAULT_INPUTS.methodName });
+    const next = newItem({
+      methodName: items[0]?.inputs.methodName || DEFAULT_INPUTS.methodName,
+      rush: rushNeeded,
+    });
     setItems((prev) => [...prev, next]);
     setExpandedItemId(next.id);
     // Wait for the new card to render, then scroll it into view at the top
@@ -797,6 +823,60 @@ export default function InstantQuotePage() {
           <Plus className="h-5 w-5" /> Add another product
         </button>
 
+        {/* ─── Date needed — one date for the whole order; drives whether
+            rush pricing applies. ─── */}
+        <div className="mt-6 rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
+          <h2 className="font-display font-bold text-base sm:text-lg text-gray-900">
+            📅 When do you need these?
+          </h2>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDateNeeded('')}
+              className={`rounded-full border-2 px-4 py-2.5 text-sm font-semibold transition ${
+                !dateNeeded ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+              }`}
+            >
+              I'm flexible
+            </button>
+            <label
+              className={`inline-flex cursor-pointer items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition ${
+                dateNeeded ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+              }`}
+            >
+              Need by
+              <input
+                type="date"
+                value={dateNeeded}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDateNeeded(e.target.value)}
+                className="bg-transparent text-sm font-semibold focus:outline-none"
+                style={{ fontSize: '16px' }}
+                aria-label="Date needed"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs sm:text-sm">
+            {!dateNeeded && (
+              <span className="text-gray-500">Standard turnaround is {standardDays} days — no rush fee.</span>
+            )}
+            {dateNeeded && !rushNeeded && (
+              <span className="text-green-700">✓ Fits our standard {standardDays}-day turnaround — no rush fee.</span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded >= rushDays && (
+              <span className="text-amber-700">
+                Needed in {daysUntilNeeded} day{daysUntilNeeded === 1 ? '' : 's'} — rush turnaround applies (+{rushPct}%).
+              </span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded < rushDays && (
+              <span className="text-amber-700">
+                That's a very tight window — rush pricing applies (+{rushPct}%), and we'll confirm
+                feasibility as soon as we see your quote.
+              </span>
+            )}
+          </p>
+        </div>
+
         {/* ─── Grand-total card — last, right above the CTAs so the
             customer sees the price they're committing to. ─── */}
         <div className="mt-8">
@@ -861,6 +941,8 @@ export default function InstantQuotePage() {
       {saveOpen && canSave && (
         <SaveQuoteModal
           items={items}
+          dateNeeded={dateNeeded}
+          rushNeeded={rushNeeded}
           intent={saveOpen}
           grandTotal={grandTotal}
           onClose={() => setSaveOpen(false)}
@@ -1406,11 +1488,13 @@ function ItemCard({
 /* ────────────────────────────────────────────────────────────────────── */
 
 function SaveQuoteModal({
-  items, intent, grandTotal, onClose,
+  items, intent, grandTotal, dateNeeded, rushNeeded, onClose,
 }: {
   items: ItemDraft[];
   intent: 'save' | 'lock-in';
   grandTotal: number;
+  dateNeeded: string;
+  rushNeeded: boolean;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -1499,6 +1583,9 @@ function SaveQuoteModal({
       const sizeNote = items.some((it) => it.kind === 'catalog')
         ? 'Sizes not collected on the quick form — quantities are totals; confirm size breakdown with customer.'
         : '';
+      const dateNote = dateNeeded
+        ? `Needed by ${dateNeeded}${rushNeeded ? ' — RUSH (surcharge applied to quote)' : ''}.`
+        : '';
 
       const saveRes = await fetch('/api/quote/save', {
         method: 'POST',
@@ -1507,7 +1594,7 @@ function SaveQuoteModal({
           customer_name: name || null,
           customer_email: email,
           customer_phone: phone,
-          notes: [sizeNote, notes.trim()].filter(Boolean).join('\n') || null,
+          notes: [dateNote, sizeNote, notes.trim()].filter(Boolean).join('\n') || null,
           items: payloadItems,
         }),
       });
