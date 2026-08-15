@@ -251,9 +251,19 @@ router.get('/weight/:styleId', async (req, res, next) => {
 });
 
 // GET /pricing/:styleId - Get S&S wholesale pricing for a style
+// S&S pricing rarely moves intraday; cache per style so a page of 60 sale
+// cards costs one upstream sweep every 6h instead of 60 calls per visitor.
+const pricingCache = new Map(); // styleId -> { at, body }
+const PRICING_TTL_MS = 6 * 60 * 60 * 1000;
+const PRICING_CACHE_MAX = 500;
+
 router.get('/pricing/:styleId', async (req, res, next) => {
   try {
     const { styleId } = req.params;
+    const cached = pricingCache.get(styleId);
+    if (cached && Date.now() - cached.at < PRICING_TTL_MS) {
+      return res.json(cached.body);
+    }
     const accountNumber = process.env.SS_ACCOUNT_NUMBER;
     const apiKey = process.env.SS_API_KEY;
     if (!accountNumber || !apiKey) return res.json({ pricing: null });
@@ -271,14 +281,19 @@ router.get('/pricing/:styleId', async (req, res, next) => {
 
     // Get the first item's pricing (prices are same across colors for a style)
     const p = items[0];
-    res.json({
+    const body = {
       pricing: {
         customerPrice: p.customerPrice || 0,
         retailPrice: p.retailPrice || 0,
         piecePrice: p.piecePrice || 0,
         salePrice: p.salePrice || 0,
       }
-    });
+    };
+    if (pricingCache.size >= PRICING_CACHE_MAX) {
+      pricingCache.delete(pricingCache.keys().next().value);
+    }
+    pricingCache.set(styleId, { at: Date.now(), body });
+    res.json(body);
   } catch (err) {
     next(err);
   }

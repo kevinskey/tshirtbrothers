@@ -19,9 +19,24 @@ type SaleProduct = {
   colors?: Array<{ name?: string; hex?: string } | string>;
 };
 
-// Retail price mirrors ShopPage: wholesale (base_price) doubled.
-function retailOf(p: SaleProduct): number {
-  return Number(p.base_price || 0) * 2;
+// Retail mirrors the shop's convention: wholesale piece price doubled.
+// products.base_price is 0 for most rows, so each card pulls live S&S
+// pricing from /api/products/pricing/:ssId (server caches it for 6h).
+function useRetailPrice(p: SaleProduct): number {
+  const { data } = useQuery<number>({
+    queryKey: ['sale-pricing', p.ss_id],
+    queryFn: async () => {
+      const r = await fetch(`/api/products/pricing/${encodeURIComponent(p.ss_id || '')}`);
+      if (!r.ok) return 0;
+      const body = await r.json();
+      const wholesale = Number(body?.pricing?.customerPrice || body?.pricing?.piecePrice || 0);
+      return wholesale * 2;
+    },
+    enabled: !!p.ss_id,
+    staleTime: 60 * 60 * 1000,
+  });
+  const fallback = Number(p.base_price || 0) * 2;
+  return data && data > 0 ? data : fallback;
 }
 
 function useSaleProducts(categoryLike: string) {
@@ -41,7 +56,7 @@ function useSaleProducts(categoryLike: string) {
 
 function SaleCard({ product }: { product: SaleProduct }) {
   const img = product.image_url || product.imageUrl;
-  const retail = retailOf(product);
+  const retail = useRetailPrice(product);
   const sale = retail * (1 - SALE_PCT);
   // Quote builder is the purchase path — the card drops the customer into
   // /quote with this product attached.
