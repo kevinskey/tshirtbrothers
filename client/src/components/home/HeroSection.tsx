@@ -62,36 +62,37 @@ export default function HeroSection() {
               the text block with the image card to its right on lg. */}
           <div className="text-center lg:text-left lg:self-center">
             <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
+              className="text-3xl sm:text-4xl md:text-5xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              {/* Fluid size below sm: at text-4xl this nowrap line is 386px
-                  wide and overflows a 390px phone, so clamp() scales it. */}
-              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+              {/* Fluid size below sm: clamp() keeps this nowrap line inside
+                  a 390px phone. Scale runs one step below the old sizing so
+                  the hero doesn't dwarf the header at stacked widths. */}
+              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
-                className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
+                className="block my-1 sm:my-2 text-4xl sm:text-5xl md:text-6xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
               >
                 Custom Printing
               </span>
               <span className="text-orange-600">Done Right.</span>
             </h1>
-            <p className="mt-3 lg:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
+            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-gray-600">
               Atlanta's custom apparel shop · Pickup in Fairburn, GA · Shipped nationwide.
             </p>
 
-            <div className="mt-4 sm:mt-8 lg:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
+            <div className="mt-4 sm:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
               <Link
                 to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-8 sm:py-3.5 text-sm sm:text-lg lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
                 Get a Free Quote
               </Link>
               <Link
                 to="/design"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-10 sm:py-5 lg:px-6 lg:py-3.5 text-sm sm:text-xl lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-8 sm:py-3.5 text-sm sm:text-lg lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
-                <Palette className="h-4 w-4 sm:h-6 sm:w-6 lg:h-4 lg:w-4" />
+                <Palette className="h-4 w-4 sm:h-5 sm:w-5 lg:h-4 lg:w-4" />
                 Design Studio
               </Link>
             </div>

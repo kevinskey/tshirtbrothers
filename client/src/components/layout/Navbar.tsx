@@ -156,7 +156,7 @@ export default function Navbar() {
             separate the header block from page content. */}
         <div className="mx-auto max-w-7xl sm:px-6 lg:px-8 pb-3 sm:pb-4 sm:border-b border-gray-200/80">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               enterKeyHint="search"
@@ -164,7 +164,7 @@ export default function Navbar() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search for t-shirts, hoodies, hats, and more"
-              className="w-full rounded-full bg-gray-100 pl-12 pr-4 py-[9.5px] text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
+              className="w-full rounded-full bg-gray-100 pl-11 pr-4 py-1.5 text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
               style={{ fontSize: '16px' }}
             />
           </div>
