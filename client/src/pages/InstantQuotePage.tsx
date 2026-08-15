@@ -188,6 +188,14 @@ function totalQuantity(sizes: Inputs['sizes']): number {
   return sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
 }
 
+// Umami custom event, if the tracker loaded (adblock / script failure = no-op).
+function trackEvent(event: string, data?: Record<string, unknown>): void {
+  const w = window as unknown as {
+    umami?: { track: (e: string, d?: Record<string, unknown>) => void };
+  };
+  try { w.umami?.track(event, data); } catch { /* analytics must never break the page */ }
+}
+
 function categoryToGarmentName(category?: string): Inputs['garmentName'] {
   const c = (category || '').toLowerCase();
   if (c.includes('hood')) return 'Hoodie';
@@ -617,6 +625,7 @@ export default function InstantQuotePage() {
   // the minimal priced form with garmentName preset; "other" routes to the
   // free-form custom flow.
   function pickItemType(itemId: string, key: string) {
+    trackEvent('quote-card-tap', { card: key });
     setItems((prev) => prev.map((it) => {
       if (it.id !== itemId) return it;
       // Strip a previously-attached catalog product / Design Studio mockup
@@ -1500,6 +1509,7 @@ function SaveQuoteModal({
       });
       const saveBody = await saveRes.json();
       if (!saveRes.ok) throw new Error(saveBody.error || 'Save failed');
+      trackEvent('quote-submitted', { items: items.length, total: Math.round(grandTotal) });
 
       if (!isLockIn) {
         toast.success(isCustomOnly
@@ -1517,6 +1527,7 @@ function SaveQuoteModal({
       });
       const lockBody = await lockRes.json();
       if (!lockRes.ok) throw new Error(lockBody.error || 'Could not start checkout');
+      trackEvent('quote-lockin', { total: Math.round(grandTotal) });
       window.location.href = lockBody.url;
     } catch (err: any) {
       toast.error(err.message || 'Failed');
