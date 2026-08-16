@@ -15,15 +15,15 @@ interface HeroSlide {
 // Must be one of the 4:5 portrait posters so it fills the frame like the
 // live slides do.
 const FALLBACK_WEBP =
-  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/spirit-wear.webp';
+  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v4/spirit-wear.webp';
 const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 0, image_url: FALLBACK_WEBP, label: 'Spirit Wear', link_url: null },
 ];
 
-// Every optimized v3 slide was exported as a webp + avif pair — derive the
-// avif so <picture> can prefer it. Admin uploads outside v3 stay plain.
+// Every optimized v3/v4 slide was exported as a webp + avif pair — derive
+// the avif so <picture> can prefer it. Admin uploads elsewhere stay plain.
 const avifFor = (url: string) =>
-  /\/hero-slides\/v3\/[^/]+\.webp$/.test(url) ? url.replace(/\.webp$/, '.avif') : null;
+  /\/hero-slides\/v[34]\/[^/]+\.webp$/.test(url) ? url.replace(/\.webp$/, '.avif') : null;
 
 export default function HeroSection() {
   const { data } = useQuery<{ slides: HeroSlide[] }>({
@@ -170,8 +170,8 @@ export default function HeroSection() {
                 <img
                   src={s.image_url}
                   alt={s.label || ''}
-                  width={768}
-                  height={960}
+                  width={1200}
+                  height={1500}
                   className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                   loading={i === 0 ? 'eager' : 'lazy'}
                   decoding={i === 0 ? 'sync' : 'async'}
