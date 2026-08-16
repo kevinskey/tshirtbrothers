@@ -12,16 +12,18 @@ interface HeroSlide {
 
 // Default fallback so the page never renders a totally empty hero — if
 // the API is unreachable or has zero active rows, we still show one slide.
-// v3 is the optimized 1440×960 WebP (~94 KiB, down from a 2,189 KiB PNG)
-// — see server/scripts/optimize-hero-image.js for how it's generated.
+// Must be one of the 4:5 portrait posters so it fills the frame like the
+// live slides do.
 const FALLBACK_WEBP =
-  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/tshirt-ad.webp';
-// Companion AVIF for the fallback; <picture> will prefer it when supported.
-const FALLBACK_AVIF =
-  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/tshirt-ad.avif';
+  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v3/spirit-wear.webp';
 const FALLBACK_SLIDES: HeroSlide[] = [
-  { id: 0, image_url: FALLBACK_WEBP, label: null, link_url: null },
+  { id: 0, image_url: FALLBACK_WEBP, label: 'Spirit Wear', link_url: null },
 ];
+
+// Every optimized v3 slide was exported as a webp + avif pair — derive the
+// avif so <picture> can prefer it. Admin uploads outside v3 stay plain.
+const avifFor = (url: string) =>
+  /\/hero-slides\/v3\/[^/]+\.webp$/.test(url) ? url.replace(/\.webp$/, '.avif') : null;
 
 export default function HeroSection() {
   const { data } = useQuery<{ slides: HeroSlide[] }>({
@@ -61,7 +63,10 @@ export default function HeroSection() {
         {/* Desktop: three columns — headline / product slide / DTF card —
             so the transfer service is visible without scrolling. Below lg
             the DTF card hides (the DtfPromo band covers phones). */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,3fr)] lg:gap-5 xl:gap-6 lg:items-stretch">
+        {/* Column split follows the slides: they're 4:5 portrait posters,
+            so the middle column stays narrow (4fr) to keep the hero above
+            the fold, and the reclaimed width goes to the headline (5fr). */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] lg:gap-5 xl:gap-6 lg:items-stretch">
 
           {/* Headline + CTAs — first in source so phones lead with the
               actions, not the promo slide. self-center vertically aligns
@@ -78,7 +83,7 @@ export default function HeroSection() {
                   fluid clamp below sm AND at lg+ (where the 3-col grid caps
                   the column near 390px — fixed steps overflowed into the
                   slide graphic). Cap 1.9rem keeps it inside at max-w-7xl. */}
-              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-[clamp(1.5rem,2.35vw,1.9rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-[clamp(1.6rem,2.9vw,2.4rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
                 className="block my-1 sm:my-2 text-4xl sm:text-5xl md:text-6xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
@@ -153,28 +158,28 @@ export default function HeroSection() {
           </div>
 
           {/* Hero image card — second in source so it drops below the fold
-              on phones. aspect-[3/2] matches the 1440×960 slides exactly,
-              killing the white letterbox bands object-contain used to leave
-              inside the old 5/4 box. */}
-          <div className="mt-5 lg:mt-0 -mx-4 sm:mx-0 lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[3/2] bg-white">
+              on phones. aspect-[4/5] matches the portrait poster slides
+              (768×960); object-cover absorbs the one 806px-wide outlier by
+              shaving ~2% off its bleed margins instead of letterboxing.
+              Capped width between sm and lg so tablets don't get a
+              near-fullscreen poster. */}
+          <div className="mt-5 lg:mt-0 -mx-4 sm:mx-auto sm:w-full sm:max-w-[26rem] lg:max-w-none lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[4/5] bg-white">
             {slides.map((s, i) => {
-              // Only the fallback slide has a paired AVIF; admin-uploaded
-              // slides keep working as a plain <img> for back-compat.
-              const isFallback = s.image_url === FALLBACK_WEBP;
+              const avif = avifFor(s.image_url);
               const img = (
                 <img
                   src={s.image_url}
                   alt={s.label || ''}
-                  width={1440}
+                  width={768}
                   height={960}
-                  className={`absolute inset-0 h-full w-full object-contain object-center transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-1000 ${i === active ? 'opacity-100' : 'opacity-0'}`}
                   loading={i === 0 ? 'eager' : 'lazy'}
                   decoding={i === 0 ? 'sync' : 'async'}
                 />
               );
-              const picture = isFallback ? (
+              const picture = avif ? (
                 <picture>
-                  <source type="image/avif" srcSet={FALLBACK_AVIF} />
+                  <source type="image/avif" srcSet={avif} />
                   {img}
                 </picture>
               ) : img;
