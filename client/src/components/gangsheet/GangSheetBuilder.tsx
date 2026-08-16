@@ -7,10 +7,10 @@ import {
   DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2
 } from 'lucide-react';
 import {
-  SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT,
+  SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
   DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
   SIZE_PRESETS,
-  pxToInches, pxToFeet, inchesToPx, feetToPx, calculateSheetCost,
+  pxToInches, pxToFeet, inchesToPx, feetToPx,
   type PricingTier
 } from '@/lib/gangsheet/constants';
 import { calculateDPI, getDPIStatus, getImageDimensions, DPI_COLORS } from '@/lib/gangsheet/dpiUtils';
@@ -97,6 +97,43 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [aiBusyId, setAiBusyId] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // Live $/ft rates from the store's admin-editable settings — the PRICING
+  // constants below are stale display copy (e.g. $6/$8/$12) that don't match
+  // what /dtf actually charges (server-side rates.standard/rush/hot_rush,
+  // in cents). null until the fetch resolves; effectiveRates (below) falls
+  // back to PRICING only if the fetch never succeeds. Fetched in BOTH
+  // modes — admin should see the true price too, since total_cost persists
+  // into gang_sheets and surfaces in AdminPage's sheet list.
+  const [liveRates, setLiveRates] = useState<Record<PricingTier, number> | null>(null);
+  useEffect(() => {
+    fetch('/api/gangsheet-store/config')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
+      .then((data: { rates?: { standard?: unknown; rush?: unknown; hot_rush?: unknown } }) => {
+        const rates = data.rates;
+        if (
+          !rates || typeof rates.standard !== 'number' || typeof rates.rush !== 'number'
+          || typeof rates.hot_rush !== 'number'
+        ) {
+          throw new Error('unexpected /config shape');
+        }
+        // Server cents -> display dollars; hot_rush (server) -> hotRush
+        // (PricingTier) is the only key that doesn't map 1:1.
+        setLiveRates({
+          standard: rates.standard / 100,
+          rush: rates.rush / 100,
+          hotRush: rates.hot_rush / 100,
+        });
+      })
+      .catch((err) => {
+        console.error('[gangsheet] failed to load live store rates — falling back to static PRICING constants:', err);
+      });
+  }, []);
+  const effectiveRates: Record<PricingTier, number> = liveRates ?? {
+    standard: PRICING.standard.rate,
+    rush: PRICING.rush.rate,
+    hotRush: PRICING.hotRush.rate,
+  };
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
@@ -904,7 +941,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     setDesignCount(count);
   }
 
-  const totalCost = calculateSheetCost(sheetLengthFt, pricingTier);
+  // Mirrors constants.ts's calculateSheetCost() but reads the live rate
+  // (effectiveRates) instead of the stale PRICING constant, so the ticker,
+  // Cost tab, and the total_cost value persisted to gang_sheets all agree
+  // with what /dtf actually charges.
+  const totalCost = Math.max(MIN_SHEET_LENGTH_FT, Math.ceil(sheetLengthFt)) * effectiveRates[pricingTier];
   const costPerDesign = designCount > 0 ? totalCost / designCount : 0;
 
   // ─── Zoom Controls ──────────────────────────────────────────────────────
@@ -1556,20 +1597,26 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
               <div className="space-y-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase">KolorMatrix Pricing</p>
 
-                {/* Tier selector */}
+                {/* Tier selector — label/desc stay the static PRICING copy
+                    (brief-approved: they don't map cleanly onto /config's
+                    "promises" strings), but the $/ft figure is always the
+                    live store rate. */}
                 <div className="space-y-2">
-                  {(Object.entries(PRICING) as [PricingTier, typeof PRICING[PricingTier]][]).map(([key, tier]) => (
-                    <button key={key} onClick={() => setPricingTier(key)}
-                      className={`w-full text-left p-3 rounded-xl border-2 transition ${
-                        pricingTier === key ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300'
-                      }`}>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-semibold text-gray-900">{tier.label}</span>
-                        <span className="text-sm font-bold text-orange-600">${tier.rate}/ft</span>
-                      </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{tier.desc}</p>
-                    </button>
-                  ))}
+                  {(Object.keys(PRICING) as PricingTier[]).map((key) => {
+                    const tier = PRICING[key];
+                    return (
+                      <button key={key} onClick={() => setPricingTier(key)}
+                        className={`w-full text-left p-3 rounded-xl border-2 transition ${
+                          pricingTier === key ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-semibold text-gray-900">{tier.label}</span>
+                          <span className="text-sm font-bold text-orange-600">${effectiveRates[key].toFixed(2)}/ft</span>
+                        </div>
+                        <p className="text-[10px] text-gray-500 mt-0.5">{tier.desc}</p>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Cost breakdown */}
@@ -1580,7 +1627,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Rate</span>
-                    <span className="text-gray-900">${PRICING[pricingTier].rate}/ft</span>
+                    <span className="text-gray-900">${effectiveRates[pricingTier].toFixed(2)}/ft</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Designs</span>
