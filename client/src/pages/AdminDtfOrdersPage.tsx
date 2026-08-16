@@ -21,11 +21,19 @@ type OrderRow = {
   shipping_cents: number;
   delivery: 'pickup' | 'ship';
   ship_address: ShipAddress | null;
+  file_height_px: number | null;
   note: string | null;
   status: string;
   paid_at: string | null;
   created_at: string;
 };
+
+// Server-side height check (1 ft = 3,600 px) as a display value, so a
+// mismatch between the file's actual height and the ordered length is
+// visible in the queue before the sheet goes to print.
+function fileHeightFt(px: number | null): number | null {
+  return px == null ? null : Math.ceil(px / 3600);
+}
 
 const TIER_LABEL: Record<TierKey, string> = { standard: 'Standard', rush: 'Rush', hot_rush: 'Hot Rush' };
 const TIER_BADGE: Record<TierKey, string> = {
@@ -242,6 +250,8 @@ function DtfOrdersQueue() {
                   const countdown = countdownLabel(order);
                   const action = NEXT_ACTION[order.status];
                   const addr = order.ship_address;
+                  const fileFt = fileHeightFt(order.file_height_px);
+                  const fileMismatch = fileFt !== null && fileFt !== order.length_ft;
                   return (
                     <tr key={order.id} className="border-b border-gray-100 align-top last:border-b-0">
                       <td className="px-3 py-3">
@@ -249,7 +259,14 @@ function DtfOrdersQueue() {
                         <span className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${TIER_BADGE[order.tier]}`}>
                           {TIER_LABEL[order.tier]}
                         </span>
-                        <div className="mt-0.5 text-xs text-gray-500">{order.length_ft} ft</div>
+                        <div className="mt-0.5 text-xs text-gray-500">
+                          {order.length_ft} ft ordered
+                          {fileFt !== null && (
+                            <span className={fileMismatch ? 'ml-1 font-semibold text-red-600' : 'ml-1 text-gray-400'}>
+                              · file {fileFt} ft{fileMismatch ? ' ⚠' : ''}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <div className="font-medium text-gray-900">{order.customer_name || '—'}</div>

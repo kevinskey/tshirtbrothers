@@ -8,6 +8,7 @@ import {
   sendPaidInvoiceReceipt,
   sendGangSheetPaidToCustomer,
   sendGangSheetPaidToAdmin,
+  sendGangSheetOrphanPaymentAlert,
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
@@ -592,25 +593,52 @@ async function handleCheckoutSessionCompleted(session) {
 
   const gangSheetOrderId = session.metadata?.gang_sheet_order_id;
   if (gangSheetOrderId) {
-    const { rows } = await pool.query(
-      `UPDATE gang_sheet_orders
-         SET status = 'paid', paid_at = now(),
-             customer_email = COALESCE(customer_email, $2),
-             customer_name = COALESCE(customer_name, $3)
-       WHERE id = $1 AND status = 'pending_payment' RETURNING *`,
-      [gangSheetOrderId, session.customer_details?.email || null, session.customer_details?.name || null],
-    );
-    if (!rows[0]) {
-      console.error(`[Stripe Webhook] gang_sheet_order ${gangSheetOrderId} missing or not pending — session ${session.id}; MONEY RECEIVED, investigate`);
-      return;
+    // Stripe fires checkout.session.completed even for sessions that end up
+    // unpaid (e.g. async payment methods that later fail) — only ever mark
+    // an order paid when Stripe itself says the session is paid.
+    if (session.payment_status && session.payment_status !== 'paid') return;
+    try {
+      const { rows } = await pool.query(
+        `UPDATE gang_sheet_orders
+           SET status = 'paid', paid_at = now(),
+               customer_email = COALESCE(customer_email, $2),
+               customer_name = COALESCE(customer_name, $3)
+         WHERE id = $1 AND status = 'pending_payment' RETURNING *`,
+        [gangSheetOrderId, session.customer_details?.email || null, session.customer_details?.name || null],
+      );
+      if (!rows[0]) {
+        // Zero rows means either (a) this is a webhook replay of an event
+        // we already processed — the order exists, is past pending_payment,
+        // and is tied to this exact session — or (b) the order is genuinely
+        // missing/mismatched while Stripe says money moved. Only (b) is the
+        // "investigate now" emergency; (a) is expected and should log quietly.
+        const { rows: existingRows } = await pool.query(
+          'SELECT * FROM gang_sheet_orders WHERE id = $1',
+          [gangSheetOrderId],
+        );
+        const existing = existingRows[0];
+        if (existing && existing.status !== 'pending_payment' && existing.stripe_session_id === session.id) {
+          console.log(`[Stripe Webhook] gang_sheet_order ${gangSheetOrderId} replay for already-processed order (session ${session.id})`);
+          return;
+        }
+        console.error(`[Stripe Webhook] gang_sheet_order ${gangSheetOrderId} missing or not pending — session ${session.id}; MONEY RECEIVED, investigate`);
+        sendGangSheetOrphanPaymentAlert({
+          sessionId: session.id,
+          orderId: gangSheetOrderId,
+          amountCents: session.amount_total || 0,
+        }).catch((e) => console.error('[Stripe Webhook] orphan-payment alert email failed:', e.message));
+        return;
+      }
+      const order = rows[0];
+      Promise.allSettled([
+        sendGangSheetPaidToCustomer({ order }),
+        sendGangSheetPaidToAdmin({ order }),
+      ]).then((results) => results.forEach((r) => {
+        if (r.status === 'rejected') console.error('[Stripe Webhook] gang sheet email failed:', r.reason?.message);
+      }));
+    } catch (err) {
+      console.error('[Stripe Webhook] gang sheet order handling crashed for session ' + session.id + ':', err);
     }
-    const order = rows[0];
-    Promise.allSettled([
-      sendGangSheetPaidToCustomer({ order }),
-      sendGangSheetPaidToAdmin({ order }),
-    ]).then((results) => results.forEach((r) => {
-      if (r.status === 'rejected') console.error('[Stripe Webhook] gang sheet email failed:', r.reason?.message);
-    }));
     return;
   }
 

@@ -898,7 +898,7 @@ export async function sendGangSheetPaidToCustomer({ order }) {
     : `Pickup — ${SHOP_ADDRESS}`;
   const subject = `Order #${order.id} confirmed — DTF Gang Sheet 22in × ${order.length_ft} ft`;
   const body = `
-    <p>Hi ${order.customer_name || 'there'},</p>
+    <p>Hi ${escapeHtml(order.customer_name || 'there')},</p>
     <p>Thanks for your order — we've got it and we're getting started.</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
@@ -936,7 +936,7 @@ export async function sendGangSheetReadyToCustomer({ order }) {
       </div>
     `;
   const body = `
-    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${order.customer_name || 'there'},</p>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.customer_name || 'there')},</p>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Good news — your DTF gang sheet order is ready!</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
@@ -959,13 +959,13 @@ export async function sendGangSheetPaidToAdmin({ order }) {
   const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';
   const subject = `💰 ${urgencyPrefix}Gang sheet order #${order.id} (${order.length_ft} ft)`;
   const body = `
-    <p><strong>${order.customer_name || '(no name)'} &lt;${order.customer_email || 'no email'}&gt;</strong> just paid for a gang sheet order.</p>
+    <p><strong>${escapeHtml(order.customer_name || '(no name)')} &lt;${escapeHtml(order.customer_email || 'no email')}&gt;</strong> just paid for a gang sheet order.</p>
     ${detailsTable(
       detailRow('Size', `22in &times; ${order.length_ft} ft`) +
       detailRow('Tier', TIER_PROMISES[order.tier] || order.tier) +
       detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
       detailRow('Total', `<strong>${total}</strong>`) +
-      (order.note ? detailRow('Note', order.note) : '')
+      (order.note ? detailRow('Note', escapeHtml(order.note)) : '')
     )}
     ${primaryButton('Open in Admin', `${DOMAIN}/admin/dtf-orders`)}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Order ID #${order.id}</p>
@@ -977,4 +977,36 @@ export async function sendGangSheetPaidToAdmin({ order }) {
     subject,
     html: baseLayout('Gang Sheet Order Paid', body),
   });
+}
+
+// Fired when the Stripe webhook confirms a gang-sheet checkout paid but the
+// matching gang_sheet_orders row can't be found/updated (see
+// server/routes/payments.js's checkout.session.completed handler). Money
+// has moved and there is no order to fulfil it against — this needs a
+// human immediately, not just a console.error that scrolls off a log.
+export async function sendGangSheetOrphanPaymentAlert({ sessionId, orderId, amountCents }) {
+  const amount = formatCurrency((amountCents || 0) / 100);
+  const subject = '🚨 Stripe payment with no matching gang sheet order';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#dc2626;">Payment received, order not found</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">A gang-sheet Stripe checkout completed, but the matching order row could not be marked paid. The customer's card was charged — find and fix this order manually.</p>
+    ${detailsTable(
+      detailRow('Stripe Session', escapeHtml(sessionId || 'unknown')) +
+      detailRow('Order ID', escapeHtml(String(orderId))) +
+      detailRow('Amount', amount)
+    )}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Check the Stripe Dashboard for this session, then the gang_sheet_orders table for order #${escapeHtml(String(orderId))}.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject,
+      html: baseLayout('Orphan Payment Alert', body),
+    });
+    console.log(`[Email] Gang sheet orphan payment alert sent for order ${orderId}`);
+  } catch (err) {
+    console.error('[Email] Failed to send gang sheet orphan payment alert:', err);
+    throw err;
+  }
 }

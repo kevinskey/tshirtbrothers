@@ -3,7 +3,8 @@ import multer from 'multer';
 import crypto from 'crypto';
 import fs from 'fs';
 import Stripe from 'stripe';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import rateLimit from 'express-rate-limit';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
@@ -37,7 +38,7 @@ export async function loadSettings() {
 function atlantaNow(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
-    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+    weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false, hourCycle: 'h23',
   }).formatToParts(now);
   const get = (t) => parts.find((p) => p.type === t)?.value;
   return {
@@ -102,6 +103,29 @@ router.get('/config', async (req, res, next) => {
 const upload = multer({
   dest: '/tmp/gangsheet-uploads',
   limits: { fileSize: 100 * 1024 * 1024 },
+  // Reject non-PNG uploads before they ever hit disk. cb(null, false) skips
+  // the file silently (no error thrown) — the !req.file check below turns
+  // that into a clear 400.
+  fileFilter: (req, file, cb) => cb(null, file.mimetype === 'image/png'),
+});
+
+// Abuse-surface rate limits — this route accepts anonymous multipart
+// uploads and creates real Stripe Checkout sessions, so it's a target for
+// both storage-filling and checkout-spam abuse. Pattern copied from
+// server/routes/deepseek.js's publicLimiter/adminLimiter.
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many uploads. Please try again in a few minutes.' },
+});
+const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again in a few minutes.' },
 });
 
 // PNG dimensions live in the IHDR chunk: bytes 16-19 width, 20-23 height
@@ -113,10 +137,12 @@ function pngDimensions(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
-router.post('/upload', upload.single('file'), async (req, res, next) => {
+router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, next) => {
   const tmpPath = req.file?.path;
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    // fileFilter above silently drops non-PNG mimetypes (cb(null, false)),
+    // so this also covers "wrong file type" not just "nothing sent".
+    if (!req.file) return res.status(400).json({ error: 'File must be a PNG (or nothing was uploaded)' });
     // uploadObject() (server/services/spaces.js:51) only accepts a Buffer or
     // base64 data URL for `body` — no stream support. 100 MB max upload fits
     // comfortably in droplet RAM, so we read the whole tmp file into a
@@ -128,7 +154,10 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     if (Math.abs(dims.width - 6600) > 132) {
       return res.status(400).json({ error: `Sheet must be 6,600 px wide (22" at 300 DPI); got ${dims.width} px` });
     }
-    const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.png`;
+    // Embed the server-parsed dims directly in the key so /checkout can
+    // derive width/height from the key itself instead of trusting whatever
+    // the client claims in the checkout request body (C1 fix).
+    const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
     // Customer production files must stay private — override uploadObject's
     // public-read default via its `acl` param.
     await uploadObject({ key, body: fileBuf, contentType: 'image/png', acl: 'private' });
@@ -137,9 +166,16 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
 });
 
-router.post('/checkout', async (req, res, next) => {
+// Server-generated /upload keys embed the server-parsed PNG dims as
+// <uuid>-<width>x<height>.png (see /upload above). Requiring that exact
+// shape here — and reading width/height back out of it — means /checkout
+// can never be handed a client-supplied height that doesn't match the
+// actual uploaded file (C1).
+const FILE_KEY_RE = /^gangsheet-orders\/[\w-]+\/[0-9a-f-]+-(\d{1,5})x(\d{1,6})\.png$/;
+
+router.post('/checkout', checkoutLimiter, async (req, res, next) => {
   try {
-    const { length_ft, tier, delivery = 'pickup', file_key, width_px, height_px,
+    const { length_ft, tier, delivery = 'pickup', file_key,
             name, email, note, ship_address } = req.body || {};
     const s = await loadSettings();
     if (!['standard', 'rush', 'hot_rush'].includes(tier)) {
@@ -150,15 +186,36 @@ router.post('/checkout', async (req, res, next) => {
       return res.status(400).json({ error: `That turnaround isn't available right now (${avail.reason}).` });
     }
     if (!['pickup', 'ship'].includes(delivery)) return res.status(400).json({ error: 'Invalid delivery option' });
-    if (!file_key || !/^gangsheet-orders\/[\w-]+\/[\w-]+\.png$/.test(String(file_key))) {
+    const keyMatch = typeof file_key === 'string' ? file_key.match(FILE_KEY_RE) : null;
+    if (!keyMatch) {
       return res.status(400).json({ error: 'Upload your sheet first' });
     }
+    // Regex capture groups are string|undefined in general, but both groups
+    // here are non-optional (\d{1,5} / \d{1,6}, no `?`), so a successful
+    // match guarantees both are present — Number() is safe without a
+    // fallback branch.
+    const fileWidthPx = Number(keyMatch[1]);
+    const fileHeightPx = Number(keyMatch[2]);
     let cents;
     try { cents = priceCents(s, length_ft, tier); }
     catch { return res.status(400).json({ error: `Length must be ${s.min_ft}–${s.max_ft} ft` }); }
     // Height must fit the purchased length (1 ft = 3,600 px, +2% tolerance).
-    if (height_px && height_px > Math.ceil(length_ft) * 3600 * 1.02) {
+    // Uses the server-parsed height from the file key, never a client-sent
+    // value — this is the price-integrity fix from the final review (C1).
+    if (fileHeightPx > Math.ceil(length_ft) * 3600 * 1.02) {
       return res.status(400).json({ error: 'Your file is taller than the sheet length you picked — bump the length up' });
+    }
+    // Confirm the uploaded object actually exists in Spaces before creating
+    // an order + Stripe session against it — otherwise a customer could
+    // check out on a file_key from a prior session that was never uploaded
+    // (or was cleaned up), and the admin queue would 404 on download.
+    try {
+      await getSpacesClient().send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: file_key }));
+    } catch (headErr) {
+      if (headErr.name === 'NotFound' || headErr.$metadata?.httpStatusCode === 404) {
+        return res.status(400).json({ error: 'Upload your sheet first' });
+      }
+      throw headErr;
     }
     const shippingCents = delivery === 'ship' ? s.shipping_flat_cents : 0;
 
@@ -169,7 +226,7 @@ router.post('/checkout', async (req, res, next) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
       [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, width_px || null, height_px || null, note || null],
+       file_key, fileWidthPx, fileHeightPx, note || null],
     );
     const orderId = ins.rows[0].id;
 
@@ -198,6 +255,7 @@ router.post('/checkout', async (req, res, next) => {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      payment_method_types: ['card'],
       line_items: lineItems,
       customer_email: email || undefined,
       success_url: `${domain}/dtf/success?order=${orderId}`,
@@ -254,8 +312,34 @@ router.get('/admin/orders/:id/file', ...adminGuard, async (req, res, next) => {
     const obj = await getSpacesClient().send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', `attachment; filename="order-${req.params.id}.png"`);
+    // A mid-stream error from the Spaces read (network blip, connection
+    // reset) must not crash the process — destroy the response instead of
+    // letting the unhandled stream error propagate. Also stop reading from
+    // Spaces if the client disconnects early (closed tab, aborted download).
+    obj.Body.on('error', (e) => {
+      console.error('[dtf-store] download stream error:', e.message);
+      res.destroy(e);
+    });
+    res.on('close', () => {
+      if (typeof obj.Body.destroy === 'function') obj.Body.destroy();
+    });
     obj.Body.pipe(res);
   } catch (err) { next(err); }
+});
+
+// Router-level error handler — catches Multer errors thrown by the
+// upload.single('file') middleware (oversized file, etc.) and turns them
+// into a friendly 400 instead of falling through to the app's generic
+// error handler. Must be registered after all routes.
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      error: err.code === 'LIMIT_FILE_SIZE'
+        ? 'That file is over the 100 MB limit — flatten layers or split the sheet in two.'
+        : 'Upload failed — try again.',
+    });
+  }
+  next(err);
 });
 
 export default router;

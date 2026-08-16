@@ -26,13 +26,14 @@ type UploadedFile = { file_key: string; width_px: number; height_px: number };
 
 type ShipAddress = { line1: string; city: string; state: string; zip: string };
 
+// width_px/height_px are deliberately absent — the server now derives both
+// from the /upload-issued file_key itself (embedded in the key as
+// <uuid>-<width>x<height>.png) rather than trusting client-sent values.
 type CheckoutBody = {
   length_ft: number;
   tier: TierKey;
   delivery: 'pickup' | 'ship';
   file_key: string;
-  width_px: number;
-  height_px: number;
   name: string;
   email: string;
   note?: string;
@@ -199,8 +200,6 @@ export default function DtfStorePage() {
       tier,
       delivery,
       file_key: uploadedFile.file_key,
-      width_px: uploadedFile.width_px,
-      height_px: uploadedFile.height_px,
       name,
       email,
       ...(note.trim() ? { note: note.trim() } : {}),
