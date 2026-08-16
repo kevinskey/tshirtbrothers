@@ -1,236 +1,107 @@
-# TShirt Brothers - Deployment Guide
+# TShirt Brothers — Deployment Guide
 
-Deploy to DigitalOcean Droplet (134.199.194.178)
+_Last rewritten 2026-08-16. The previous version of this file described the
+original droplet at 134.199.194.178, which no longer exists._
 
-## 1. Copy Project to Droplet
+## Where production lives
 
-```bash
-# From your local machine:
-rsync -avz --exclude node_modules --exclude dist \
-  ./tshirtbrothers/ root@134.199.194.178:/var/www/tshirtbrothers/
-```
+| Thing | Value |
+|---|---|
+| Droplet | `198.211.113.144` (shared "gleeworld" droplet) |
+| App dir | `/var/www/tshirtbrothers` |
+| Frontend | nginx serves `client/dist` statically (vhost `/etc/nginx/sites-enabled/tshirtbrothers`) |
+| API | pm2 app `tshirtbrothers-api` → `server/index.js` on **:3001**, runs as user `tsb` |
+| Database | local PostgreSQL 16, db `tshirtbrothers`, app user `tsbadmin` (env in `server/.env` as `DB_*`, not `DATABASE_URL`) |
+| File storage | DigitalOcean Spaces bucket `tshirtbrothers` (region `atl1`); gang-sheet customer files are **private** ACL |
+| Analytics | self-hosted Umami (docker `umami`, port 3070) at https://stats.tshirtbrothers.com |
+| Stripe webhook | `POST /api/payments/webhook` (raw-body route; quote deposits, invoices, store orders, gang-sheet orders) |
 
-## 2. SSH Into Droplet
+## Routine deploys — just push to main
 
-```bash
-ssh root@134.199.194.178
-```
+Every push to `main` auto-deploys via GitHub Actions
+(`.github/workflows/deploy.yml`): it SSHes into the droplet and runs
+`/var/www/tshirtbrothers/deploy.sh`, which
 
-## 3. Install System Dependencies
+1. fast-forwards the checkout to `origin/main` (a diverged droplet `main` is
+   tagged `droplet-backup-<ts>` and hard-reset — nothing is lost),
+2. `npm install` + `npm run build` in `client/` (the build is gated by
+   `tsc -b`; on a type error the old `dist/` keeps serving),
+3. `npm install` in `server/` (so new server dependencies just work),
+4. re-chowns the tree to `tsb` and restarts pm2.
 
-```bash
-# Node.js 20
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt-get install -y nodejs
+**Do not** also run a manual deploy after pushing — the Action already did it.
+GitHub emails on failure only; a "Deploy to droplet failed" email means a
+real problem (start with the workflow logs, then `pm2 logs tshirtbrothers-api`).
 
-# PostgreSQL 16
-apt-get install -y postgresql postgresql-contrib
+Secrets used by the workflow (repo → Settings → Secrets → Actions):
+`DEPLOY_HOST` = 198.211.113.144, `DEPLOY_USER` = root, `DEPLOY_SSH_KEY` = the
+dedicated key whose public half sits in the droplet's
+`/root/.ssh/authorized_keys` (comment `github-actions-deploy-tshirtbrothers`).
 
-# Nginx
-apt-get install -y nginx
+## Manual deploy (fallback)
 
-# PM2 (process manager)
-npm install -g pm2
-
-# Certbot (SSL)
-apt-get install -y certbot python3-certbot-nginx
-```
-
-## 4. Set Up PostgreSQL
-
-```bash
-# Start PostgreSQL
-systemctl start postgresql
-systemctl enable postgresql
-
-# Create database and user
-sudo -u postgres psql << 'EOF'
-CREATE USER tsbadmin WITH PASSWORD 'YOUR_SECURE_PASSWORD_HERE';
-CREATE DATABASE tshirtbrothers OWNER tsbadmin;
-GRANT ALL PRIVILEGES ON DATABASE tshirtbrothers TO tsbadmin;
-\c tshirtbrothers
-GRANT ALL ON SCHEMA public TO tsbadmin;
-EOF
-
-# Run schema
-sudo -u postgres psql -d tshirtbrothers -f /var/www/tshirtbrothers/server/schema.sql
-
-# Create admin user (change password!)
-sudo -u postgres psql -d tshirtbrothers << 'EOF'
-INSERT INTO users (email, password_hash, role, name)
-VALUES ('kevin@tshirtbrothers.com',
-  '$2a$10$placeholder', 'admin', 'Kevin');
-EOF
-```
-
-Note: The password_hash above is a placeholder. After the server is running,
-register via the /auth page or use this Node.js snippet to generate a hash:
-```bash
-node -e "const bcrypt = require('bcryptjs'); bcrypt.hash('YOUR_PASSWORD', 10).then(h => console.log(h))"
-```
-Then update the users table with the real hash.
-
-## 5. Configure Environment
+If Actions is down or you need to deploy a non-main ref:
 
 ```bash
-cd /var/www/tshirtbrothers/server
-
-cp .env.example .env
-nano .env
+ssh root@198.211.113.144
+sudo bash /var/www/tshirtbrothers/deploy.sh        # full deploy (recommended)
+# or, quick client-only rebuild + restart (skips server npm install):
+bash /var/www/tshirtbrothers/quick-deploy.sh
 ```
 
-Fill in your actual values:
-```env
-PORT=3001
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=tshirtbrothers
-DB_USER=tsbadmin
-DB_PASSWORD=YOUR_SECURE_PASSWORD_HERE
-JWT_SECRET=generate-a-random-64-char-string
-SS_ACCOUNT_NUMBER=your-ss-account-number
-SS_API_KEY=your-ss-api-key
-OPENAI_API_KEY=sk-your-openai-key
-SPACES_KEY=your-do-spaces-key
-SPACES_SECRET=your-do-spaces-secret
-SPACES_REGION=nyc3
-SPACES_BUCKET=tshirtbrothers
-SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
-DOMAIN=https://tshirtbrothers.com
-```
+## Database migrations
 
-## 6. Install Dependencies & Build
+`server/migrations/*.sql` are applied automatically at API boot by the
+runner in `server/index.js` — **as the `tsbadmin` user**. Consequences:
+
+- Write migrations idempotently (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`).
+- If you ever apply DDL by hand as `postgres`, transfer ownership afterwards
+  (`ALTER TABLE x OWNER TO tsbadmin;`) or the boot runner will log
+  `permission denied` forever and future ALTERs will fail.
+
+Ad-hoc queries:
 
 ```bash
-# Backend
-cd /var/www/tshirtbrothers/server
-npm install
-
-# Frontend
-cd /var/www/tshirtbrothers/client
-npm install
-npm run build
+ssh root@198.211.113.144
+sudo -u postgres psql tshirtbrothers
+# or through the app's own pool:
+cd /var/www/tshirtbrothers/server && node --input-type=module -e \
+  "import 'dotenv/config'; import pool from './db.js'; /* … */"
 ```
 
-## 7. Configure Nginx
+## Local development notes
 
-```bash
-nano /etc/nginx/sites-available/tshirtbrothers
-```
+- `client/ npm ci` fails on macOS (lockfile lacks the mac rollup binary);
+  `npm install --legacy-peer-deps` works and lets you run the real
+  `npx tsc -b --force` locally. Don't commit the resulting lockfile churn.
+- The droplet is the source of truth for builds; `deploy.sh` self-heals the
+  Linux rollup-binary variant of the same npm bug.
 
-Paste this config:
-```nginx
-server {
-    listen 80;
-    server_name tshirtbrothers.com www.tshirtbrothers.com;
+## Gotchas that have bitten before
 
-    # Frontend (static files from Vite build)
-    root /var/www/tshirtbrothers/client/dist;
-    index index.html;
+- pm2 restarts must run as **root** (`sudo -u tsb pm2 …` fails).
+- `server/.env` holds the Stripe key (`rk_live_…`, per-business key policy),
+  Spaces credentials, `DOMAIN`, and `DB_*` — it is not in git; back it up
+  before touching it (`cp -n`).
+- nginx vhost has exact-match locations `/stats-script.js` and `/api/send`
+  proxying to Umami (:3070) that must stay ABOVE the general `/api/` proxy
+  to :3001.
+- The sale/product pages price from live S&S data via
+  `/api/products/pricing/:styleId` (6-hour in-process cache);
+  `products.base_price` in the DB is mostly 0 and not trustworthy.
+- Boot-log noise that is pre-existing and harmless-ish: expired Google
+  Places API key (reviews), `stores.slug` GROUP BY error (sitemap group
+  stores enumeration).
 
-    # API proxy
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
+## Provisioning a fresh droplet (disaster recovery sketch)
 
-    # SPA fallback - all routes serve index.html
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Cache static assets
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
-
-Enable the site:
-```bash
-ln -s /etc/nginx/sites-available/tshirtbrothers /etc/nginx/sites-enabled/
-rm /etc/nginx/sites-enabled/default  # remove default site
-nginx -t  # test config
-systemctl restart nginx
-```
-
-## 8. SSL Certificate
-
-```bash
-certbot --nginx -d tshirtbrothers.com -d www.tshirtbrothers.com
-```
-
-Follow the prompts. Certbot will auto-configure Nginx for HTTPS.
-
-## 9. Start Backend with PM2
-
-```bash
-cd /var/www/tshirtbrothers/server
-pm2 start index.js --name tshirtbrothers-api
-pm2 save
-pm2 startup  # auto-start on boot
-```
-
-## 10. Update DNS
-
-Point your domain to the droplet IP:
-- A record: `tshirtbrothers.com` → `134.199.194.178`
-- A record: `www.tshirtbrothers.com` → `134.199.194.178`
-
-## 11. Verify
-
-```bash
-# Check API is running
-curl http://localhost:3001/api/health
-
-# Check Nginx is serving frontend
-curl -I https://tshirtbrothers.com
-
-# Check PM2 status
-pm2 status
-
-# View logs
-pm2 logs tshirtbrothers-api
-```
-
-## Useful Commands
-
-```bash
-# Restart API after code changes
-pm2 restart tshirtbrothers-api
-
-# Rebuild frontend after changes
-cd /var/www/tshirtbrothers/client && npm run build
-
-# View API logs
-pm2 logs tshirtbrothers-api --lines 50
-
-# Sync products from S&S Activewear
-curl -X POST https://tshirtbrothers.com/api/admin/sync-products \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-```
-
-## File Structure on Server
-
-```
-/var/www/tshirtbrothers/
-├── server/           # Express API (port 3001)
-│   ├── index.js
-│   ├── db.js
-│   ├── .env
-│   ├── routes/
-│   ├── services/
-│   └── middleware/
-├── client/
-│   ├── src/          # React source
-│   └── dist/         # Built static files (served by Nginx)
-└── DEPLOY.md
-```
+The full original step-by-step lived in this file's git history
+(`git log --follow DEPLOY.md`, versions before 2026-08-16). Short form:
+Node 20 + PostgreSQL 16 + nginx + pm2 + certbot; clone the repo to
+`/var/www/tshirtbrothers`; create db `tshirtbrothers` + user `tsbadmin`;
+restore `server/.env` from backup; run `deploy.sh`; recreate the nginx
+vhosts (tshirtbrothers + stats.tshirtbrothers.com → :3070) and certbot
+certs; `docker run` Umami (postgres `umami` db, `--network host`, port
+3070, creds in droplet `/root/umami-credentials.txt`); re-add the GitHub
+Actions deploy key. Note `gang_sheets` predates the tracked migrations —
+its DDL is not in the repo; recover it from a DB backup.
