@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Minus, Plus, Upload, Loader2, CheckCircle2, AlertTriangle, ArrowUpCircle,
 } from 'lucide-react';
@@ -77,6 +77,33 @@ function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
 }
 
+// Reads + validates the upload stash without touching component state, so
+// both the mount-restore effect and the length-default effect (below) can
+// share one source of truth instead of duplicating the parsing/expiry logic.
+function readUploadStash(): UploadedFile | null {
+  try {
+    const raw = sessionStorage.getItem(UPLOAD_STASH_KEY);
+    if (!raw) return null;
+    const stash = JSON.parse(raw) as {
+      file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown;
+    };
+    if (
+      typeof stash.file_key !== 'string' || typeof stash.width_px !== 'number'
+      || typeof stash.height_px !== 'number' || typeof stash.at !== 'number'
+    ) return null;
+    if (Date.now() - stash.at >= UPLOAD_STASH_MAX_AGE_MS) {
+      sessionStorage.removeItem(UPLOAD_STASH_KEY);
+      return null;
+    }
+    return {
+      file_key: stash.file_key,
+      width_px: stash.width_px,
+      height_px: stash.height_px,
+      fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
+    };
+  } catch { return null; /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
+}
+
 function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -106,6 +133,8 @@ function probeImageDimensions(file: File): Promise<{ width: number; height: numb
 
 export default function DtfStorePage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const fromBuilder = searchParams.get('from') === 'builder';
 
   const { data: config, isLoading: configLoading, isError: configError } = useQuery<DtfConfig>({
     queryKey: ['dtf-config'],
@@ -124,7 +153,17 @@ export default function DtfStorePage() {
   const [tier, setTier] = useState<TierKey | null>(null);
   useEffect(() => {
     if (!config) return;
-    setLengthFt((prev) => (prev === null ? clamp(5, config.min_ft, config.max_ft) : prev));
+    // The `prev === null` guard is what makes this "only when the user
+    // hasn't already changed length": it fires exactly once, the first time
+    // config resolves. A restored builder stash's height_px takes priority
+    // over the flat 5ft default so the length matches what was actually
+    // built.
+    setLengthFt((prev) => {
+      if (prev !== null) return prev;
+      const stash = readUploadStash();
+      if (stash) return clamp(Math.ceil(stash.height_px / 3600), config.min_ft, config.max_ft);
+      return clamp(5, config.min_ft, config.max_ft);
+    });
     setTier((prev) => {
       if (prev !== null) return prev;
       return TIER_ORDER.find((t) => config.tiers[t].available) ?? 'standard';
@@ -151,27 +190,8 @@ export default function DtfStorePage() {
   // scratch with no client-side state, but the file is still sitting in
   // Spaces under the same file_key.
   useEffect(() => {
-    try {
-      const raw = sessionStorage.getItem(UPLOAD_STASH_KEY);
-      if (!raw) return;
-      const stash = JSON.parse(raw) as {
-        file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown;
-      };
-      if (
-        typeof stash.file_key !== 'string' || typeof stash.width_px !== 'number'
-        || typeof stash.height_px !== 'number' || typeof stash.at !== 'number'
-      ) return;
-      if (Date.now() - stash.at >= UPLOAD_STASH_MAX_AGE_MS) {
-        sessionStorage.removeItem(UPLOAD_STASH_KEY);
-        return;
-      }
-      setUploadedFile({
-        file_key: stash.file_key,
-        width_px: stash.width_px,
-        height_px: stash.height_px,
-        fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
-      });
-    } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
+    const stash = readUploadStash();
+    if (stash) setUploadedFile(stash);
   }, []);
 
   // Umami dtf-length-set, debounced 800ms after the value settles. The ref
@@ -354,6 +374,12 @@ export default function DtfStorePage() {
 
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
+            {fromBuilder && (
+              <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
+                Your built sheet is loaded — pick turnaround and check out
+              </div>
+            )}
+
             {/* ── Length stepper ── */}
             <section className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
               <h2 className="font-display text-base sm:text-lg font-bold text-gray-900">How long is your sheet?</h2>
@@ -501,6 +527,12 @@ export default function DtfStorePage() {
               <ul className="mt-1 text-xs text-gray-500">
                 <li>PNG · transparent background · 300 DPI · 22&quot; / 6,600 px wide · max 100 MB</li>
               </ul>
+              <p className="mt-1 text-xs">
+                Don&apos;t have a print-ready file?{' '}
+                <Link to="/dtf/builder" className="font-semibold text-orange-700 underline">
+                  Or build your sheet online →
+                </Link>
+              </p>
               <label
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={onDrop}

@@ -44,14 +44,38 @@ interface DesignItem {
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
 const authHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` });
 
+// Umami custom event, if the tracker loaded (adblock / script failure = no-op).
+// Copied idiom from DtfStorePage.tsx rather than imported — page/component
+// modules in this app don't import helpers from each other.
+function trackEvent(event: string, data?: Record<string, unknown>): void {
+  const w = window as unknown as {
+    umami?: { track: (e: string, d?: Record<string, unknown>) => void };
+  };
+  try { w.umami?.track(event, data); } catch { /* analytics must never break the page */ }
+}
+
+// sessionStorage stash DtfStorePage restores on mount — key + shape must
+// match DtfStorePage.tsx's UPLOAD_STASH_KEY / UploadedFile exactly (see
+// that file's comment on why it survives a Stripe back-button trip).
+const DTF_UPLOAD_STASH_KEY = 'dtf_upload_stash';
+
+interface GangSheetBuilderProps {
+  // 'customer' points the sheet CRUD calls at /api/gangsheet-store/sheets
+  // (own-sheets-only, enforced server-side), hides admin-only panels, and
+  // enables the checkout handoff. Defaults to 'admin' so the existing
+  // /admin/gangsheet route needs no changes.
+  mode?: 'admin' | 'customer';
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function GangSheetBuilder() {
+export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderProps = {}) {
   const navigate = useNavigate();
   const { id: sheetId } = useParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const apiBase = mode === 'customer' ? '/api/gangsheet-store/sheets' : '/api/admin/gangsheets';
 
   // Sheet state
   const [sheetName, setSheetName] = useState('Untitled Sheet');
@@ -71,6 +95,8 @@ export default function GangSheetBuilder() {
   const [designCount, setDesignCount] = useState(0);
   const [fitError, setFitError] = useState<string | null>(null);
   const [aiBusyId, setAiBusyId] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
@@ -910,28 +936,33 @@ export default function GangSheetBuilder() {
 
   // ─── Export ─────────────────────────────────────────────────────────────
 
-  async function handleExport() {
+  // Shared full-res render step used by both the "Export PNG" download
+  // (handleExport) and the customer checkout handoff (handleCheckoutSheet).
+  // Wrapped in try/finally so a mid-render failure (e.g. a huge sheet
+  // exhausting canvas memory on a weak device) still restores the on-screen
+  // zoom/grid instead of leaving the builder stuck at full-res with the
+  // grid hidden.
+  async function generateFullResExport(): Promise<{ dataUrl: string; heightPx: number }> {
     const canvas = fabricRef.current;
-    if (!canvas) return;
+    if (!canvas) throw new Error('Canvas not ready');
 
-    setExporting(true);
+    // Hide grid
+    canvas.getObjects().forEach(obj => {
+      if ((obj as any).data?.isGrid) obj.set('visible', false);
+    });
+
+    // Calculate used height
+    const objects = canvas.getObjects().filter(o => !(o as any).data?.isGrid);
+    let maxY = 0;
+    for (const obj of objects) {
+      const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
+      if (bottom > maxY) maxY = bottom;
+    }
+    const exportHeight = Math.max(PX_PER_FOOT, maxY + DESIGN_SPACING_PX);
+
+    const savedZoom = canvas.getZoom();
     try {
-      // Hide grid
-      canvas.getObjects().forEach(obj => {
-        if ((obj as any).data?.isGrid) obj.set('visible', false);
-      });
-
-      // Calculate used height
-      const objects = canvas.getObjects().filter(o => !(o as any).data?.isGrid);
-      let maxY = 0;
-      for (const obj of objects) {
-        const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
-        if (bottom > maxY) maxY = bottom;
-      }
-      const exportHeight = Math.max(PX_PER_FOOT, maxY + DESIGN_SPACING_PX);
-
-      // Export at full resolution
-      const savedZoom = canvas.getZoom();
+      // Render at full resolution
       canvas.setZoom(1);
       canvas.setDimensions({ width: SHEET_WIDTH_PX, height: exportHeight }, { cssOnly: false });
 
@@ -943,24 +974,28 @@ export default function GangSheetBuilder() {
         width: SHEET_WIDTH_PX,
         height: exportHeight,
       });
-
-      // Restore zoom
+      return { dataUrl, heightPx: exportHeight };
+    } finally {
+      // Restore zoom + grid regardless of success or failure
       canvas.setZoom(savedZoom);
       canvas.setDimensions({
         width: SHEET_WIDTH_PX * savedZoom,
         height: exportHeight * savedZoom,
       });
-
-      // Restore grid
       canvas.getObjects().forEach(obj => {
         if ((obj as any).data?.isGrid) obj.set('visible', true);
       });
       canvas.renderAll();
+    }
+  }
 
-      // Download
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const { dataUrl, heightPx } = await generateFullResExport();
       const link = document.createElement('a');
       link.href = dataUrl;
-      link.download = `gangsheet-${sheetName.replace(/\s+/g, '-')}-${SHEET_WIDTH_PX}x${Math.round(exportHeight)}px-300dpi.png`;
+      link.download = `gangsheet-${sheetName.replace(/\s+/g, '-')}-${SHEET_WIDTH_PX}x${Math.round(heightPx)}px-300dpi.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -972,29 +1007,104 @@ export default function GangSheetBuilder() {
     }
   }
 
+  // ─── Checkout handoff (customer mode only) ─────────────────────────────
+  // Runs the same full-res export as the download button, but instead of a
+  // download: dataURL -> blob -> POST /api/gangsheet-store/upload -> write
+  // the DtfStorePage upload stash (same key/shape it reads on mount) ->
+  // navigate to /dtf so the customer picks turnaround + checks out there.
+  async function handleCheckoutSheet() {
+    if (mode !== 'customer' || checkingOut) return;
+    setCheckingOut(true);
+    setCheckoutError(null);
+    trackEvent('dtf-builder-checkout');
+    try {
+      let dataUrl: string;
+      try {
+        ({ dataUrl } = await generateFullResExport());
+      } catch (err) {
+        console.error('Export failed:', err);
+        throw new Error(
+          'This sheet is too large to export in your browser — save it and use the Upload lane with your own file, or try on a desktop.'
+        );
+      }
+
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const form = new FormData();
+      form.append('file', blob, `${(sheetName || 'gangsheet').replace(/\s+/g, '-')}.png`);
+      const uploadRes = await fetch('/api/gangsheet-store/upload', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      });
+      const uploadData = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
+
+      // Best-effort: persist the sheet as 'exported' so the work isn't lost
+      // if the customer bounces before finishing checkout. The uploaded
+      // file itself (stashed below) is already safe in Spaces independent
+      // of this succeeding, so a save failure here shouldn't block handoff.
+      try {
+        await persistSheet('exported');
+      } catch (err) {
+        console.error('Sheet save before checkout failed (non-fatal):', err);
+      }
+
+      const stash = {
+        file_key: uploadData.file_key,
+        width_px: uploadData.width_px,
+        height_px: uploadData.height_px,
+        fileName: `${sheetName || 'Untitled Sheet'}.png`,
+        at: Date.now(),
+      };
+      try {
+        sessionStorage.setItem(DTF_UPLOAD_STASH_KEY, JSON.stringify(stash));
+      } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
+
+      navigate('/dtf?from=builder');
+    } catch (err: any) {
+      setCheckoutError(err?.message || 'Checkout failed. Try again.');
+    } finally {
+      setCheckingOut(false);
+    }
+  }
+
   // ─── Save / Load ───────────────────────────────────────────────────────
+
+  // Shared create-or-update, used by both the Save button (status 'draft')
+  // and the checkout handoff (status 'exported'). Throws with the server's
+  // error message on failure (e.g. the customer 20-sheet cap) instead of
+  // swallowing it, so callers can surface something more useful than
+  // "Save failed".
+  async function persistSheet(status: 'draft' | 'exported'): Promise<void> {
+    const body = {
+      name: sheetName,
+      sheet_length_ft: sheetLengthFt,
+      pricing_tier: pricingTier,
+      total_cost: totalCost,
+      designs: designs,
+      status,
+    };
+
+    if (dbId) {
+      const res = await fetch(`${apiBase}/${dbId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+    } else {
+      const res = await fetch(apiBase, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: sheetName }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setDbId(data.id);
+      const res2 = await fetch(`${apiBase}/${data.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+      const data2 = await res2.json().catch(() => ({}));
+      if (!res2.ok) throw new Error(data2.error || 'Save failed');
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
     try {
-      const body = {
-        name: sheetName,
-        sheet_length_ft: sheetLengthFt,
-        pricing_tier: pricingTier,
-        total_cost: totalCost,
-        designs: designs,
-        status: 'draft',
-      };
-
-      if (dbId) {
-        await fetch(`/api/admin/gangsheets/${dbId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
-      } else {
-        const res = await fetch('/api/admin/gangsheets', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: sheetName }) });
-        const data = await res.json();
-        setDbId(data.id);
-        await fetch(`/api/admin/gangsheets/${data.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
-      }
-    } catch { alert('Save failed'); }
+      await persistSheet('draft');
+    } catch (err: any) { alert(err?.message || 'Save failed'); }
     finally { setSaving(false); }
   }
 
@@ -1002,7 +1112,7 @@ export default function GangSheetBuilder() {
     if (!sheetId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/admin/gangsheets/${sheetId}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch(`${apiBase}/${sheetId}`, { headers: { Authorization: `Bearer ${getToken()}` } });
       if (!res.ok) throw new Error('Not found');
       const data = await res.json();
       setSheetName(data.name);
@@ -1059,6 +1169,11 @@ export default function GangSheetBuilder() {
   // ─── Library Fetch ──────────────────────────────────────────────────────
 
   useEffect(() => {
+    // Both endpoints below are admin-only server-side (403 for a customer
+    // token) — the Design Lab library and the reprint-from-quotes list are
+    // internal admin tooling, not something a customer account can see.
+    if (mode === 'customer') return;
+
     fetch('/api/admin/designs-library', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
       .then(setLibraryDesigns)
@@ -1079,7 +1194,7 @@ export default function GangSheetBuilder() {
         })));
       })
       .catch(() => {});
-  }, []);
+  }, [mode]);
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -1095,8 +1210,8 @@ export default function GangSheetBuilder() {
     <div className="h-screen flex flex-col bg-gray-100">
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3 flex-shrink-0 z-10">
-        <button onClick={() => navigate('/admin')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
-          <ArrowLeft className="w-4 h-4" /> Admin
+        <button onClick={() => navigate(mode === 'customer' ? '/dtf' : '/admin')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
+          <ArrowLeft className="w-4 h-4" /> {mode === 'customer' ? 'Back to shop' : 'Admin'}
         </button>
         <div className="w-px h-6 bg-gray-200" />
 
@@ -1139,7 +1254,22 @@ export default function GangSheetBuilder() {
         <button onClick={handleExport} disabled={exporting} className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
           <Download className="w-3 h-3" /> {exporting ? '...' : 'Export PNG'}
         </button>
+        {mode === 'customer' && (
+          <button
+            onClick={handleCheckoutSheet}
+            disabled={checkingOut || exporting}
+            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            <DollarSign className="w-3 h-3" /> {checkingOut ? 'Preparing…' : 'Checkout this sheet'}
+          </button>
+        )}
       </header>
+
+      {mode === 'customer' && (
+        <div className="bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">
+          Design your gang sheet — $/ft updates as you go
+        </div>
+      )}
 
       {/* ── Main Content ───────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
@@ -1150,6 +1280,13 @@ export default function GangSheetBuilder() {
               <span className="font-semibold">⚠ Doesn't fit:</span>
               <span className="flex-1">{fitError}</span>
               <button onClick={() => setFitError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
+            </div>
+          )}
+          {checkoutError && (
+            <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
+              <span className="font-semibold">⚠ Checkout:</span>
+              <span className="flex-1">{checkoutError}</span>
+              <button onClick={() => setCheckoutError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
             </div>
           )}
           <div
@@ -1182,13 +1319,15 @@ export default function GangSheetBuilder() {
             </button>
           </div>
 
-          {/* Tabs */}
+          {/* Tabs — Library is admin-only (Design Lab + reprint-from-quotes
+              both 403 on a customer token server-side), so it's simply not
+              offered as a tab in customer mode. */}
           <div className="flex border-b border-gray-200">
-            {([
-              { key: 'upload', icon: Upload, label: 'Upload' },
-              { key: 'library', icon: FolderOpen, label: 'Library' },
-              { key: 'pricing', icon: DollarSign, label: 'Cost' },
-            ] as const).map(tab => (
+            {[
+              { key: 'upload' as const, icon: Upload, label: 'Upload' },
+              ...(mode === 'admin' ? [{ key: 'library' as const, icon: FolderOpen, label: 'Library' }] : []),
+              { key: 'pricing' as const, icon: DollarSign, label: 'Cost' },
+            ].map(tab => (
               <button
                 key={tab.key}
                 onClick={() => setActivePanel(tab.key)}
@@ -1342,8 +1481,8 @@ export default function GangSheetBuilder() {
               </div>
             )}
 
-            {/* Library Panel */}
-            {activePanel === 'library' && (() => {
+            {/* Library Panel — admin-only, see tab-list comment above */}
+            {activePanel === 'library' && mode === 'admin' && (() => {
               // Group Design Lab items by category (alphabetical; 'general'/empty last)
               const grouped: Record<string, typeof libraryDesigns> = {};
               for (const d of libraryDesigns) {
@@ -1489,6 +1628,15 @@ export default function GangSheetBuilder() {
         <button onClick={handleExport} disabled={exporting} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap">
           {exporting ? '...' : 'Export'}
         </button>
+        {mode === 'customer' && (
+          <button
+            onClick={handleCheckoutSheet}
+            disabled={checkingOut || exporting}
+            className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap"
+          >
+            {checkingOut ? '...' : 'Checkout'}
+          </button>
+        )}
       </div>
     </div>
   );

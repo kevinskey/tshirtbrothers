@@ -30,6 +30,7 @@ import AccountPage from '@/pages/AccountPage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import GangSheetPage from '@/pages/GangSheetPage';
 import DtfStorePage from '@/pages/DtfStorePage';
+import DtfBuilderPage from '@/pages/DtfBuilderPage';
 import DtfSuccessPage from '@/pages/DtfSuccessPage';
 import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
@@ -107,6 +108,7 @@ function App() {
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/sale" element={<SalePage />} />
           <Route path="/dtf" element={<DtfStorePage />} />
+          <Route path="/dtf/builder" element={<DtfBuilderPage />} />
           <Route path="/dtf/success" element={<DtfSuccessPage />} />
           <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
           <Route path="/brands" element={<BrandsPage />} />
