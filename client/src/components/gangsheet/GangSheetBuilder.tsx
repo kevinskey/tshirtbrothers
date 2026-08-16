@@ -1905,6 +1905,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
               </div>
             )}
           </div>
+
+          {/* Mobile continue — once a design is on the sheet, the next step
+              is an explicit button instead of hunting for the ✕. */}
+          {designs.length > 0 && (
+            <div className="md:hidden flex-shrink-0 border-t border-gray-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <button
+                onClick={() => setMobilePanelOpen(false)}
+                className="w-full rounded-lg bg-orange-500 py-3 text-sm font-bold text-white active:bg-orange-600"
+              >
+                Continue — view your sheet
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
