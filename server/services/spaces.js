@@ -53,6 +53,7 @@ export async function uploadObject({
   body,
   contentType = 'image/png',
   cacheControl,
+  acl = 'public-read',
 }) {
   if (!key) throw new Error('key required');
   if (!body) throw new Error('body required');
@@ -66,7 +67,7 @@ export async function uploadObject({
     Key: key,
     Body: buffer,
     ContentType: contentType,
-    ACL: 'public-read',
+    ACL: acl,
     ...(cacheControl ? { CacheControl: cacheControl } : {}),
   }));
 

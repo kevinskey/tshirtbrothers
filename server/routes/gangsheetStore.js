@@ -105,8 +105,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     // uploadObject() (server/services/spaces.js:51) only accepts a Buffer or
-    // base64 data URL for `body` — no stream support — and always writes
-    // with ACL public-read (no `acl` param exists). 100 MB max upload fits
+    // base64 data URL for `body` — no stream support. 100 MB max upload fits
     // comfortably in droplet RAM, so we read the whole tmp file into a
     // Buffer here rather than streaming it.
     const fileBuf = fs.readFileSync(tmpPath);
@@ -117,7 +116,9 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       return res.status(400).json({ error: `Sheet must be 6,600 px wide (22" at 300 DPI); got ${dims.width} px` });
     }
     const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.png`;
-    await uploadObject({ key, body: fileBuf, contentType: 'image/png' });
+    // Customer production files must stay private — override uploadObject's
+    // public-read default via its `acl` param.
+    await uploadObject({ key, body: fileBuf, contentType: 'image/png', acl: 'private' });
     res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: req.file.size });
   } catch (err) { next(err); }
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
