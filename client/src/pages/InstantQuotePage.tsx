@@ -1293,7 +1293,9 @@ function ItemCard({
             />
           </Section>
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900">
-            Custom items are priced after our team reviews your request. Save the quote and we'll email you a price.
+            {item.custom.service === 'press-only'
+              ? `Pressing is priced live at $${PRESS_ONLY_RATE.toFixed(2)}/each. If you also need transfers printed, that part is quoted after we review your art.`
+              : "Custom items are priced after our team reviews your request. Save the quote and we'll email you a price."}
           </div>
         </div>
       )}
