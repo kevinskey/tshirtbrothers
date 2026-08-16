@@ -322,7 +322,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // ─── Design Management ──────────────────────────────────────────────────
 
-  async function addDesignToCanvas(imageUrl: string, name: string, targetWidthInches?: number) {
+  async function addDesignToCanvas(imageUrl: string, name: string, targetWidthInches?: number, initialQuantity?: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
@@ -344,7 +344,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         naturalHeight: dims.height,
         printWidthInches: printW,
         printHeightInches: printH,
-        quantity: 1,
+        quantity: Math.max(1, initialQuantity ?? 1),
         dpi,
       };
 
@@ -417,6 +417,30 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       });
 
       canvas.add(img);
+
+      // Restoring a saved sheet: place the remaining copies now (same
+      // cursor walk as updateDesignQuantity's grow branch) — that helper
+      // can't be used here because it reads `designs` state, which hasn't
+      // flushed yet for this design.
+      const copies = Math.max(1, initialQuantity ?? 1) - 1;
+      if (copies > 0) {
+        const copyW = targetW;
+        const copyH = targetH;
+        let cursorX = startLeft + copyW + DESIGN_SPACING_PX;
+        let cursorY = startTop;
+        for (let i = 0; i < copies; i++) {
+          if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+            cursorX = EDGE_PADDING_PX;
+            cursorY += copyH + DESIGN_SPACING_PX;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          const copy = await loadFabricImage(imageUrl);
+          copy.set({ left: cursorX, top: cursorY, scaleX: scale, scaleY: scale, data: { designId: id, natW } as any });
+          canvas.add(copy);
+          cursorX += copyW + DESIGN_SPACING_PX;
+        }
+      }
+
       canvas.setActiveObject(img);
       canvas.renderAll();
       resolveOverlaps();
@@ -1355,10 +1379,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       setSheetName(data.name);
       setPricingTier(data.pricing_tier || 'standard');
       if (data.designs && Array.isArray(data.designs)) {
-        setDesigns(data.designs);
-        // Re-add designs to canvas
+        // Rebuild the design list THROUGH addDesignToCanvas (it appends its
+        // own fresh entries) — pre-seeding state with the saved rows here
+        // produced duplicate list entries whose stale ids matched nothing
+        // on the canvas.
         for (const d of data.designs) {
-          await addDesignToCanvas(d.imageUrl, d.name, d.printWidthInches);
+          await addDesignToCanvas(d.imageUrl, d.name, d.printWidthInches, d.quantity);
         }
       }
     } catch { alert('Failed to load sheet'); }
