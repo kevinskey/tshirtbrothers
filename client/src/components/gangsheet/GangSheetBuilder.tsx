@@ -89,7 +89,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [loading, setLoading] = useState(!!sheetId);
+  // loading tracks a loadSheet() in flight. It must NOT gate the whole
+  // render (see below): the canvas has to mount before loadSheet can
+  // populate it, so starting `true` here deadlocked deep-linked /:id
+  // opens into a permanent spinner (canvas waits on loading, loadSheet
+  // waits on canvas).
+  const [loading, setLoading] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
   const [dbId, setDbId] = useState<number | null>(sheetId ? parseInt(sheetId) : null);
 
   // UI state
@@ -210,6 +216,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     setZoom(scale);
     drawGrid(canvas, initialHeight);
     fabricRef.current = canvas;
+    setCanvasReady(true);
 
     // Selection events
     canvas.on('selection:created', (e) => {
@@ -221,6 +228,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     return () => {
       canvas.dispose();
       fabricRef.current = null;
+      setCanvasReady(false);
     };
   }, []);
 
@@ -1358,8 +1366,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   }
 
   useEffect(() => {
-    if (sheetId && fabricRef.current) loadSheet();
-  }, [sheetId]);
+    // Wait for the fabric canvas to actually exist — gating on
+    // fabricRef.current inside a [sheetId]-only effect silently skipped
+    // the load whenever the effect ran before canvas init (every deep-
+    // linked open), leaving the old full-screen spinner up forever.
+    if (sheetId && canvasReady) loadSheet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetId, canvasReady]);
 
   // ─── My Sheets (customer mode) ──────────────────────────────────────────
 
@@ -1462,16 +1475,15 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen [height:100dvh] flex flex-col bg-gray-100">
+      {/* loadSheet overlay — must not unmount the tree (the canvas below
+          has to exist for loadSheet to populate it). */}
+      {loading && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/70">
+          <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        </div>
+      )}
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3 flex-shrink-0 z-10">
         <button onClick={() => navigate(mode === 'customer' ? '/dtf' : '/admin')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
