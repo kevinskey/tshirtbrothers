@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fabric';
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
-  FolderOpen, Trash2, Loader2, Plus, Minus,
+  FolderOpen, Trash2, Loader2, Plus, Minus, Check,
   DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2
 } from 'lucide-react';
 import {
@@ -87,6 +87,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [pricingTier, setPricingTier] = useState<PricingTier>('standard');
   const [zoom, setZoom] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(!!sheetId);
   const [dbId, setDbId] = useState<number | null>(sheetId ? parseInt(sheetId) : null);
@@ -1300,6 +1301,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     setSaving(true);
     try {
       await persistSheet('draft');
+      // Visible confirmation — a silent success on the icon-only mobile
+      // button reads as "nothing happened".
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
     } catch (err: any) { alert(err?.message || 'Save failed'); }
     finally { setSaving(false); }
   }
@@ -1936,9 +1941,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           onClick={handleSave}
           disabled={saving}
           aria-label="Save sheet"
-          className="flex items-center justify-center p-2 bg-gray-900 text-white rounded-lg disabled:opacity-50 flex-shrink-0"
+          className={`flex items-center gap-1 px-3 py-2 text-white text-xs font-medium rounded-lg disabled:opacity-70 flex-shrink-0 transition-colors ${justSaved ? 'bg-green-600' : 'bg-gray-900'}`}
         >
-          <Save className="w-3 h-3" />
+          {saving
+            ? <Loader2 className="w-3 h-3 animate-spin" />
+            : justSaved
+              ? <Check className="w-3 h-3" />
+              : <Save className="w-3 h-3" />}
+          {saving ? 'Saving' : justSaved ? 'Saved' : 'Save'}
         </button>
         <span className="flex-1 text-center text-xs font-bold text-green-700 whitespace-nowrap">
           {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
@@ -1951,11 +1961,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           >
             {checkingOut ? '...' : !liveRates ? 'Loading…' : 'Checkout'}
           </button>
-        ) : (
-          <button onClick={handleExport} disabled={exporting || checkingOut} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0">
-            {exporting ? '...' : 'Export'}
-          </button>
-        )}
+        ) : null}
+        {/* No Export on the mobile bar in either mode: full-res client-side
+            export (6,600px-wide canvas) exceeds iOS Safari's canvas limits —
+            it just spins and fails. Admin exports happen on desktop; customer
+            checkout composes server-side. */}
       </div>
     </div>
   );
