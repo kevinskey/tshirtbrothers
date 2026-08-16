@@ -661,8 +661,25 @@ export default function InstantQuotePage() {
         mockupUrlBack: null,
         designs: draft.designs.filter((d) => d.url !== draft.mockupUrl && d.url !== draft.mockupUrlBack),
       });
-      if (key === 'other') {
-        return { ...clearAttachment(it), kind: 'custom' };
+      // Service-style cards route to the custom describe-it flow with a
+      // description seed so the shop instantly knows the job type. Seeds
+      // only fill an empty description — a customer's own text survives
+      // switching cards.
+      const customSeeds: Record<string, string> = {
+        other: '',
+        byo: 'Bringing my own garments — printing only. Garment type + brand: ',
+        dtfpress: 'DTF pressing only — pressing transfers onto garments. Transfers: ',
+      };
+      if (key in customSeeds) {
+        const cleared = clearAttachment(it);
+        return {
+          ...cleared,
+          kind: 'custom',
+          custom: {
+            ...cleared.custom,
+            description: cleared.custom.description || customSeeds[key],
+          },
+        };
       }
       const garments: Record<string, string> = {
         tshirt: 'T-shirt',
@@ -1148,6 +1165,8 @@ function ItemCard({
               { key: 'hoodie',     icon: '🧥', label: 'Hoodie',         sub: 'Pullover + zip options' },
               { key: 'sweatshirt', icon: '👚', label: 'Sweatshirt',     sub: 'Crewneck fleece' },
               { key: 'hat',        icon: '🧢', label: 'Hat',            sub: 'Caps, beanies, snapbacks' },
+              { key: 'byo',        icon: '📦', label: 'I have my own shirts', sub: 'You supply the garments — we print them' },
+              { key: 'dtfpress',   icon: '🔥', label: 'DTF pressing only',    sub: 'We press your DTF transfers for you' },
               { key: 'other',      icon: '✨', label: 'Something else', sub: 'Bags, koozies, patches — describe it' },
             ].map((card) => (
               <button
