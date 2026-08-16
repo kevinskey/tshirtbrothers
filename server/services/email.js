@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 // Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
@@ -14,6 +15,10 @@ const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
 const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
+// Same shop address baseLayout() prints in every email's footer — reused
+// verbatim in the gang-sheet-order confirmation so a pickup customer sees
+// it in the body, not just buried in the footer.
+const SHOP_ADDRESS = '6010 Renaissance Parkway, Fairburn, GA 30213';
 
 function baseLayout(title, bodyHtml) {
   return `<!DOCTYPE html>
@@ -877,5 +882,58 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
     replyTo: quote.customer_email,
     subject,
     html: baseLayout('New Instant Quote', body),
+  });
+}
+
+// ── Gang sheet store (DTF) ──────────────────────────────────────────────────
+
+export async function sendGangSheetPaidToCustomer({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const deliveryValue = order.delivery === 'ship'
+    ? 'Ships to you — we\'ll email tracking once it\'s on the way'
+    : `Pickup — ${SHOP_ADDRESS}`;
+  const subject = `Order #${order.id} confirmed — DTF Gang Sheet 22in × ${order.length_ft} ft`;
+  const body = `
+    <p>Hi ${order.customer_name || 'there'},</p>
+    <p>Thanks for your order — we've got it and we're getting started.</p>
+    ${detailsTable(
+      detailRow('Order', `#${order.id}`) +
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Turnaround', TIER_PROMISES[order.tier] || order.tier) +
+      detailRow('Total', `<strong>${total}</strong>`) +
+      detailRow('Delivery', deliveryValue)
+    )}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll email you again as soon as it's ready.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [order.customer_email],
+    subject,
+    html: baseLayout('Order Confirmed', body),
+  });
+}
+
+export async function sendGangSheetPaidToAdmin({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';
+  const subject = `💰 ${urgencyPrefix}Gang sheet order #${order.id} (${order.length_ft} ft)`;
+  const body = `
+    <p><strong>${order.customer_name || '(no name)'} &lt;${order.customer_email || 'no email'}&gt;</strong> just paid for a gang sheet order.</p>
+    ${detailsTable(
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Tier', TIER_PROMISES[order.tier] || order.tier) +
+      detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
+      detailRow('Total', `<strong>${total}</strong>`) +
+      (order.note ? detailRow('Note', order.note) : '')
+    )}
+    ${primaryButton('Open in Admin', `${DOMAIN}/admin/dtf-orders`)}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Order ID #${order.id}</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [ADMIN_EMAIL],
+    replyTo: order.customer_email || undefined,
+    subject,
+    html: baseLayout('Gang Sheet Order Paid', body),
   });
 }

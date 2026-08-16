@@ -2,10 +2,20 @@ import { Router } from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 import fs from 'fs';
+import Stripe from 'stripe';
 import pool from '../db.js';
 import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
+
+// Mirrors routes/payments.js's getStripe(): lazy per-request instantiation
+// so a missing key surfaces as a clean 500 on first use rather than a
+// silent, half-configured client sitting at module scope.
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error('Stripe not configured');
+  return new Stripe(key);
+}
 
 // Tier promises are copy, centralised so client + emails agree.
 export const TIER_PROMISES = {
@@ -122,6 +132,78 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: req.file.size });
   } catch (err) { next(err); }
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
+});
+
+router.post('/checkout', async (req, res, next) => {
+  try {
+    const { length_ft, tier, delivery = 'pickup', file_key, width_px, height_px,
+            name, email, note, ship_address } = req.body || {};
+    const s = await loadSettings();
+    if (!['standard', 'rush', 'hot_rush'].includes(tier)) {
+      return res.status(400).json({ error: 'Pick a turnaround option' });
+    }
+    const avail = tierAvailability(s)[tier];
+    if (!avail.available) {
+      return res.status(400).json({ error: `That turnaround isn't available right now (${avail.reason}).` });
+    }
+    if (!['pickup', 'ship'].includes(delivery)) return res.status(400).json({ error: 'Invalid delivery option' });
+    if (!file_key || !/^gangsheet-orders\/[\w-]+\/[\w-]+\.png$/.test(String(file_key))) {
+      return res.status(400).json({ error: 'Upload your sheet first' });
+    }
+    let cents;
+    try { cents = priceCents(s, length_ft, tier); }
+    catch { return res.status(400).json({ error: `Length must be ${s.min_ft}–${s.max_ft} ft` }); }
+    // Height must fit the purchased length (1 ft = 3,600 px, +2% tolerance).
+    if (height_px && height_px > Math.ceil(length_ft) * 3600 * 1.02) {
+      return res.status(400).json({ error: 'Your file is taller than the sheet length you picked — bump the length up' });
+    }
+    const shippingCents = delivery === 'ship' ? s.shipping_flat_cents : 0;
+
+    const ins = await pool.query(
+      `INSERT INTO gang_sheet_orders
+        (customer_name, customer_email, length_ft, tier, price_cents, shipping_cents,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
+       delivery, ship_address ? JSON.stringify(ship_address) : null,
+       file_key, width_px || null, height_px || null, note || null],
+    );
+    const orderId = ins.rows[0].id;
+
+    // Same DOMAIN env var + fallback that payments.js uses for its own
+    // success_url/cancel_url construction — kept consistent so every
+    // checkout flow in this app resolves against the same base URL.
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const tierLabel = { standard: 'Standard', rush: 'Rush', hot_rush: 'Hot Rush' }[tier];
+    const lineItems = [{
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: `DTF Gang Sheet 22in × ${Math.ceil(Number(length_ft))} ft — ${tierLabel}`,
+          description: TIER_PROMISES[tier],
+        },
+        unit_amount: cents,
+      },
+      quantity: 1,
+    }];
+    if (shippingCents > 0) {
+      lineItems.push({
+        price_data: { currency: 'usd', product_data: { name: 'Shipping (flat)' }, unit_amount: shippingCents },
+        quantity: 1,
+      });
+    }
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: lineItems,
+      customer_email: email || undefined,
+      success_url: `${domain}/dtf/success?order=${orderId}`,
+      cancel_url: `${domain}/dtf`,
+      metadata: { gang_sheet_order_id: String(orderId) },
+    });
+    await pool.query('UPDATE gang_sheet_orders SET stripe_session_id = $1 WHERE id = $2', [session.id, orderId]);
+    res.json({ url: session.url });
+  } catch (err) { next(err); }
 });
 
 export default router;

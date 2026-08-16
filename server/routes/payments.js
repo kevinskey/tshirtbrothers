@@ -6,6 +6,8 @@ import {
   sendQuoteAcceptedNotification,
   sendDepositReceiptToCustomer,
   sendPaidInvoiceReceipt,
+  sendGangSheetPaidToCustomer,
+  sendGangSheetPaidToAdmin,
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
@@ -586,6 +588,30 @@ async function handleCheckoutSessionCompleted(session) {
     } catch (err) {
       console.error('[Stripe Webhook] DB update failed:', err);
     }
+  }
+
+  const gangSheetOrderId = session.metadata?.gang_sheet_order_id;
+  if (gangSheetOrderId) {
+    const { rows } = await pool.query(
+      `UPDATE gang_sheet_orders
+         SET status = 'paid', paid_at = now(),
+             customer_email = COALESCE(customer_email, $2),
+             customer_name = COALESCE(customer_name, $3)
+       WHERE id = $1 AND status = 'pending_payment' RETURNING *`,
+      [gangSheetOrderId, session.customer_details?.email || null, session.customer_details?.name || null],
+    );
+    if (!rows[0]) {
+      console.error(`[Stripe Webhook] gang_sheet_order ${gangSheetOrderId} missing or not pending — session ${session.id}; MONEY RECEIVED, investigate`);
+      return;
+    }
+    const order = rows[0];
+    Promise.allSettled([
+      sendGangSheetPaidToCustomer({ order }),
+      sendGangSheetPaidToAdmin({ order }),
+    ]).then((results) => results.forEach((r) => {
+      if (r.status === 'rejected') console.error('[Stripe Webhook] gang sheet email failed:', r.reason?.message);
+    }));
+    return;
   }
 
   if (!invoiceId && !quoteId) {
