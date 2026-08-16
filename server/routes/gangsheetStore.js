@@ -501,8 +501,20 @@ const COMPOSE_MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 // Streams the response body so we can abort the moment a design image
 // exceeds the per-image size cap, instead of buffering an arbitrarily large
 // body into memory first and checking after the fact.
+//
+// redirect: 'manual' — the SSRF allowlist (isAllowedDesignImageUrl) only
+// checks the URL we're ABOUT to fetch; without this, our own trusted CDN
+// host could 3xx to an attacker-controlled Location and the default
+// follow-redirects behavior would fetch it anyway, bypassing the allowlist
+// entirely. With 'manual', Node's fetch (undici) returns the 3xx response
+// itself instead of following it (confirmed: status/headers are readable,
+// unlike browser fetch's opaque-redirect behavior) — so any 3xx here is
+// something to reject, not follow.
 async function fetchDesignImageBuffer(url) {
-  const resp = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const resp = await fetch(url, { signal: AbortSignal.timeout(20000), redirect: 'manual' });
+  if (resp.status >= 300 && resp.status < 400) {
+    throw new Error('Design image could not be loaded');
+  }
   if (!resp.ok) throw new Error(`design image fetch failed (${resp.status})`);
   const declaredLen = Number(resp.headers.get('content-length'));
   if (Number.isFinite(declaredLen) && declaredLen > COMPOSE_MAX_IMAGE_BYTES) {
@@ -583,6 +595,18 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     }
     const sheetHeightPx = Math.max(neededHeight, 3600);
 
+    // sharp's default limitInputPixels (~268M px) is well under what a
+    // full-length sheet needs once max_ft is configured above ~23.6 ft
+    // (6,600 x 23.6ft*3,600 ≈ 560M px already exceeds a naively-fixed
+    // limit) — max_ft is admin-configurable up to 40 ft (950M+ px). Derive
+    // the limit from the SAME settings row used for the height check above,
+    // with 10% headroom, and apply it everywhere sharp reads or creates a
+    // sheet-scale image: both the per-design source-image decode below (a
+    // design's source file can legitimately have intrinsic dimensions
+    // larger than its placed size — e.g. a hi-res original getting
+    // downscaled to fit its box) and the output canvas create() call.
+    const pixelLimit = Math.ceil(6600 * settings.max_ft * 3600 * 1.1);
+
     // Fetch each unique source image exactly once, even if it's placed
     // multiple times (quantity > 1 on the same design).
     const bufferByUrl = new Map();
@@ -605,7 +629,7 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
         const swapped = p.rotation === 90 || p.rotation === 270;
         const resizeWidth = swapped ? p.height : p.width;
         const resizeHeight = swapped ? p.width : p.height;
-        let img = sharp(srcBuf).resize(resizeWidth, resizeHeight, { fit: 'fill' });
+        let img = sharp(srcBuf, { limitInputPixels: pixelLimit }).resize(resizeWidth, resizeHeight, { fit: 'fill' });
         if (p.rotation) img = img.rotate(p.rotation, { background: { r: 0, g: 0, b: 0, alpha: 0 } });
         const buf = await img.png().toBuffer();
         return { input: buf, left: p.left, top: p.top };
@@ -624,11 +648,10 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
           channels: 4,
           background: { r: 0, g: 0, b: 0, alpha: 0 },
         },
-        // Sheets can run up to max_ft (admin-configurable, up to 40 ft =
-        // 144,000px tall = 950M+ px²) — well past sharp's default
-        // limitInputPixels (~268M), which would otherwise reject the
-        // create() canvas itself before compositing ever runs.
-        limitInputPixels: 7000 * 80000,
+        // See pixelLimit comment above — derived from settings.max_ft, not
+        // a fixed constant, so this scales with whatever the store admin
+        // has configured instead of silently breaking sheets past ~23.6 ft.
+        limitInputPixels: pixelLimit,
       }).composite(composeInputs).png().toBuffer();
     } catch (err) {
       console.error('[dtf-store] compose: composite failed:', err.message);

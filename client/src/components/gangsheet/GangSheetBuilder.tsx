@@ -1164,6 +1164,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       setCheckoutError('Canvas not ready — try again');
       return;
     }
+    // handleFileUpload's upload-to-Spaces call can fail (network blip, the
+    // /api/quotes/upload-design endpoint erroring) and fall back to using
+    // the local data: URL directly so the design still shows on the canvas.
+    // That design was never actually persisted anywhere the server can
+    // fetch it from — /compose's SSRF allowlist correctly rejects non-https
+    // URLs (see server/routes/gangsheetStore.js's isAllowedDesignImageUrl),
+    // so catch it here first with guidance the customer can act on, instead
+    // of a round-trip just to get the server's generic 400 back.
+    const unfinishedUpload = designs.find((d) => d.imageUrl.startsWith('data:'));
+    if (unfinishedUpload) {
+      setCheckoutError(`"${unfinishedUpload.name}" didn't finish uploading — delete it and re-add it, then check out again.`);
+      return;
+    }
     setCheckingOut(true);
     setCheckoutError(null);
     trackEvent('dtf-builder-checkout');
