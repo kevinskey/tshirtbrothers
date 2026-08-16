@@ -384,25 +384,72 @@ export default function DtfStorePage() {
 
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
-            {fromBuilder && uploadedFile && (
-              <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3">
-                <p className="text-sm font-semibold text-orange-800">
-                  Your built sheet is loaded — pick turnaround and check out
-                </p>
-                {uploadedFile.preview && (
-                  <div className="mt-3 overflow-hidden rounded-xl border border-orange-200 bg-white p-2">
-                    <img
-                      src={uploadedFile.preview}
-                      alt="Your gang sheet"
-                      className="max-h-64 w-full object-contain"
-                    />
-                    <p className="mt-1 text-center text-[11px] text-gray-500">
-                      {uploadedFile.fileName ?? 'Your sheet'} · 22&Prime; × {Math.ceil(uploadedFile.height_px / 3600)} ft
+            {fromBuilder && uploadedFile && (() => {
+              // The preview must track the LENGTH the customer is buying,
+              // not the length the sheet was built at — otherwise the
+              // stepper silently changes the order under a stale picture.
+              // The frame below always has the chosen length's aspect
+              // ratio: shrinking below the artwork visibly crops it (the
+              // server rejects such orders anyway); growing past it shows
+              // the blank tail they're paying for.
+              const fileFt = Math.ceil(uploadedFile.height_px / 3600);
+              const chosenFt = lengthFt ?? fileFt;
+              const chosenPx = chosenFt * 3600;
+              const cropped = chosenPx < uploadedFile.height_px;
+              const contentPct = Math.min(100, (uploadedFile.height_px / chosenPx) * 100);
+              return (
+                <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3">
+                  <p className="text-sm font-semibold text-orange-800">
+                    Your built sheet is loaded — pick turnaround and check out
+                  </p>
+                  {uploadedFile.preview && (
+                    <div className="mt-3 rounded-xl border border-orange-200 bg-white p-2">
+                      {/* Frame = the sheet being purchased (22" × chosenFt) */}
+                      <div
+                        className="relative w-full overflow-hidden rounded-md border border-gray-200"
+                        style={{ aspectRatio: `6600 / ${chosenPx}`, maxHeight: '20rem' }}
+                      >
+                        <img
+                          src={uploadedFile.preview}
+                          alt="Your gang sheet"
+                          className="absolute inset-x-0 top-0 w-full"
+                          style={{ height: `${contentPct}%`, objectFit: 'fill' }}
+                        />
+                        {!cropped && contentPct < 99 && (
+                          <div
+                            className="absolute inset-x-0 bottom-0 flex items-center justify-center"
+                            style={{
+                              top: `${contentPct}%`,
+                              backgroundImage:
+                                'repeating-linear-gradient(45deg, #f3f4f6 0, #f3f4f6 8px, #ffffff 8px, #ffffff 16px)',
+                            }}
+                          >
+                            <span className="rounded bg-white/90 px-2 py-0.5 text-[10px] font-medium text-gray-500">
+                              blank space · {chosenFt - fileFt} ft
+                            </span>
+                          </div>
+                        )}
+                        {cropped && (
+                          <div className="absolute inset-x-0 bottom-0 border-t-2 border-dashed border-red-500 bg-red-500/10 py-0.5 text-center text-[10px] font-bold text-red-700">
+                            cut off below this line
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-1 text-center text-[11px] text-gray-500">
+                        {uploadedFile.fileName ?? 'Your sheet'} · buying 22&Prime; × {chosenFt} ft
+                        {chosenFt !== fileFt ? ` (artwork fills ${fileFt} ft)` : ''}
+                      </p>
+                    </div>
+                  )}
+                  {cropped && (
+                    <p className="mt-2 text-xs font-semibold text-red-700">
+                      Your artwork needs {fileFt} ft — at {chosenFt} ft the bottom of your sheet gets cut
+                      off, and checkout will be rejected. Set the length back to {fileFt} ft or more.
                     </p>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ── Length stepper ── */}
             <section className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
