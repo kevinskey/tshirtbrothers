@@ -1450,7 +1450,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         <input
           type="text" value={sheetName}
           onChange={e => setSheetName(e.target.value)}
-          className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none px-1 py-0.5 flex-1 min-w-0 w-auto md:w-56"
+          className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none px-1 py-0.5 flex-1 min-w-0 md:flex-none md:w-56"
           style={{ fontSize: '16px' }}
         />
 
@@ -1919,16 +1919,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         <button onClick={autoLayout} className="flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0">
           <Layout className="w-3 h-3" /> Layout
         </button>
-        {mode === 'customer' && (
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            aria-label="Save sheet"
-            className="flex items-center justify-center p-2 bg-gray-900 text-white rounded-lg disabled:opacity-50 flex-shrink-0"
-          >
-            <Save className="w-3 h-3" />
-          </button>
-        )}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          aria-label="Save sheet"
+          className="flex items-center justify-center p-2 bg-gray-900 text-white rounded-lg disabled:opacity-50 flex-shrink-0"
+        >
+          <Save className="w-3 h-3" />
+        </button>
         <span className="flex-1 text-center text-xs font-bold text-green-700 whitespace-nowrap">
           {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
         </span>
