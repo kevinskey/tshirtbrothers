@@ -1262,20 +1262,46 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const composeData = await composeRes.json().catch(() => ({}));
       if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose your sheet — try again');
 
+      // Screen-resolution snapshot of the sheet so /dtf can SHOW the
+      // customer what they're buying. Captured at the on-screen canvas
+      // size (a few hundred px wide) — trivially within iOS canvas
+      // limits, unlike the full-res export. Best-effort: a preview
+      // failure must never block checkout.
+      let preview: string | null = null;
+      try {
+        canvas.discardActiveObject();
+        canvas.getObjects().forEach((o) => { if ((o as any).data?.isGrid) o.set('visible', false); });
+        canvas.renderAll();
+        const cap = 480 / Math.max(1, canvas.getWidth());
+        preview = canvas.toDataURL({ format: 'jpeg', quality: 0.85, multiplier: Math.min(1, cap) });
+        if (preview.length > 1_500_000) preview = null; // sessionStorage quota safety
+      } catch { preview = null; }
+      finally {
+        canvas.getObjects().forEach((o) => { if ((o as any).data?.isGrid) o.set('visible', true); });
+        canvas.renderAll();
+      }
+
       const stash = {
         file_key: composeData.file_key,
         width_px: composeData.width_px,
         height_px: composeData.height_px,
         fileName: `${sheetName || 'Untitled Sheet'}.png`,
         at: Date.now(),
+        ...(preview ? { preview } : {}),
       };
       // M2: if the stash write fails (private-mode sessionStorage etc.), the
       // handoff has nothing to hand off — surface it and stop here instead
-      // of navigating to /dtf with no restorable upload.
+      // of navigating to /dtf with no restorable upload. A quota failure
+      // WITH the preview gets one retry without it first.
       try {
         sessionStorage.setItem(DTF_UPLOAD_STASH_KEY, JSON.stringify(stash));
       } catch {
-        throw new Error('Could not prepare checkout handoff — try again, or use the Upload lane on the DTF page with an exported PNG.');
+        try {
+          const { preview: _p, ...slim } = stash as typeof stash & { preview?: string };
+          sessionStorage.setItem(DTF_UPLOAD_STASH_KEY, JSON.stringify(slim));
+        } catch {
+          throw new Error('Could not prepare checkout handoff — try again, or use the Upload lane on the DTF page with an exported PNG.');
+        }
       }
 
       navigate('/dtf?from=builder');

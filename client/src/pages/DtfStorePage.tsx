@@ -25,7 +25,10 @@ type DtfConfig = {
 // fileName is display-only (never sent to the server) — carried along so a
 // sessionStorage-restored upload (see UPLOAD_STASH_KEY below) can render the
 // same "File uploaded" UI, original name and all, without re-fetching.
-type UploadedFile = { file_key: string; width_px: number; height_px: number; fileName?: string };
+// `preview` is a small screen-resolution snapshot data-URL the builder
+// stashes at checkout so the customer can SEE the sheet they built —
+// the composed file itself is private in Spaces and not client-fetchable.
+type UploadedFile = { file_key: string; width_px: number; height_px: number; fileName?: string; preview?: string };
 
 type ShipAddress = { line1: string; city: string; state: string; zip: string };
 
@@ -85,7 +88,7 @@ function readUploadStash(): UploadedFile | null {
     const raw = sessionStorage.getItem(UPLOAD_STASH_KEY);
     if (!raw) return null;
     const stash = JSON.parse(raw) as {
-      file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown;
+      file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown; preview?: unknown;
     };
     if (
       typeof stash.file_key !== 'string' || typeof stash.width_px !== 'number'
@@ -100,6 +103,9 @@ function readUploadStash(): UploadedFile | null {
       width_px: stash.width_px,
       height_px: stash.height_px,
       fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
+      // Only trust an inline image data-URL — never let a tampered stash
+      // inject an arbitrary URL into an <img src>.
+      preview: typeof stash.preview === 'string' && stash.preview.startsWith('data:image/') ? stash.preview : undefined,
     };
   } catch { return null; /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 }
@@ -379,8 +385,22 @@ export default function DtfStorePage() {
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
             {fromBuilder && uploadedFile && (
-              <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
-                Your built sheet is loaded — pick turnaround and check out
+              <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3">
+                <p className="text-sm font-semibold text-orange-800">
+                  Your built sheet is loaded — pick turnaround and check out
+                </p>
+                {uploadedFile.preview && (
+                  <div className="mt-3 overflow-hidden rounded-xl border border-orange-200 bg-white p-2">
+                    <img
+                      src={uploadedFile.preview}
+                      alt="Your gang sheet"
+                      className="max-h-64 w-full object-contain"
+                    />
+                    <p className="mt-1 text-center text-[11px] text-gray-500">
+                      {uploadedFile.fileName ?? 'Your sheet'} · 22&Prime; × {Math.ceil(uploadedFile.height_px / 3600)} ft
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
