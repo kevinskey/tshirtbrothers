@@ -117,6 +117,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     maxFt: MAX_SHEET_LENGTH_FT,
   });
 
+  // I3 recalibration: Chrome's 2D canvas has an area ceiling of ~268M px²
+  // (2^28). At our fixed 6,600px sheet width that puts the hard client-side
+  // export ceiling around 11 ft (6600 * 11*3600 ≈ 261.4M px², just under the
+  // limit) — regardless of whatever longer max_ft the store admin has
+  // configured. Cap the CUSTOMER builder's effective max length there so the
+  // UI is honest up front (an over-length sheet can never export in Chrome,
+  // no matter how small its content), instead of only failing at checkout.
+  // Admin mode keeps the full configured max_ft — admins accept the risk of
+  // building something un-exportable. Either way, the 250M px² budget +
+  // dataURL sanity check in generateFullResExport() remain the actual
+  // enforcement backstop (and also catch lower mobile-Safari ceilings).
+  const BUILDER_MAX_FT = mode === 'customer' ? Math.min(configLimits.maxFt, 11) : configLimits.maxFt;
+
   // Live $/ft rates from the store's admin-editable settings — the PRICING
   // constants below are stale display copy (e.g. $6/$8/$12) that don't match
   // what /dtf actually charges (server-side rates.standard/rush/hot_rush,
@@ -613,9 +626,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     if (maxY > declaredSheetPx + 1) {
       // Auto-bump the declared sheet length so pricing matches what fits.
       const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
-      if (neededFt > configLimits.maxFt) {
-        setSheetLengthFt(configLimits.maxFt);
-        setFitError(`Designs need ${neededFt} ft but the max sheet length is ${configLimits.maxFt} ft. Split into two sheets, or reduce size/quantity.`);
+      if (neededFt > BUILDER_MAX_FT) {
+        setSheetLengthFt(BUILDER_MAX_FT);
+        setFitError(`Designs need ${neededFt} ft but the max sheet length is ${BUILDER_MAX_FT} ft. Split into two sheets, or reduce size/quantity.`);
         return false;
       }
       setSheetLengthFt(neededFt);
@@ -902,7 +915,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   function updateSheetLength(ft: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const newFt = Math.max(configLimits.minFt, Math.min(configLimits.maxFt, Math.round(ft)));
+    const newFt = Math.max(configLimits.minFt, Math.min(BUILDER_MAX_FT, Math.round(ft)));
     const newHeight = feetToPx(newFt);
     // Resize both bitmap and CSS so the zoom factor alone governs display scale
     canvas.setDimensions({
@@ -1116,9 +1129,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // export that would just get rejected — checkFit() already keeps
     // sheetLengthFt in sync with what's actually placed, so this reuses that
     // same figure against the live store ceiling.
-    if (Math.ceil(sheetLengthFt) > configLimits.maxFt) {
+    if (Math.ceil(sheetLengthFt) > BUILDER_MAX_FT) {
       setCheckoutError(
-        `Designs need ${Math.ceil(sheetLengthFt)} ft but the max sheet length is ${configLimits.maxFt} ft. Split into two sheets, or reduce size/quantity.`
+        `Designs need ${Math.ceil(sheetLengthFt)} ft but the max sheet length is ${BUILDER_MAX_FT} ft. Split into two sheets, or reduce size/quantity.`
       );
       return;
     }
@@ -1151,8 +1164,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       // if the customer bounces before finishing checkout. The uploaded
       // file itself (stashed below) is already safe in Spaces independent
       // of this succeeding, so a save failure here shouldn't block handoff.
+      // stampUrl: false — this save can be the FIRST save of a brand-new
+      // sheet (dbId still null), and persistSheet's URL-stamp navigate()
+      // would otherwise remount the whole builder (DtfBuilderPage keys
+      // GangSheetBuilder by the :id param) mid-checkout, right as we're
+      // about to navigate away to /dtf anyway. The row still gets its id
+      // via setDbId either way — only the URL/history write is skipped.
       try {
-        await persistSheet('exported');
+        await persistSheet('exported', { stampUrl: false });
       } catch (err) {
         console.error('Sheet save before checkout failed (non-fatal):', err);
       }
@@ -1188,7 +1207,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // error message on failure (e.g. the customer 20-sheet cap) instead of
   // swallowing it, so callers can surface something more useful than
   // "Save failed".
-  async function persistSheet(status: 'draft' | 'exported'): Promise<void> {
+  async function persistSheet(status: 'draft' | 'exported', { stampUrl = true }: { stampUrl?: boolean } = {}): Promise<void> {
     const body = {
       name: sheetName,
       sheet_length_ft: sheetLengthFt,
@@ -1215,8 +1234,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       // sheet does, instead of falling back to dbId === null and minting a
       // second row for what's really the same sheet. Customer-mode only —
       // the admin /admin/gangsheet route predates this fix and isn't in
-      // scope for this pass.
-      if (mode === 'customer') {
+      // scope for this pass. stampUrl: false (checkout's best-effort save)
+      // skips this — see the call site's comment for why.
+      if (mode === 'customer' && stampUrl) {
         navigate(`/dtf/builder/${data.id}`, { replace: true });
       }
     }
@@ -1563,7 +1583,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <input
                         type="number"
                         min={configLimits.minFt}
-                        max={configLimits.maxFt}
+                        max={BUILDER_MAX_FT}
                         value={sheetLengthFt}
                         onChange={(e) => updateSheetLength(parseInt(e.target.value) || configLimits.minFt)}
                         className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
@@ -1572,6 +1592,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                     </div>
                   </label>
                   <p className="text-[10px] text-gray-400">Width fixed at 22". Set the length manually — if your graphics don't fit you'll get a warning.</p>
+                  {mode === 'customer' && (
+                    <p className="text-[10px] text-orange-600">
+                      The online builder supports sheets up to 11 ft — need longer? Use the upload lane on the DTF page.
+                    </p>
+                  )}
                 </div>
 
                 {/* Design list */}
@@ -1780,7 +1805,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                         }`}>
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-semibold text-gray-900">{tier.label}</span>
-                          <span className="text-sm font-bold text-orange-600">${effectiveRates[key].toFixed(2)}/ft</span>
+                          <span className="text-sm font-bold text-orange-600">
+                            {mode === 'customer' && !liveRates ? '—/ft' : `$${effectiveRates[key].toFixed(2)}/ft`}
+                          </span>
                         </div>
                         <p className="text-[10px] text-gray-500 mt-0.5">{tier.desc}</p>
                       </button>
@@ -1796,7 +1823,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Rate</span>
-                    <span className="text-gray-900">${effectiveRates[pricingTier].toFixed(2)}/ft</span>
+                    <span className="text-gray-900">
+                      {mode === 'customer' && !liveRates ? '—/ft' : `$${effectiveRates[pricingTier].toFixed(2)}/ft`}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Designs</span>
@@ -1804,12 +1833,16 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   </div>
                   <div className="border-t border-gray-200 pt-2 flex justify-between">
                     <span className="text-sm font-semibold text-gray-900">Total Cost</span>
-                    <span className="text-lg font-black text-green-700">${totalCost.toFixed(2)}</span>
+                    <span className="text-lg font-black text-green-700">
+                      {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
+                    </span>
                   </div>
                   {designCount > 0 && (
                     <div className="flex justify-between text-xs text-gray-500">
                       <span>Cost per design</span>
-                      <span className="font-semibold">${costPerDesign.toFixed(2)}</span>
+                      <span className="font-semibold">
+                        {mode === 'customer' && !liveRates ? '—' : `$${costPerDesign.toFixed(2)}`}
+                      </span>
                     </div>
                   )}
                 </div>
