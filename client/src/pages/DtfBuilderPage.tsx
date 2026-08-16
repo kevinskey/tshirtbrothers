@@ -3,7 +3,7 @@
 // ownership scoping happens server-side in server/routes/gangsheetStore.js's
 // /sheets routes (created_by = req.user.id), not here.
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import GangSheetBuilder from '@/components/gangsheet/GangSheetBuilder';
 
@@ -22,6 +22,12 @@ function trackEvent(event: string, data?: Record<string, unknown>): void {
 // account may build a sheet, not just admins.
 export default function DtfBuilderPage() {
   const navigate = useNavigate();
+  // Both /dtf/builder and /dtf/builder/:id render this page — `id` is
+  // undefined on the former. Used below as GangSheetBuilder's `key` (I1) so
+  // switching between two different sheet ids — e.g. via the My Sheets
+  // panel's Open button — fully remounts the builder instead of leaving it
+  // with a stale dbId/canvas from whichever sheet was open before.
+  const { id } = useParams();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
@@ -51,5 +57,5 @@ export default function DtfBuilderPage() {
     );
   }
 
-  return <GangSheetBuilder mode="customer" />;
+  return <GangSheetBuilder key={id ?? 'new'} mode="customer" />;
 }

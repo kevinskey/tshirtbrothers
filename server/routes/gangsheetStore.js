@@ -368,6 +368,9 @@ router.post('/sheets', authenticate, async (req, res, next) => {
 
 router.get('/sheets/:id', authenticate, async (req, res, next) => {
   try {
+    // M4: a non-integer id can never match a row — reject before it reaches
+    // the query instead of letting Postgres throw on the int cast.
+    if (!Number.isInteger(Number(req.params.id))) return res.status(404).json({ error: 'Sheet not found' });
     // Same 404 whether the row doesn't exist or belongs to someone else —
     // no existence leak across accounts.
     const { rows } = await pool.query(
@@ -381,12 +384,29 @@ router.get('/sheets/:id', authenticate, async (req, res, next) => {
 
 router.put('/sheets/:id', authenticate, async (req, res, next) => {
   try {
+    // M4: a non-integer id can never match a row — reject before it reaches
+    // the query instead of letting Postgres throw on the int cast.
+    if (!Number.isInteger(Number(req.params.id))) return res.status(404).json({ error: 'Sheet not found' });
     const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status } = req.body || {};
     if (sheet_length_ft !== undefined && sheet_length_ft !== null) {
       const n = Number(sheet_length_ft);
       if (!Number.isFinite(n) || n < 1 || n > 20) {
         return res.status(400).json({ error: 'Sheet length must be a number between 1 and 20 ft' });
       }
+    }
+    // M5: allowlist status/pricing_tier and cap name length before they hit
+    // the UPDATE — these all come straight from client-side builder state.
+    if (status !== undefined && status !== null && !['draft', 'exported'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    if (
+      pricing_tier !== undefined && pricing_tier !== null
+      && !['standard', 'rush', 'hotRush', 'hot_rush'].includes(pricing_tier)
+    ) {
+      return res.status(400).json({ error: 'Invalid pricing tier' });
+    }
+    if (typeof name === 'string' && name.length > 120) {
+      return res.status(400).json({ error: 'Name is too long (max 120 characters)' });
     }
     const { rows } = await pool.query(
       `UPDATE gang_sheets SET
@@ -411,6 +431,9 @@ router.put('/sheets/:id', authenticate, async (req, res, next) => {
 
 router.delete('/sheets/:id', authenticate, async (req, res, next) => {
   try {
+    // M4: a non-integer id can never match a row — reject before it reaches
+    // the query instead of letting Postgres throw on the int cast.
+    if (!Number.isInteger(Number(req.params.id))) return res.status(404).json({ error: 'Sheet not found' });
     const { rows } = await pool.query(
       'DELETE FROM gang_sheets WHERE id = $1 AND created_by = $2 RETURNING id',
       [req.params.id, req.user.id],

@@ -109,6 +109,7 @@ function App() {
           <Route path="/sale" element={<SalePage />} />
           <Route path="/dtf" element={<DtfStorePage />} />
           <Route path="/dtf/builder" element={<DtfBuilderPage />} />
+          <Route path="/dtf/builder/:id" element={<DtfBuilderPage />} />
           <Route path="/dtf/success" element={<DtfSuccessPage />} />
           <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
           <Route path="/brands" element={<BrandsPage />} />

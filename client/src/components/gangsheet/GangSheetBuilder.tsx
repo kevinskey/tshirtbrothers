@@ -59,6 +59,10 @@ function trackEvent(event: string, data?: Record<string, unknown>): void {
 // that file's comment on why it survives a Stripe back-button trip).
 const DTF_UPLOAD_STASH_KEY = 'dtf_upload_stash';
 
+// Mirrors server/routes/gangsheetStore.js's SHEET_CAP so the "x of 20
+// sheets" copy in the My Sheets panel matches what the server enforces.
+const CUSTOMER_SHEET_CAP = 20;
+
 interface GangSheetBuilderProps {
   // 'customer' points the sheet CRUD calls at /api/gangsheet-store/sheets
   // (own-sheets-only, enforced server-side), hides admin-only panels, and
@@ -98,6 +102,21 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
+  // My Sheets panel (customer mode only) — list of the customer's own saved
+  // sheets, fetched from the same /sheets endpoint persistSheet() writes to.
+  const [mySheets, setMySheets] = useState<{ id: number; name: string; sheet_length_ft: number; status: string; updated_at: string }[]>([]);
+  const [mySheetsOpen, setMySheetsOpen] = useState(false);
+  const [mySheetsLoading, setMySheetsLoading] = useState(false);
+
+  // Live min_ft/max_ft from the store's admin-editable settings, captured
+  // alongside liveRates below. Falls back to the static constants until the
+  // fetch resolves (or if it never does) — same fallback idiom as
+  // effectiveRates just below.
+  const [configLimits, setConfigLimits] = useState<{ minFt: number; maxFt: number }>({
+    minFt: MIN_SHEET_LENGTH_FT,
+    maxFt: MAX_SHEET_LENGTH_FT,
+  });
+
   // Live $/ft rates from the store's admin-editable settings — the PRICING
   // constants below are stale display copy (e.g. $6/$8/$12) that don't match
   // what /dtf actually charges (server-side rates.standard/rush/hot_rush,
@@ -109,7 +128,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   useEffect(() => {
     fetch('/api/gangsheet-store/config')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
-      .then((data: { rates?: { standard?: unknown; rush?: unknown; hot_rush?: unknown } }) => {
+      .then((data: { rates?: { standard?: unknown; rush?: unknown; hot_rush?: unknown }; min_ft?: unknown; max_ft?: unknown }) => {
         const rates = data.rates;
         if (
           !rates || typeof rates.standard !== 'number' || typeof rates.rush !== 'number'
@@ -124,6 +143,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           rush: rates.rush / 100,
           hotRush: rates.hot_rush / 100,
         });
+        // min_ft/max_ft (I2) travel with the same response but are validated
+        // separately — a malformed rates shape above already threw, so a bad
+        // shape here just leaves configLimits at its static-constant default
+        // instead of failing the whole fetch.
+        if (typeof data.min_ft === 'number' && typeof data.max_ft === 'number') {
+          setConfigLimits({ minFt: data.min_ft, maxFt: data.max_ft });
+        }
       })
       .catch((err) => {
         console.error('[gangsheet] failed to load live store rates — falling back to static PRICING constants:', err);
@@ -587,9 +613,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     if (maxY > declaredSheetPx + 1) {
       // Auto-bump the declared sheet length so pricing matches what fits.
       const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
-      if (neededFt > MAX_SHEET_LENGTH_FT) {
-        setSheetLengthFt(MAX_SHEET_LENGTH_FT);
-        setFitError(`Designs need ${neededFt} ft but the max sheet length is ${MAX_SHEET_LENGTH_FT} ft. Split into two sheets, or reduce size/quantity.`);
+      if (neededFt > configLimits.maxFt) {
+        setSheetLengthFt(configLimits.maxFt);
+        setFitError(`Designs need ${neededFt} ft but the max sheet length is ${configLimits.maxFt} ft. Split into two sheets, or reduce size/quantity.`);
         return false;
       }
       setSheetLengthFt(neededFt);
@@ -876,7 +902,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   function updateSheetLength(ft: number) {
     const canvas = fabricRef.current;
     if (!canvas) return;
-    const newFt = Math.max(1, Math.min(MAX_SHEET_LENGTH_FT, Math.round(ft)));
+    const newFt = Math.max(configLimits.minFt, Math.min(configLimits.maxFt, Math.round(ft)));
     const newHeight = feetToPx(newFt);
     // Resize both bitmap and CSS so the zoom factor alone governs display scale
     canvas.setDimensions({
@@ -1001,11 +1027,28 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
     const exportHeight = Math.max(PX_PER_FOOT, maxY + DESIGN_SPACING_PX);
 
+    // Conservative canvas-area budget (I3): a canvas bigger than this risks
+    // exhausting memory or silently producing a corrupt/blank PNG on weaker
+    // devices/browsers. Fail fast with a message the callers below map to
+    // friendly copy, instead of letting toDataURL() hang or crash the tab.
+    if (SHEET_WIDTH_PX * exportHeight > 250_000_000) {
+      throw new Error('TOO_LARGE');
+    }
+
     const savedZoom = canvas.getZoom();
+    // C1: canvas.backgroundColor is opaque white (set at canvas init, ~:151)
+    // so admin's on-screen editing view always has a visible page — but
+    // Fabric renders that background color into toDataURL() like any other
+    // pixel. DTF printing needs a transparent PNG (only the artwork prints;
+    // a white rectangle behind it prints too, ruining sheets meant for dark
+    // garments). Clear it for this render only; restored in the finally
+    // below alongside zoom/grid so admin's on-screen view is unaffected.
+    const savedBackgroundColor = canvas.backgroundColor;
     try {
       // Render at full resolution
       canvas.setZoom(1);
       canvas.setDimensions({ width: SHEET_WIDTH_PX, height: exportHeight }, { cssOnly: false });
+      canvas.backgroundColor = '';
 
       const dataUrl = canvas.toDataURL({
         format: 'png',
@@ -1015,9 +1058,16 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         width: SHEET_WIDTH_PX,
         height: exportHeight,
       });
+      // I3: a truncated/empty data URL means the render silently failed
+      // (canvas too large for this device) rather than throwing — treat it
+      // the same as the explicit size-budget check above.
+      if (!dataUrl.startsWith('data:image/png;base64,') || dataUrl.length < 1000) {
+        throw new Error('TOO_LARGE');
+      }
       return { dataUrl, heightPx: exportHeight };
     } finally {
-      // Restore zoom + grid regardless of success or failure
+      // Restore zoom + grid + background regardless of success or failure
+      canvas.backgroundColor = savedBackgroundColor;
       canvas.setZoom(savedZoom);
       canvas.setDimensions({
         width: SHEET_WIDTH_PX * savedZoom,
@@ -1040,9 +1090,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Export failed:', err);
-      alert('Export failed. Try again.');
+      alert(err?.message === 'TOO_LARGE'
+        ? 'This sheet is too large to export in your browser — reduce the size/quantity of graphics, or split it into two sheets.'
+        : 'Export failed. Try again.');
     } finally {
       setExporting(false);
     }
@@ -1055,6 +1107,21 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // navigate to /dtf so the customer picks turnaround + checks out there.
   async function handleCheckoutSheet() {
     if (mode !== 'customer' || checkingOut) return;
+    // I5: nothing to export/upload/checkout with an empty sheet.
+    if (designs.length === 0) {
+      setCheckoutError('Add at least one design first');
+      return;
+    }
+    // I2: catch an over-length sheet BEFORE burning time/memory on a full-res
+    // export that would just get rejected — checkFit() already keeps
+    // sheetLengthFt in sync with what's actually placed, so this reuses that
+    // same figure against the live store ceiling.
+    if (Math.ceil(sheetLengthFt) > configLimits.maxFt) {
+      setCheckoutError(
+        `Designs need ${Math.ceil(sheetLengthFt)} ft but the max sheet length is ${configLimits.maxFt} ft. Split into two sheets, or reduce size/quantity.`
+      );
+      return;
+    }
     setCheckingOut(true);
     setCheckoutError(null);
     trackEvent('dtf-builder-checkout');
@@ -1097,9 +1164,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         fileName: `${sheetName || 'Untitled Sheet'}.png`,
         at: Date.now(),
       };
+      // M2: if the stash write fails (private-mode sessionStorage etc.), the
+      // handoff has nothing to hand off — surface it and stop here instead
+      // of navigating to /dtf with no restorable upload.
       try {
         sessionStorage.setItem(DTF_UPLOAD_STASH_KEY, JSON.stringify(stash));
-      } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
+      } catch {
+        throw new Error('Could not prepare checkout handoff — try again, or use the Upload lane on the DTF page with an exported PNG.');
+      }
 
       navigate('/dtf?from=builder');
     } catch (err: any) {
@@ -1138,7 +1210,17 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const res2 = await fetch(`${apiBase}/${data.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
       const data2 = await res2.json().catch(() => ({}));
       if (!res2.ok) throw new Error(data2.error || 'Save failed');
+      // I1: stamp the new row's id into the URL so a page refresh (or a
+      // return visit) resolves sheetId -> dbId the same way any other saved
+      // sheet does, instead of falling back to dbId === null and minting a
+      // second row for what's really the same sheet. Customer-mode only —
+      // the admin /admin/gangsheet route predates this fix and isn't in
+      // scope for this pass.
+      if (mode === 'customer') {
+        navigate(`/dtf/builder/${data.id}`, { replace: true });
+      }
     }
+    if (mode === 'customer') refreshMySheets();
   }
 
   async function handleSave() {
@@ -1172,6 +1254,41 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   useEffect(() => {
     if (sheetId && fabricRef.current) loadSheet();
   }, [sheetId]);
+
+  // ─── My Sheets (customer mode) ──────────────────────────────────────────
+
+  async function refreshMySheets() {
+    if (mode !== 'customer') return;
+    setMySheetsLoading(true);
+    try {
+      const res = await fetch('/api/gangsheet-store/sheets', { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (res.ok) setMySheets(await res.json());
+    } catch {
+      // Best-effort — the panel just keeps showing whatever it last had.
+    } finally {
+      setMySheetsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshMySheets();
+  }, []);
+
+  async function handleDeleteSheet(id: number) {
+    if (!confirm("Delete this sheet? This can't be undone.")) return;
+    try {
+      const res = await fetch(`/api/gangsheet-store/sheets/${id}`, { method: 'DELETE', headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Delete failed'); return; }
+      setMySheets((prev) => prev.filter((s) => s.id !== id));
+      // Deleting the sheet currently open in the builder — send the user
+      // back to a blank builder rather than leaving them editing a row that
+      // no longer exists (the next Save would 404 against a stale dbId).
+      if (dbId === id) navigate('/dtf/builder');
+    } catch {
+      alert('Delete failed');
+    }
+  }
 
   // ─── File Upload ────────────────────────────────────────────────────────
 
@@ -1283,7 +1400,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         <div className="hidden md:flex items-center gap-3 text-xs text-gray-500">
           <span>{designCount} designs</span>
           <span>{sheetLengthFt}ft</span>
-          <span className="font-bold text-green-700">${totalCost.toFixed(2)}</span>
+          {/* M3: never show a fallback-priced dollar figure to a customer —
+              only the live store rate, or '—' until it resolves. Admin may
+              still see the static-fallback price if the live fetch fails. */}
+          <span className="font-bold text-green-700">
+            {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
+          </span>
         </div>
 
         <div className="w-px h-6 bg-gray-200" />
@@ -1292,16 +1414,17 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50">
           <Save className="w-3 h-3" /> {saving ? '...' : 'Save'}
         </button>
-        <button onClick={handleExport} disabled={exporting} className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
+        <button onClick={handleExport} disabled={exporting || checkingOut} className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
           <Download className="w-3 h-3" /> {exporting ? '...' : 'Export PNG'}
         </button>
         {mode === 'customer' && (
           <button
             onClick={handleCheckoutSheet}
-            disabled={checkingOut || exporting}
+            disabled={checkingOut || exporting || !liveRates}
             className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
-            <DollarSign className="w-3 h-3" /> {checkingOut ? 'Preparing…' : 'Checkout this sheet'}
+            <DollarSign className="w-3 h-3" />
+            {checkingOut ? 'Preparing…' : !liveRates ? 'Loading current pricing…' : 'Checkout this sheet'}
           </button>
         )}
       </header>
@@ -1309,6 +1432,42 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       {mode === 'customer' && (
         <div className="bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">
           Design your gang sheet — $/ft updates as you go
+        </div>
+      )}
+
+      {/* ── My Sheets (customer mode only) ──────────────────────────────── */}
+      {mode === 'customer' && (
+        <div className="border-b border-gray-200 bg-white flex-shrink-0">
+          <button
+            onClick={() => setMySheetsOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+          >
+            <span className="flex items-center gap-1">
+              <FolderOpen className="w-3.5 h-3.5" /> My sheets ({mySheets.length} of {CUSTOMER_SHEET_CAP})
+            </span>
+            <span>{mySheetsOpen ? '▲' : '▼'}</span>
+          </button>
+          {mySheetsOpen && (
+            <div className="max-h-48 overflow-y-auto border-t border-gray-100 px-4 py-2">
+              {mySheetsLoading && <p className="text-xs text-gray-400 py-2">Loading…</p>}
+              {!mySheetsLoading && mySheets.length === 0 && (
+                <p className="text-xs text-gray-400 py-2">No saved sheets yet.</p>
+              )}
+              {!mySheetsLoading && mySheets.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-2 text-xs py-1.5 border-b border-gray-50 last:border-0">
+                  <span className="truncate flex-1">
+                    {s.name} · {s.sheet_length_ft}ft · {new Date(s.updated_at).toLocaleDateString()}
+                  </span>
+                  <button onClick={() => navigate(`/dtf/builder/${s.id}`)} className="font-semibold text-orange-600 hover:underline flex-shrink-0">
+                    Open
+                  </button>
+                  <button onClick={() => handleDeleteSheet(s.id)} className="font-semibold text-red-500 hover:underline flex-shrink-0">
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1389,6 +1548,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   <Upload className="w-8 h-8 text-gray-300" />
                   <span className="text-sm font-medium text-gray-500">Drop designs here or click to upload</span>
                   <span className="text-[10px] text-gray-400">PNG, JPG, SVG · 300 DPI recommended</span>
+                  <span className="text-[10px] text-gray-400">PNGs with transparent backgrounds print clean; JPGs print their full rectangle.</span>
                   <input type="file" multiple accept=".png,.jpg,.jpeg,.svg,.webp,.tiff" className="hidden"
                     onChange={e => handleFileUpload(e.target.files)} />
                 </label>
@@ -1402,10 +1562,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <button onClick={() => updateSheetLength(sheetLengthFt - 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">−</button>
                       <input
                         type="number"
-                        min={1}
-                        max={MAX_SHEET_LENGTH_FT}
+                        min={configLimits.minFt}
+                        max={configLimits.maxFt}
                         value={sheetLengthFt}
-                        onChange={(e) => updateSheetLength(parseInt(e.target.value) || 1)}
+                        onChange={(e) => updateSheetLength(parseInt(e.target.value) || configLimits.minFt)}
                         className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
                       />
                       <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
@@ -1477,24 +1637,33 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                             ))}
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <button
-                              onClick={() => handleRemoveBg(d.id)}
-                              disabled={aiBusyId === d.id}
-                              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50"
-                              title="Use AI to remove the background"
-                            >
-                              {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eraser className="w-3 h-3" />}
-                              Remove BG
-                            </button>
-                            <button
-                              onClick={() => handleFixDpi(d.id)}
-                              disabled={aiBusyId === d.id}
-                              className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                              title="Use AI to upscale 4× and fix low DPI"
-                            >
-                              {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                              Fix DPI
-                            </button>
+                            {/* I4: Remove BG / Fix DPI hit metered, unauthenticated
+                                AI endpoints (/api/design/remove-bg, /upscale) —
+                                admin only for this pass. The endpoints themselves
+                                staying unauthenticated is a separate, pre-existing
+                                ticket, not touched here. */}
+                            {mode === 'admin' && (
+                              <>
+                                <button
+                                  onClick={() => handleRemoveBg(d.id)}
+                                  disabled={aiBusyId === d.id}
+                                  className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                                  title="Use AI to remove the background"
+                                >
+                                  {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eraser className="w-3 h-3" />}
+                                  Remove BG
+                                </button>
+                                <button
+                                  onClick={() => handleFixDpi(d.id)}
+                                  disabled={aiBusyId === d.id}
+                                  className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                  title="Use AI to upscale 4× and fix low DPI"
+                                >
+                                  {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                                  Fix DPI
+                                </button>
+                              </>
+                            )}
                             <button
                               onClick={() => rotateDesign(d.id)}
                               disabled={aiBusyId === d.id}
@@ -1670,18 +1839,20 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           <Layout className="w-3 h-3" /> Layout
         </button>
         <span className="text-xs text-gray-500 whitespace-nowrap">{designCount} · {sheetLengthFt}ft</span>
-        <span className="text-xs font-bold text-green-700 whitespace-nowrap">${totalCost.toFixed(2)}</span>
+        <span className="text-xs font-bold text-green-700 whitespace-nowrap">
+          {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
+        </span>
         <div className="flex-1" />
-        <button onClick={handleExport} disabled={exporting} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap">
+        <button onClick={handleExport} disabled={exporting || checkingOut} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap">
           {exporting ? '...' : 'Export'}
         </button>
         {mode === 'customer' && (
           <button
             onClick={handleCheckoutSheet}
-            disabled={checkingOut || exporting}
+            disabled={checkingOut || exporting || !liveRates}
             className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap"
           >
-            {checkingOut ? '...' : 'Checkout'}
+            {checkingOut ? '...' : !liveRates ? 'Loading…' : 'Checkout'}
           </button>
         )}
       </div>

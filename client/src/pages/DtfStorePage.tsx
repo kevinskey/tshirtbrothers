@@ -158,9 +158,13 @@ export default function DtfStorePage() {
     // config resolves. A restored builder stash's height_px takes priority
     // over the flat 5ft default so the length matches what was actually
     // built.
+    // M8: read the stash once here rather than inside the updater below —
+    // React may invoke a state updater function more than once per commit
+    // (e.g. StrictMode's double-invoke in dev), which would otherwise read
+    // sessionStorage twice for one state update.
+    const stash = readUploadStash();
     setLengthFt((prev) => {
       if (prev !== null) return prev;
-      const stash = readUploadStash();
       if (stash) return clamp(Math.ceil(stash.height_px / 3600), config.min_ft, config.max_ft);
       return clamp(5, config.min_ft, config.max_ft);
     });
@@ -374,7 +378,7 @@ export default function DtfStorePage() {
 
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
-            {fromBuilder && (
+            {fromBuilder && uploadedFile && (
               <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-800">
                 Your built sheet is loaded — pick turnaround and check out
               </div>
