@@ -329,6 +329,97 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Customer: gang sheet builder (own sheets only) ─────────────────────────
+// Requires login (any role) but NOT adminOnly — every query below is scoped
+// created_by = req.user.id server-side, same idiom the admin routes below
+// use for the columns/COALESCE shape but with an added ownership predicate.
+
+const SHEET_CAP = 20;
+
+router.get('/sheets', authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, sheet_length_ft, status, updated_at
+       FROM gang_sheets WHERE created_by = $1
+       ORDER BY updated_at DESC LIMIT 20`,
+      [req.user.id],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/sheets', authenticate, async (req, res, next) => {
+  try {
+    const { name } = req.body || {};
+    const { rows: countRows } = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM gang_sheets WHERE created_by = $1',
+      [req.user.id],
+    );
+    if (countRows[0].n >= SHEET_CAP) {
+      return res.status(400).json({ error: 'Sheet limit reached — delete an old sheet first' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO gang_sheets (name, created_by) VALUES ($1, $2) RETURNING *`,
+      [name || 'Untitled Sheet', req.user.id],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.get('/sheets/:id', authenticate, async (req, res, next) => {
+  try {
+    // Same 404 whether the row doesn't exist or belongs to someone else —
+    // no existence leak across accounts.
+    const { rows } = await pool.query(
+      'SELECT * FROM gang_sheets WHERE id = $1 AND created_by = $2',
+      [req.params.id, req.user.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.put('/sheets/:id', authenticate, async (req, res, next) => {
+  try {
+    const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status } = req.body || {};
+    if (sheet_length_ft !== undefined && sheet_length_ft !== null) {
+      const n = Number(sheet_length_ft);
+      if (!Number.isFinite(n) || n < 1 || n > 20) {
+        return res.status(400).json({ error: 'Sheet length must be a number between 1 and 20 ft' });
+      }
+    }
+    const { rows } = await pool.query(
+      `UPDATE gang_sheets SET
+        name = COALESCE($1, name),
+        sheet_length_ft = COALESCE($2, sheet_length_ft),
+        pricing_tier = COALESCE($3, pricing_tier),
+        total_cost = COALESCE($4, total_cost),
+        layout_json = COALESCE($5, layout_json),
+        designs = COALESCE($6, designs),
+        status = COALESCE($7, status),
+        updated_at = NOW()
+      WHERE id = $8 AND created_by = $9 RETURNING *`,
+      [name, sheet_length_ft, pricing_tier, total_cost,
+       layout_json ? JSON.stringify(layout_json) : null,
+       designs ? JSON.stringify(designs) : null,
+       status, req.params.id, req.user.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/sheets/:id', authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'DELETE FROM gang_sheets WHERE id = $1 AND created_by = $2 RETURNING id',
+      [req.params.id, req.user.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
 // ── Admin: order queue, status transitions, private file download ─────────
 
 const adminGuard = [authenticate, adminOnly];
