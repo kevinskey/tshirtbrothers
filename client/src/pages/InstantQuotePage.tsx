@@ -677,7 +677,7 @@ export default function InstantQuotePage() {
           kind: 'custom',
           custom: {
             ...cleared.custom,
-            description: cleared.custom.description || customSeeds[key],
+            description: cleared.custom.description || (customSeeds[key] ?? ''),
           },
         };
       }
