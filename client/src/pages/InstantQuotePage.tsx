@@ -79,11 +79,25 @@ type CatalogProduct = {
 // Fields collected when the customer is quoting something that isn't in our
 // catalog — no size grid, no print method, just a free-form description +
 // quantity that the admin will review and price manually.
+// DTF pressing labor rate — auto-priced client-side for display. MUST match
+// PRESS_ONLY_RATE in server/routes/instantQuote.js, which is what actually
+// prices the saved quote (emails, admin, deposit).
+const PRESS_ONLY_RATE = 3;
+
 type CustomItemInputs = {
   description: string;
   quantity: string;
   notes: string;
+  // 'press-only' = DTF pressing service: quantity × $3 auto-priced; any
+  // transfer PRINTING is still priced manually after art review.
+  service?: 'press-only';
 };
+
+// Auto-priced portion of a custom item (0 for everything except pressing).
+function pressTotal(it: ItemDraft): number {
+  if (it.kind !== 'custom' || it.custom.service !== 'press-only') return 0;
+  return (parseInt(it.custom.quantity, 10) || 0) * PRESS_ONLY_RATE;
+}
 
 // Which shape of question set the item is currently in.
 //   unset   — the five-card "what are you quoting?" picker
@@ -543,8 +557,9 @@ export default function InstantQuotePage() {
 
   // Roll-ups across all items.
   const grandTotal = useMemo(
-    () => calcQueries.reduce((sum, q) => sum + (q.data?.total || 0), 0),
-    [calcQueries],
+    () => calcQueries.reduce((sum, q) => sum + (q.data?.total || 0), 0)
+      + items.reduce((sum, it) => sum + pressTotal(it), 0),
+    [calcQueries, items],
   );
   const grandQuantity = useMemo(
     () => items.reduce((sum, it) => {
@@ -679,6 +694,9 @@ export default function InstantQuotePage() {
           custom: {
             ...cleared.custom,
             description: cleared.custom.description || (customSeeds[key] ?? ''),
+            // Pressing is the one custom service with a known auto-priced
+            // rate; switching to another custom card clears the flag.
+            service: key === 'dtfpress' ? 'press-only' : undefined,
           },
         };
       }
@@ -1059,7 +1077,9 @@ function ItemCard({
     } else if (item.kind === 'custom') {
       const cq = parseInt(item.custom.quantity, 10) || 0;
       productLabel = item.custom.description.trim() || 'Custom item';
-      detail = `${cq} pcs · custom · priced after review`;
+      detail = item.custom.service === 'press-only'
+        ? `${cq} pcs · DTF pressing · $${pressTotal(item).toFixed(2)}`
+        : `${cq} pcs · custom · priced after review`;
     } else {
       productLabel = item.pickedProduct ? item.pickedProduct.name : inputs.garmentName;
       const locs: string[] = [];
@@ -1221,6 +1241,15 @@ function ItemCard({
               className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
               style={{ fontSize: '16px' }}
             />
+            {item.custom.service === 'press-only' && (parseInt(item.custom.quantity, 10) || 0) > 0 && (
+              <p className="mt-2 text-sm text-gray-700">
+                Pressing: {parseInt(item.custom.quantity, 10)} × ${PRESS_ONLY_RATE.toFixed(2)} ={' '}
+                <strong className="text-gray-900">${pressTotal(item).toFixed(2)}</strong>
+                <span className="block text-xs text-gray-500">
+                  Transfer printing (if you need it) is quoted after we review your art.
+                </span>
+              </p>
+            )}
           </Section>
           <Section icon={<Upload className="h-5 w-5" />} title="Reference photo or artwork (optional)">
             <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
@@ -1528,7 +1557,10 @@ function SaveQuoteModal({
   // If the quote is entirely custom items (nothing has been auto-priced),
   // reword the modal so the customer knows they're requesting a price
   // rather than filing an already-known number.
-  const isCustomOnly = !isLockIn && items.length > 0 && items.every((it) => it.kind === 'custom');
+  // Press-only items carry a real auto-calculated price, so a quote made of
+  // them doesn't get the "we'll email you a price" copy.
+  const isCustomOnly = !isLockIn && items.length > 0
+    && items.every((it) => it.kind === 'custom' && it.custom.service !== 'press-only');
 
   async function submit() {
     if (!name.trim()) {
@@ -1560,6 +1592,9 @@ function SaveQuoteModal({
               description: item.custom.description.trim(),
               quantity: Math.max(1, parseInt(item.custom.quantity, 10) || 1),
               notes: item.custom.notes.trim() || null,
+              // Server prices 'press-only' at its own PRESS_ONLY_RATE —
+              // the flag is a service selector, never a client-set price.
+              ...(item.custom.service ? { service: item.custom.service } : {}),
             },
           };
         }
@@ -1961,6 +1996,11 @@ function PriceCard({
               if (it.kind === 'custom') {
                 const cq = parseInt(it.custom.quantity, 10) || 0;
                 const label = `${i + 1}. ${it.custom.description.trim() || 'Custom item'}`;
+                if (it.custom.service === 'press-only') {
+                  return (
+                    <Row key={it.id} label={label} sub={`${cq} pcs · DTF pressing · $${PRESS_ONLY_RATE.toFixed(2)}/ea`} value={pressTotal(it)} />
+                  );
+                }
                 const sub = `${cq} pcs · custom · priced after review`;
                 return (
                   <Row key={it.id} label={label} sub={sub} value={0} pending />

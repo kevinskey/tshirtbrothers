@@ -748,7 +748,11 @@ function instantQuoteItemRows(item) {
     html += detailRow('Product', `Custom: ${item.custom.description}`);
     html += detailRow('Quantity', String(item.custom.quantity));
     if (item.custom.notes) html += detailRow('Notes', item.custom.notes);
-    html += detailRow('Price', 'To be quoted after review');
+    if (item.custom.service === 'press-only' && item.calc?.total > 0) {
+      html += detailRow('Price', `$${item.calc.total.toFixed(2)} ($${item.calc.per_shirt.toFixed(2)}/each pressing — transfer printing, if any, quoted after art review)`);
+    } else {
+      html += detailRow('Price', 'To be quoted after review');
+    }
     return html;
   }
   const { inputs, calc, pickedProductMeta } = item;
