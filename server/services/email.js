@@ -19,6 +19,10 @@ const BRAND_DARK = '#111827';
 // verbatim in the gang-sheet-order confirmation so a pickup customer sees
 // it in the body, not just buried in the footer.
 const SHOP_ADDRESS = '6010 Renaissance Parkway, Fairburn, GA 30213';
+// Same hours quoted in the AI FAQ knowledge base (server/routes/deepseek.js
+// TSB_KNOWLEDGE) — kept in sync so a "ready for pickup" email never
+// contradicts what the assistant tells the same customer.
+const SHOP_HOURS = '8am–8pm every day except Sunday (closed Sundays)';
 
 function baseLayout(title, bodyHtml) {
   return `<!DOCTYPE html>
@@ -910,6 +914,43 @@ export async function sendGangSheetPaidToCustomer({ order }) {
     to: [order.customer_email],
     subject,
     html: baseLayout('Order Confirmed', body),
+  });
+}
+
+// Fired when an admin flips an order to `ready` (server/routes/gangsheetStore.js
+// PATCH /admin/orders/:id). Pickup orders get the shop address + hours so
+// the customer doesn't have to dig for them; ship orders just get told
+// it's on the way — EasyPost tracking (if any) isn't wired to this order
+// type yet, so we don't promise a tracking number.
+export async function sendGangSheetReadyToCustomer({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const subject = `Your DTF transfers are ready! — Order #${order.id}`;
+  const deliveryBlock = order.delivery === 'ship'
+    ? `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your order has shipped! It's on its way to you — no action needed on your end.</p>`
+    : `
+      <div style="background:#fff7ed;border-radius:8px;padding:16px;margin:0 0 16px;">
+        <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:${BRAND_DARK};">Ready for pickup</p>
+        <p style="margin:0 0 4px;font-size:14px;color:#374151;">${SHOP_ADDRESS}</p>
+        <p style="margin:0;font-size:14px;color:#374151;">Hours: ${SHOP_HOURS}</p>
+        <p style="margin:8px 0 0;font-size:13px;color:#6b7280;">The facility is secure — please call us at (470) 622-4845 when you arrive and we'll bring it right out.</p>
+      </div>
+    `;
+  const body = `
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${order.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Good news — your DTF gang sheet order is ready!</p>
+    ${detailsTable(
+      detailRow('Order', `#${order.id}`) +
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Total', `<strong>${total}</strong>`)
+    )}
+    ${deliveryBlock}
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [order.customer_email],
+    subject,
+    html: baseLayout('Order Ready', body),
   });
 }
 

@@ -3,8 +3,11 @@ import multer from 'multer';
 import crypto from 'crypto';
 import fs from 'fs';
 import Stripe from 'stripe';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
-import { uploadObject } from '../services/spaces.js';
+import { authenticate, adminOnly } from '../middleware/auth.js';
+import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
+import { sendGangSheetReadyToCustomer } from '../services/email.js';
 
 const router = Router();
 
@@ -203,6 +206,55 @@ router.post('/checkout', async (req, res, next) => {
     });
     await pool.query('UPDATE gang_sheet_orders SET stripe_session_id = $1 WHERE id = $2', [session.id, orderId]);
     res.json({ url: session.url });
+  } catch (err) { next(err); }
+});
+
+// ── Admin: order queue, status transitions, private file download ─────────
+
+const adminGuard = [authenticate, adminOnly];
+
+router.get('/admin/orders', ...adminGuard, async (req, res, next) => {
+  try {
+    const openOnly = (req.query.status || 'open') !== 'all';
+    const { rows } = await pool.query(
+      `SELECT * FROM gang_sheet_orders
+        ${openOnly ? `WHERE status IN ('paid','in_production','ready')` : ''}
+        ORDER BY (tier = 'hot_rush') DESC, (tier = 'rush') DESC, paid_at ASC NULLS LAST, created_at DESC
+        LIMIT 200`,
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+const NEXT_STATUSES = ['paid', 'in_production', 'ready', 'completed', 'canceled'];
+router.patch('/admin/orders/:id', ...adminGuard, async (req, res, next) => {
+  try {
+    const { status } = req.body || {};
+    if (!NEXT_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const { rows } = await pool.query(
+      `UPDATE gang_sheet_orders SET status = $1,
+         ready_at = CASE WHEN $1 = 'ready' THEN now() ELSE ready_at END,
+         completed_at = CASE WHEN $1 = 'completed' THEN now() ELSE completed_at END
+       WHERE id = $2 RETURNING *`,
+      [status, req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    if (status === 'ready' && rows[0].customer_email) {
+      sendGangSheetReadyToCustomer({ order: rows[0] })
+        .catch((e) => console.error('[dtf-store] ready email failed:', e.message));
+    }
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.get('/admin/orders/:id/file', ...adminGuard, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT file_key FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    const obj = await getSpacesClient().send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="order-${req.params.id}.png"`);
+    obj.Body.pipe(res);
   } catch (err) { next(err); }
 });
 
