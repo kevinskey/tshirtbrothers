@@ -1262,25 +1262,48 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // swallowing it, so callers can surface something more useful than
   // "Save failed".
   async function persistSheet(status: 'draft' | 'exported', { stampUrl = true }: { stampUrl?: boolean } = {}): Promise<void> {
+    // Persist a SLIM design list. The in-memory DesignItem carries `history`
+    // (undo snapshots) and can carry a base64 data-URL imageUrl when the
+    // add-time upload fell back — serializing those made the save payload
+    // tens of MB, which on a phone connection looks like Save hanging
+    // forever (and can 413 the server's 10 MB JSON limit).
+    const persistable = [] as Array<Omit<DesignItem, 'history'>>;
+    for (const d of designs) {
+      const { history: _history, ...slim } = d;
+      if (slim.imageUrl.startsWith('data:')) {
+        // One retry to get it hosted; if that fails, refuse fast with
+        // guidance instead of shipping megabytes.
+        const hosted = await uploadDataUrlToSpaces(slim.imageUrl, slim.name);
+        if (hosted.startsWith('data:')) {
+          throw new Error(`"${d.name}" hasn't finished uploading — check your connection, then delete and re-add it.`);
+        }
+        slim.imageUrl = hosted;
+        setDesigns(prev => prev.map(p => (p.id === d.id ? { ...p, imageUrl: hosted } : p)));
+      }
+      persistable.push(slim);
+    }
     const body = {
       name: sheetName,
       sheet_length_ft: sheetLengthFt,
       pricing_tier: pricingTier,
       total_cost: totalCost,
-      designs: designs,
+      designs: persistable,
       status,
     };
 
+    // A slim payload should be quick; if the network is genuinely dead,
+    // fail with a message instead of spinning forever.
+    const saveTimeout = () => ({ signal: AbortSignal.timeout(30_000) });
     if (dbId) {
-      const res = await fetch(`${apiBase}/${dbId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+      const res = await fetch(`${apiBase}/${dbId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body), ...saveTimeout() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
     } else {
-      const res = await fetch(apiBase, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: sheetName }) });
+      const res = await fetch(apiBase, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: sheetName }), ...saveTimeout() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
       setDbId(data.id);
-      const res2 = await fetch(`${apiBase}/${data.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+      const res2 = await fetch(`${apiBase}/${data.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body), ...saveTimeout() });
       const data2 = await res2.json().catch(() => ({}));
       if (!res2.ok) throw new Error(data2.error || 'Save failed');
       // I1: stamp the new row's id into the URL so a page refresh (or a
@@ -1305,7 +1328,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       // button reads as "nothing happened".
       setJustSaved(true);
       window.setTimeout(() => setJustSaved(false), 2000);
-    } catch (err: any) { alert(err?.message || 'Save failed'); }
+    } catch (err: any) {
+      const msg = err?.name === 'TimeoutError' || err?.name === 'AbortError'
+        ? 'Save timed out — check your connection and try again.'
+        : err?.message || 'Save failed';
+      alert(msg);
+    }
     finally { setSaving(false); }
   }
 
