@@ -1166,9 +1166,9 @@ function ItemCard({
               { key: 'hoodie',     icon: '🧥', label: 'Hoodie',         sub: 'Pullover + zip options' },
               { key: 'sweatshirt', icon: '👚', label: 'Sweatshirt',     sub: 'Crewneck fleece' },
               { key: 'hat',        icon: '🧢', label: 'Hat',            sub: 'Caps, beanies, snapbacks' },
+              { key: 'other',      icon: '✨', label: 'Something else', sub: 'Bags, koozies, patches — describe it' },
               { key: 'byo',        icon: '📦', label: 'I have my own shirts', sub: 'You supply the garments — we print them' },
               { key: 'dtfpress',   icon: '🔥', label: 'DTF pressing only',    sub: 'Pressing $3 each · transfer printing quoted by size' },
-              { key: 'other',      icon: '✨', label: 'Something else', sub: 'Bags, koozies, patches — describe it' },
             ].map((card) => (
               <button
                 key={card.key}
