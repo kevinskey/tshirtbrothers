@@ -71,10 +71,11 @@ Customer lays out individual designs on the sheet in the browser.
 
 ## Turnaround tiers & cutoffs
 
-Three tiers, names/promises configurable:
-- **Standard** — e.g. ready next business day.
-- **Rush** — same-day if ordered before `cutoff_rush`.
-- **Hot Rush** — e.g. 2 hours, if ordered before `cutoff_hot_rush`.
+Three tiers, names/promises configurable. Kevin's launch promise is
+**KolorMatrix's ladder plus one day** (2026-08-15):
+- **Standard** — ready in 2 business days.
+- **Rush** — ready next business day if ordered before `cutoff_rush` (11:00).
+- **Hot Rush** — ready same day if ordered before `cutoff_hot_rush` (1:30).
 
 Cutoff behavior: past the cutoff (America/New_York), the tier's option shows
 "available again tomorrow" and is unselectable; the server rejects it too
@@ -177,7 +178,7 @@ Notifications (existing email service):
 | Decision | Default in this spec | Notes |
 |---|---|---|
 | Per-foot rates | $6 / $8 / $12 (KolorMatrix parity) | Pure business call; editable in admin post-launch |
-| Turnaround promises | Standard = next business day; Rush = same-day by 11:00; Hot Rush = 2 hr by 1:30 | Promise ONLY what the shop can staff — this is the risk item |
+| Turnaround promises | **DECIDED (KolorMatrix + 1 day):** Standard = 2 business days; Rush = next business day by 11:00; Hot Rush = same day by 1:30 | Kevin, 2026-08-15 |
 | Weekend service | Mon–Fri only for Rush/Hot Rush | |
 | Shipping | Pickup free; flat $6.99 USPS option | Or pickup-only at launch |
 | Guest checkout | Allowed on fast lane | Builder requires account |
