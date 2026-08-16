@@ -1438,19 +1438,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
+    <div className="h-screen [height:100dvh] flex flex-col bg-gray-100">
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3 flex-shrink-0 z-10">
         <button onClick={() => navigate(mode === 'customer' ? '/dtf' : '/admin')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
-          <ArrowLeft className="w-4 h-4" /> {mode === 'customer' ? 'Back to shop' : 'Admin'}
+          <ArrowLeft className="w-4 h-4" /> <span className="hidden md:inline">{mode === 'customer' ? 'Back to shop' : 'Admin'}</span>
         </button>
-        <div className="w-px h-6 bg-gray-200" />
+        <div className="hidden md:block w-px h-6 bg-gray-200" />
 
         {/* Sheet name */}
         <input
           type="text" value={sheetName}
           onChange={e => setSheetName(e.target.value)}
-          className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none px-1 py-0.5 w-40 sm:w-56"
+          className="text-sm font-semibold text-gray-900 bg-transparent border-b border-transparent hover:border-gray-300 focus:border-orange-500 focus:outline-none px-1 py-0.5 flex-1 min-w-0 w-auto md:w-56"
           style={{ fontSize: '16px' }}
         />
 
@@ -1481,20 +1481,20 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           </span>
         </div>
 
-        <div className="w-px h-6 bg-gray-200" />
+        <div className="hidden md:block w-px h-6 bg-gray-200" />
 
         {/* Actions */}
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50">
+        <button onClick={handleSave} disabled={saving} className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50">
           <Save className="w-3 h-3" /> {saving ? '...' : 'Save'}
         </button>
-        <button onClick={handleExport} disabled={exporting || checkingOut} className="flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
+        <button onClick={handleExport} disabled={exporting || checkingOut} className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
           <Download className="w-3 h-3" /> {exporting ? '...' : 'Export PNG'}
         </button>
         {mode === 'customer' && (
           <button
             onClick={handleCheckoutSheet}
             disabled={checkingOut || exporting || !liveRates}
-            className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+            className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
             <DollarSign className="w-3 h-3" />
             {checkingOut ? 'Preparing…' : !liveRates ? 'Loading current pricing…' : 'Checkout this sheet'}
@@ -1503,7 +1503,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       </header>
 
       {mode === 'customer' && (
-        <div className="bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">
+        <div className="hidden sm:block bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">
           Design your gang sheet — $/ft updates as you go
         </div>
       )}
@@ -1909,31 +1909,40 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       </div>
 
       {/* ── Mobile Bottom Bar ──────────────────────────────────────────── */}
-      <div className="md:hidden bg-white border-t border-gray-200 px-3 py-2 flex items-center gap-2 overflow-x-auto flex-shrink-0">
+      <div className="md:hidden bg-white border-t border-gray-200 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => { setActivePanel('upload'); setMobilePanelOpen(true); }}
-          className="flex items-center gap-1 px-3 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap"
+          className="flex items-center gap-1 px-3 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg whitespace-nowrap flex-shrink-0"
         >
-          <Plus className="w-3 h-3" /> Add Graphics
+          <Plus className="w-3 h-3" /> Add
         </button>
-        <button onClick={autoLayout} className="flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg whitespace-nowrap">
+        <button onClick={autoLayout} className="flex items-center gap-1 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0">
           <Layout className="w-3 h-3" /> Layout
-        </button>
-        <span className="text-xs text-gray-500 whitespace-nowrap">{designCount} · {sheetLengthFt}ft</span>
-        <span className="text-xs font-bold text-green-700 whitespace-nowrap">
-          {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
-        </span>
-        <div className="flex-1" />
-        <button onClick={handleExport} disabled={exporting || checkingOut} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap">
-          {exporting ? '...' : 'Export'}
         </button>
         {mode === 'customer' && (
           <button
+            onClick={handleSave}
+            disabled={saving}
+            aria-label="Save sheet"
+            className="flex items-center justify-center p-2 bg-gray-900 text-white rounded-lg disabled:opacity-50 flex-shrink-0"
+          >
+            <Save className="w-3 h-3" />
+          </button>
+        )}
+        <span className="flex-1 text-center text-xs font-bold text-green-700 whitespace-nowrap">
+          {mode === 'customer' && !liveRates ? '—' : `$${totalCost.toFixed(2)}`}
+        </span>
+        {mode === 'customer' ? (
+          <button
             onClick={handleCheckoutSheet}
             disabled={checkingOut || exporting || !liveRates}
-            className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap"
+            className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0"
           >
             {checkingOut ? '...' : !liveRates ? 'Loading…' : 'Checkout'}
+          </button>
+        ) : (
+          <button onClick={handleExport} disabled={exporting || checkingOut} className="px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0">
+            {exporting ? '...' : 'Export'}
           </button>
         )}
       </div>
