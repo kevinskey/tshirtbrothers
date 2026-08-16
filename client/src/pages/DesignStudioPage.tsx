@@ -595,6 +595,16 @@ export default function DesignStudioPage() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [savedDesignId, setSavedDesignId] = useState<number | null>(loadState?.designId ?? null);
   const [isSaving, setIsSaving] = useState(false);
+  // First-visit mobile coach card — three-step "how this works" pointer.
+  // Dismissing sets a localStorage flag so it never shows again; desktop
+  // never sees it (rendered md:hidden below).
+  const [showMobileCoach, setShowMobileCoach] = useState<boolean>(() => {
+    try {
+      return !localStorage.getItem('tsb_studio_coach_v1');
+    } catch {
+      return false;
+    }
+  });
 
   // Per-design print-area W × H in inches. Default 12 × 12. Hydrated from
   // loadState if a saved design was opened. Drives the DimensionReadout,
@@ -2468,8 +2478,8 @@ export default function DesignStudioPage() {
   /*  Render: Bottom Toolbar (mobile)                                  */
   /* ---------------------------------------------------------------- */
 
-  const bottomToolbar = (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-gray-200 bg-white md:hidden">
+  const mobileToolNav = (
+    <nav className="flex border-t border-gray-200 bg-white">
       {selectedProduct && frontImage && !showWelcome && (
         <button
           type="button"
@@ -2508,6 +2518,60 @@ export default function DesignStudioPage() {
         );
       })}
     </nav>
+  );
+
+  /* ---------------------------------------------------------------- */
+  /*  Render: Action Row (mobile) — Product chip + Save + Get Price    */
+  /* ---------------------------------------------------------------- */
+
+  // Sits directly above the tool nav so a phone customer always has a
+  // visible next step. Every control here reuses an existing handler —
+  // the product chip opens the same panel the "Change Products" tool
+  // button opens (toggleTool), Save/Get Price are the desktop bottom
+  // bar's exact handlers + disabled state (:handleSave / :handleGetPrice).
+  const mobileActionRow = (
+    <div className="flex items-center gap-2 border-t border-gray-200 bg-white px-2 py-2">
+      <button
+        type="button"
+        onClick={() => toggleTool('products')}
+        className="flex flex-1 min-w-0 items-center gap-2 rounded-lg px-1 py-1 text-left hover:bg-gray-50 transition"
+      >
+        <div className="h-8 w-8 shrink-0 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
+          {displayImage && <img src={displayImage} alt="" className="h-full w-full object-contain" />}
+        </div>
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-700">
+          {selectedProduct
+            ? `${selectedProduct.name} · ${productColors[selectedColorIdx]?.name ?? 'White'}`
+            : 'Choose a product'}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={isSaving}
+        aria-label="Save design"
+        className="flex shrink-0 items-center justify-center h-10 w-10 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+      >
+        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      </button>
+      <button
+        type="button"
+        onClick={handleGetPrice}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-600 text-white font-bold px-4 py-2 hover:bg-orange-700 transition"
+      >
+        <Tag className="h-4 w-4" /> Get Price
+      </button>
+    </div>
+  );
+
+  // Two-row fixed dock: action row on top, tool nav underneath. This
+  // outer element is the one actually pinned to bottom-0, so iOS safe-area
+  // padding goes here (once, on the wrapper) rather than on either row.
+  const bottomToolbar = (
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex flex-col bg-white pb-[env(safe-area-inset-bottom)]">
+      {mobileActionRow}
+      {mobileToolNav}
+    </div>
   );
 
   /* ---------------------------------------------------------------- */
@@ -3202,9 +3266,10 @@ export default function DesignStudioPage() {
       <div
         className={mobilePanel}
         style={{
-          // 4.5rem clears the mobile bottom toolbar (~64px because
-          // "Product Details" wraps to two lines). Plus keyboard inset.
-          bottom: `calc(4.5rem + ${kbInset}px)`,
+          // 8rem clears the two-row mobile dock (tool nav, ~64px because
+          // "Product Details" wraps to two lines, plus the action row
+          // above it, ~56px). Plus keyboard inset.
+          bottom: `calc(8rem + ${kbInset}px)`,
           width: vpWidth ? `${vpWidth}px` : undefined,
           maxWidth: vpWidth ? `${vpWidth}px` : undefined,
         }}
@@ -3319,6 +3384,37 @@ export default function DesignStudioPage() {
 
       {/* Done */}
       <button type="button" onClick={() => setSelectedElementId(null)} className="px-2 py-1.5 rounded-md text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
+    </div>
+  ) : null;
+
+  /* ---------------------------------------------------------------- */
+  /*  First-visit coach card (mobile only)                              */
+  /* ---------------------------------------------------------------- */
+
+  // Small dismissible "how this works" pointer over the lower canvas
+  // area. Shows once per browser (localStorage flag), never on md+.
+  const mobileCoachCard = !showWelcome && showMobileCoach ? (
+    <div className="md:hidden fixed left-3 right-3 bottom-[8.5rem] z-30 bg-white rounded-2xl border border-orange-200 shadow-xl p-4">
+      <div className="space-y-1.5 text-sm text-gray-700">
+        <p><span className="font-bold text-orange-600">1.</span> Pick your product (bottom toolbar)</p>
+        <p><span className="font-bold text-orange-600">2.</span> Add your art or text</p>
+        <p><span className="font-bold text-orange-600">3.</span> Tap Get Price when it looks right</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          try {
+            localStorage.setItem('tsb_studio_coach_v1', '1');
+          } catch {
+            // localStorage unavailable (private mode, etc) — still hide
+            // for this session even though it may reappear next visit.
+          }
+          setShowMobileCoach(false);
+        }}
+        className="mt-3 w-full rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white hover:bg-orange-700 transition"
+      >
+        Got it
+      </button>
     </div>
   ) : null;
 
@@ -3470,7 +3566,9 @@ export default function DesignStudioPage() {
   // On mobile, reserve room only when a bottom sheet (tool / welcome / text
   // panels) is actually open. Otherwise just clear the bottom nav (h-12).
   // The old static `pb-64` ate ~30% of the viewport on phones for nothing.
-  const mobileBottomPad = (activeTool || showWelcome || showTextEditor) ? 'pb-[42vh]' : 'pb-14';
+  // pb-14 (old, single-row nav) bumped to clear the taller two-row mobile
+  // dock (tool nav + action row) added above it.
+  const mobileBottomPad = (activeTool || showWelcome || showTextEditor) ? 'pb-[42vh]' : 'pb-[7.5rem]';
   // Phase 2 PR #10: layers panel takes 18rem of the right edge in Fabric
   // mode. Add a matching margin so the canvas isn't covered. Legacy mode
   // pays nothing for this — the panel doesn't render and the class isn't
@@ -3512,13 +3610,15 @@ export default function DesignStudioPage() {
             aspectRatio: `${canvasInches} / ${canvasInchesH}`,
             width: `${100 * canvasZoom}%`,
             // Fit the surface inside a viewport-height-based square: both
-            // dimensions capped at (100vh - 10rem) * zoom. 10rem covers
+            // dimensions capped at (100dvh - 10rem) * zoom. 10rem covers
             // header (4rem) + a bit of top/bottom breathing room + the
-            // mobile bottom nav. maxWidth handles wide (landscape) prints
-            // that would otherwise exceed the box; maxHeight handles tall
-            // (portrait) ones. Whichever is more restrictive wins.
-            maxHeight: `calc((100vh - 10rem) * ${canvasZoom})`,
-            maxWidth: `calc((100vh - 10rem) * ${canvasZoom})`,
+            // mobile bottom nav. dvh (not vh) so mobile Safari's address
+            // bar doesn't leave the cap stale after it collapses/expands.
+            // maxWidth handles wide (landscape) prints that would
+            // otherwise exceed the box; maxHeight handles tall (portrait)
+            // ones. Whichever is more restrictive wins.
+            maxHeight: `calc((100dvh - 10rem) * ${canvasZoom})`,
+            maxWidth: `calc((100dvh - 10rem) * ${canvasZoom})`,
             // cqw font scaling now keys off the shirt-photo box itself.
             containerType: 'inline-size',
           }}
@@ -3951,8 +4051,9 @@ export default function DesignStudioPage() {
       // Two-row wrapping palette pinned just above the main bottom toolbar.
       // flex-wrap lets the ~14 controls reflow onto a second row instead of
       // overflowing horizontally; shrink-0 children keep their tap-target
-      // width.
-      className="md:hidden fixed bottom-[5.5rem] left-2 right-2 z-40 flex flex-wrap items-center justify-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 [&>*]:shrink-0"
+      // width. bottom-[8.5rem] clears the two-row mobile dock (tool nav
+      // ~64px + action row ~48-52px) plus breathing room.
+      className="md:hidden fixed bottom-[8.5rem] left-2 right-2 z-40 flex flex-wrap items-center justify-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1.5 py-1 [&>*]:shrink-0"
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       onTouchStart={e => e.stopPropagation()}
@@ -4357,7 +4458,7 @@ export default function DesignStudioPage() {
     const here = location.pathname + location.search;
     const flagged = here + (location.search ? '&' : '?') + 'canvas=fabric';
     return (
-      <div className="h-screen w-screen overflow-hidden bg-gray-100 flex items-center justify-center p-6">
+      <div className="h-screen [height:100dvh] w-screen overflow-hidden bg-gray-100 flex items-center justify-center p-6">
         <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-8 text-center">
           <Sparkles className="h-10 w-10 mx-auto mb-3 text-blue-600" />
           <h2 className="text-xl font-bold text-gray-900 mb-2">Saved in the new editor</h2>
@@ -4401,6 +4502,7 @@ export default function DesignStudioPage() {
       {imageToolbar}
       {shapeToolbar}
       {canvas}
+      {mobileCoachCard}
       {useFabricRenderer && (
         <LayersPanel
           elements={designElements}
