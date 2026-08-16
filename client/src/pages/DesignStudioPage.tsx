@@ -625,13 +625,11 @@ export default function DesignStudioPage() {
   // overflow the main, which has overflow-auto so horizontal + vertical
   // scrollbars appear. UX-only: doesn't change saved coords or print
   // size, just the on-screen working area.
-  const [canvasZoom, setCanvasZoom] = useState<number>(() => {
-    // Phones get a 1.25x default so the product fills more of the screen;
-    // main is overflow-auto so the small horizontal overflow turns into a
-    // swipe rather than a layout break. Desktop stays at 1.0.
-    if (typeof window !== 'undefined' && window.innerWidth < 768) return 1.25;
-    return 1;
-  });
+  // Everyone opens at fit. Phones briefly defaulted to 1.25x, but that
+  // crops ~12% off each canvas edge behind a swipe nothing advertises,
+  // and pins the size badge offscreen-left — opening at fit shows the
+  // whole print area; + / pinch is still there for close work.
+  const [canvasZoom, setCanvasZoom] = useState<number>(1);
   // Conversion factor: legacy fontSize is in 800-px reference units, where
   // the full canvas width = 800px. canvas_inches inches map to those 800
   // units, so 1 inch = 800 / canvasInches reference units.
