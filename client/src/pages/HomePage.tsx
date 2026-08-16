@@ -9,6 +9,7 @@ import BottomCTA from '@/components/home/BottomCTA';
 import HowItWorksSection from '@/components/home/HowItWorksSection';
 import PricingHint from '@/components/home/PricingHint';
 import QuoteCTA from '@/components/home/QuoteCTA';
+import DtfPromo from '@/components/home/DtfPromo';
 import SalesPopup from '@/components/home/SalesPopup';
 
 export default function HomePage() {
@@ -24,6 +25,7 @@ export default function HomePage() {
       <SalesPopup />
       
       <ServicesGrid />
+      <DtfPromo />
       <QuoteCTA />
       <HowItWorksSection />
       <PricingHint />

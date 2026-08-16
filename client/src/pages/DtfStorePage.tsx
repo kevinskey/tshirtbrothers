@@ -355,21 +355,112 @@ export default function DtfStorePage() {
         path="/dtf"
       />
 
-      {/* Hero — dark band, same shape as SalePage's. */}
-      <section className="bg-gray-900 text-white">
-        <div className="container mx-auto max-w-4xl px-4 py-8 sm:py-10 text-center">
-          <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.2em] text-orange-400">DTF Gang Sheets</p>
-          <h1 className="mt-1 font-display text-2xl sm:text-4xl font-bold">
-            DTF Transfers by the Foot — 22&quot; gang sheets
-            {heroRate && <>, <span className="text-orange-500">{heroRate}/ft</span></>}
-          </h1>
-          <p className="mt-2 text-xs sm:text-sm text-gray-300">
-            Upload transparent PNG art at print size — what you upload is exactly what prints.
-          </p>
+      {/* Hero — the gang-sheet ribbon IS the pitch: film rolling out with
+          a foot-ruler edge, so "by the foot" needs no explaining. */}
+      <section className="overflow-hidden bg-gray-900 text-white">
+        <div className="container mx-auto grid max-w-5xl grid-cols-[1fr_auto] items-stretch gap-6 px-4 sm:gap-10">
+          <div className="py-10 sm:py-14">
+            <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.25em] text-orange-400">
+              DTF transfers · printed in Atlanta
+            </p>
+            <h1
+              className="mt-2 font-display text-4xl font-bold uppercase leading-[0.95] tracking-tight sm:text-6xl"
+              style={{ fontWeight: 900 }}
+            >
+              We print DTF.
+              <span className="block text-orange-500">By the foot.</span>
+            </h1>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-gray-300 sm:text-base">
+              22-inch gang sheets at 300 DPI with white-ink underbase, hot-peel film
+              {heroRate && <>, from <strong className="text-white">{heroRate}/ft</strong></>}.
+              Upload a print-ready sheet, or lay one out in your browser.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a
+                href="#order"
+                className="rounded-xl bg-orange-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-orange-700"
+              >
+                Order a sheet
+              </a>
+              <Link
+                to="/dtf/builder"
+                className="rounded-xl border border-gray-600 px-6 py-3 text-sm font-bold text-gray-200 transition hover:border-orange-500 hover:text-white"
+              >
+                Build one online
+              </Link>
+            </div>
+            <p className="mt-6 font-mono text-[11px] uppercase tracking-wider text-gray-500">
+              300 DPI · hot peel · pickup in Fairburn or ships nationwide
+            </p>
+          </div>
+
+          {/* The ribbon: dark PET film, printed art haloed in white ink,
+              tape-measure edge in feet. Decorative — hidden from AT. */}
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 150 420"
+            className="h-full w-24 self-stretch sm:w-36"
+            preserveAspectRatio="xMidYMin slice"
+          >
+            {/* film */}
+            <rect x="28" y="-10" width="122" height="440" rx="6" fill="#1f2937" />
+            <rect x="28" y="-10" width="122" height="440" rx="6" fill="url(#dtfGloss)" />
+            <defs>
+              <linearGradient id="dtfGloss" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#ffffff" stopOpacity="0.10" />
+                <stop offset="0.25" stopColor="#ffffff" stopOpacity="0" />
+                <stop offset="1" stopColor="#000000" stopOpacity="0.25" />
+              </linearGradient>
+            </defs>
+            {/* printed art — every piece sits on a white-ink halo, like real DTF */}
+            <g>
+              <circle cx="66" cy="46" r="17" fill="#ffffff" />
+              <circle cx="66" cy="46" r="13" fill="#ec4899" />
+              <rect x="94" y="26" width="42" height="30" rx="6" fill="#ffffff" />
+              <rect x="98" y="30" width="34" height="22" rx="4" fill="#22d3ee" />
+              <path d="M64 96 l14 24 h-11 l9 22 -24 -28 h11 z" fill="#ffffff" transform="scale(1.15) translate(-6,-8)" />
+              <path d="M64 96 l14 24 h-11 l9 22 -24 -28 h11 z" fill="#facc15" />
+              <rect x="96" y="96" width="38" height="38" rx="19" fill="#ffffff" />
+              <rect x="101" y="101" width="28" height="28" rx="14" fill="#ea580c" />
+              <rect x="52" y="168" width="80" height="26" rx="6" fill="#ffffff" />
+              <rect x="56" y="172" width="72" height="18" rx="4" fill="#111827" />
+              <text x="92" y="185" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="900" fontSize="11" fill="#ffffff" letterSpacing="1">TSB</text>
+              <circle cx="70" cy="238" r="19" fill="#ffffff" />
+              <circle cx="70" cy="238" r="15" fill="#22d3ee" />
+              <rect x="98" y="222" width="36" height="32" rx="6" fill="#ffffff" />
+              <rect x="102" y="226" width="28" height="24" rx="4" fill="#ec4899" />
+              <rect x="54" y="292" width="76" height="30" rx="6" fill="#ffffff" />
+              <rect x="58" y="296" width="68" height="22" rx="4" fill="#ea580c" />
+              <circle cx="72" cy="368" r="16" fill="#ffffff" />
+              <circle cx="72" cy="368" r="12" fill="#facc15" />
+              <rect x="100" y="352" width="34" height="30" rx="6" fill="#ffffff" />
+              <rect x="104" y="356" width="26" height="22" rx="4" fill="#111827" />
+            </g>
+            {/* tape-measure edge */}
+            <rect x="12" y="-10" width="16" height="440" fill="#111827" />
+            {[0, 1, 2, 3].map((ft) => (
+              <g key={ft}>
+                <rect x="12" y={20 + ft * 120} width="16" height="2" fill="#ea580c" />
+                <text
+                  x="20"
+                  y={36 + ft * 120}
+                  textAnchor="middle"
+                  fontFamily="ui-monospace, monospace"
+                  fontSize="8"
+                  fill="#9ca3af"
+                >
+                  {ft + 1}FT
+                </text>
+                {[1, 2, 3].map((q) => (
+                  <rect key={q} x="20" y={20 + ft * 120 + q * 30} width="8" height="1" fill="#4b5563" />
+                ))}
+              </g>
+            ))}
+          </svg>
         </div>
       </section>
 
-      <main className="container mx-auto max-w-4xl px-4 py-6 pb-28 lg:pb-10">
+      <main id="order" className="container mx-auto max-w-4xl px-4 py-6 pb-28 lg:pb-10 scroll-mt-24">
         {configLoading && (
           <div className="flex items-center justify-center py-20 text-gray-400">
             <Loader2 className="h-6 w-6 animate-spin" />
@@ -771,6 +862,123 @@ export default function DtfStorePage() {
           </div>
         </div>
       )}
+
+      {/* ── How it works — the DTF process is genuinely sequential, so
+          numbered steps carry real information here. ── */}
+      <section className="border-t border-gray-200 bg-white">
+        <div className="container mx-auto max-w-5xl px-4 py-10 sm:py-14">
+          <h2 className="font-display text-2xl font-bold text-gray-900 sm:text-3xl">How it works</h2>
+          <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            {[
+              {
+                n: '1',
+                title: 'Send your art',
+                body: 'Upload a print-ready 22″ sheet above, or lay your designs out in the online builder — it packs them onto the film for you.',
+              },
+              {
+                n: '2',
+                title: 'We print it',
+                body: '300 DPI on hot-peel film with a white-ink underbase, powdered and cured in-house in Fairburn, GA.',
+              },
+              {
+                n: '3',
+                title: 'You press it',
+                body: '300°F, 10–12 seconds, firm pressure, hot peel. Works on cotton, blends, and poly — no weeding, no cutting.',
+              },
+            ].map((s) => (
+              <div key={s.n} className="rounded-2xl border-2 border-gray-200 bg-white p-5">
+                <span className="font-mono text-xs font-bold text-orange-600">STEP {s.n}</span>
+                <h3 className="mt-1 font-display text-lg font-bold text-gray-900">{s.title}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{s.body}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-sm text-gray-500">
+            Don't want to press them yourself? We'll press your transfers onto garments for $3 each —{' '}
+            <Link to="/quote" className="text-orange-700 underline">start a quote</Link>.
+          </p>
+        </div>
+      </section>
+
+      {/* ── Turnaround pricing from the live settings ── */}
+      {config && (
+        <section className="border-t border-gray-200 bg-gray-50">
+          <div className="container mx-auto max-w-5xl px-4 py-10 sm:py-14">
+            <h2 className="font-display text-2xl font-bold text-gray-900 sm:text-3xl">Pick your speed</h2>
+            <p className="mt-1 text-sm text-gray-500">Same sheet, same quality — you're choosing how fast it comes off the printer.</p>
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              {(['standard', 'rush', 'hot_rush'] as const).map((t) => (
+                <div
+                  key={t}
+                  className={`rounded-2xl border-2 bg-white p-5 ${t === 'standard' ? 'border-orange-500' : 'border-gray-200'}`}
+                >
+                  <div className="flex items-baseline justify-between">
+                    <h3 className="font-display text-lg font-bold text-gray-900">
+                      {t === 'standard' ? 'Standard' : t === 'rush' ? 'Rush' : 'Hot Rush'}
+                    </h3>
+                    <span className="font-display text-xl font-bold text-orange-600">{money(config.rates[t])}<span className="text-xs font-medium text-gray-400">/ft</span></span>
+                  </div>
+                  <p className="mt-1.5 text-sm text-gray-600">{config.promises[t]}</p>
+                  {t === 'standard' && (
+                    <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide text-orange-600">Most orders</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── Specs & straight answers ── */}
+      <section className="border-t border-gray-200 bg-white">
+        <div className="container mx-auto max-w-5xl px-4 py-10 sm:py-14">
+          <h2 className="font-display text-2xl font-bold text-gray-900 sm:text-3xl">The fine print, plainly</h2>
+          <div className="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+            {[
+              {
+                q: 'What files work?',
+                a: 'Transparent-background PNG, 6,600 px wide (22″ at 300 DPI), up to 100 MB. What you upload is exactly what prints — we don’t edit your file.',
+              },
+              {
+                q: 'What do transfers press onto?',
+                a: 'Cotton, poly, blends, canvas, denim — light or dark garments. The white underbase keeps colors bright on anything.',
+              },
+              {
+                q: 'How do I press them?',
+                a: '300°F for 10–12 seconds with firm pressure, then peel hot. A second 5-second press with parchment sets the finish.',
+              },
+              {
+                q: 'How long do they keep?',
+                a: 'Stored cool and dry, transfers press just as well for up to a year — order a full sheet now, press as you need them.',
+              },
+              {
+                q: 'Do you print for other shops?',
+                a: 'Yes — plenty of local printers run their gang sheets through us. Your art stays yours, and files are kept private.',
+              },
+              {
+                q: 'Pickup or shipping?',
+                a: 'Free pickup in Fairburn, GA, or flat-rate shipping anywhere in the US.',
+              },
+            ].map((f) => (
+              <div key={f.q}>
+                <h3 className="text-sm font-bold text-gray-900">{f.q}</h3>
+                <p className="mt-1 text-sm leading-relaxed text-gray-600">{f.a}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-10 rounded-2xl bg-gray-900 px-6 py-6 text-center">
+            <p className="font-display text-xl font-bold uppercase text-white" style={{ fontWeight: 900 }}>
+              Ready when you are.
+            </p>
+            <a
+              href="#order"
+              className="mt-3 inline-block rounded-xl bg-orange-600 px-8 py-3 text-sm font-bold text-white transition hover:bg-orange-700"
+            >
+              Order a sheet
+            </a>
+          </div>
+        </div>
+      </section>
     </Layout>
   );
 }
