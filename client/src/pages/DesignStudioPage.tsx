@@ -1642,7 +1642,15 @@ export default function DesignStudioPage() {
   });
 
   const productColors = colorsData?.colors ?? selectedProduct?.colors ?? [];
-  const selectedColorImage = userPickedColor ? productColors[selectedColorIdx]?.image : null;
+  // Always prefer the per-color S&S colorFrontImage — it's the FLAT garment
+  // photo. products.image_url is S&S's "styled product shot", which for many
+  // styles is an on-model (person wearing it) photo that reads as noise on
+  // the design canvas. image_url is only the last-resort fallback for styles
+  // where S&S provides no flat color imagery.
+  const selectedColorImage = productColors[selectedColorIdx]?.image || null;
+  // While the colors query is in flight for an S&S product, don't paint the
+  // styled shot at all — a spinner beats a model photo that blinks away.
+  const colorsLoading = !!selectedProduct?.ss_id && colorsData === undefined;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   const displayImage = currentView === 'back' ? backImage : frontImage;
@@ -1654,7 +1662,10 @@ export default function DesignStudioPage() {
   const hasPickedDefaultBlack = useRef(false);
   useEffect(() => {
     if (hasPickedDefaultBlack.current) return;
-    if (initialProductId) return; // user came in with a specific product
+    // Applies to ?product= entries too: colorways are usually ordered
+    // White-first, and landing on Black beats landing on an arbitrary
+    // first color (the flat color image also replaces the on-model
+    // styled shot the moment a color is selected).
     if (userPickedColor) return;
     if (!productColors.length) return;
     const blackIdx = productColors.findIndex(
@@ -3623,7 +3634,13 @@ export default function DesignStudioPage() {
             containerType: 'inline-size',
           }}
         >
-          {displayImage ? (
+          {colorsLoading ? (
+            /* Colors still resolving — hold the frame rather than flashing
+               the on-model styled shot that's about to be replaced. */
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <Loader2 className="h-8 w-8 animate-spin text-gray-300" />
+            </div>
+          ) : displayImage ? (
             <img
               ref={productImgRef}
               src={displayImage}
