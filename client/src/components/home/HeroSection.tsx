@@ -74,7 +74,11 @@ export default function HeroSection() {
               {/* Fluid size below sm: clamp() keeps this nowrap line inside
                   a 390px phone. Scale runs one step below the old sizing so
                   the hero doesn't dwarf the header at stacked widths. */}
-              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-4xl xl:text-5xl 2xl:text-6xl">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+              {/* This line stays nowrap, so its size must track its column:
+                  fluid clamp below sm AND at lg+ (where the 3-col grid caps
+                  the column near 390px — fixed steps overflowed into the
+                  slide graphic). Cap 1.9rem keeps it inside at max-w-7xl. */}
+              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-[clamp(1.5rem,2.35vw,1.9rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
                 className="block my-1 sm:my-2 text-4xl sm:text-5xl md:text-6xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}

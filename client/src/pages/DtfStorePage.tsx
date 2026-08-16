@@ -358,7 +358,9 @@ export default function DtfStorePage() {
       {/* Hero — the gang-sheet ribbon IS the pitch: film rolling out with
           a foot-ruler edge, so "by the foot" needs no explaining. */}
       <section className="overflow-hidden bg-gray-900 text-white">
-        <div className="container mx-auto grid max-w-5xl grid-cols-[1fr_auto] items-stretch gap-6 px-4 sm:gap-10">
+        {/* Single column on phones — the vertical ribbon squeezed the copy
+            into a sliver at 390px; it returns beside the text from sm up. */}
+        <div className="container mx-auto grid max-w-5xl grid-cols-1 items-stretch gap-6 px-4 sm:grid-cols-[1fr_auto] sm:gap-10">
           <div className="py-10 sm:py-14">
             <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.25em] text-orange-400">
               DTF transfers · printed in Atlanta
@@ -399,7 +401,7 @@ export default function DtfStorePage() {
           <svg
             aria-hidden="true"
             viewBox="0 0 150 420"
-            className="h-full w-24 self-stretch sm:w-36"
+            className="hidden h-full self-stretch sm:block sm:w-36"
             preserveAspectRatio="xMidYMin slice"
           >
             {/* film */}
