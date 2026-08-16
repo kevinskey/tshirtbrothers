@@ -177,7 +177,7 @@ Notifications (existing email service):
 
 | Decision | Default in this spec | Notes |
 |---|---|---|
-| Per-foot rates | $6 / $8 / $12 (KolorMatrix parity) | Pure business call; editable in admin post-launch |
+| Per-foot rates | **DECIDED:** $3 Standard / $4 Rush / $6 Hot Rush | Kevin set $3/ft Standard 2026-08-15; Rush tiers keep KolorMatrix's x1.33/x2 multipliers — confirm those two |
 | Turnaround promises | **DECIDED (KolorMatrix + 1 day):** Standard = 2 business days; Rush = next business day by 11:00; Hot Rush = same day by 1:30 | Kevin, 2026-08-15 |
 | Weekend service | Mon–Fri only for Rush/Hot Rush | |
 | Shipping | Pickup free; flat $6.99 USPS option | Or pickup-only at launch |
