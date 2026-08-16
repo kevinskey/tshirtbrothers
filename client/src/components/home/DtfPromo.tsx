@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 // /dtf hero's signature graphic so the two read as one campaign.
 export default function DtfPromo() {
   return (
-    <section className="overflow-hidden bg-gray-900">
+    <section className="overflow-hidden bg-gray-900 lg:hidden">
       <div className="container mx-auto grid max-w-6xl items-center gap-6 px-4 py-10 sm:grid-cols-2 sm:py-12">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-orange-400">

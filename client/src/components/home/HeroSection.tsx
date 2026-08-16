@@ -58,7 +58,10 @@ export default function HeroSection() {
         {/* Asymmetric 5/7 split — the text column only needs ~5 columns,
             so giving the image the rest closes the dead gap between them
             on wide desktops. */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-6 xl:gap-8 lg:items-center">
+        {/* Desktop: three columns — headline / product slide / DTF card —
+            so the transfer service is visible without scrolling. Below lg
+            the DTF card hides (the DtfPromo band covers phones). */}
+        <div className="lg:grid lg:grid-cols-[minmax(0,4fr)_minmax(0,5fr)_minmax(0,3fr)] lg:gap-5 xl:gap-6 lg:items-stretch">
 
           {/* Headline + CTAs — first in source so phones lead with the
               actions, not the promo slide. self-center vertically aligns
@@ -163,6 +166,54 @@ export default function HeroSection() {
               </div>
             )}
           </div>
+
+          {/* DTF card — third column, desktop only. Mirrors the /dtf hero
+              (film ribbon + foot ruler) so the campaign is one glance away
+              without scrolling. */}
+          <Link
+            to="/dtf"
+            className="hidden lg:flex relative flex-col justify-between overflow-hidden rounded-3xl bg-gray-900 p-6 shadow-sm transition hover:ring-2 hover:ring-orange-500"
+          >
+            <div className="relative z-10">
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-orange-400">New · DTF transfers</p>
+              <p
+                className="mt-2 font-display text-2xl font-bold uppercase leading-[0.95] tracking-tight text-white xl:text-3xl"
+                style={{ fontWeight: 900 }}
+              >
+                We print DTF.
+                <span className="block text-orange-500">By the foot.</span>
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-gray-300">
+                22&Prime; gang sheets from $9/ft — upload art or build a sheet online.
+              </p>
+            </div>
+            <span className="relative z-10 mt-4 inline-block w-max rounded-lg bg-orange-600 px-4 py-2 text-xs font-bold text-white">
+              Order transfers →
+            </span>
+            {/* mini ribbon along the card's bottom */}
+            <svg aria-hidden="true" viewBox="0 0 300 90" className="relative z-0 mt-5 w-full">
+              <rect x="-10" y="16" width="320" height="66" rx="5" fill="#1f2937" />
+              <circle cx="34" cy="50" r="15" fill="#ffffff" />
+              <circle cx="34" cy="50" r="11" fill="#ec4899" />
+              <rect x="62" y="34" width="46" height="26" rx="6" fill="#ffffff" />
+              <rect x="66" y="38" width="38" height="18" rx="4" fill="#22d3ee" />
+              <rect x="120" y="36" width="60" height="24" rx="6" fill="#ffffff" />
+              <rect x="124" y="40" width="52" height="16" rx="3" fill="#111827" />
+              <text x="150" y="52" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="900" fontSize="10" fill="#ffffff" letterSpacing="1.5">TSB</text>
+              <circle cx="204" cy="48" r="13" fill="#ffffff" />
+              <circle cx="204" cy="48" r="9" fill="#facc15" />
+              <rect x="228" y="34" width="44" height="26" rx="6" fill="#ffffff" />
+              <rect x="232" y="38" width="36" height="18" rx="4" fill="#ea580c" />
+              {/* foot ruler */}
+              <rect x="-10" y="8" width="320" height="8" fill="#111827" />
+              {[0, 1, 2].map((ft) => (
+                <g key={ft}>
+                  <rect x={20 + ft * 110} y="8" width="2" height="8" fill="#ea580c" />
+                  <text x={28 + ft * 110} y="15" fontFamily="ui-monospace, monospace" fontSize="7" fill="#9ca3af">{ft + 1}FT</text>
+                </g>
+              ))}
+            </svg>
+          </Link>
 
         </div>
       </div>
