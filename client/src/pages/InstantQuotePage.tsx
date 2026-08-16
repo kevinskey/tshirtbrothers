@@ -668,7 +668,8 @@ export default function InstantQuotePage() {
       const customSeeds: Record<string, string> = {
         other: '',
         byo: 'Bringing my own garments — printing only. Garment type + brand: ',
-        dtfpress: 'DTF pressing only — pressing transfers onto garments. Transfers: ',
+        dtfpress: 'DTF pressing only ($3/each to press ready-to-press transfers). '
+          + 'If you need transfers printed too, upload your art below — printing is quoted by print size after we assess it. Transfers: ',
       };
       if (key in customSeeds) {
         const cleared = clearAttachment(it);
@@ -1166,7 +1167,7 @@ function ItemCard({
               { key: 'sweatshirt', icon: '👚', label: 'Sweatshirt',     sub: 'Crewneck fleece' },
               { key: 'hat',        icon: '🧢', label: 'Hat',            sub: 'Caps, beanies, snapbacks' },
               { key: 'byo',        icon: '📦', label: 'I have my own shirts', sub: 'You supply the garments — we print them' },
-              { key: 'dtfpress',   icon: '🔥', label: 'DTF pressing only',    sub: 'We press your DTF transfers for you' },
+              { key: 'dtfpress',   icon: '🔥', label: 'DTF pressing only',    sub: 'Pressing $3 each · transfer printing quoted by size' },
               { key: 'other',      icon: '✨', label: 'Something else', sub: 'Bags, koozies, patches — describe it' },
             ].map((card) => (
               <button
