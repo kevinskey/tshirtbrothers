@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
+import sharp from 'sharp';
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
@@ -149,6 +150,16 @@ const uploadLimiter = rateLimit({
 const checkoutLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again in a few minutes.' },
+});
+// /compose does real server-side work per request (fetch up to 40 images,
+// run them through sharp, write a file to Spaces) — same abuse-surface
+// shape as /upload, so it gets the same 10/15min-per-IP budget.
+const composeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests. Please try again in a few minutes.' },
@@ -440,6 +451,199 @@ router.delete('/sheets/:id', authenticate, async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
     res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
+// ── Server-side sheet composition (POST /compose) ──────────────────────────
+// iPhone checkouts were failing 100% of the time: the customer builder used
+// to export the full sheet client-side via canvas.toDataURL() at 6,600px ×
+// (up to) 39,600px — 261M+ px². iOS Safari's canvas backing-store limit sits
+// well below that (it silently produces a blank/truncated image, which the
+// TOO_LARGE heuristic in generateFullResExport() then caught as an error on
+// every iPhone, always). This route moves the pixel work server-side: the
+// phone sends placement JSON (where each design goes), not pixels.
+//
+// PLACEMENT CONTRACT — must match GangSheetBuilder.tsx's handleCheckoutSheet
+// placement-builder exactly (documented there too):
+//   Each placement's left/top/width/height is the design's FINAL on-sheet
+//   bounding box — i.e. the box it visually occupies on the sheet, AFTER
+//   any rotation. `rotation` (0/90/180/270, default 0) describes how the
+//   SOURCE image at image_url must be turned to land in that box.
+//   In this app rotation is never a live fabric.js transform — rotateImage90
+//   bakes the turn into the image bitmap itself (rotates the canvas, then
+//   re-uploads) before the object ever goes on the sheet — so every
+//   placement the current client sends has rotation: 0. The field is kept
+//   in the contract only for forward-compatibility (e.g. a future on-canvas
+//   rotate handle). For rotation 90/270 we resize the source into the
+//   PRE-rotation box (height×width, swapped) and then rotate it — sharp's
+//   rotate() on an exact multiple of 90° swaps width/height with no
+//   resampling, so the output lands as exactly width×height, matching the
+//   requested final box precisely.
+//
+// SSRF guard: this route fetches attacker-influenced URLs (image_url comes
+// straight from the request body), so it will ONLY ever fetch https URLs
+// whose host is one of our own Spaces hosts — see isAllowedDesignImageUrl.
+// Anything else (localhost, internal IPs, other domains) is rejected before
+// any network call is made.
+const SPACES_CDN_HOST = 'tshirtbrothers.atl1.cdn.digitaloceanspaces.com';
+const SPACES_ORIGIN_HOST = 'atl1.digitaloceanspaces.com';
+function isAllowedDesignImageUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { return false; }
+  if (u.protocol !== 'https:') return false;
+  if (u.hostname === SPACES_CDN_HOST) return true;
+  if (u.hostname === SPACES_ORIGIN_HOST && u.pathname.startsWith('/tshirtbrothers/')) return true;
+  return false;
+}
+
+const COMPOSE_MAX_IMAGE_BYTES = 30 * 1024 * 1024;
+
+// Streams the response body so we can abort the moment a design image
+// exceeds the per-image size cap, instead of buffering an arbitrarily large
+// body into memory first and checking after the fact.
+async function fetchDesignImageBuffer(url) {
+  const resp = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  if (!resp.ok) throw new Error(`design image fetch failed (${resp.status})`);
+  const declaredLen = Number(resp.headers.get('content-length'));
+  if (Number.isFinite(declaredLen) && declaredLen > COMPOSE_MAX_IMAGE_BYTES) {
+    throw new Error('design image too large');
+  }
+  if (!resp.body) throw new Error('design image fetch returned no body');
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > COMPOSE_MAX_IMAGE_BYTES) {
+      reader.cancel().catch(() => {});
+      throw new Error('design image too large');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+}
+
+router.post('/compose', authenticate, composeLimiter, async (req, res, next) => {
+  try {
+    const { placements } = req.body || {};
+    if (!Array.isArray(placements) || placements.length < 1 || placements.length > 400) {
+      return res.status(400).json({ error: 'Send between 1 and 400 placements' });
+    }
+
+    const cleaned = [];
+    const uniqueUrls = new Set();
+    for (const raw of placements) {
+      if (!raw || typeof raw !== 'object') {
+        return res.status(400).json({ error: 'Invalid placement' });
+      }
+      const { image_url: imageUrl, left, top, width, height } = raw;
+      const rotation = raw.rotation === undefined || raw.rotation === null ? 0 : raw.rotation;
+      if (typeof imageUrl !== 'string' || !isAllowedDesignImageUrl(imageUrl)) {
+        return res.status(400).json({ error: 'Invalid design image URL' });
+      }
+      if (![0, 90, 180, 270].includes(rotation)) {
+        return res.status(400).json({ error: 'Invalid rotation' });
+      }
+      if (typeof left !== 'number' || !Number.isFinite(left) || left < 0) {
+        return res.status(400).json({ error: 'Invalid placement position' });
+      }
+      if (typeof top !== 'number' || !Number.isFinite(top) || top < 0) {
+        return res.status(400).json({ error: 'Invalid placement position' });
+      }
+      if (typeof width !== 'number' || !Number.isFinite(width) || width < 30 || width > 6600) {
+        return res.status(400).json({ error: 'Invalid placement size' });
+      }
+      if (typeof height !== 'number' || !Number.isFinite(height) || height < 30 || height > 6600) {
+        return res.status(400).json({ error: 'Invalid placement size' });
+      }
+      const l = Math.round(left);
+      const t = Math.round(top);
+      const w = Math.round(width);
+      const h = Math.round(height);
+      if (l + w > 6600) {
+        return res.status(400).json({ error: 'A design extends past the sheet width' });
+      }
+      uniqueUrls.add(imageUrl);
+      cleaned.push({ imageUrl, left: l, top: t, width: w, height: h, rotation });
+    }
+    if (uniqueUrls.size > 40) {
+      return res.status(400).json({ error: 'Too many different design images (max 40)' });
+    }
+
+    const settings = await loadSettings();
+    const maxHeightPx = settings.max_ft * 3600;
+    const maxBottom = cleaned.reduce((m, p) => Math.max(m, p.top + p.height), 0);
+    const neededHeight = maxBottom + 30;
+    if (neededHeight > maxHeightPx) {
+      return res.status(400).json({
+        error: `Your sheet is ${Math.ceil(neededHeight / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
+      });
+    }
+    const sheetHeightPx = Math.max(neededHeight, 3600);
+
+    // Fetch each unique source image exactly once, even if it's placed
+    // multiple times (quantity > 1 on the same design).
+    const bufferByUrl = new Map();
+    try {
+      for (const url of uniqueUrls) {
+        bufferByUrl.set(url, await fetchDesignImageBuffer(url));
+      }
+    } catch (err) {
+      console.error('[dtf-store] compose: design image fetch failed:', err.message);
+      return res.status(400).json({ error: 'Could not fetch one of your design images — try re-adding it' });
+    }
+
+    let composeInputs;
+    try {
+      composeInputs = await Promise.all(cleaned.map(async (p) => {
+        const srcBuf = bufferByUrl.get(p.imageUrl);
+        // Contract: width/height is the box AFTER rotation. For 90/270 we
+        // resize into the swapped (pre-rotation) box, then rotate — see the
+        // PLACEMENT CONTRACT comment above.
+        const swapped = p.rotation === 90 || p.rotation === 270;
+        const resizeWidth = swapped ? p.height : p.width;
+        const resizeHeight = swapped ? p.width : p.height;
+        let img = sharp(srcBuf).resize(resizeWidth, resizeHeight, { fit: 'fill' });
+        if (p.rotation) img = img.rotate(p.rotation, { background: { r: 0, g: 0, b: 0, alpha: 0 } });
+        const buf = await img.png().toBuffer();
+        return { input: buf, left: p.left, top: p.top };
+      }));
+    } catch (err) {
+      console.error('[dtf-store] compose: input processing failed:', err.message);
+      return res.status(500).json({ error: 'Could not compose your sheet — try again' });
+    }
+
+    let composedBuf;
+    try {
+      composedBuf = await sharp({
+        create: {
+          width: 6600,
+          height: sheetHeightPx,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+        // Sheets can run up to max_ft (admin-configurable, up to 40 ft =
+        // 144,000px tall = 950M+ px²) — well past sharp's default
+        // limitInputPixels (~268M), which would otherwise reject the
+        // create() canvas itself before compositing ever runs.
+        limitInputPixels: 7000 * 80000,
+      }).composite(composeInputs).png().toBuffer();
+    } catch (err) {
+      console.error('[dtf-store] compose: composite failed:', err.message);
+      return res.status(500).json({ error: 'Could not compose your sheet — try again' });
+    }
+
+    // From here down: EXACTLY the /upload pipeline (dims-from-PNG-header,
+    // key shape, private upload, response shape) so /checkout's FILE_KEY_RE
+    // and file_height_px trust boundary work identically regardless of
+    // which route produced the file.
+    const dims = pngDimensions(composedBuf.subarray(0, 24));
+    if (!dims) return res.status(500).json({ error: 'Could not compose your sheet — try again' });
+    const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
+    await uploadObject({ key, body: composedBuf, contentType: 'image/png', acl: 'private' });
+    res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: composedBuf.length });
   } catch (err) { next(err); }
 });
 

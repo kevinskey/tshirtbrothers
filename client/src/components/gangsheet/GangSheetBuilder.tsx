@@ -117,18 +117,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     maxFt: MAX_SHEET_LENGTH_FT,
   });
 
-  // I3 recalibration: Chrome's 2D canvas has an area ceiling of ~268M px²
-  // (2^28). At our fixed 6,600px sheet width that puts the hard client-side
-  // export ceiling around 11 ft (6600 * 11*3600 ≈ 261.4M px², just under the
-  // limit) — regardless of whatever longer max_ft the store admin has
-  // configured. Cap the CUSTOMER builder's effective max length there so the
-  // UI is honest up front (an over-length sheet can never export in Chrome,
-  // no matter how small its content), instead of only failing at checkout.
-  // Admin mode keeps the full configured max_ft — admins accept the risk of
-  // building something un-exportable. Either way, the 250M px² budget +
-  // dataURL sanity check in generateFullResExport() remain the actual
-  // enforcement backstop (and also catch lower mobile-Safari ceilings).
-  const BUILDER_MAX_FT = mode === 'customer' ? Math.min(configLimits.maxFt, 11) : configLimits.maxFt;
+  // Formerly capped at 11 ft for the CUSTOMER builder (Chrome's 2D canvas
+  // area ceiling of ~268M px² made anything longer un-exportable in-browser
+  // — see git history for the old "I3 recalibration" note). The customer
+  // checkout handoff (handleCheckoutSheet) no longer runs canvas export at
+  // all: it POSTs placement JSON to /api/gangsheet-store/compose and the
+  // server renders the sheet with sharp, so the browser's canvas ceiling is
+  // irrelevant to that path now. Both modes use the full store-configured
+  // max_ft; the pre-checkout guard in handleCheckoutSheet still enforces it
+  // (and /compose enforces it again server-side, authoritatively).
+  // ADMIN mode's Export PNG button (handleExport) is UNCHANGED — it still
+  // runs generateFullResExport() client-side, so its own 250M px² budget +
+  // dataURL sanity check remain the real backstop for that path.
+  const BUILDER_MAX_FT = configLimits.maxFt;
 
   // Live $/ft rates from the store's admin-editable settings — the PRICING
   // constants below are stale display copy (e.g. $6/$8/$12) that don't match
@@ -1016,8 +1017,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // ─── Export ─────────────────────────────────────────────────────────────
 
-  // Shared full-res render step used by both the "Export PNG" download
-  // (handleExport) and the customer checkout handoff (handleCheckoutSheet).
+  // Full-res render step used by the admin "Export PNG" download
+  // (handleExport). The customer checkout handoff (handleCheckoutSheet) no
+  // longer calls this — it POSTs placement JSON to
+  // /api/gangsheet-store/compose instead, which renders server-side with
+  // sharp (see that route's PLACEMENT CONTRACT comment). This function, its
+  // 250M px² budget, and the TOO_LARGE machinery below remain exactly as
+  // they were for the admin export path, which still runs client-side.
   // Wrapped in try/finally so a mid-render failure (e.g. a huge sheet
   // exhausting canvas memory on a weak device) still restores the on-screen
   // zoom/grid instead of leaving the builder stuck at full-res with the
@@ -1114,19 +1120,37 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   }
 
   // ─── Checkout handoff (customer mode only) ─────────────────────────────
-  // Runs the same full-res export as the download button, but instead of a
-  // download: dataURL -> blob -> POST /api/gangsheet-store/upload -> write
-  // the DtfStorePage upload stash (same key/shape it reads on mount) ->
-  // navigate to /dtf so the customer picks turnaround + checks out there.
+  // SERVER-SIDE COMPOSITION (iOS Safari fix): this used to run the same
+  // full-res canvas export as the Export PNG download (generateFullResExport,
+  // via canvas.toDataURL() at 6,600px x up to 39,600px = 250M+ px²), then
+  // uploaded the resulting PNG. iOS Safari's canvas backing-store limit sits
+  // well below that ceiling, so the export silently produced a blank/
+  // truncated image on every iPhone — every iPhone checkout failed. Now the
+  // phone sends WHERE each design goes (placement JSON), not pixels; the
+  // server renders the sheet with sharp and returns a file_key exactly like
+  // /upload did. Flow: build placements from the live canvas -> POST
+  // /api/gangsheet-store/compose -> write the DtfStorePage upload stash
+  // (same key/shape it reads on mount) -> navigate to /dtf so the customer
+  // picks turnaround + checks out there.
+  //
+  // PLACEMENT CONTRACT — must match the server route's contract exactly
+  // (documented in full on server/routes/gangsheetStore.js's POST /compose):
+  //   Each placement's left/top/width/height is the design's FINAL on-sheet
+  //   bounding box (post-rotation), rotation is 0/90/180/270 (default 0).
+  //   This builder never applies a live fabric.js rotation transform — turns
+  //   go through rotateImage90()/applyProcessedImage() above, which bake the
+  //   turn into the image bitmap itself and re-upload it before the object
+  //   ever lands on the canvas (no `.angle` use anywhere in this file) — so
+  //   every placement built here always has rotation: 0.
   async function handleCheckoutSheet() {
     if (mode !== 'customer' || checkingOut) return;
-    // I5: nothing to export/upload/checkout with an empty sheet.
+    // I5: nothing to compose/checkout with an empty sheet.
     if (designs.length === 0) {
       setCheckoutError('Add at least one design first');
       return;
     }
-    // I2: catch an over-length sheet BEFORE burning time/memory on a full-res
-    // export that would just get rejected — checkFit() already keeps
+    // I2: catch an over-length sheet BEFORE burning a round-trip on a compose
+    // request that would just get rejected — checkFit() already keeps
     // sheetLengthFt in sync with what's actually placed, so this reuses that
     // same figure against the live store ceiling.
     if (Math.ceil(sheetLengthFt) > BUILDER_MAX_FT) {
@@ -1135,51 +1159,67 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       );
       return;
     }
+    const canvas = fabricRef.current;
+    if (!canvas) {
+      setCheckoutError('Canvas not ready — try again');
+      return;
+    }
     setCheckingOut(true);
     setCheckoutError(null);
     trackEvent('dtf-builder-checkout');
     try {
-      let dataUrl: string;
-      try {
-        ({ dataUrl } = await generateFullResExport());
-      } catch (err) {
-        console.error('Export failed:', err);
-        throw new Error(
-          'This sheet is too large to export in your browser — save it and use the Upload lane with your own file, or try on a desktop.'
-        );
-      }
-
-      const blob = await fetch(dataUrl).then((r) => r.blob());
-      const form = new FormData();
-      form.append('file', blob, `${(sheetName || 'gangsheet').replace(/\s+/g, '-')}.png`);
-      const uploadRes = await fetch('/api/gangsheet-store/upload', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${getToken()}` },
-        body: form,
-      });
-      const uploadData = await uploadRes.json().catch(() => ({}));
-      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed');
-
-      // Best-effort: persist the sheet as 'exported' so the work isn't lost
-      // if the customer bounces before finishing checkout. The uploaded
-      // file itself (stashed below) is already safe in Spaces independent
-      // of this succeeding, so a save failure here shouldn't block handoff.
-      // stampUrl: false — this save can be the FIRST save of a brand-new
-      // sheet (dbId still null), and persistSheet's URL-stamp navigate()
-      // would otherwise remount the whole builder (DtfBuilderPage keys
-      // GangSheetBuilder by the :id param) mid-checkout, right as we're
-      // about to navigate away to /dtf anyway. The row still gets its id
-      // via setDbId either way — only the URL/history write is skipped.
+      // Best-effort: persist the sheet as 'exported' up front so the layout
+      // isn't lost if the compose call below fails partway through.
+      // stampUrl: false — this can be the FIRST save of a brand-new sheet
+      // (dbId still null), and persistSheet's URL-stamp navigate() would
+      // otherwise remount the whole builder (DtfBuilderPage keys
+      // GangSheetBuilder by the :id param) mid-checkout. The row still gets
+      // its id via setDbId either way — only the URL/history write is
+      // skipped.
       try {
         await persistSheet('exported', { stampUrl: false });
       } catch (err) {
         console.error('Sheet save before checkout failed (non-fatal):', err);
       }
 
+      const designById = new Map(designs.map((d) => [d.id, d]));
+      const placements = canvas.getObjects()
+        .filter((obj) => !(obj as any).data?.isGrid)
+        .map((obj) => {
+          const designId = (obj as any).data?.designId as string | undefined;
+          const design = designId ? designById.get(designId) : undefined;
+          // An object with no matching design (shouldn't happen, but the
+          // designId/data tagging is best-effort client state) is skipped
+          // rather than failing the whole checkout — see the null filter
+          // below.
+          if (!design) return null;
+          return {
+            image_url: design.imageUrl,
+            left: Math.round(obj.left || 0),
+            top: Math.round(obj.top || 0),
+            width: Math.round(obj.getScaledWidth?.() || 0),
+            height: Math.round(obj.getScaledHeight?.() || 0),
+            rotation: 0, // see PLACEMENT CONTRACT comment above
+          };
+        })
+        .filter((p): p is NonNullable<typeof p> => p !== null);
+
+      if (placements.length === 0) {
+        throw new Error('Add at least one design first');
+      }
+
+      const composeRes = await fetch('/api/gangsheet-store/compose', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ placements }),
+      });
+      const composeData = await composeRes.json().catch(() => ({}));
+      if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose your sheet — try again');
+
       const stash = {
-        file_key: uploadData.file_key,
-        width_px: uploadData.width_px,
-        height_px: uploadData.height_px,
+        file_key: composeData.file_key,
+        width_px: composeData.width_px,
+        height_px: composeData.height_px,
         fileName: `${sheetName || 'Untitled Sheet'}.png`,
         at: Date.now(),
       };
@@ -1592,11 +1632,6 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                     </div>
                   </label>
                   <p className="text-[10px] text-gray-400">Width fixed at 22". Set the length manually — if your graphics don't fit you'll get a warning.</p>
-                  {mode === 'customer' && (
-                    <p className="text-[10px] text-orange-600">
-                      The online builder supports sheets up to 11 ft — need longer? Use the upload lane on the DTF page.
-                    </p>
-                  )}
                 </div>
 
                 {/* Design list */}
