@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -22,7 +22,10 @@ type DtfConfig = {
   promises: Record<TierKey, string>;
 };
 
-type UploadedFile = { file_key: string; width_px: number; height_px: number };
+// fileName is display-only (never sent to the server) — carried along so a
+// sessionStorage-restored upload (see UPLOAD_STASH_KEY below) can render the
+// same "File uploaded" UI, original name and all, without re-fetching.
+type UploadedFile = { file_key: string; width_px: number; height_px: number; fileName?: string };
 
 type ShipAddress = { line1: string; city: string; state: string; zip: string };
 
@@ -38,6 +41,7 @@ type CheckoutBody = {
   email: string;
   note?: string;
   ship_address?: ShipAddress;
+  attested: boolean;
 };
 
 const TIER_ORDER: readonly TierKey[] = ['standard', 'rush', 'hot_rush'];
@@ -47,6 +51,17 @@ const TIER_LABEL: Record<TierKey, string> = { standard: 'Standard', rush: 'Rush'
 // reads this from sessionStorage only — no network fetch — so it can stay
 // "dumb" per spec while still showing a real promise instead of nothing.
 const SUCCESS_STASH_KEY = 'dtf_last_order';
+
+// Survives a Stripe redirect-out-and-back (hitting the browser back button
+// from Checkout) so the customer doesn't have to re-upload a 100 MB file.
+// Cleared right before we hand off to Stripe, and ignored (not just left
+// stale) once it's more than 2h old.
+const UPLOAD_STASH_KEY = 'dtf_upload_stash';
+const UPLOAD_STASH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
+// Loose "did you fat-finger it" check, not full RFC 5322 — mirrors the
+// server's EMAIL_RE in server/routes/gangsheetStore.js's /checkout.
+const EMAIL_RE = /.+@.+\..+/;
 
 // Umami custom event, if the tracker loaded (adblock / script failure = no-op).
 // Copied from InstantQuotePage.tsx rather than imported — page components in
@@ -131,6 +146,52 @@ export default function DtfStorePage() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
+  // Restore a still-fresh upload stash on mount — covers the back-button
+  // path from Stripe Checkout, where the browser re-renders this page from
+  // scratch with no client-side state, but the file is still sitting in
+  // Spaces under the same file_key.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(UPLOAD_STASH_KEY);
+      if (!raw) return;
+      const stash = JSON.parse(raw) as {
+        file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown;
+      };
+      if (
+        typeof stash.file_key !== 'string' || typeof stash.width_px !== 'number'
+        || typeof stash.height_px !== 'number' || typeof stash.at !== 'number'
+      ) return;
+      if (Date.now() - stash.at >= UPLOAD_STASH_MAX_AGE_MS) {
+        sessionStorage.removeItem(UPLOAD_STASH_KEY);
+        return;
+      }
+      setUploadedFile({
+        file_key: stash.file_key,
+        width_px: stash.width_px,
+        height_px: stash.height_px,
+        fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
+      });
+    } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
+  }, []);
+
+  // Umami dtf-length-set, debounced 800ms after the value settles. The ref
+  // tracks the previous *non-null* length so the initial null -> config
+  // default population (not a user action) never fires an event — only
+  // subsequent, user-driven changes do.
+  const prevLengthRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (lengthFt === null) return;
+    if (prevLengthRef.current === null) {
+      prevLengthRef.current = lengthFt;
+      return;
+    }
+    if (prevLengthRef.current === lengthFt) return;
+    const ft = lengthFt;
+    const t = setTimeout(() => trackEvent('dtf-length-set', { ft }), 800);
+    prevLengthRef.current = lengthFt;
+    return () => clearTimeout(t);
+  }, [lengthFt]);
+
   async function handleFileSelected(file: File) {
     setUploadError(null);
     setBumpSuggestion(null);
@@ -155,14 +216,28 @@ export default function DtfStorePage() {
       const r = await fetch('/api/gangsheet-store/upload', { method: 'POST', body: form });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error || 'Upload failed');
-      const uploaded: UploadedFile = { file_key: body.file_key, width_px: body.width_px, height_px: body.height_px };
+      const uploaded: UploadedFile = {
+        file_key: body.file_key, width_px: body.width_px, height_px: body.height_px, fileName: file.name,
+      };
       setUploadedFile(uploaded);
+      try {
+        sessionStorage.setItem(UPLOAD_STASH_KEY, JSON.stringify({ ...uploaded, at: Date.now() }));
+      } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 
       const currentFt = lengthFt ?? 0;
       if (config && uploaded.height_px > currentFt * 3600) {
-        const neededFt = clamp(Math.ceil(uploaded.height_px / 3600), config.min_ft, config.max_ft);
-        const rate = config.rates[tier ?? 'standard'];
-        setBumpSuggestion({ ft: neededFt, extraCents: Math.max(0, (neededFt - currentFt) * rate) });
+        const neededFt = Math.ceil(uploaded.height_px / 3600);
+        if (neededFt > config.max_ft) {
+          // Bumping to config.max_ft still wouldn't fit the file — a bump
+          // button here would be an un-actionable dead end, so tell the
+          // customer to split the sheet instead (server enforces the same
+          // ceiling in /upload, this is the client-side mirror of it).
+          setUploadError(`Your file is ${neededFt} ft long — our max sheet is ${config.max_ft} ft. Split it into two sheets.`);
+        } else {
+          const clampedFt = clamp(neededFt, config.min_ft, config.max_ft);
+          const rate = config.rates[tier ?? 'standard'];
+          setBumpSuggestion({ ft: clampedFt, extraCents: Math.max(0, (clampedFt - currentFt) * rate) });
+        }
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed');
@@ -202,6 +277,7 @@ export default function DtfStorePage() {
       file_key: uploadedFile.file_key,
       name,
       email,
+      attested: agree,
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(delivery === 'ship' ? { ship_address: shipAddr } : {}),
     };
@@ -214,6 +290,7 @@ export default function DtfStorePage() {
       });
       const respBody = await r.json();
       if (!r.ok) throw new Error(respBody.error || 'Checkout failed');
+      try { sessionStorage.removeItem(UPLOAD_STASH_KEY); } catch { /* non-fatal */ }
       window.location.href = respBody.url;
     } catch (err) {
       setCheckoutError(err instanceof Error ? err.message : 'Checkout failed');
@@ -230,9 +307,10 @@ export default function DtfStorePage() {
   const totalCents = lineTotalCents + shippingCents;
 
   const shipFieldsFilled = shipAddr.line1.trim() && shipAddr.city.trim() && shipAddr.state.trim() && shipAddr.zip.trim();
+  const emailValid = EMAIL_RE.test(email.trim());
   const canCheckout = !!uploadedFile
     && agree
-    && email.trim() !== ''
+    && emailValid
     && !checkingOut
     && !uploading
     && (delivery !== 'ship' || !!shipFieldsFilled);
@@ -439,6 +517,9 @@ export default function DtfStorePage() {
                     <span className="font-semibold text-gray-700">
                       File uploaded — {uploadedFile.width_px} × {uploadedFile.height_px} px
                     </span>
+                    {uploadedFile.fileName && (
+                      <span className="text-xs text-gray-500">{uploadedFile.fileName}</span>
+                    )}
                     <span className="text-xs text-gray-400">Click to replace</span>
                   </>
                 ) : (
@@ -527,14 +608,19 @@ export default function DtfStorePage() {
                   className="rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
                   style={{ fontSize: '16px' }}
                 />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  style={{ fontSize: '16px' }}
-                />
+                <div>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    style={{ fontSize: '16px' }}
+                  />
+                  {email.trim() !== '' && !emailValid && (
+                    <p className="mt-1 text-xs text-red-600">Enter a valid email address</p>
+                  )}
+                </div>
                 <textarea
                   placeholder="Note (optional)"
                   value={note}

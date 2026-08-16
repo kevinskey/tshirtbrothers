@@ -5,9 +5,11 @@
 // fire once per replica.
 
 import cron from 'node-cron';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { sendAbandonedQuoteFollowUp } from './email.js';
 import { runPayoutJob } from './storePayoutJob.js';
+import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
 // AND haven't already been followed up. The 24h floor lets the customer
@@ -45,6 +47,36 @@ async function runAbandonedQuoteFollowUps() {
   }
 }
 
+// A gang-sheet checkout that never completes payment leaves behind a
+// pending_payment order row AND a private 100 MB-capable upload sitting in
+// Spaces. After 24h the Stripe Checkout Session has long expired (Stripe
+// sessions default-expire at 24h), so there's no path back to paying for
+// that specific order — clear both the row and the file so abandoned carts
+// don't grow storage forever.
+async function purgeAbandonedGangSheetCheckouts() {
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, file_key FROM gang_sheet_orders
+       WHERE status = 'pending_payment'
+         AND created_at < NOW() - INTERVAL '24 hours'
+    `);
+    if (rows.length === 0) return;
+    for (const row of rows) {
+      try {
+        await getSpacesClient().send(new DeleteObjectCommand({ Bucket: SPACES_BUCKET, Key: row.file_key }));
+      } catch (err) {
+        // A missing/already-deleted object shouldn't block cleaning up the
+        // row — log and move on.
+        console.error(`[scheduler] failed to delete gang sheet file ${row.file_key} (order ${row.id}):`, err.message);
+      }
+    }
+    await pool.query('DELETE FROM gang_sheet_orders WHERE id = ANY($1)', [rows.map((r) => r.id)]);
+    console.log(`[scheduler] purged ${rows.length} abandoned gang-sheet checkout(s)`);
+  } catch (err) {
+    console.error('[scheduler] purgeAbandonedGangSheetCheckouts failed:', err.message);
+  }
+}
+
 export function startScheduler() {
   // Every hour at :05. Hourly is plenty for a 24-72h window.
   cron.schedule('5 * * * *', () => {
@@ -56,5 +88,10 @@ export function startScheduler() {
   cron.schedule('0 6 * * *', () => {
     runPayoutJob();
   });
-  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC)');
+  // Daily at 06:30 UTC — offset 30m after the payout job so the two don't
+  // contend for the pool at the same instant.
+  cron.schedule('30 6 * * *', () => {
+    purgeAbandonedGangSheetCheckouts();
+  });
+  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC)');
 }

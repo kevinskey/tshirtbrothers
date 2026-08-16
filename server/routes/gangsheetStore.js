@@ -34,6 +34,30 @@ export async function loadSettings() {
   return rows[0];
 }
 
+// 'HH:MM:SS' (or 'HH:MM') -> '11:00 AM' / '1:30 PM'. Postgres TIME columns
+// come back from pg as 'HH:MM:SS' strings, never a Date, so this is pure
+// string math — no timezone involved.
+function fmt(t) {
+  const [hStr, mStr] = String(t).split(':');
+  let h = Number(hStr);
+  const m = Number(mStr);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Live version of TIER_PROMISES, built from the settings row so admin edits
+// to the cutoffs are reflected immediately in /config and outbound emails.
+// TIER_PROMISES below stays as the static fallback for callers that can't
+// await a settings load (or whose load failed).
+export function tierPromises(settings) {
+  return {
+    standard: 'Ready in 2 business days',
+    rush: `Ready next business day — order by ${fmt(settings.cutoff_rush)}`,
+    hot_rush: `Ready same day — order by ${fmt(settings.cutoff_hot_rush)}`,
+  };
+}
+
 // Current shop-local wall clock. The droplet runs UTC; the shop is Atlanta.
 function atlantaNow(now = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -82,7 +106,9 @@ export function priceCents(settings, lengthFt, tier) {
     rush: settings.rate_rush_cents,
     hot_rush: settings.rate_hot_rush_cents,
   }[tier];
-  if (!rate) throw new Error('invalid tier');
+  // == null (not falsy) so a legitimately-configured 0 rate still prices —
+  // only an unrecognized tier key should throw.
+  if (rate == null) throw new Error('invalid tier');
   return ft * rate;
 }
 
@@ -95,7 +121,7 @@ router.get('/config', async (req, res, next) => {
       min_ft: s.min_ft,
       max_ft: s.max_ft,
       shipping_flat_cents: s.shipping_flat_cents,
-      promises: TIER_PROMISES,
+      promises: tierPromises(s),
     });
   } catch (err) { next(err); }
 });
@@ -154,6 +180,15 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     if (Math.abs(dims.width - 6600) > 132) {
       return res.status(400).json({ error: `Sheet must be 6,600 px wide (22" at 300 DPI); got ${dims.width} px` });
     }
+    // Reject up front if the file is taller than the shop's max sheet length
+    // even with the checkout bump-to-max-length suggestion applied — letting
+    // it upload just to dead-end the customer at checkout isn't actionable.
+    const settings = await loadSettings();
+    if (dims.height > settings.max_ft * 3600 * 1.02) {
+      return res.status(400).json({
+        error: `Your file is ${Math.ceil(dims.height / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
+      });
+    }
     // Embed the server-parsed dims directly in the key so /checkout can
     // derive width/height from the key itself instead of trusting whatever
     // the client claims in the checkout request body (C1 fix).
@@ -172,11 +207,36 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
 // can never be handed a client-supplied height that doesn't match the
 // actual uploaded file (C1).
 const FILE_KEY_RE = /^gangsheet-orders\/[\w-]+\/[0-9a-f-]+-(\d{1,5})x(\d{1,6})\.png$/;
+// Same loose shape the client checks before enabling the Checkout button —
+// kept intentionally permissive (this is a "did you fat-finger it" check,
+// not full RFC 5322 validation).
+const EMAIL_RE = /.+@.+\..+/;
 
 router.post('/checkout', checkoutLimiter, async (req, res, next) => {
   try {
     const { length_ft, tier, delivery = 'pickup', file_key,
-            name, email, note, ship_address } = req.body || {};
+            name, email, note, ship_address, attested } = req.body || {};
+    if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
+      return res.status(400).json({ error: 'Enter a valid email address' });
+    }
+    // Generous length caps — this route is anonymous and rate-limited but
+    // still accepts free-text fields that end up in emails and the admin
+    // queue, so cap them well short of anything that could bloat storage
+    // or a Stripe product_data field.
+    if (typeof name === 'string' && name.length > 120) {
+      return res.status(400).json({ error: 'That field is too long' });
+    }
+    if (email.length > 254) return res.status(400).json({ error: 'That field is too long' });
+    if (typeof note === 'string' && note.length > 2000) {
+      return res.status(400).json({ error: 'That field is too long' });
+    }
+    if (ship_address && typeof ship_address === 'object') {
+      for (const v of Object.values(ship_address)) {
+        if (typeof v === 'string' && v.length > 120) {
+          return res.status(400).json({ error: 'That field is too long' });
+        }
+      }
+    }
     const s = await loadSettings();
     if (!['standard', 'rush', 'hot_rush'].includes(tier)) {
       return res.status(400).json({ error: 'Pick a turnaround option' });
@@ -222,11 +282,11 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
         (customer_name, customer_email, length_ft, tier, price_cents, shipping_cents,
-         delivery, ship_address, file_key, file_width_px, file_height_px, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
       [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, fileWidthPx, fileHeightPx, note || null],
+       file_key, fileWidthPx, fileHeightPx, note || null, attested === true],
     );
     const orderId = ins.rows[0].id;
 
@@ -240,7 +300,9 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
         currency: 'usd',
         product_data: {
           name: `DTF Gang Sheet 22in × ${Math.ceil(Number(length_ft))} ft — ${tierLabel}`,
-          description: TIER_PROMISES[tier],
+          // Live copy — `s` (settings) is already loaded above for pricing,
+          // so this reflects the same cutoffs /config and the emails show.
+          description: tierPromises(s)[tier],
         },
         unit_amount: cents,
       },
@@ -261,7 +323,7 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       success_url: `${domain}/dtf/success?order=${orderId}`,
       cancel_url: `${domain}/dtf`,
       metadata: { gang_sheet_order_id: String(orderId) },
-    });
+    }, { idempotencyKey: `gso-${orderId}` });
     await pool.query('UPDATE gang_sheet_orders SET stripe_session_id = $1 WHERE id = $2', [session.id, orderId]);
     res.json({ url: session.url });
   } catch (err) { next(err); }
@@ -270,6 +332,67 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
 // ── Admin: order queue, status transitions, private file download ─────────
 
 const adminGuard = [authenticate, adminOnly];
+
+router.get('/admin/settings', ...adminGuard, async (req, res, next) => {
+  try {
+    res.json(await loadSettings());
+  } catch (err) { next(err); }
+});
+
+// Whitelist of [column, validator] pairs. The UPDATE is built by iterating
+// this fixed array — column names never come from request input, so there's
+// no string-interpolation-of-a-column-name injection surface, only
+// parameterized values.
+const SETTINGS_FIELDS = [
+  ['rate_standard_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_hot_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['cutoff_rush', (v) => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)],
+  ['cutoff_hot_rush', (v) => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)],
+  ['min_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
+  ['max_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
+  ['shipping_flat_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['standard_active', (v) => typeof v === 'boolean'],
+  ['rush_active', (v) => typeof v === 'boolean'],
+  ['hot_rush_active', (v) => typeof v === 'boolean'],
+];
+
+router.patch('/admin/settings', ...adminGuard, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const setClauses = [];
+    const values = [];
+    for (const [field, isValid] of SETTINGS_FIELDS) {
+      if (!(field in body)) continue;
+      const value = body[field];
+      if (!isValid(value)) {
+        return res.status(400).json({ error: `Invalid value for ${field}` });
+      }
+      values.push(value);
+      setClauses.push(`${field} = $${values.length}`);
+    }
+    if (setClauses.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+    // min_ft/max_ft are cross-validated against whichever of the two isn't
+    // part of this PATCH (e.g. raising max_ft alone still has to clear the
+    // existing min_ft).
+    if ('min_ft' in body || 'max_ft' in body) {
+      const current = await loadSettings();
+      const nextMin = 'min_ft' in body ? body.min_ft : current.min_ft;
+      const nextMax = 'max_ft' in body ? body.max_ft : current.max_ft;
+      if (nextMin > nextMax) {
+        return res.status(400).json({ error: 'min_ft must be ≤ max_ft' });
+      }
+    }
+    setClauses.push('updated_at = now()');
+    const { rows } = await pool.query(
+      `UPDATE gang_sheet_store_settings SET ${setClauses.join(', ')} WHERE id = 1 RETURNING *`,
+      values,
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
 
 router.get('/admin/orders', ...adminGuard, async (req, res, next) => {
   try {
@@ -284,19 +407,39 @@ router.get('/admin/orders', ...adminGuard, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-const NEXT_STATUSES = ['paid', 'in_production', 'ready', 'completed', 'canceled'];
+// Allowed-from lists, keyed by the *target* status — i.e. ALLOWED_FROM.ready
+// is every status you're allowed to mark 'ready' starting from. There is no
+// entry for 'paid': that transition only ever happens from the Stripe
+// webhook (server/routes/payments.js), never through this admin endpoint.
+const ALLOWED_FROM = {
+  canceled: ['pending_payment', 'paid', 'in_production', 'ready'],
+  in_production: ['paid'],
+  ready: ['paid', 'in_production'],
+  completed: ['ready'],
+};
 router.patch('/admin/orders/:id', ...adminGuard, async (req, res, next) => {
   try {
     const { status } = req.body || {};
-    if (!NEXT_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const allowedFrom = ALLOWED_FROM[status];
+    if (!allowedFrom) return res.status(400).json({ error: 'Invalid status' });
+    // Single UPDATE...WHERE status = ANY(allowed) so the check-and-set is
+    // atomic — no TOCTOU window between reading the current status and
+    // writing the new one under concurrent admin clicks.
     const { rows } = await pool.query(
       `UPDATE gang_sheet_orders SET status = $1,
          ready_at = CASE WHEN $1 = 'ready' THEN now() ELSE ready_at END,
          completed_at = CASE WHEN $1 = 'completed' THEN now() ELSE completed_at END
-       WHERE id = $2 RETURNING *`,
-      [status, req.params.id],
+       WHERE id = $2 AND status = ANY($3) RETURNING *`,
+      [status, req.params.id, allowedFrom],
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    if (!rows[0]) {
+      // The UPDATE matched nothing — either the order doesn't exist, or it
+      // exists but isn't in an allowed source status. Look it up once more
+      // to tell those two cases apart and give a specific error either way.
+      const { rows: existing } = await pool.query('SELECT status FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+      if (!existing[0]) return res.status(404).json({ error: 'Order not found' });
+      return res.status(400).json({ error: `Can't go from ${existing[0].status} to ${status}` });
+    }
     if (status === 'ready' && rows[0].customer_email) {
       sendGangSheetReadyToCustomer({ order: rows[0] })
         .catch((e) => console.error('[dtf-store] ready email failed:', e.message));

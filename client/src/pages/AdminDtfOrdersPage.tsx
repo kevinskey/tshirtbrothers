@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Download, RefreshCw } from 'lucide-react';
+import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Types — mirror server/routes/gangsheetStore.js's admin/orders shape    */
@@ -158,6 +158,289 @@ export default function AdminDtfOrdersPage() {
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
+/*  Pricing & turnaround settings — mirrors gang_sheet_store_settings       */
+/* ────────────────────────────────────────────────────────────────────── */
+
+type SettingsRow = {
+  rate_standard_cents: number;
+  rate_rush_cents: number;
+  rate_hot_rush_cents: number;
+  cutoff_rush: string;      // 'HH:MM:SS' (Postgres TIME, as text)
+  cutoff_hot_rush: string;
+  min_ft: number;
+  max_ft: number;
+  shipping_flat_cents: number;
+  standard_active: boolean;
+  rush_active: boolean;
+  hot_rush_active: boolean;
+};
+
+// Everything in the form is a controlled text/checkbox input, so the form
+// state is all strings/booleans — converted to real numbers only at save
+// time. Keeps every keystroke (including a mid-edit "12." or "") a valid
+// render instead of fighting a numeric useState.
+type SettingsForm = {
+  rate_standard: string;   // dollars
+  rate_rush: string;
+  rate_hot_rush: string;
+  cutoff_rush: string;     // 'HH:MM' (type="time" shape)
+  cutoff_hot_rush: string;
+  min_ft: string;
+  max_ft: string;
+  shipping_flat: string;   // dollars
+  standard_active: boolean;
+  rush_active: boolean;
+  hot_rush_active: boolean;
+};
+
+function centsToDollarStr(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+// Postgres TIME comes back as 'HH:MM:SS' — <input type="time"> wants exactly
+// 'HH:MM'.
+function toHHMM(t: string): string {
+  return t.slice(0, 5);
+}
+
+function settingsToForm(s: SettingsRow): SettingsForm {
+  return {
+    rate_standard: centsToDollarStr(s.rate_standard_cents),
+    rate_rush: centsToDollarStr(s.rate_rush_cents),
+    rate_hot_rush: centsToDollarStr(s.rate_hot_rush_cents),
+    cutoff_rush: toHHMM(s.cutoff_rush),
+    cutoff_hot_rush: toHHMM(s.cutoff_hot_rush),
+    min_ft: String(s.min_ft),
+    max_ft: String(s.max_ft),
+    shipping_flat: centsToDollarStr(s.shipping_flat_cents),
+    standard_active: s.standard_active,
+    rush_active: s.rush_active,
+    hot_rush_active: s.hot_rush_active,
+  };
+}
+
+// Dollar string -> integer cents, or null if it's not a valid non-negative
+// number (blank field, stray letters, negative typo, etc).
+function dollarsToCents(v: string): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+function intOrNull(v: string): number | null {
+  if (!/^\d+$/.test(v.trim())) return null;
+  return parseInt(v, 10);
+}
+
+const inputCls = 'mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
+const labelCls = 'block text-xs font-semibold text-gray-600';
+
+function SettingsCard() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<SettingsForm | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const { data: settings, isLoading, isError } = useQuery<SettingsRow>({
+    queryKey: ['dtf-admin-settings'],
+    queryFn: async () => {
+      const r = await fetch('/api/gangsheet-store/admin/settings', { headers: authHeaders() });
+      if (!r.ok) throw new Error('Failed to load settings');
+      return r.json();
+    },
+    enabled: open,
+  });
+
+  // Seed the form once, the first time settings load — further server
+  // refetches (e.g. after Save) shouldn't clobber whatever the admin is
+  // mid-typing.
+  useEffect(() => {
+    if (settings && !form) setForm(settingsToForm(settings));
+  }, [settings, form]);
+
+  function patch(partial: Partial<SettingsForm>) {
+    setForm((f) => (f ? { ...f, ...partial } : f));
+  }
+
+  async function handleSave() {
+    if (!form) return;
+    const rateStandardCents = dollarsToCents(form.rate_standard);
+    const rateRushCents = dollarsToCents(form.rate_rush);
+    const rateHotRushCents = dollarsToCents(form.rate_hot_rush);
+    const shippingFlatCents = dollarsToCents(form.shipping_flat);
+    const minFt = intOrNull(form.min_ft);
+    const maxFt = intOrNull(form.max_ft);
+    if (
+      rateStandardCents === null || rateRushCents === null || rateHotRushCents === null
+      || shippingFlatCents === null || minFt === null || maxFt === null
+    ) {
+      toast.error('Check your inputs — some values look invalid');
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/gangsheet-store/admin/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          rate_standard_cents: rateStandardCents,
+          rate_rush_cents: rateRushCents,
+          rate_hot_rush_cents: rateHotRushCents,
+          cutoff_rush: form.cutoff_rush,
+          cutoff_hot_rush: form.cutoff_hot_rush,
+          min_ft: minFt,
+          max_ft: maxFt,
+          shipping_flat_cents: shippingFlatCents,
+          standard_active: form.standard_active,
+          rush_active: form.rush_active,
+          hot_rush_active: form.hot_rush_active,
+        }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || 'Save failed');
+      toast.success('Settings saved');
+      queryClient.invalidateQueries({ queryKey: ['dtf-admin-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['dtf-config'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="font-display text-sm font-bold text-gray-900">Pricing &amp; turnaround settings</span>
+        {open ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 px-4 py-4">
+          {isLoading && <p className="text-sm text-gray-400">Loading…</p>}
+          {isError && <p className="text-sm text-red-600">Couldn&apos;t load settings.</p>}
+          {form && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className={labelCls}>
+                  Standard rate ($/ft)
+                  <input
+                    type="number" step="0.01" min="0" value={form.rate_standard}
+                    onChange={(e) => patch({ rate_standard: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+                <label className={labelCls}>
+                  Rush rate ($/ft)
+                  <input
+                    type="number" step="0.01" min="0" value={form.rate_rush}
+                    onChange={(e) => patch({ rate_rush: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+                <label className={labelCls}>
+                  Hot rush rate ($/ft)
+                  <input
+                    type="number" step="0.01" min="0" value={form.rate_hot_rush}
+                    onChange={(e) => patch({ rate_hot_rush: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className={labelCls}>
+                  Rush cutoff
+                  <input
+                    type="time" value={form.cutoff_rush}
+                    onChange={(e) => patch({ cutoff_rush: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+                <label className={labelCls}>
+                  Hot rush cutoff
+                  <input
+                    type="time" value={form.cutoff_hot_rush}
+                    onChange={(e) => patch({ cutoff_hot_rush: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <label className={labelCls}>
+                  Min length (ft)
+                  <input
+                    type="number" min="1" max="40" step="1" value={form.min_ft}
+                    onChange={(e) => patch({ min_ft: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+                <label className={labelCls}>
+                  Max length (ft)
+                  <input
+                    type="number" min="1" max="40" step="1" value={form.max_ft}
+                    onChange={(e) => patch({ max_ft: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+                <label className={labelCls}>
+                  Shipping (flat, $)
+                  <input
+                    type="number" step="0.01" min="0" value={form.shipping_flat}
+                    onChange={(e) => patch({ shipping_flat: e.target.value })}
+                    className={inputCls} style={{ fontSize: '16px' }}
+                  />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-4">
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input
+                    type="checkbox" checked={form.standard_active}
+                    onChange={(e) => patch({ standard_active: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  Standard active
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input
+                    type="checkbox" checked={form.rush_active}
+                    onChange={(e) => patch({ rush_active: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  Rush active
+                </label>
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-600">
+                  <input
+                    type="checkbox" checked={form.hot_rush_active}
+                    onChange={(e) => patch({ hot_rush_active: e.target.checked })}
+                    className="h-4 w-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                  />
+                  Hot rush active
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────────────── */
 /*  Queue table                                                            */
 /* ────────────────────────────────────────────────────────────────────── */
 
@@ -175,6 +458,12 @@ function DtfOrdersQueue() {
     refetchInterval: 30_000,
   });
 
+  // Which single order's PATCH is in flight — used to disable that row's
+  // buttons only, instead of every row in the table going inert whenever
+  // any one action is pending (advance.isPending is shared across the
+  // whole mutation, not per-row).
+  const [mutatingId, setMutatingId] = useState<number | null>(null);
+
   const advance = useMutation({
     mutationFn: async ({ id, status }: { id: number; status: string }) => {
       const r = await fetch(`/api/gangsheet-store/admin/orders/${id}`, {
@@ -188,11 +477,18 @@ function DtfOrdersQueue() {
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['dtf-admin-orders'] }); },
     onError: (err) => { toast.error(err instanceof Error ? err.message : 'Update failed'); },
+    onSettled: () => { setMutatingId(null); },
   });
+
+  function handleAdvance(id: number, status: string) {
+    setMutatingId(id);
+    advance.mutate({ id, status });
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <div className="mx-auto max-w-6xl">
+        <SettingsCard />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-display text-xl font-bold text-gray-900">DTF Gang Sheet Orders</h1>
           <div className="flex items-center gap-2">
@@ -313,8 +609,8 @@ function DtfOrdersQueue() {
                           {action && (
                             <button
                               type="button"
-                              disabled={advance.isPending}
-                              onClick={() => advance.mutate({ id: order.id, status: action.next })}
+                              disabled={mutatingId === order.id}
+                              onClick={() => handleAdvance(order.id, action.next)}
                               className="rounded-lg bg-orange-600 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-orange-700 disabled:opacity-50"
                             >
                               {action.label}
@@ -323,8 +619,8 @@ function DtfOrdersQueue() {
                           {CANCELABLE.has(order.status) && (
                             <button
                               type="button"
-                              disabled={advance.isPending}
-                              onClick={() => advance.mutate({ id: order.id, status: 'canceled' })}
+                              disabled={mutatingId === order.id}
+                              onClick={() => handleAdvance(order.id, 'canceled')}
                               className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
                             >
                               Cancel

@@ -891,11 +891,44 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
 
 // ── Gang sheet store (DTF) ──────────────────────────────────────────────────
 
+// Live tier-promise copy, pulled from the settings row so an admin edit to
+// the cutoffs shows up in outbound emails immediately rather than only in
+// the storefront. Dynamic `import()` (not a top-level import) keeps this a
+// function-body-only reach into routes/gangsheetStore.js — same established
+// pattern used elsewhere in this file (see sendMockupForApproval's callers,
+// server/routes/mockups.js) to avoid a hard module-load cycle between the
+// route file and this service. An email must never fail to send just
+// because the settings row couldn't be loaded, so any failure here falls
+// back to the static TIER_PROMISES copy.
+async function gangSheetTurnaround(tier) {
+  try {
+    const { loadSettings, tierPromises } = await import('../routes/gangsheetStore.js');
+    const settings = await loadSettings();
+    return tierPromises(settings)[tier] || tier;
+  } catch (err) {
+    console.error('[Email] gang sheet live settings unavailable, using static tier copy:', err.message);
+    return TIER_PROMISES[tier] || tier;
+  }
+}
+
+// ship_address is stored as JSONB but may arrive here as an already-parsed
+// object (fresh query result) or, in principle, a JSON string — normalize
+// either shape to a plain object, or null if it's neither / malformed.
+function parseShipAddress(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return null;
+}
+
 export async function sendGangSheetPaidToCustomer({ order }) {
   const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
   const deliveryValue = order.delivery === 'ship'
     ? 'Ships to you — we\'ll email tracking once it\'s on the way'
     : `Pickup — ${SHOP_ADDRESS}`;
+  const turnaround = await gangSheetTurnaround(order.tier);
   const subject = `Order #${order.id} confirmed — DTF Gang Sheet 22in × ${order.length_ft} ft`;
   const body = `
     <p>Hi ${escapeHtml(order.customer_name || 'there')},</p>
@@ -903,7 +936,7 @@ export async function sendGangSheetPaidToCustomer({ order }) {
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
       detailRow('Size', `22in &times; ${order.length_ft} ft`) +
-      detailRow('Turnaround', TIER_PROMISES[order.tier] || order.tier) +
+      detailRow('Turnaround', turnaround) +
       detailRow('Total', `<strong>${total}</strong>`) +
       detailRow('Delivery', deliveryValue)
     )}
@@ -958,12 +991,15 @@ export async function sendGangSheetPaidToAdmin({ order }) {
   const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
   const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';
   const subject = `💰 ${urgencyPrefix}Gang sheet order #${order.id} (${order.length_ft} ft)`;
+  const turnaround = await gangSheetTurnaround(order.tier);
+  const shipAddr = order.delivery === 'ship' ? parseShipAddress(order.ship_address) : null;
   const body = `
     <p><strong>${escapeHtml(order.customer_name || '(no name)')} &lt;${escapeHtml(order.customer_email || 'no email')}&gt;</strong> just paid for a gang sheet order.</p>
     ${detailsTable(
       detailRow('Size', `22in &times; ${order.length_ft} ft`) +
-      detailRow('Tier', TIER_PROMISES[order.tier] || order.tier) +
+      detailRow('Tier', turnaround) +
       detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
+      (shipAddr ? detailRow('Ship to', escapeHtml(`${shipAddr.line1 || ''}, ${shipAddr.city || ''}, ${shipAddr.state || ''} ${shipAddr.zip || ''}`)) : '') +
       detailRow('Total', `<strong>${total}</strong>`) +
       (order.note ? detailRow('Note', escapeHtml(order.note)) : '')
     )}
