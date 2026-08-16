@@ -103,6 +103,36 @@ export default function HeroSection() {
               </Link>
             </div>
 
+            {/* DTF strip — phones + iPads (below lg, where the desktop DTF
+                card is hidden). Slim so it fits above the fold without
+                pushing the CTAs down; full card lives in column 3 on lg+. */}
+            <Link
+              to="/dtf"
+              className="lg:hidden mt-3 sm:mt-4 flex items-center justify-between gap-3 rounded-xl bg-gray-900 px-4 py-3 text-left shadow-sm"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                {/* mini film-ribbon glyph */}
+                <svg aria-hidden="true" viewBox="0 0 44 28" className="h-7 w-11 shrink-0">
+                  <rect x="0" y="4" width="44" height="20" rx="3" fill="#374151" />
+                  <circle cx="10" cy="14" r="6" fill="#ffffff" />
+                  <circle cx="10" cy="14" r="4" fill="#ec4899" />
+                  <rect x="20" y="8" width="18" height="12" rx="3" fill="#ffffff" />
+                  <rect x="22" y="10" width="14" height="8" rx="2" fill="#ea580c" />
+                </svg>
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    New — We print DTF <span className="text-orange-500">from $9/ft</span>
+                  </span>
+                  <span className="block truncate text-xs text-gray-400">
+                    22&Prime; gang sheets · upload or build online
+                  </span>
+                </span>
+              </span>
+              <span className="shrink-0 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white">
+                Order →
+              </span>
+            </Link>
+
             <div className="mt-4 sm:mt-8 lg:mt-5 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
               <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
               <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
