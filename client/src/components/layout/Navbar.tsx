@@ -25,6 +25,7 @@ const subNavEntries: NavEntry[] = [
   { label: 'Design Studio', href: '/design' },
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
+  { label: 'DTF Transfers', href: '/dtf' },
   { label: 'Services', href: '/services', desktopOnly: true },
   { label: 'About', href: '/about', desktopOnly: true },
 ];

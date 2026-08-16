@@ -28,6 +28,7 @@ const STATIC_PAGES = [
   { path: '/faq',               priority: '0.7', changefreq: 'monthly'},
   { path: '/design',            priority: '0.8', changefreq: 'weekly' },
   { path: '/quote',             priority: '0.8', changefreq: 'monthly'},
+  { path: '/dtf',               priority: '0.8', changefreq: 'weekly' },
   { path: '/blog',              priority: '0.8', changefreq: 'weekly' },
   { path: '/brands',            priority: '0.7', changefreq: 'weekly' },
   { path: '/local-businesses',  priority: '0.7', changefreq: 'monthly'},

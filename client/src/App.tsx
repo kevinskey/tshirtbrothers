@@ -29,6 +29,9 @@ import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import GangSheetPage from '@/pages/GangSheetPage';
+import DtfStorePage from '@/pages/DtfStorePage';
+import DtfSuccessPage from '@/pages/DtfSuccessPage';
+import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
@@ -103,6 +106,9 @@ function App() {
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/sale" element={<SalePage />} />
+          <Route path="/dtf" element={<DtfStorePage />} />
+          <Route path="/dtf/success" element={<DtfSuccessPage />} />
+          <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.
