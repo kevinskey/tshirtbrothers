@@ -13,6 +13,7 @@ import {
 } from '@tshirtbrothers/design-studio';
 import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
+import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
 
@@ -1432,7 +1433,41 @@ export default function DesignStudioPage() {
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
-  const [, setFontsReady] = useState(0); // force re-render when fonts load
+  const [fontsReady, setFontsReady] = useState(0); // bumped when fonts load
+
+  // Fonts also load from the render path (loadGoogleFont on first paint of
+  // an element), which has no callback — listen for the browser's own
+  // loadingdone so every arrival triggers a re-measure.
+  useEffect(() => {
+    const onDone = () => setFontsReady(n => n + 1);
+    document.fonts.addEventListener('loadingdone', onDone);
+    return () => document.fonts.removeEventListener('loadingdone', onDone);
+  }, []);
+
+  // A text box measured before its display font arrived was measured with
+  // the fallback font's metrics. Re-measure every normal text element when
+  // fonts finish loading so boxes snap onto their real glyphs.
+  useEffect(() => {
+    if (!fontsReady) return;
+    setDesignElements(prev => {
+      let changed = false;
+      const next = prev.map(el => {
+        if (el.type !== 'text' || (el.textShape && el.textShape !== 'normal')) return el;
+        const w = measureTextWidthPct({
+          content: el.content,
+          fontSize: el.fontSize ?? 24,
+          fontFamily: el.fontFamily,
+          letterSpacing: el.letterSpacing,
+          wordSpacing: el.wordSpacing,
+        });
+        if (!Number.isFinite(w) || Math.abs(w - el.width) < 0.5) return el;
+        changed = true;
+        return { ...el, x: recenteredX(el.x, el.width, w), width: w };
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fontsReady]);
 
   // --- Drag / resize state ---
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -1487,6 +1522,9 @@ export default function DesignStudioPage() {
     startY: number;
     startWidth: number;
     startHeight: number;
+    // Text resize scales fontSize with the drag; scaling from the drag-start
+    // value avoids compounding rounding across mousemove ticks.
+    startFontSize?: number;
   } | null>(null);
 
   /* ---------------------------------------------------------------- */
@@ -1709,7 +1747,35 @@ export default function DesignStudioPage() {
   }, []);
 
   const updateElement = useCallback((id: string, updates: Partial<DesignElement>) => {
-    setDesignElements(prev => prev.map(el => el.id === id ? { ...el, ...updates } : el));
+    setDesignElements(prev => prev.map(el => {
+      if (el.id !== id) return el;
+      const merged = { ...el, ...updates };
+      // Text boxes derive their width from the rendered glyphs. Whenever an
+      // update touches something that changes glyph metrics, re-measure and
+      // keep the visual center where it was. Shaped text scales itself to
+      // the box (SVG), so only 'normal' text syncs.
+      const touchesMetrics =
+        'content' in updates || 'fontSize' in updates || 'fontFamily' in updates ||
+        'letterSpacing' in updates || 'wordSpacing' in updates || 'textShape' in updates;
+      if (
+        merged.type === 'text' &&
+        (!merged.textShape || merged.textShape === 'normal') &&
+        touchesMetrics
+      ) {
+        const w = measureTextWidthPct({
+          content: merged.content,
+          fontSize: merged.fontSize ?? 24,
+          fontFamily: merged.fontFamily,
+          letterSpacing: merged.letterSpacing,
+          wordSpacing: merged.wordSpacing,
+        });
+        if (Number.isFinite(w)) {
+          merged.x = recenteredX(merged.x, merged.width, w);
+          merged.width = w;
+        }
+      }
+      return merged;
+    }));
   }, []);
 
   const duplicateElement = useCallback((id: string) => {
@@ -2089,12 +2155,21 @@ export default function DesignStudioPage() {
     // the time to set font / color / shape / size. addDesignElement
     // closes the Add Text panel; selecting the new element flips the
     // showTextEditor flag and the Edit Text panel takes its place.
+    // Box width derives from the glyphs (was a hardcoded 40% that "HI" and
+    // "CONGRATULATIONS" both got, letting text paint past its own box).
+    const content = textInput.trim();
+    const measured = measureTextWidthPct({
+      content,
+      fontSize: textFontSize,
+      fontFamily: 'Inter',
+    });
+    const width = Number.isFinite(measured) ? measured : 40;
     addDesignElement({
       type: 'text',
-      x: 30,
+      x: Math.max(0, 50 - width / 2),
       y: 22,
-      width: 40,
-      content: textInput.trim(),
+      width,
+      content,
       fontSize: textFontSize,
       color: textColor,
       fontFamily: 'Inter',
@@ -2135,6 +2210,7 @@ export default function DesignStudioPage() {
       // height to width — they ignore it but the resize math wants a real
       // number to subtract from.
       startHeight: el.height ?? el.width,
+      startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
     });
   }, [designElements]);
 
@@ -2156,7 +2232,7 @@ export default function DesignStudioPage() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
-      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight } = dragState;
+      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize } = dragState;
 
       if (mode === 'move') {
         const dx = ((e.clientX - startMx) / rect.width) * 100;
@@ -2186,7 +2262,27 @@ export default function DesignStudioPage() {
                 : Math.max(5, Math.min(100, startHeight + dy));
               return { ...el, width: newW, height: newH };
             }
-            return { ...el, width: Math.max(5, Math.min(80, startWidth + dx)) };
+            const newW = Math.max(5, Math.min(80, startWidth + dx));
+            if (el.type === 'text' && (!el.textShape || el.textShape === 'normal') && startFontSize) {
+              // Resizing text scales the glyphs with the box (it used to
+              // change only the invisible box, leaving the text untouched).
+              // Width is then re-measured from the scaled fontSize so boxes
+              // that had drifted from their glyphs snap back onto them.
+              const newFontSize = Math.max(4, startFontSize * (newW / startWidth));
+              const measured = measureTextWidthPct({
+                content: el.content,
+                fontSize: newFontSize,
+                fontFamily: el.fontFamily,
+                letterSpacing: el.letterSpacing,
+                wordSpacing: el.wordSpacing,
+              });
+              return {
+                ...el,
+                fontSize: newFontSize,
+                width: Number.isFinite(measured) ? measured : newW,
+              };
+            }
+            return { ...el, width: newW };
           }),
         );
       }
