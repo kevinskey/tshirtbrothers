@@ -1021,6 +1021,74 @@ export async function fetchSouthAtlantaZips(): Promise<{ zips: string[] }> {
   return request('/local-businesses/zips');
 }
 
+// ---- Sales prospects (admin only) ------------------------------------------
+
+export interface Prospect {
+  id: number;
+  tier: 'A' | 'B' | 'C';
+  name: string;
+  category: string | null;
+  address: string | null;
+  city: string | null;
+  phone: string | null;
+  phone_confidence: string | null;
+  google_rating: string | null;
+  product_angle: string | null;
+  notes: string | null;
+  status: 'new' | 'contacted' | 'quoted' | 'won' | 'lost';
+  contact_name: string | null;
+  contact_email: string | null;
+  outreach_notes: string | null;
+  last_contacted_at: string | null;
+}
+
+export interface ProspectTotals {
+  tier: 'A' | 'B' | 'C';
+  status: Prospect['status'];
+  n: number;
+  with_phone: number;
+}
+
+export async function fetchProspects(filters: {
+  tier?: string;
+  status?: string;
+  q?: string;
+  hasPhone?: string;
+} = {}): Promise<{ prospects: Prospect[]; totals: ProspectTotals[] }> {
+  const params = new URLSearchParams();
+  if (filters.tier) params.set('tier', filters.tier);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.q) params.set('q', filters.q);
+  if (filters.hasPhone) params.set('hasPhone', filters.hasPhone);
+  const qs = params.toString();
+  return authRequest(`/admin/prospects${qs ? `?${qs}` : ''}`);
+}
+
+export async function updateProspect(
+  id: number,
+  patch: Partial<Pick<Prospect,
+    'tier' | 'status' | 'phone' | 'contact_name' | 'contact_email' | 'outreach_notes'>>
+): Promise<{ prospect: Prospect }> {
+  return authRequest(`/admin/prospects/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+export async function createProspect(
+  body: { name: string; tier?: string; category?: string; address?: string;
+          city?: string; phone?: string; product_angle?: string; notes?: string }
+): Promise<{ prospect: Prospect }> {
+  return authRequest('/admin/prospects', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteProspect(id: number): Promise<{ ok: boolean }> {
+  return authRequest(`/admin/prospects/${id}`, { method: 'DELETE' });
+}
+
 export async function refreshLocalBusinesses(limit?: number): Promise<{
   fetched: number;
   inserted: number;

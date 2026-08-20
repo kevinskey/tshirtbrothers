@@ -34,6 +34,7 @@ import campaignsRouter, { publicRouter as emailPublicRouter } from './routes/cam
 import instantQuoteRouter, { adminRouter as instantQuotePricingAdminRouter } from './routes/instantQuote.js';
 import favoritesRouter from './routes/favorites.js';
 import heroSlidesRouter, { adminRouter as heroSlidesAdminRouter } from './routes/heroSlides.js';
+import { adminRouter as prospectsAdminRouter } from './routes/prospects.js';
 import reviewsRouter from './routes/reviews.js';
 import newsletterRouter from './routes/newsletter.js';
 import sitemapRouter from './routes/sitemap.js';
@@ -94,6 +95,7 @@ app.use('/api/email', emailPublicRouter);
 app.use('/api/favorites', favoritesRouter);
 app.use('/api/hero-slides', heroSlidesRouter);
 app.use('/api/admin/hero-slides', heroSlidesAdminRouter);
+app.use('/api/admin/prospects', prospectsAdminRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
