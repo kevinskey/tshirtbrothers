@@ -1,4 +1,5 @@
 import { Resend } from 'resend';
+import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 // Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
@@ -14,6 +15,14 @@ const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
 const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
+// Same shop address baseLayout() prints in every email's footer — reused
+// verbatim in the gang-sheet-order confirmation so a pickup customer sees
+// it in the body, not just buried in the footer.
+const SHOP_ADDRESS = '6010 Renaissance Parkway, Fairburn, GA 30213';
+// Same hours quoted in the AI FAQ knowledge base (server/routes/deepseek.js
+// TSB_KNOWLEDGE) — kept in sync so a "ready for pickup" email never
+// contradicts what the assistant tells the same customer.
+const SHOP_HOURS = '8am–8pm every day except Sunday (closed Sundays)';
 
 function baseLayout(title, bodyHtml) {
   return `<!DOCTYPE html>
@@ -748,7 +757,11 @@ function instantQuoteItemRows(item) {
     html += detailRow('Product', `Custom: ${item.custom.description}`);
     html += detailRow('Quantity', String(item.custom.quantity));
     if (item.custom.notes) html += detailRow('Notes', item.custom.notes);
-    html += detailRow('Price', 'To be quoted after review');
+    if (item.custom.service === 'press-only' && item.calc?.total > 0) {
+      html += detailRow('Price', `$${item.calc.total.toFixed(2)} ($${item.calc.per_shirt.toFixed(2)}/each pressing — transfer printing, if any, quoted after art review)`);
+    } else {
+      html += detailRow('Price', 'To be quoted after review');
+    }
     return html;
   }
   const { inputs, calc, pickedProductMeta } = item;
@@ -874,4 +887,162 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
     subject,
     html: baseLayout('New Instant Quote', body),
   });
+}
+
+// ── Gang sheet store (DTF) ──────────────────────────────────────────────────
+
+// Live tier-promise copy, pulled from the settings row so an admin edit to
+// the cutoffs shows up in outbound emails immediately rather than only in
+// the storefront. Dynamic `import()` (not a top-level import) keeps this a
+// function-body-only reach into routes/gangsheetStore.js — same established
+// pattern used elsewhere in this file (see sendMockupForApproval's callers,
+// server/routes/mockups.js) to avoid a hard module-load cycle between the
+// route file and this service. An email must never fail to send just
+// because the settings row couldn't be loaded, so any failure here falls
+// back to the static TIER_PROMISES copy.
+async function gangSheetTurnaround(tier) {
+  try {
+    const { loadSettings, tierPromises } = await import('../routes/gangsheetStore.js');
+    const settings = await loadSettings();
+    return tierPromises(settings)[tier] || tier;
+  } catch (err) {
+    console.error('[Email] gang sheet live settings unavailable, using static tier copy:', err.message);
+    return TIER_PROMISES[tier] || tier;
+  }
+}
+
+// ship_address is stored as JSONB but may arrive here as an already-parsed
+// object (fresh query result) or, in principle, a JSON string — normalize
+// either shape to a plain object, or null if it's neither / malformed.
+function parseShipAddress(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return null;
+}
+
+export async function sendGangSheetPaidToCustomer({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const deliveryValue = order.delivery === 'ship'
+    ? 'Ships to you — we\'ll email tracking once it\'s on the way'
+    : `Pickup — ${SHOP_ADDRESS}`;
+  const turnaround = await gangSheetTurnaround(order.tier);
+  const subject = `Order #${order.id} confirmed — DTF Gang Sheet 22in × ${order.length_ft} ft`;
+  const body = `
+    <p>Hi ${escapeHtml(order.customer_name || 'there')},</p>
+    <p>Thanks for your order — we've got it and we're getting started.</p>
+    ${detailsTable(
+      detailRow('Order', `#${order.id}`) +
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Turnaround', turnaround) +
+      detailRow('Total', `<strong>${total}</strong>`) +
+      detailRow('Delivery', deliveryValue)
+    )}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll email you again as soon as it's ready.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [order.customer_email],
+    subject,
+    html: baseLayout('Order Confirmed', body),
+  });
+}
+
+// Fired when an admin flips an order to `ready` (server/routes/gangsheetStore.js
+// PATCH /admin/orders/:id). Pickup orders get the shop address + hours so
+// the customer doesn't have to dig for them; ship orders just get told
+// it's on the way — EasyPost tracking (if any) isn't wired to this order
+// type yet, so we don't promise a tracking number.
+export async function sendGangSheetReadyToCustomer({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const subject = `Your DTF transfers are ready! — Order #${order.id}`;
+  const deliveryBlock = order.delivery === 'ship'
+    ? `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your order has shipped! It's on its way to you — no action needed on your end.</p>`
+    : `
+      <div style="background:#fff7ed;border-radius:8px;padding:16px;margin:0 0 16px;">
+        <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:${BRAND_DARK};">Ready for pickup</p>
+        <p style="margin:0 0 4px;font-size:14px;color:#374151;">${SHOP_ADDRESS}</p>
+        <p style="margin:0;font-size:14px;color:#374151;">Hours: ${SHOP_HOURS}</p>
+        <p style="margin:8px 0 0;font-size:13px;color:#6b7280;">The facility is secure — please call us at (470) 622-4845 when you arrive and we'll bring it right out.</p>
+      </div>
+    `;
+  const body = `
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.customer_name || 'there')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Good news — your DTF gang sheet order is ready!</p>
+    ${detailsTable(
+      detailRow('Order', `#${order.id}`) +
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Total', `<strong>${total}</strong>`)
+    )}
+    ${deliveryBlock}
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [order.customer_email],
+    subject,
+    html: baseLayout('Order Ready', body),
+  });
+}
+
+export async function sendGangSheetPaidToAdmin({ order }) {
+  const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
+  const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';
+  const subject = `💰 ${urgencyPrefix}Gang sheet order #${order.id} (${order.length_ft} ft)`;
+  const turnaround = await gangSheetTurnaround(order.tier);
+  const shipAddr = order.delivery === 'ship' ? parseShipAddress(order.ship_address) : null;
+  const body = `
+    <p><strong>${escapeHtml(order.customer_name || '(no name)')} &lt;${escapeHtml(order.customer_email || 'no email')}&gt;</strong> just paid for a gang sheet order.</p>
+    ${detailsTable(
+      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Tier', turnaround) +
+      detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
+      (shipAddr ? detailRow('Ship to', escapeHtml(`${shipAddr.line1 || ''}, ${shipAddr.city || ''}, ${shipAddr.state || ''} ${shipAddr.zip || ''}`)) : '') +
+      detailRow('Total', `<strong>${total}</strong>`) +
+      (order.note ? detailRow('Note', escapeHtml(order.note)) : '')
+    )}
+    ${primaryButton('Open in Admin', `${DOMAIN}/admin/dtf-orders`)}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Order ID #${order.id}</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [ADMIN_EMAIL],
+    replyTo: order.customer_email || undefined,
+    subject,
+    html: baseLayout('Gang Sheet Order Paid', body),
+  });
+}
+
+// Fired when the Stripe webhook confirms a gang-sheet checkout paid but the
+// matching gang_sheet_orders row can't be found/updated (see
+// server/routes/payments.js's checkout.session.completed handler). Money
+// has moved and there is no order to fulfil it against — this needs a
+// human immediately, not just a console.error that scrolls off a log.
+export async function sendGangSheetOrphanPaymentAlert({ sessionId, orderId, amountCents }) {
+  const amount = formatCurrency((amountCents || 0) / 100);
+  const subject = '🚨 Stripe payment with no matching gang sheet order';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#dc2626;">Payment received, order not found</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">A gang-sheet Stripe checkout completed, but the matching order row could not be marked paid. The customer's card was charged — find and fix this order manually.</p>
+    ${detailsTable(
+      detailRow('Stripe Session', escapeHtml(sessionId || 'unknown')) +
+      detailRow('Order ID', escapeHtml(String(orderId))) +
+      detailRow('Amount', amount)
+    )}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Check the Stripe Dashboard for this session, then the gang_sheet_orders table for order #${escapeHtml(String(orderId))}.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject,
+      html: baseLayout('Orphan Payment Alert', body),
+    });
+    console.log(`[Email] Gang sheet orphan payment alert sent for order ${orderId}`);
+  } catch (err) {
+    console.error('[Email] Failed to send gang sheet orphan payment alert:', err);
+    throw err;
+  }
 }

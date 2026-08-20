@@ -6,6 +6,11 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
 
+// DTF press-only labor, $ per garment pressed. Kevin's rate (2026-08-15).
+// Mirrored for display in client/src/pages/InstantQuotePage.tsx
+// (PRESS_ONLY_RATE) — keep the two in sync.
+const PRESS_ONLY_RATE = 3;
+
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
@@ -312,13 +317,24 @@ router.post('/save', async (req, res, next) => {
         if (!quantity) {
           return res.status(400).json({ error: `items[${i}]: quantity must be at least 1` });
         }
+        // 'press-only' is the one custom service with a known labor rate:
+        // the SERVER prices it (never trust a client-sent price). Any
+        // transfer PRINTING on top is still priced manually after review.
+        const isPressOnly = item.custom.service === 'press-only';
         itemRows.push({
           index: i,
           kind: 'custom',
           inputs: null,
           pickedProductMeta: null,
-          calc: { quantity, per_shirt: 0, total: 0, turnaround_days: 0 },
-          custom: { description, quantity, notes: item.custom.notes || null },
+          calc: isPressOnly
+            ? { quantity, per_shirt: PRESS_ONLY_RATE, total: quantity * PRESS_ONLY_RATE, turnaround_days: 0 }
+            : { quantity, per_shirt: 0, total: 0, turnaround_days: 0 },
+          custom: {
+            description,
+            quantity,
+            notes: item.custom.notes || null,
+            service: isPressOnly ? 'press-only' : null,
+          },
           design_url: item.design_url || null,
           extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
         });
@@ -428,22 +444,28 @@ router.post('/save', async (req, res, next) => {
     for (const r of itemRows) {
       if (r.kind === 'custom') {
         // Custom items have no catalog product, no sizes, no print areas.
-        // The description becomes the product name; unit/line prices stay
-        // NULL so the admin editor prompts them to price it manually.
-        const customNotes = r.custom.notes
-          ? `Custom item. Notes: ${r.custom.notes}`
-          : 'Custom item — priced after review.';
+        // The description becomes the product name. Press-only items carry
+        // their auto-priced $/each; other custom items leave unit/line
+        // prices NULL so the admin editor prompts them to price manually.
+        const isPress = r.custom.service === 'press-only';
+        const customNotes = isPress
+          ? `DTF pressing — auto-priced $${PRESS_ONLY_RATE}/each. Transfer printing (if any) priced after art review.${r.custom.notes ? ` Notes: ${r.custom.notes}` : ''}`
+          : (r.custom.notes
+            ? `Custom item. Notes: ${r.custom.notes}`
+            : 'Custom item — priced after review.');
         await client.query(
           `INSERT INTO quote_items
             (quote_id, position, product_id, product_name, color, sizes, quantity,
              print_areas, design_url, unit_price, line_total, notes)
-           VALUES ($1, $2, NULL, $3, NULL, '[]'::jsonb, $4, '[]'::jsonb, $5, NULL, NULL, $6)`,
+           VALUES ($1, $2, NULL, $3, NULL, '[]'::jsonb, $4, '[]'::jsonb, $5, $6, $7, $8)`,
           [
             quote.id,
             r.index,
             r.custom.description,
             r.custom.quantity,
             r.design_url || null,
+            isPress ? r.calc.per_shirt : null,
+            isPress ? r.calc.total : null,
             customNotes,
           ],
         );

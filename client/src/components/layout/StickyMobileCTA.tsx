@@ -11,12 +11,13 @@ import { Tag, Sparkles } from 'lucide-react';
 //      user has scrolled — i.e. they're "still browsing" — we recover
 //      that second-thoughts moment with a one-tap path back to /quote.
 //
-//   2. Hidden on /quote and /design entirely. /quote has its own quote
-//      CTA literally on screen; /design has its own bottom toolbar
-//      that would visually collide. Hiding here is cheaper than
+//   2. Hidden on /quote, /design, and /dtf entirely. /quote has its own
+//      quote CTA literally on screen; /design has its own bottom toolbar;
+//      /dtf has its own sticky price-summary + Checkout bar. All three
+//      would visually collide with this bar. Hiding here is cheaper than
 //      conditionally not rendering Layout for those pages.
 
-const HIDE_ON_PATHS = ['/quote', '/design'];
+const HIDE_ON_PATHS = ['/quote', '/design', '/dtf'];
 
 export default function StickyMobileCTA() {
   const { pathname } = useLocation();

@@ -121,7 +121,7 @@ router.put('/me/password', authenticate, async (req, res, next) => {
 router.get('/me/quotes', authenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, product_name, quantity, status, estimated_price, deposit_amount, created_at, date_needed, accepted_at
+      `SELECT id, product_name, quantity, status, estimated_price, deposit_amount, created_at, date_needed, accepted_at, accept_token
        FROM quotes WHERE customer_email = (SELECT email FROM users WHERE id = $1)
        ORDER BY created_at DESC`,
       [req.user.id]

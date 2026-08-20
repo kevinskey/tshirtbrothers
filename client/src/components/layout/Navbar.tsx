@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
+import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavLink = { label: string; href: string; desktopOnly?: boolean };
@@ -26,6 +25,7 @@ const subNavEntries: NavEntry[] = [
   { label: 'Design Studio', href: '/design' },
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
+  { label: 'DTF Transfers', href: '/dtf' },
   { label: 'Services', href: '/services', desktopOnly: true },
   { label: 'About', href: '/about', desktopOnly: true },
 ];
@@ -33,11 +33,8 @@ const subNavEntries: NavEntry[] = [
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
-  const [desktopCatalogueOpen, setDesktopCatalogueOpen] = useState(false);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [phoneMenu, setPhoneMenu] = useState(false);
-  const phoneBtnRef = useRef<HTMLDivElement | null>(null);
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -50,13 +47,16 @@ export default function Navbar() {
   const isLoggedIn = !!localStorage.getItem('tsb_token');
 
   return (
-    <nav className="sticky top-0 z-50 bg-white overflow-x-hidden">
+    // overflow-x-hidden used to guard the (removed) scrollable sub-nav
+    // pill; it must stay off now so the sm+ hamburger dropdown — an
+    // absolutely positioned card below this sticky nav — isn't clipped.
+    <nav className="sticky top-0 z-50 bg-white">
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
       <Link
-        to="/shop"
+        to="/sale"
         className="block bg-gray-900 text-white text-center text-xs sm:text-sm py-2.5 sm:py-0.5 px-2 sm:px-4 whitespace-nowrap overflow-hidden hover:bg-gray-800 transition-colors"
       >
-        15% Off T-shirts, Athletics &amp; Polos — Prices as Marked.<sup>*</sup>{' '}
+        15% Off All Gildan Tees &amp; Hoodies — Prices as Marked.<sup>*</sup>{' '}
         <span className="font-bold underline">Shop Sale</span>
       </Link>
 
@@ -66,16 +66,6 @@ export default function Navbar() {
       <div className="bg-white">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-1.5">
           <div className="flex items-center gap-3">
-            {/* Always-visible hamburger (mobile + desktop, like Custom Ink) */}
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
-              onClick={() => setMobileOpen(!mobileOpen)}
-              aria-label="Toggle menu"
-            >
-              {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2 flex-shrink-0">
               <img
@@ -92,31 +82,9 @@ export default function Navbar() {
               </span>
             </Link>
 
-            {/* Right side actions */}
+            {/* Right side actions — phone contact lives in the hamburger
+                menu's "Text us" entry, not the header. */}
             <div className="flex items-center gap-1 sm:gap-3 ml-auto flex-shrink-0">
-              {/* Phone — icon-only on mobile, icon + number on md+. */}
-              <div className="relative" ref={phoneBtnRef}>
-                <button type="button" onClick={() => setPhoneMenu(p => !p)} aria-label="Call or text us" className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-orange-600 transition-colors p-2 md:px-2 md:py-2">
-                  <Phone className="h-5 w-5 md:h-4 md:w-4" />
-                  <span className="hidden md:inline">(470) 622-1392</span>
-                </button>
-                {phoneMenu && (() => {
-                  const r = phoneBtnRef.current?.getBoundingClientRect();
-                  const top = r ? r.bottom + 8 : 64;
-                  const right = r ? window.innerWidth - r.right : 16;
-                  return createPortal(
-                    <>
-                      <div className="fixed inset-0 z-[9998]" onClick={() => setPhoneMenu(false)} />
-                      <div className="fixed bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-48 z-[9999]" style={{ top, right }}>
-                        <a href="tel:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><Phone className="h-4 w-4" />Call Us</a>
-                        <a href="sms:+14706221392" onClick={() => setPhoneMenu(false)} className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition"><MessageCircle className="h-4 w-4" />Text Us</a>
-                      </div>
-                    </>,
-                    document.body,
-                  );
-                })()}
-              </div>
-
               {/* Favorites (heart) */}
               <Link
                 to={isLoggedIn ? '/favorites' : '/auth'}
@@ -147,6 +115,16 @@ export default function Navbar() {
               >
                 <ShoppingCart className="h-5 w-5" />
               </Link>
+
+              {/* Hamburger — far right of the header (all breakpoints) */}
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                onClick={() => setMobileOpen(!mobileOpen)}
+                aria-label="Toggle menu"
+              >
+                {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              </button>
             </div>
           </div>
         </div>
@@ -156,7 +134,7 @@ export default function Navbar() {
             separate the header block from page content. */}
         <div className="mx-auto max-w-7xl sm:px-6 lg:px-8 pb-3 sm:pb-4 sm:border-b border-gray-200/80">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
               enterKeyHint="search"
@@ -164,86 +142,20 @@ export default function Navbar() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
               placeholder="Search for t-shirts, hoodies, hats, and more"
-              className="w-full rounded-full bg-gray-100 pl-12 pr-4 py-[9.5px] text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
+              className="w-full rounded-full bg-gray-100 pl-11 pr-4 py-1.5 text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
               style={{ fontSize: '16px' }}
             />
           </div>
         </div>
       </div>
 
-      {/* Sub-nav row — floating 3D pill. Visible at every breakpoint;
-          on mobile the pill is horizontally scrollable (overflow-x-auto
-          on the wrapper) so all 5 entries stay reachable from the
-          landing page without opening the hamburger. The pill itself
-          stays a single line — no wrap — to preserve the rounded shape. */}
-      <div className="bg-white">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-2 sm:py-3">
-          <div
-            className="flex justify-center overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <div
-              className="inline-flex flex-nowrap items-center gap-4 sm:gap-6 px-5 sm:px-6 py-1.5 sm:py-2 rounded-full border border-gray-200 bg-gradient-to-b from-white to-gray-100 overflow-visible"
-              style={{
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 1px rgba(0,0,0,0.04), 0 2px 6px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
-              }}
-            >
-            {subNavEntries.map((entry) => {
-              const mobileHide = entry.desktopOnly ? 'hidden sm:flex' : '';
-              if (isGroup(entry)) {
-                return (
-                  <div
-                    key={entry.label}
-                    className={cn('relative', mobileHide)}
-                    onMouseEnter={() => setDesktopCatalogueOpen(true)}
-                    onMouseLeave={() => setDesktopCatalogueOpen(false)}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => { setDesktopCatalogueOpen(false); navigate('/shop'); }}
-                      className="flex items-center gap-1 text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap cursor-pointer bg-transparent border-0 p-0"
-                    >
-                      {entry.label}
-                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', desktopCatalogueOpen && 'rotate-180')} />
-                    </button>
-                    {desktopCatalogueOpen && (
-                      <div className="absolute left-1/2 -translate-x-1/2 top-full pt-2 z-50">
-                        <div className="bg-white rounded-xl shadow-xl border border-gray-200 py-2 w-56">
-                          {entry.children.map((c) => (
-                            <Link
-                              key={c.label}
-                              to={c.href}
-                              onClick={() => setDesktopCatalogueOpen(false)}
-                              className="block px-4 py-2 text-sm font-medium text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors"
-                            >
-                              {c.label}
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-              return (
-                <Link
-                  key={entry.label}
-                  to={entry.href}
-                  className={cn('text-sm font-medium text-gray-600 hover:text-orange-600 transition-colors whitespace-nowrap', entry.desktopOnly && 'hidden sm:inline')}
-                >
-                  {entry.label}
-                </Link>
-              );
-            })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile/hamburger menu */}
+      {/* Hamburger menu. Mobile: full-width in-flow block (normal pattern).
+          sm+: a compact card anchored under the hamburger's side of the
+          header — desktop never gets a full-width dropdown. */}
       <div
         className={cn(
           'bg-white border-b border-gray-200 max-h-[80vh] overflow-y-auto',
+          'sm:absolute sm:right-4 sm:top-full sm:w-80 sm:rounded-2xl sm:border sm:border-gray-200 sm:shadow-2xl sm:max-h-[70vh]',
           mobileOpen ? 'block' : 'hidden'
         )}
       >

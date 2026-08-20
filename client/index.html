@@ -34,6 +34,12 @@
         else c.addEventListener('load',schedule,{once:true});
       })(window, document, 'clarity', 'script', 'wwufy30yoe');
     </script>
+    <!-- Umami — self-hosted analytics (dashboard: stats.tshirtbrothers.com).
+         Served same-origin via nginx (/stats-script.js → umami :3070) so
+         adblockers don't strip it; collection posts to /api/send, which
+         nginx routes to umami ahead of the /api/ → :3001 app proxy. -->
+    <script defer src="/stats-script.js" data-website-id="e97d0969-61d8-49ca-858f-0ef25b8241b6"></script>
+
     <link rel="icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
     <link rel="apple-touch-icon" href="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

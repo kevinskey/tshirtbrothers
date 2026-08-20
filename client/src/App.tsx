@@ -17,6 +17,7 @@ function ScrollToTop() {
 import HomePage from '@/pages/HomePage';
 import ServicesPage from '@/pages/ServicesPage';
 import ShopPage from '@/pages/ShopPage';
+import SalePage from '@/pages/SalePage';
 import InstantQuotePage from '@/pages/InstantQuotePage';
 import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
@@ -28,6 +29,10 @@ import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import GangSheetPage from '@/pages/GangSheetPage';
+import DtfStorePage from '@/pages/DtfStorePage';
+import DtfBuilderPage from '@/pages/DtfBuilderPage';
+import DtfSuccessPage from '@/pages/DtfSuccessPage';
+import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
@@ -101,6 +106,12 @@ function App() {
           <Route path="/about" element={<AboutPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/shop" element={<ShopPage />} />
+          <Route path="/sale" element={<SalePage />} />
+          <Route path="/dtf" element={<DtfStorePage />} />
+          <Route path="/dtf/builder" element={<DtfBuilderPage />} />
+          <Route path="/dtf/builder/:id" element={<DtfBuilderPage />} />
+          <Route path="/dtf/success" element={<DtfSuccessPage />} />
+          <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.

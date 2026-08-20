@@ -4,7 +4,7 @@ import { User, FileText, Palette, Package, Save, Lock, Loader2 } from 'lucide-re
 import Layout from '@/components/layout/Layout';
 
 interface Profile { id: number; email: string; name: string; phone: string; role: string; created_at: string; }
-interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; }
+interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; accept_token: string | null; }
 interface Design { id: number; name: string; product_name: string; thumbnail: string | null; mockup_url: string | null; created_at: string; }
 
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
@@ -242,6 +242,18 @@ export default function AccountPage() {
                       <p className={`font-bold ${balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>${balance.toFixed(2)}</p>
                     </div>
                   </div>
+                  {/* A balance the customer can see but not pay is a support
+                      call (2026-08-14: "no button to pay balance"). Same
+                      link the balance email carries — the checkout page
+                      validates the token server-side. */}
+                  {balance > 0 && q.status === 'accepted' && (
+                    <a
+                      href={`/payment/checkout?quote=${q.id}&token=${q.accept_token || ''}&type=balance`}
+                      className="mt-3 flex items-center justify-center w-full bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm rounded-lg py-2.5 transition-colors"
+                    >
+                      Pay Balance — ${balance.toFixed(2)}
+                    </a>
+                  )}
                 </div>
               );
             })}

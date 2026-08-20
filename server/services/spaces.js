@@ -46,13 +46,18 @@ export function publicUrl(key) {
 }
 
 // Upload a Buffer or base64 data URL to a given key under the configured
-// bucket and return the public CDN URL. Always public-read; everything in
-// this app is meant to be embeddable in customer-facing pages.
+// bucket and return the public CDN URL. Defaults to public-read (`acl`),
+// which fits most of this app's assets — mockups, designs, campaign images —
+// that are meant to be embeddable in customer-facing pages. Callers with
+// content that must stay restricted pass `acl: 'private'` instead — e.g.
+// gangsheetStore.js's customer production files, which are only ever served
+// back out through the authenticated admin download route.
 export async function uploadObject({
   key,
   body,
   contentType = 'image/png',
   cacheControl,
+  acl = 'public-read',
 }) {
   if (!key) throw new Error('key required');
   if (!body) throw new Error('body required');
@@ -66,7 +71,7 @@ export async function uploadObject({
     Key: key,
     Body: buffer,
     ContentType: contentType,
-    ACL: 'public-read',
+    ACL: acl,
     ...(cacheControl ? { CacheControl: cacheControl } : {}),
   }));
 

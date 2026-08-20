@@ -67,11 +67,16 @@ async function main() {
   const routes = await fetchRoutes();
   console.log(`[prerender] ${routes.length} routes to render`);
 
+  // strictPort:false — anything already sitting on the preferred port (a
+  // stray `vite preview`, a concurrent manual build) must not fail the
+  // deploy; vite walks up to the next free port and reports it.
   const server = await preview({
     root: CLIENT_DIR,
-    preview: { port: 4173, strictPort: true, host: '127.0.0.1' },
+    preview: { port: 4173, strictPort: false, host: '127.0.0.1' },
   });
-  const base = `http://127.0.0.1:4173`;
+  const addr = server.httpServer.address();
+  const base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 4173}`;
+  console.log(`[prerender] previewing at ${base}`);
 
   const browser = await puppeteer.launch({
     headless: true,

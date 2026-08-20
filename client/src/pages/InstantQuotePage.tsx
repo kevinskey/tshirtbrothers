@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import {
   Shirt,
-  Layers,
   Palette,
-  Printer,
   ChevronDown,
   Loader2,
   Check,
-  Zap,
   Upload,
   X as XIcon,
   Plus,
@@ -82,18 +79,31 @@ type CatalogProduct = {
 // Fields collected when the customer is quoting something that isn't in our
 // catalog — no size grid, no print method, just a free-form description +
 // quantity that the admin will review and price manually.
+// DTF pressing labor rate — auto-priced client-side for display. MUST match
+// PRESS_ONLY_RATE in server/routes/instantQuote.js, which is what actually
+// prices the saved quote (emails, admin, deposit).
+const PRESS_ONLY_RATE = 3;
+
 type CustomItemInputs = {
   description: string;
   quantity: string;
   notes: string;
+  // 'press-only' = DTF pressing service: quantity × $3 auto-priced; any
+  // transfer PRINTING is still priced manually after art review.
+  service?: 'press-only';
 };
 
+// Auto-priced portion of a custom item (0 for everything except pressing).
+function pressTotal(it: ItemDraft): number {
+  if (it.kind !== 'custom' || it.custom.service !== 'press-only') return 0;
+  return (parseInt(it.custom.quantity, 10) || 0) * PRESS_ONLY_RATE;
+}
+
 // Which shape of question set the item is currently in.
-//   unset            — initial Catalog vs. Custom picker
-//   catalog-category — after picking Catalog, choose T-shirts/Hoodies/etc.
-//   catalog          — full shirt/print form (garment preset from category)
-//   custom           — simplified describe-it form
-type ItemKind = 'unset' | 'catalog-category' | 'catalog' | 'custom';
+//   unset   — the five-card "what are you quoting?" picker
+//   catalog — minimal priced form (garment preset by the picked card)
+//   custom  — free-form describe-it form ("Other" card)
+type ItemKind = 'unset' | 'catalog' | 'custom';
 
 // One line item the customer is configuring. A quote is an ordered list of
 // these — the customer can add as many as they want before saving.
@@ -190,6 +200,14 @@ const DEFAULT_INPUTS: Inputs = {
 
 function totalQuantity(sizes: Inputs['sizes']): number {
   return sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
+}
+
+// Umami custom event, if the tracker loaded (adblock / script failure = no-op).
+function trackEvent(event: string, data?: Record<string, unknown>): void {
+  const w = window as unknown as {
+    umami?: { track: (e: string, d?: Record<string, unknown>) => void };
+  };
+  try { w.umami?.track(event, data); } catch { /* analytics must never break the page */ }
 }
 
 function categoryToGarmentName(category?: string): Inputs['garmentName'] {
@@ -539,8 +557,9 @@ export default function InstantQuotePage() {
 
   // Roll-ups across all items.
   const grandTotal = useMemo(
-    () => calcQueries.reduce((sum, q) => sum + (q.data?.total || 0), 0),
-    [calcQueries],
+    () => calcQueries.reduce((sum, q) => sum + (q.data?.total || 0), 0)
+      + items.reduce((sum, it) => sum + pressTotal(it), 0),
+    [calcQueries, items],
   );
   const grandQuantity = useMemo(
     () => items.reduce((sum, it) => {
@@ -557,13 +576,39 @@ export default function InstantQuotePage() {
     return m || (options?.settings.standard_turnaround ?? 0);
   }, [calcQueries, options]);
 
+  // ─── Date needed → rush derivation ───
+  // One date for the whole order. When it lands inside the standard
+  // turnaround window, every item is priced with the rush surcharge —
+  // the customer picks a date, never a "rush vs standard" jargon choice.
+  const [dateNeeded, setDateNeeded] = useState<string>('');
+  const standardDays = options?.settings.standard_turnaround ?? 10;
+  const rushDays = options?.settings.rush_turnaround ?? 2;
+  const rushPct = Math.round((options?.settings.rush_surcharge_pct ?? 0.25) * 100);
+  const daysUntilNeeded = useMemo(() => {
+    if (!dateNeeded) return null;
+    const need = new Date(`${dateNeeded}T00:00:00`);
+    if (Number.isNaN(need.getTime())) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((need.getTime() - today.getTime()) / 86_400_000);
+  }, [dateNeeded]);
+  const rushNeeded = daysUntilNeeded !== null && daysUntilNeeded < standardDays;
+  useEffect(() => {
+    setItems((prev) => prev.some((it) => it.inputs.rush !== rushNeeded)
+      ? prev.map((it) => ({ ...it, inputs: { ...it.inputs, rush: rushNeeded } }))
+      : prev);
+  }, [rushNeeded]);
+
   const anyCalcLoading = calcQueries.some((q) => q.isFetching);
+  // Surface the first calc failure (e.g. pricing service down, bad input
+  // combo) in the price card instead of silently leaving the total at $0.
+  const calcError = calcQueries.find((q) => q.isError)?.error as Error | undefined;
   // A "valid" item depends on its kind:
   //  - unset:   never valid (customer still has to pick a type)
   //  - catalog: at least one location + at least one shirt
   //  - custom:  a description + a positive quantity
   const itemValidity = items.map((it) => {
-    if (it.kind === 'unset' || it.kind === 'catalog-category') return false;
+    if (it.kind === 'unset') return false;
     if (it.kind === 'custom') {
       return it.custom.description.trim().length > 0
         && (parseInt(it.custom.quantity, 10) || 0) > 0;
@@ -575,7 +620,10 @@ export default function InstantQuotePage() {
   const allCalcsReady = calcQueries.every((q, i) => {
     // Custom items don't have a calc; unset items are already invalid.
     if (items[i]?.kind !== 'catalog') return true;
-    return !itemValidity[i] || q.data != null;
+    // An errored calc still counts as "ready" — the customer can submit
+    // and the quote goes through admin review for manual pricing, same as
+    // a custom item, instead of getting permanently stuck.
+    return !itemValidity[i] || q.data != null || q.isError === true;
   });
   // Save via email works even when the only items are custom (no calculable
   // price yet). Lock-in requires a real total to charge a deposit against.
@@ -611,40 +659,89 @@ export default function InstantQuotePage() {
     setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, kind } : it)));
   }
 
-  // Pick a category from the catalog-category screen. Categories that map
-  // to an actual catalog garment (T-shirt / Hoodie / Sweatshirt / Hat) drop
-  // into the standard catalog form with garmentName preset. Bags and
-  // Accessories aren't sold as catalog garments here, so they route to the
-  // custom flow with a description hint so the customer knows what to type.
-  function pickItemCategory(itemId: string, categoryKey: string) {
+  // A card tap from the five-card picker. Garment cards drop straight into
+  // the minimal priced form with garmentName preset; "other" routes to the
+  // free-form custom flow.
+  function pickItemType(itemId: string, key: string) {
+    trackEvent('quote-card-tap', { card: key });
     setItems((prev) => prev.map((it) => {
       if (it.id !== itemId) return it;
-      const catalogGarment: Record<string, string | undefined> = {
-        tshirts: 'T-shirt',
-        hoodies: 'Hoodie',
-        sweatshirts: 'Sweatshirt',
-        hats: 'Hat',
+      // Strip a previously-attached catalog product / Design Studio mockup
+      // from an item, filtering the matching URLs out of designs[] too —
+      // used whenever the card pick makes that attachment stale.
+      const clearAttachment = (draft: ItemDraft): ItemDraft => ({
+        ...draft,
+        pickedProduct: null,
+        mockupUrl: null,
+        mockupUrlBack: null,
+        designs: draft.designs.filter((d) => d.url !== draft.mockupUrl && d.url !== draft.mockupUrlBack),
+      });
+      // Service-style cards route to the custom describe-it flow with a
+      // description seed so the shop instantly knows the job type. Seeds
+      // only fill an empty description — a customer's own text survives
+      // switching cards.
+      const customSeeds: Record<string, string> = {
+        other: '',
+        byo: 'Bringing my own garments — printing only. Garment type + brand: ',
+        dtfpress: 'DTF pressing only ($3/each to press ready-to-press transfers). '
+          + 'If you need transfers printed too, upload your art below — printing is quoted by print size after we assess it. Transfers: ',
       };
-      const garment = catalogGarment[categoryKey];
-      if (garment) {
-        const nextInputs = { ...it.inputs, garmentName: garment };
-        nextInputs.sizes = normalizeSizesForProduct(null, garment, it.inputs.sizes);
-        return { ...it, kind: 'catalog', inputs: nextInputs };
+      if (key in customSeeds) {
+        const cleared = clearAttachment(it);
+        return {
+          ...cleared,
+          kind: 'custom',
+          custom: {
+            ...cleared.custom,
+            description: cleared.custom.description || (customSeeds[key] ?? ''),
+            // Pressing is the one custom service with a known auto-priced
+            // rate; switching to another custom card clears the flag.
+            service: key === 'dtfpress' ? 'press-only' : undefined,
+          },
+        };
       }
-      const seed: Record<string, string> = {
-        bags: 'Bag: ',
-        accessories: 'Accessory: ',
+      const garments: Record<string, string> = {
+        tshirt: 'T-shirt',
+        hoodie: 'Hoodie',
+        sweatshirt: 'Sweatshirt',
+        hat: 'Hat',
       };
-      return {
-        ...it,
-        kind: 'custom',
-        custom: { ...it.custom, description: it.custom.description || (seed[categoryKey] || '') },
-      };
+      const g = garments[key] || 'T-shirt';
+
+      // Does whatever's already attached (catalog product, or a bare
+      // Design Studio mockup) still depict this garment? If not, the
+      // attachment is stale — clear it so we don't silently keep showing a
+      // hoodie mockup on a shirt quote (or vice versa).
+      const productMismatch = it.pickedProduct != null
+        && categoryToGarmentName(it.pickedProduct.category) !== g;
+      const mockupOnlyMismatch = it.pickedProduct == null
+        && (it.mockupUrl || it.mockupUrlBack)
+        && it.inputs.garmentName !== g;
+
+      if (productMismatch || mockupOnlyMismatch) {
+        const cleared = clearAttachment(it);
+        const nextInputs = {
+          ...cleared.inputs,
+          garmentName: g,
+          sizes: normalizeSizesForProduct(null, g, it.inputs.sizes),
+        };
+        return { ...cleared, kind: 'catalog', inputs: nextInputs };
+      }
+
+      const nextInputs = { ...it.inputs, garmentName: g };
+      nextInputs.sizes = normalizeSizesForProduct(it.pickedProduct, g, it.inputs.sizes);
+      return { ...it, kind: 'catalog', inputs: nextInputs };
     }));
   }
 
   function addItem() {
-    const next = newItem();
+    // New items inherit the first item's print method so a customer who
+    // landed via ?service=embroidery doesn't silently get item 2 priced
+    // as DTF the moment they pick a garment card.
+    const next = newItem({
+      methodName: items[0]?.inputs.methodName || DEFAULT_INPUTS.methodName,
+      rush: rushNeeded,
+    });
     setItems((prev) => [...prev, next]);
     setExpandedItemId(next.id);
     // Wait for the new card to render, then scroll it into view at the top
@@ -709,17 +806,16 @@ export default function InstantQuotePage() {
         description="See your custom t-shirt, hoodie, or polo price update live. Screen print, DTF, embroidery — pick garment, method, and quantity for an instant quote."
         path="/quote"
       />
-      {/* Hero — compact at every breakpoint; desktop used to be huge. */}
-      <section className="bg-gray-900 text-white py-5 sm:py-6 md:py-8 text-center">
-        <div className="container mx-auto px-4">
-          <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold">Instant Quote</h1>
-          <p className="mt-1 text-gray-400 max-w-xl mx-auto text-xs sm:text-sm">
-            Add multiple products — price updates live.
-          </p>
-        </div>
-      </section>
-
-      <main className="container mx-auto px-4 py-4 sm:py-8 max-w-3xl lg:max-w-5xl">
+      {/* No hero band — the site header already eats most of the first
+          viewport, so the page title is one compact line and the product
+          cards (the real CTA) start above the fold. */}
+      <main className="container mx-auto px-4 pt-3 pb-6 sm:pt-4 sm:pb-8 max-w-3xl lg:max-w-5xl">
+        <h1 className="font-display text-lg sm:text-xl font-bold text-gray-900 mb-2 sm:mb-3">
+          Instant Quote
+          <span className="ml-2 font-sans font-normal text-xs sm:text-sm text-gray-500">
+            pick a product — price updates live
+          </span>
+        </h1>
         {/* ─── Items ─── */}
         <div className="space-y-6">
           {items.map((item, i) => (
@@ -748,7 +844,7 @@ export default function InstantQuotePage() {
               onOpenPicker={() => setProductPickerItemId(item.id)}
               onPatchCustom={(patch) => patchCustom(item.id, patch)}
               onSetKind={(kind) => setItemKind(item.id, kind)}
-              onPickCategory={(cat) => pickItemCategory(item.id, cat)}
+              onPickType={(key) => pickItemType(item.id, key)}
               onRemove={items.length > 1 ? () => removeItem(item.id) : null}
             />
           ))}
@@ -763,6 +859,60 @@ export default function InstantQuotePage() {
           <Plus className="h-5 w-5" /> Add another product
         </button>
 
+        {/* ─── Date needed — one date for the whole order; drives whether
+            rush pricing applies. ─── */}
+        <div className="mt-6 rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
+          <h2 className="font-display font-bold text-base sm:text-lg text-gray-900">
+            📅 When do you need these?
+          </h2>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDateNeeded('')}
+              className={`rounded-full border-2 px-4 py-2.5 text-sm font-semibold transition ${
+                !dateNeeded ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+              }`}
+            >
+              I'm flexible
+            </button>
+            <label
+              className={`inline-flex cursor-pointer items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition ${
+                dateNeeded ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+              }`}
+            >
+              Need by
+              <input
+                type="date"
+                value={dateNeeded}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDateNeeded(e.target.value)}
+                className="bg-transparent text-sm font-semibold focus:outline-none"
+                style={{ fontSize: '16px' }}
+                aria-label="Date needed"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs sm:text-sm">
+            {!dateNeeded && (
+              <span className="text-gray-500">Standard turnaround is {standardDays} days — no rush fee.</span>
+            )}
+            {dateNeeded && !rushNeeded && (
+              <span className="text-green-700">✓ Fits our standard {standardDays}-day turnaround — no rush fee.</span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded >= rushDays && (
+              <span className="text-amber-700">
+                Needed in {daysUntilNeeded} day{daysUntilNeeded === 1 ? '' : 's'} — rush turnaround applies (+{rushPct}%).
+              </span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded < rushDays && (
+              <span className="text-amber-700">
+                That's a very tight window — rush pricing applies (+{rushPct}%), and we'll confirm
+                feasibility as soon as we see your quote.
+              </span>
+            )}
+          </p>
+        </div>
+
         {/* ─── Grand-total card — last, right above the CTAs so the
             customer sees the price they're committing to. ─── */}
         <div className="mt-8">
@@ -775,6 +925,7 @@ export default function InstantQuotePage() {
             grandQuantity={grandQuantity}
             turnaroundDays={grandTurnaroundDays}
             allValid={allItemsValid}
+            calcError={calcError?.message || null}
           />
         </div>
 
@@ -826,6 +977,8 @@ export default function InstantQuotePage() {
       {saveOpen && canSave && (
         <SaveQuoteModal
           items={items}
+          dateNeeded={dateNeeded}
+          rushNeeded={rushNeeded}
           intent={saveOpen}
           grandTotal={grandTotal}
           onClose={() => setSaveOpen(false)}
@@ -872,7 +1025,7 @@ function ItemCard({
   index, totalItems, item, options, calc, uploadingCount,
   expanded, onExpand,
   onPatchInputs, onClearProduct, onRemoveDesign, onUploadFiles, onOpenPicker,
-  onPatchCustom, onSetKind, onPickCategory, onRemove,
+  onPatchCustom, onSetKind, onPickType, onRemove,
 }: {
   index: number;
   totalItems: number;
@@ -889,13 +1042,11 @@ function ItemCard({
   onOpenPicker: () => void;
   onPatchCustom: (patch: Partial<CustomItemInputs>) => void;
   onSetKind: (kind: ItemKind) => void;
-  onPickCategory: (categoryKey: string) => void;
+  onPickType: (key: string) => void;
   onRemove: (() => void) | null;
 }) {
   const inputs = item.inputs;
-  const isScreenPrint = inputs.methodName === 'Screen Print';
   const liveTotalQty = totalQuantity(inputs.sizes);
-  const numLocations = Object.values(inputs.locations).filter(Boolean).length;
 
   // User-facing noun ('hat' / 'shirt' / 'hoodie' …) derived from the
   // garment type, used to localize "per shirt" / "Shirt color" etc.
@@ -905,27 +1056,6 @@ function ItemCard({
   // to the default shirt grid / palette.
   const sizeList = useMemo(() => availableSizesFor(item.pickedProduct, inputs.garmentName), [item.pickedProduct, inputs.garmentName]);
   const colorList = useMemo(() => availableColorsFor(item.pickedProduct), [item.pickedProduct]);
-  const isOneSize = sizeList.length === 1;
-
-  // When the size grid changes (product pick, garment change), prune
-  // inputs.sizes to only the supported sizes — keeps the displayed total
-  // honest if a stray size entry survived a reshape.
-  const visibleSizeRows = useMemo(() => {
-    return sizeList.map((sz) => {
-      const row = inputs.sizes.find((r) => r.size === sz);
-      return { size: sz, quantity: row?.quantity || 0 };
-    });
-  }, [sizeList, inputs.sizes]);
-
-  const garmentNames = useMemo(() => {
-    if (!options) return [];
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const g of options.garments) {
-      if (!seen.has(g.name)) { seen.add(g.name); out.push(g.name); }
-    }
-    return out;
-  }, [options]);
 
   const currentTier = useMemo(() => {
     if (!options) return null;
@@ -943,23 +1073,19 @@ function ItemCard({
     let detail: string;
     if (item.kind === 'unset') {
       productLabel = 'Choose product type';
-      detail = 'Tap Edit to pick catalog or custom';
-    } else if (item.kind === 'catalog-category') {
-      productLabel = 'Pick a category';
-      detail = 'T-shirts, hoodies, hats, bags…';
+      detail = 'Tap Edit to choose';
     } else if (item.kind === 'custom') {
       const cq = parseInt(item.custom.quantity, 10) || 0;
       productLabel = item.custom.description.trim() || 'Custom item';
-      detail = `${cq} pcs · custom · priced after review`;
+      detail = item.custom.service === 'press-only'
+        ? `${cq} pcs · DTF pressing · $${pressTotal(item).toFixed(2)}`
+        : `${cq} pcs · custom · priced after review`;
     } else {
-      productLabel = item.pickedProduct
-        ? item.pickedProduct.name
-        : `${inputs.qualityTier} ${inputs.garmentName}`;
+      productLabel = item.pickedProduct ? item.pickedProduct.name : inputs.garmentName;
       const locs: string[] = [];
       if (inputs.locations.front) locs.push('Front');
       if (inputs.locations.back) locs.push('Back');
-      if (inputs.locations.sleeve) locs.push('Sleeve');
-      detail = `${liveTotalQty} pcs · ${inputs.color} · ${inputs.methodName}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
+      detail = `${liveTotalQty} pcs · ${inputs.color}${locs.length ? ' · ' + locs.join(' + ') : ''}`;
     }
     return (
       <div
@@ -1047,69 +1173,35 @@ function ItemCard({
         )}
       </div>
 
-      {/* Initial screen — customer chooses whether this line item is a
-          catalog product or a custom item they'll describe. Skipped when
-          the URL, catalog picker, or Design Studio has already committed
-          the item to catalog. */}
+      {/* Card picker — first thing a new item shows. One tap picks the
+          product type; "Something else" routes to the custom flow. */}
       {item.kind === 'unset' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => onSetKind('catalog-category')}
-            className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-gray-200 bg-white p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
-          >
-            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 group-hover:bg-orange-200">
-              <Shirt className="h-5 w-5" />
-            </div>
-            <div className="font-semibold text-gray-900">From our catalog</div>
-            <div className="text-xs text-gray-500">T-shirts, hoodies, sweatshirts, hats, bags, accessories — pick a category to get started.</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetKind('custom')}
-            className="group flex flex-col items-start gap-2 rounded-2xl border-2 border-gray-200 bg-white p-5 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
-          >
-            <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700 group-hover:bg-orange-200">
-              <PenSquare className="h-5 w-5" />
-            </div>
-            <div className="font-semibold text-gray-900">Custom item</div>
-            <div className="text-xs text-gray-500">Something not in our catalog — describe it and we'll quote it after review.</div>
-          </button>
-        </div>
-      )}
-
-      {/* Category picker — second step after the customer chose "catalog".
-          T-shirts / Hoodies / Sweatshirts / Hats drop into the priced form
-          with garmentName preset. Bags / Accessories don't have catalog
-          pricing yet, so they hop into the custom flow with a description
-          seed so the customer knows what shape of text to type. */}
-      {item.kind === 'catalog-category' && (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => onSetKind('unset')}
-            className="text-xs text-orange-700 hover:text-orange-800 hover:underline"
-          >
-            ← Change product type
-          </button>
-          <p className="text-sm text-gray-600">What kind of product are you quoting?</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div>
+          <p className="mb-3 text-sm text-gray-600">What are you quoting?</p>
+          {/* One card per row on phones (icon left, text right, chevron
+              affordance); sm+ goes back to a 3-up grid of stacked cards. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
-              { key: 'tshirts',     label: 'T-shirts',     sub: 'Softstyle, Comfort Colors, Next Level' },
-              { key: 'hoodies',     label: 'Hoodies',      sub: 'Pullover + zip options' },
-              { key: 'sweatshirts', label: 'Sweatshirts',  sub: 'Crewneck fleece' },
-              { key: 'hats',        label: 'Hats',         sub: 'Caps, beanies, snapbacks' },
-              { key: 'bags',        label: 'Bags',         sub: 'Totes, drawstring, backpacks' },
-              { key: 'accessories', label: 'Accessories',  sub: 'Koozies, patches, misc.' },
-            ].map((cat) => (
+              { key: 'tshirt',     icon: '👕', label: 'T-shirt',        sub: 'Softstyle, Comfort Colors, Next Level' },
+              { key: 'hoodie',     icon: '🧥', label: 'Hoodie',         sub: 'Pullover + zip options' },
+              { key: 'sweatshirt', icon: '👚', label: 'Sweatshirt',     sub: 'Crewneck fleece' },
+              { key: 'hat',        icon: '🧢', label: 'Hat',            sub: 'Caps, beanies, snapbacks' },
+              { key: 'other',      icon: '✨', label: 'Something else', sub: 'Bags, koozies, patches — describe it' },
+              { key: 'byo',        icon: '📦', label: 'I have my own shirts', sub: 'You supply the garments — we print them' },
+              { key: 'dtfpress',   icon: '🔥', label: 'DTF pressing only',    sub: 'Pressing $3 each · transfer printing quoted by size' },
+            ].map((card) => (
               <button
-                key={cat.key}
+                key={card.key}
                 type="button"
-                onClick={() => onPickCategory(cat.key)}
-                className="group flex flex-col items-start gap-1 rounded-2xl border-2 border-gray-200 bg-white p-4 text-left transition hover:border-orange-500 hover:bg-orange-50/40"
+                onClick={() => onPickType(card.key)}
+                className="group flex items-center gap-4 rounded-2xl border-2 border-gray-300 bg-white p-4 text-left shadow-sm transition hover:border-orange-500 hover:bg-orange-50/40 active:scale-[0.99] sm:flex-col sm:items-start sm:gap-1.5 sm:p-5"
               >
-                <div className="font-semibold text-gray-900">{cat.label}</div>
-                <div className="text-[11px] text-gray-500 leading-snug">{cat.sub}</div>
+                <span className="text-3xl sm:text-2xl" aria-hidden="true">{card.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-display text-lg sm:text-base font-bold text-gray-900">{card.label}</span>
+                  <span className="block text-xs sm:text-[11px] text-gray-500 leading-snug">{card.sub}</span>
+                </span>
+                <ChevronDown className="h-5 w-5 -rotate-90 text-gray-400 group-hover:text-orange-600 sm:hidden" aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -1149,6 +1241,15 @@ function ItemCard({
               className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
               style={{ fontSize: '16px' }}
             />
+            {item.custom.service === 'press-only' && (parseInt(item.custom.quantity, 10) || 0) > 0 && (
+              <p className="mt-2 text-sm text-gray-700">
+                Pressing: {parseInt(item.custom.quantity, 10)} × ${PRESS_ONLY_RATE.toFixed(2)} ={' '}
+                <strong className="text-gray-900">${pressTotal(item).toFixed(2)}</strong>
+                <span className="block text-xs text-gray-500">
+                  Transfer printing (if you need it) is quoted after we review your art.
+                </span>
+              </p>
+            )}
           </Section>
           <Section icon={<Upload className="h-5 w-5" />} title="Reference photo or artwork (optional)">
             <label className="flex cursor-pointer items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-8 text-sm text-gray-500 transition hover:border-orange-400 hover:bg-gray-50">
@@ -1192,7 +1293,17 @@ function ItemCard({
             />
           </Section>
           <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900">
-            Custom items are priced after our team reviews your request. Save the quote and we'll email you a price.
+            {item.custom.service === 'press-only' ? (
+              <>
+                Pressing is priced live at ${PRESS_ONLY_RATE.toFixed(2)}/each. If you also need transfers printed,
+                that part is quoted after we review your art. Need the transfers printed?{' '}
+                <Link to="/dtf" className="font-semibold underline hover:text-amber-950">
+                  Order a gang sheet from $9/ft →
+                </Link>
+              </>
+            ) : (
+              "Custom items are priced after our team reviews your request. Save the quote and we'll email you a price."
+            )}
           </div>
         </div>
       )}
@@ -1201,6 +1312,20 @@ function ItemCard({
           stays visible alongside the live price. When the design has both
           front and back, render them side-by-side. */}
       {item.kind === 'catalog' && (<>
+      {/* Garment chip + change — returns to the card picker. State is
+          preserved, so tapping a different card keeps qty/color/art. */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="inline-flex items-center gap-2 rounded-full bg-orange-100 px-3 py-1.5 text-sm font-semibold text-orange-800">
+          <Shirt className="h-4 w-4" /> {item.pickedProduct?.name || inputs.garmentName}
+        </span>
+        <button
+          type="button"
+          onClick={() => onSetKind('unset')}
+          className="text-xs text-orange-700 hover:text-orange-800 hover:underline"
+        >
+          change
+        </button>
+      </div>
       {(item.mockupUrl || item.mockupUrlBack) && (
         <div className="mb-4 overflow-hidden rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-white p-3">
           <div className="mb-2 flex items-center gap-2">
@@ -1257,117 +1382,30 @@ function ItemCard({
           </div>
         )}
 
-        {/* Garment — first thing the customer picks (unless a specific
-            catalog product is already chosen, in which case the product
-            determines the garment type). */}
-        {!item.pickedProduct && (
-          <Section icon={<Shirt className="h-5 w-5" />} title="What kind of garment?">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {garmentNames.map((name) => (
-                <Chip key={name} active={inputs.garmentName === name} onClick={() => onPatchInputs({ garmentName: name })}>
-                  {name}
-                </Chip>
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* Quality tier — paired with garment, hidden when a specific
-            product is picked. */}
-        {!item.pickedProduct && (
-          <Section icon={<Layers className="h-5 w-5" />} title="Quality tier">
-            <div className="grid grid-cols-3 gap-2">
-              {(['Standard', 'Premium', 'Ultra'] as const).map((q) => {
-                const tshirtBrand: Record<typeof q, string> = {
-                  Standard: 'Gildan',
-                  Premium: 'Next Level',
-                  Ultra: 'Comfort Colors',
-                } as const;
-                const brandHint = inputs.garmentName === 'T-shirt' ? tshirtBrand[q] : null;
-                return (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => onPatchInputs({ qualityTier: q })}
-                    className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                      inputs.qualityTier === q ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-                    }`}
-                  >
-                    <div>{q}</div>
-                    {brandHint && (
-                      <div className={`text-[10px] mt-0.5 ${inputs.qualityTier === q ? 'text-orange-100' : 'text-gray-500'}`}>
-                        {brandHint}
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </Section>
-        )}
-
-        {/* Quantity — one-size garments (hats) get a single input; others
-            get the per-size grid restricted to the product's actual sizes. */}
-        <Section
-          icon={<span className="text-xl">#</span>}
-          title={isOneSize ? `How many ${noun}s?` : `How many ${noun}s? (per size)`}
-        >
-          {isOneSize ? (
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={visibleSizeRows[0]?.quantity || ''}
-              onChange={(e) => {
-                const qty = Math.max(0, parseInt(e.target.value) || 0);
-                onPatchInputs({ sizes: [{ size: sizeList[0] || 'One Size', quantity: qty }] });
-              }}
-              placeholder="0"
-              className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-              style={{ fontSize: '16px' }}
-            />
-          ) : (
-            <div className={`grid gap-2 ${visibleSizeRows.length <= 4 ? 'grid-cols-4' : 'grid-cols-4 sm:grid-cols-8'}`}>
-              {visibleSizeRows.map((row) => {
-                const upcharge = Number(options?.settings.size_upcharges?.[row.size] || 0);
-                return (
-                  <div key={row.size} className="flex flex-col items-center gap-1">
-                    <label className="text-xs font-semibold text-gray-700">{row.size}</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={row.quantity || ''}
-                      onChange={(e) => {
-                        const qty = Math.max(0, parseInt(e.target.value) || 0);
-                        const next = visibleSizeRows.map((r) =>
-                          r.size === row.size ? { ...r, quantity: qty } : r,
-                        );
-                        onPatchInputs({ sizes: next });
-                      }}
-                      placeholder="0"
-                      className="w-full text-center rounded-lg border border-gray-300 px-2 py-2 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      style={{ fontSize: '16px' }}
-                    />
-                    {upcharge > 0 && (
-                      <span className="text-[10px] text-gray-500">+${upcharge.toFixed(0)}</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div className="mt-3 text-sm text-gray-600">
-            Total: <strong className="text-gray-900">{liveTotalQty}</strong>
+        {/* Quantity — one total. Size breakdown is collected after the
+            quote is accepted, so the customer isn't blocked on it here. */}
+        <Section icon={<span className="text-xl">#</span>} title={`How many ${noun}s?`}>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={liveTotalQty || ''}
+            onChange={(e) => {
+              const qty = Math.max(0, parseInt(e.target.value) || 0);
+              onPatchInputs({ sizes: [{ size: sizeList[0] || 'S', quantity: qty }] });
+            }}
+            placeholder="e.g. 24"
+            className="w-32 text-center rounded-lg border border-gray-300 px-2 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+            style={{ fontSize: '16px' }}
+          />
+          <p className="mt-2 text-xs text-gray-500">
+            We'll collect your size breakdown when you approve the quote.
             {currentTier && currentTier.discount_pct > 0 && (
-              <span className="ml-2 text-xs text-green-700">
-                {Math.round(currentTier.discount_pct * 100)}% volume discount
+              <span className="ml-2 text-green-700 font-medium">
+                {Math.round(currentTier.discount_pct * 100)}% volume discount applied
               </span>
             )}
-            {numLocations === 0 && (
-              <span className="ml-2 text-xs text-amber-700">Pick at least one print location below.</span>
-            )}
-          </div>
+          </p>
         </Section>
 
         {/* Color — fabric-swatch photos from SSActiveWear when the picked
@@ -1464,96 +1502,40 @@ function ItemCard({
         </Section>
         )}
 
-        {/* Print method */}
-        <Section icon={<Printer className="h-5 w-5" />} title="Print method">
-          <div className="grid grid-cols-2 gap-2">
-            {options?.print_methods.map((m) => (
-              <Chip
-                key={m.id}
-                active={inputs.methodName === m.name}
-                onClick={() => onPatchInputs({ methodName: m.name as Inputs['methodName'] })}
-              >
-                {m.name}
-                {m.name === 'DTF' && (
-                  <span className={`ml-1 italic text-xs ${inputs.methodName === m.name ? 'text-orange-100' : 'text-gray-500'}`}>(most popular)</span>
-                )}
-              </Chip>
-            ))}
-          </div>
-        </Section>
-
-        {/* Print locations — hidden when a Studio mockup is attached;
-            the handoff already derived front/back from which sides of
-            the mockup were captured. */}
+        {/* Print sides — single choice. Sleeve prints and multi-location
+            combos are handled by the shop after review. */}
         {!(item.mockupUrl || item.mockupUrlBack) && (
-        <Section icon={<Palette className="h-5 w-5" />} title="Where do you want it printed?">
+        <Section icon={<Palette className="h-5 w-5" />} title="Print on the…">
           <div className="grid grid-cols-3 gap-2">
-            {(['front', 'back', 'sleeve'] as const).map((loc) => (
-              <button
-                key={loc}
-                type="button"
-                onClick={() => onPatchInputs({ locations: { ...inputs.locations, [loc]: !inputs.locations[loc] } })}
-                className={`rounded-xl border-2 px-3 py-3 text-sm font-medium capitalize transition ${
-                  inputs.locations[loc] ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-                }`}
-              >
-                {inputs.locations[loc] && <Check className="inline h-3.5 w-3.5 mr-1" />}
-                {loc}
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-gray-500">Front + Back = 2 locations. Pick any combination.</p>
-        </Section>
-        )}
-
-        {/* Colors per location — only for screen print */}
-        {isScreenPrint && (
-          <Section icon={<Palette className="h-5 w-5" />} title="How many colors per location?">
-            <div className="grid grid-cols-6 gap-2">
-              {[1, 2, 3, 4, 5, 6].map((n) => (
+            {([
+              ['front', 'Front'],
+              ['back', 'Back'],
+              ['both', 'Front + Back'],
+            ] as const).map(([key, label]) => {
+              const active = key === 'both'
+                ? inputs.locations.front && inputs.locations.back
+                : key === 'front'
+                  ? inputs.locations.front && !inputs.locations.back
+                  : inputs.locations.back && !inputs.locations.front;
+              return (
                 <button
-                  key={n}
+                  key={key}
                   type="button"
-                  onClick={() => onPatchInputs({ colorsPerLocation: n })}
-                  className={`rounded-xl border-2 py-3 text-base font-bold transition ${
-                    inputs.colorsPerLocation === n ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+                  onClick={() => onPatchInputs({
+                    locations: { front: key !== 'back', back: key !== 'front', sleeve: false },
+                  })}
+                  className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
+                    active ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
                   }`}
                 >
-                  {n}
+                  {active && <Check className="inline h-3.5 w-3.5 mr-1" />}
+                  {label}
                 </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs text-gray-500">More colors = higher screen-print setup fee.</p>
-          </Section>
-        )}
-
-        {/* Turnaround */}
-        <Section icon={<Zap className="h-5 w-5" />} title="When do you need it?">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onPatchInputs({ rush: false })}
-              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                !inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              <div>Standard</div>
-              <div className={`text-[10px] mt-0.5 ${!inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>{options?.settings.standard_turnaround ?? 10} days</div>
-            </button>
-            <button
-              type="button"
-              onClick={() => onPatchInputs({ rush: true })}
-              className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-                inputs.rush ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              <div>Rush</div>
-              <div className={`text-[10px] mt-0.5 ${inputs.rush ? 'text-orange-100' : 'text-gray-500'}`}>
-                1–{options?.settings.rush_turnaround ?? 2} day{(options?.settings.rush_turnaround ?? 2) === 1 ? '' : 's'} · +{Math.round((options?.settings.rush_surcharge_pct ?? 1) * 100)}%
-              </div>
-            </button>
+              );
+            })}
           </div>
         </Section>
+        )}
       </div>
       </>)}
     </div>
@@ -1565,11 +1547,13 @@ function ItemCard({
 /* ────────────────────────────────────────────────────────────────────── */
 
 function SaveQuoteModal({
-  items, intent, grandTotal, onClose,
+  items, intent, grandTotal, dateNeeded, rushNeeded, onClose,
 }: {
   items: ItemDraft[];
   intent: 'save' | 'lock-in';
   grandTotal: number;
+  dateNeeded: string;
+  rushNeeded: boolean;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -1583,7 +1567,10 @@ function SaveQuoteModal({
   // If the quote is entirely custom items (nothing has been auto-priced),
   // reword the modal so the customer knows they're requesting a price
   // rather than filing an already-known number.
-  const isCustomOnly = !isLockIn && items.length > 0 && items.every((it) => it.kind === 'custom');
+  // Press-only items carry a real auto-calculated price, so a quote made of
+  // them doesn't get the "we'll email you a price" copy.
+  const isCustomOnly = !isLockIn && items.length > 0
+    && items.every((it) => it.kind === 'custom' && it.custom.service !== 'press-only');
 
   async function submit() {
     if (!name.trim()) {
@@ -1615,6 +1602,9 @@ function SaveQuoteModal({
               description: item.custom.description.trim(),
               quantity: Math.max(1, parseInt(item.custom.quantity, 10) || 1),
               notes: item.custom.notes.trim() || null,
+              // Server prices 'press-only' at its own PRESS_ONLY_RATE —
+              // the flag is a service selector, never a client-set price.
+              ...(item.custom.service ? { service: item.custom.service } : {}),
             },
           };
         }
@@ -1652,6 +1642,16 @@ function SaveQuoteModal({
         };
       });
 
+      // The quick form collects total quantity per size, not a confirmed
+      // size breakdown — flag that for the shop so it isn't mistaken for a
+      // customer-confirmed size split.
+      const sizeNote = items.some((it) => it.kind === 'catalog')
+        ? 'Sizes not collected on the quick form — quantities are totals; confirm size breakdown with customer.'
+        : '';
+      const dateNote = dateNeeded
+        ? `Needed by ${dateNeeded}${rushNeeded ? ' — RUSH (surcharge applied to quote)' : ''}.`
+        : '';
+
       const saveRes = await fetch('/api/quote/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1659,12 +1659,13 @@ function SaveQuoteModal({
           customer_name: name || null,
           customer_email: email,
           customer_phone: phone,
-          notes: notes || null,
+          notes: [dateNote, sizeNote, notes.trim()].filter(Boolean).join('\n') || null,
           items: payloadItems,
         }),
       });
       const saveBody = await saveRes.json();
       if (!saveRes.ok) throw new Error(saveBody.error || 'Save failed');
+      trackEvent('quote-submitted', { items: items.length, total: Math.round(grandTotal) });
 
       if (!isLockIn) {
         toast.success(isCustomOnly
@@ -1682,6 +1683,7 @@ function SaveQuoteModal({
       });
       const lockBody = await lockRes.json();
       if (!lockRes.ok) throw new Error(lockBody.error || 'Could not start checkout');
+      trackEvent('quote-lockin', { total: Math.round(grandTotal) });
       window.location.href = lockBody.url;
     } catch (err: any) {
       toast.error(err.message || 'Failed');
@@ -1902,7 +1904,7 @@ function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) =
 }
 
 function PriceCard({
-  items, calcs, itemValidity, loading, grandTotal, grandQuantity, turnaroundDays, allValid,
+  items, calcs, itemValidity, loading, grandTotal, grandQuantity, turnaroundDays, allValid, calcError,
 }: {
   items: ItemDraft[];
   calcs: Array<CalcResponse | null>;
@@ -1912,6 +1914,7 @@ function PriceCard({
   grandQuantity: number;
   turnaroundDays: number;
   allValid: boolean;
+  calcError: string | null;
 }) {
   const hasAnyInputs = grandQuantity > 0 && itemValidity.some(Boolean);
   const perShirtAvg = grandQuantity > 0 ? grandTotal / grandQuantity : 0;
@@ -1935,7 +1938,7 @@ function PriceCard({
           </div>
         </div>
         <p className="mt-2 sm:mt-3 text-[11px] sm:text-xs text-gray-500">
-          Enter quantities + a print location for live pricing.
+          Enter a quantity for live pricing.
         </p>
       </div>
     );
@@ -1968,19 +1971,34 @@ function PriceCard({
         <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
           {grandQuantity} pieces
         </span>
+        {/* Read-only method callout — kept out of the always-visible rows
+            per spec (jargon lives behind "See details"/"Price breakdown"),
+            but a single catalog item has no such collapsible section of
+            its own, so it surfaces here instead. */}
+        {items.length === 1 && items[0] && items[0].kind === 'catalog' && (
+          <span className="rounded-full bg-white px-2.5 py-0.5 sm:px-3 sm:py-1 text-gray-700 border border-orange-200">
+            {items[0].inputs.methodName} printing
+          </span>
+        )}
         {!allValid && (
           <span className="rounded-full bg-amber-50 px-2.5 py-0.5 sm:px-3 sm:py-1 text-amber-800 border border-amber-200">
-            Add qty + location to remaining
+            Finish the remaining items to see your full price
           </span>
         )}
       </div>
 
+      {calcError && (
+        <p className="mt-3 text-sm text-red-700">
+          We couldn't price this automatically ({calcError}). You can still send the quote — we'll price it by hand.
+        </p>
+      )}
+
       {/* Per-item breakdown when there's more than one item */}
       {items.length > 1 && (
-        <details className="mt-4 group" open>
+        <details className="mt-4 group">
           <summary className="flex items-center gap-1 text-sm text-orange-700 hover:text-orange-800 cursor-pointer select-none list-none">
             <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
-            Items
+            See details
           </summary>
           <dl className="mt-3 space-y-1 text-sm">
             {items.map((it, i) => {
@@ -1988,6 +2006,11 @@ function PriceCard({
               if (it.kind === 'custom') {
                 const cq = parseInt(it.custom.quantity, 10) || 0;
                 const label = `${i + 1}. ${it.custom.description.trim() || 'Custom item'}`;
+                if (it.custom.service === 'press-only') {
+                  return (
+                    <Row key={it.id} label={label} sub={`${cq} pcs · DTF pressing · $${PRESS_ONLY_RATE.toFixed(2)}/ea`} value={pressTotal(it)} />
+                  );
+                }
                 const sub = `${cq} pcs · custom · priced after review`;
                 return (
                   <Row key={it.id} label={label} sub={sub} value={0} pending />
@@ -1998,13 +2021,8 @@ function PriceCard({
                   <Row key={it.id} label={`${i + 1}. Not chosen yet`} sub="Pick a product type" value={0} pending />
                 );
               }
-              if (it.kind === 'catalog-category') {
-                return (
-                  <Row key={it.id} label={`${i + 1}. Not chosen yet`} sub="Pick a category" value={0} pending />
-                );
-              }
               const qty = totalQuantity(it.inputs.sizes);
-              const label = `${i + 1}. ${it.pickedProduct?.name || `${it.inputs.qualityTier} ${it.inputs.garmentName}`}`;
+              const label = `${i + 1}. ${it.pickedProduct?.name || it.inputs.garmentName}`;
               const sub = `${qty} pcs · ${it.inputs.color} · ${it.inputs.methodName}`;
               return (
                 <Row key={it.id} label={label} sub={sub} value={calc?.total || 0} />
@@ -2083,18 +2101,3 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border-2 px-3 py-3 text-sm font-medium transition ${
-        active
-          ? 'border-orange-600 bg-orange-600 text-white shadow-sm'
-          : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
