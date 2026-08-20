@@ -24,6 +24,8 @@ interface Prospect {
 
 const STATUSES: Prospect['status'][] = ['new', 'contacted', 'quoted', 'won', 'lost'];
 
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 const STATUS_STYLE: Record<Prospect['status'], string> = {
   new:       'bg-gray-100 text-gray-700',
   contacted: 'bg-blue-100 text-blue-800',
@@ -229,7 +231,7 @@ export default function ProspectsAdmin() {
         <select value={status} onChange={e => setStatus(e.target.value)}
           className="px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="">Any status</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
+          {STATUSES.map(s => <option key={s} value={s}>{titleCase(s)}</option>)}
         </select>
         <select value={hasPhone} onChange={e => setHasPhone(e.target.value)}
           className="px-3 py-2 text-sm border border-gray-300 rounded-lg">
@@ -317,7 +319,7 @@ export default function ProspectsAdmin() {
                           className={`text-xs font-semibold rounded-full px-2 py-1 border-0 cursor-pointer ${STATUS_STYLE[p.status]}`}
                         >
                           {STATUSES.map(s => (
-                            <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>
+                            <option key={s} value={s}>{titleCase(s)}</option>
                           ))}
                         </select>
                         {p.last_contacted_at && (
