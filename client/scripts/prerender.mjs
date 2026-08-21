@@ -83,10 +83,20 @@ async function main() {
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
 
+  // A route that fails to prerender still WORKS: the SPA renders it client
+  // side, it just ships without server-rendered HTML for crawlers. So a slow
+  // page must never abort the deploy — this script runs at the END of
+  // `npm run build`, and deploy.sh chains the pm2 restart AFTER that, so
+  // exiting 1 here left the droplet with a freshly rebuilt client and a
+  // server still running the old code, with nothing saying so.
+  //
+  // That is 2026-08-21: /blog, one blog post and /brands hit the 30s
+  // navigation timeout on the droplet (all 36 passed locally), the build
+  // exited 1, and a payments change sat unloaded until someone restarted pm2
+  // by hand.
   let okCount = 0;
-  let failCount = 0;
 
-  for (const route of routes) {
+  async function renderRoute(route, { timeout, waitUntil, settleMs }) {
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
     // Proxy /api/* calls to production so data-dependent pages (blog
@@ -117,33 +127,69 @@ async function main() {
     });
 
     try {
-      await page.goto(`${base}${route}`, {
-        waitUntil: 'networkidle0',
-        timeout: 30_000,
-      });
+      await page.goto(`${base}${route}`, { waitUntil, timeout });
       // Give React Helmet a tick to flush the title + meta after the
       // last data-dependent render.
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, settleMs));
 
       const html = await page.content();
       const outPath = pathToFile(route);
       await mkdir(dirname(outPath), { recursive: true });
       await writeFile(outPath, html, 'utf8');
-      okCount++;
-      console.log(`  ✓ ${route}`);
+      console.log(`  \u2713 ${route}`);
+      return true;
     } catch (err) {
-      failCount++;
-      console.error(`  ✗ ${route}: ${err.message}`);
+      console.error(`  \u2717 ${route}: ${err.message}`);
+      return false;
     } finally {
       await page.close();
     }
   }
 
+  const failedFirstPass = [];
+  for (const route of routes) {
+    if (await renderRoute(route, { timeout: 30_000, waitUntil: 'networkidle0', settleMs: 250 })) okCount++;
+    else failedFirstPass.push(route);
+  }
+
+  // Second pass for the stragglers. networkidle0 never settles on a page
+  // holding a connection open (analytics beacons, a slow feed), and that is
+  // what these timeouts actually are — not a broken page. domcontentloaded
+  // plus a longer settle captures the meta tags and body copy that make
+  // prerendering worth doing at all.
+  const stillFailed = [];
+  if (failedFirstPass.length > 0) {
+    console.log(`[prerender] retrying ${failedFirstPass.length} route(s) with a longer timeout`);
+    for (const route of failedFirstPass) {
+      if (await renderRoute(route, { timeout: 60_000, waitUntil: 'domcontentloaded', settleMs: 1500 })) okCount++;
+      else stillFailed.push(route);
+    }
+  }
+  const failCount = stillFailed.length;
+
   await browser.close();
   await server.httpServer.close();
 
   console.log(`[prerender] done — ${okCount} ok, ${failCount} failed`);
-  if (failCount > 0) process.exit(1);
+
+  // Fail the build only when something is genuinely broken rather than slow:
+  // nothing rendered at all, or more than a fifth of the site did not. A
+  // handful of stragglers is a warning, not a reason to leave production
+  // half-deployed.
+  const tolerance = Math.max(3, Math.ceil(routes.length * 0.2));
+  if (okCount === 0 || failCount > tolerance) {
+    console.error(
+      `[prerender] FAILING the build: ${failCount} of ${routes.length} routes could not be rendered `
+      + `(tolerance ${tolerance}). This looks like a real breakage, not slow pages.`,
+    );
+    process.exit(1);
+  }
+  if (failCount > 0) {
+    console.warn(
+      `[prerender] WARNING: ${stillFailed.join(', ')} shipped without prerendered HTML. `
+      + 'They still work as client-rendered routes; crawlers just see less. Not blocking the deploy.',
+    );
+  }
 }
 
 main().catch((err) => {
