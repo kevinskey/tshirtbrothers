@@ -569,10 +569,18 @@ router.post('/lock-in', async (req, res, next) => {
     const depositCents = Math.round(total * 100 * 0.5);
     const stripe = getStripe();
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    // Show them their own artwork on the payment page. Stripe renders
+    // product_data.images beside the amount, and a customer looking at the
+    // shirt they designed is markedly less likely to abandon than one looking
+    // at a bare dollar figure from a business name they half-recognise. The
+    // mockup wins over the raw upload when it exists — it is what they are
+    // actually buying. Must be a publicly reachable URL; Stripe fetches it.
+    const checkoutImage = quote.mockup_image_url || quote.design_url || null;
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
       customer_email: quote.customer_email || undefined,
+      submit_type: 'pay',
       line_items: [{
         price_data: {
           currency: 'usd',
@@ -580,10 +588,19 @@ router.post('/lock-in', async (req, res, next) => {
           product_data: {
             name: '50% Deposit — ' + (quote.product_name || 'Instant Quote'),
             description: `Quote #${quote.id} · Total $${total.toFixed(2)} · Balance ($${(total / 2).toFixed(2)}) due before pickup/ship`,
+            ...(checkoutImage ? { images: [checkoutImage] } : {}),
           },
         },
         quantity: 1,
       }],
+      custom_text: {
+        submit: {
+          message: 'This is the 50% deposit. We\u2019ll send a mockup for your approval before anything goes on the press, and the balance is due when your order is ready. — TShirt Brothers',
+        },
+      },
+      payment_intent_data: {
+        description: `TShirt Brothers — 50% deposit, Quote #${quote.id}`,
+      },
       // metadata.quoteId triggers the existing webhook handler in
       // routes/payments.js: it marks the quote 'accepted', sets
       // deposit_amount, and emails the customer.

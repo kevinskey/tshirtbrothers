@@ -212,21 +212,34 @@ router.post('/create-checkout', async (req, res, next) => {
     const stripe = getStripe();
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
+    // Same treatment as the instant-quote deposit: put the artwork on the
+    // payment page. See routes/instantQuote.js for why.
+    const checkoutImage = quote.mockup_image_url || quote.design_url || null;
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
+      submit_type: 'pay',
       line_items: [
         {
           price_data: {
             currency: 'usd',
             product_data: {
-              name: `Deposit - ${quote.product_name || 'Custom Printing Order'}`,
-              description: `${depositPercent}% deposit for Quote #${quote.id}. Customer: ${quote.customer_name || 'N/A'}`,
+              name: `${depositPercent}% Deposit — ${quote.product_name || 'Custom Printing Order'}`,
+              description: `Quote #${quote.id} · Total $${total.toFixed(2)} · Balance ($${(total - depositAmount / 100).toFixed(2)}) due before pickup/ship`,
+              ...(checkoutImage ? { images: [checkoutImage] } : {}),
             },
             unit_amount: depositAmount,
           },
           quantity: 1,
         },
       ],
+      custom_text: {
+        submit: {
+          message: 'This is the 50% deposit. We\u2019ll send a mockup for your approval before anything goes on the press, and the balance is due when your order is ready. — TShirt Brothers',
+        },
+      },
+      payment_intent_data: {
+        description: `TShirt Brothers — ${depositPercent}% deposit, Quote #${quote.id}`,
+      },
       mode: 'payment',
       success_url: `${domain}/payment/success?quote=${quoteId}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${domain}/payment/cancel?quote=${quoteId}`,
