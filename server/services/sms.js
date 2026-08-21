@@ -86,6 +86,9 @@ export async function smsStatusUpdateToCustomer(quote, newStatus) {
   if (!phone) return;
   const messages = {
     approved: `Great news! Your TShirt Brothers order has been approved and is in production. We'll notify you when it's ready!`,
+    awaiting_approval: `Your TShirt Brothers mockup is ready to review — check your email for the approval link. Reply with any changes!`,
+    in_production: `Good news! Your artwork is approved and your TShirt Brothers order is on the press. We'll text when it's ready.`,
+    ready: `Your TShirt Brothers order is ready! The remaining balance is due — check your email for the payment link. Pickup or delivery?`,
     completed: `Your TShirt Brothers order is complete and ready for pickup/delivery! Contact us at (470) 622-1392.`,
     rejected: `We have an update on your TShirt Brothers quote. Please check your email or call us at (470) 622-1392.`,
   };
@@ -106,6 +109,29 @@ export async function smsReviewRequest(quote) {
   const msg = `Thank you for your business! If you loved it, would you take 30 sec to leave us a Google review? ${url} `
     + `And send us a pic of you wearing it — we love seeing it! Thank you for shopping with tshirtbrothers.com (Reply STOP to opt out.)`;
   await sendSMS(phone, msg);
+}
+
+/**
+ * Same decision, texted to the shop.
+ *
+ * A rejection is time-critical — the job is stalled until it is redrawn — so
+ * it goes to the phone, not just the inbox. The customer's note is truncated
+ * rather than dropped: knowing roughly what they want is what decides whether
+ * you open the laptop now or after lunch.
+ */
+export async function smsMockupDecisionToAdmin(mockup, action, note) {
+  const to = process.env.ADMIN_SMS_TO || process.env.ADMIN_PHONE;
+  if (!to) return;
+  const approved = action === 'approved';
+  const who = mockup.customer_name || mockup.customer_email || 'A customer';
+  const ref = mockup.quote_id ? ` (Quote #${mockup.quote_id})` : '';
+  const tail = !approved && note ? ` — "${note.slice(0, 90)}${note.length > 90 ? '…' : ''}"` : '';
+  await sendSMS(
+    to,
+    approved
+      ? `✅ ${who} approved the mockup${ref}. Ready for production.`
+      : `✏️ ${who} requested changes${ref}${tail}`,
+  );
 }
 
 // Send a paid-invoice receipt via SMS

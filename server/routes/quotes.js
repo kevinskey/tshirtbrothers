@@ -708,7 +708,16 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     // Status is optional now — this endpoint accepts partial updates
     // covering status / notes / customer contact info. At least one
     // field must be present.
-    const validStatuses = ['pending', 'reviewed', 'quoted', 'rejected', 'completed'];
+    // The order ladder, in the order a job actually travels:
+    //   pending -> quoted -> accepted (50% deposit paid, set by the Stripe
+    //   webhook) -> awaiting_approval (mockup sent) -> approved (customer
+    //   said yes) -> in_production -> ready (balance due, pickup or delivery
+    //   chosen) -> completed.
+    // 'reviewed' and 'rejected' stay for the pre-quote triage path.
+    const validStatuses = [
+      'pending', 'reviewed', 'quoted', 'rejected',
+      'accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed',
+    ];
     if (status !== undefined && !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Status must be one of: ${validStatuses.join(', ')}` });
     }
@@ -722,6 +731,11 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     const params = [];
     const push = (col, val) => { params.push(val); patches.push(`${col} = $${params.length}`); };
     if (status         !== undefined) push('status',         status);
+    // Stamp when each stage was entered, so the dashboard can show how long a
+    // job has been sitting rather than only where it is.
+    if (status === 'awaiting_approval') patches.push('mockup_sent_at = NOW()');
+    if (status === 'in_production')     patches.push('in_production_at = NOW()');
+    if (status === 'ready')             patches.push('ready_at = NOW()');
     if (notes          !== undefined) push('notes',          notes);
     if (customer_email !== undefined) push('customer_email', customer_email);
     if (customer_name  !== undefined) push('customer_name',  customer_name);
@@ -741,10 +755,42 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
 
     const quote = result.rows[0];
 
-    // Fire-and-forget: send status update email to customer
-    if (['approved', 'completed', 'rejected'].includes(status)) {
+    // Fire-and-forget: send status update email to customer.
+    //
+    // SMS is deliberately NOT sent for every hop. Texting someone at each of
+    // eight stages reads as spam and earns a STOP, which then costs us the
+    // messages that matter. The four that matter: their mockup needs a look,
+    // it went into production, it is ready and the balance is due, and it is
+    // done. Everything else is email only.
+    const SMS_WORTHY = ['awaiting_approval', 'in_production', 'ready', 'completed'];
+    // awaiting_approval is SMS-only: sending the mockup already emailed them
+    // the approval link, and a second generic email in the same minute is
+    // just noise. The text is a nudge toward the mail that matters.
+    if (['approved', 'completed', 'rejected', 'in_production', 'ready'].includes(status)) {
       sendQuoteStatusUpdate(quote, status).catch(() => {});
+      if (SMS_WORTHY.includes(status)) {
+        smsStatusUpdateToCustomer(quote, status).catch(() => {});
+      }
+    } else if (status === 'awaiting_approval') {
       smsStatusUpdateToCustomer(quote, status).catch(() => {});
+    }
+
+    // 'ready' is the money hop: the work is done, the remaining 50% is due,
+    // and we need to know whether they are collecting it or we are sending
+    // it. Both questions go in one message rather than two.
+    if (status === 'ready') {
+      (async () => {
+        try {
+          const total = Number(quote.estimated_price ?? 0);
+          const depositPaid = Number(quote.deposit_amount ?? 0);
+          const balanceDue = Math.max(0, total - depositPaid);
+          if (balanceDue > 0 && !quote.balance_paid_at) {
+            await sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue }).catch(() => {});
+          }
+        } catch (err) {
+          console.error('[quotes] balance-due on ready failed', err);
+        }
+      })();
     }
 
     // Auto review request — fires once per quote when the order is

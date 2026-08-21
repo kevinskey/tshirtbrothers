@@ -445,7 +445,42 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
       [action, note || null, req.params.token],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
-    res.json({ status: rows[0].status });
+    const mockup = rows[0];
+
+    // Answer the customer immediately; everything below is bookkeeping and
+    // must not make them wait or see a failure that does not affect them.
+    res.json({ status: mockup.status });
+
+    // Advance the linked quote and tell the shop. Without this the customer
+    // approved into a void: the mockup row changed and nobody found out until
+    // someone happened to open the page.
+    (async () => {
+      try {
+        if (mockup.quote_id) {
+          // approved -> straight into production-ready state. rejected ->
+          // back to 'awaiting_approval' with the note attached, because the
+          // ball is in the shop's court to redraw it.
+          const nextStatus = action === 'approved' ? 'approved' : 'awaiting_approval';
+          const stamp = action === 'approved' ? 'mockup_approved_at' : 'mockup_rejected_at';
+          await pool.query(
+            `UPDATE quotes
+                SET status = $1,
+                    ${stamp} = NOW(),
+                    mockup_feedback = COALESCE($2, mockup_feedback)
+              WHERE id = $3`,
+            [nextStatus, note || null, mockup.quote_id],
+          );
+        }
+        const { sendMockupDecisionToAdmin } = await import('../services/email.js');
+        const { smsMockupDecisionToAdmin } = await import('../services/sms.js');
+        await Promise.all([
+          sendMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
+          smsMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
+        ]);
+      } catch (err) {
+        console.error('[mockups] post-decision notify failed', err);
+      }
+    })();
   } catch (err) { next(err); }
 });
 

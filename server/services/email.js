@@ -316,18 +316,24 @@ export async function sendDepositReceiptToCustomer(quote) {
 export async function sendQuoteStatusUpdate(quote, newStatus) {
   const subjectMap = {
     approved: 'Your Quote Has Been Approved - TShirt Brothers',
+    in_production: 'Your Order Is In Production - TShirt Brothers',
+    ready: 'Your Order Is Ready — Balance Due - TShirt Brothers',
     completed: 'Your Order Is Ready! - TShirt Brothers',
     rejected: 'Update on Your Quote Request - TShirt Brothers',
   };
 
   const headingMap = {
     approved: 'Your Quote Has Been Approved',
+    in_production: 'Your Order Is In Production',
+    ready: 'Your Order Is Ready',
     completed: 'Your Order Is Ready!',
     rejected: 'Update on Your Quote Request',
   };
 
   const messageMap = {
     approved: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Great news! Your custom printing quote has been approved. We're ready to get started as soon as we receive your deposit.</p>`,
+    in_production: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your artwork is approved and your order is on the press. We'll let you know the moment it's ready.</p>`,
+    ready: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your order is finished and looking great. The remaining balance is due to release it — you'll find a payment link in the separate email we just sent. Just reply and let us know whether you'd like to <strong>pick it up</strong> or have us <strong>deliver</strong> it.</p>`,
     completed: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your order is complete and ready for pickup or shipping! We hope you love the finished product.</p>`,
     rejected: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Unfortunately, we were unable to fulfill your quote request at this time. Please feel free to reach out if you have any questions or would like to submit a new request.</p>`,
   };
@@ -740,6 +746,46 @@ export function buildCampaignHtml({ subject, bodyHtml, exampleImageUrls = [], re
  * Sends a single campaign email. The caller is responsible for batching
  * and respecting Resend's per-second rate limit.
  */
+/**
+ * Tell the shop what the customer decided about a mockup.
+ *
+ * The approval page has always recorded the decision and the customer's note;
+ * nothing ever announced it, so an approval sat unnoticed until someone
+ * opened the mockup by chance. A rejection matters more — it carries the note
+ * saying what to change, which is the whole point of asking.
+ */
+export async function sendMockupDecisionToAdmin(mockup, action, note) {
+  const approved = action === 'approved';
+  const who = mockup.customer_name || mockup.customer_email || 'A customer';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${approved ? '#15803d' : '#b91c1c'};">
+      ${approved ? '✅ Mockup approved' : '✏️ Changes requested'}
+    </h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">
+      <strong>${escapeHtml(who)}</strong> ${approved ? 'approved' : 'asked for changes to'}
+      ${escapeHtml(mockup.name || 'their mockup')}${mockup.quote_id ? ` (Quote #${escapeHtml(String(mockup.quote_id))})` : ''}.
+    </p>
+    ${note ? `<div style="margin:0 0 16px;padding:12px;background:#fef3c7;border-left:3px solid #f59e0b;">
+        <p style="margin:0 0 4px;font-size:12px;color:#92400e;font-weight:600;">What they said</p>
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(note)}</p>
+      </div>` : ''}
+    ${mockup.preview_image_url ? `<img src="${escapeHtml(mockup.preview_image_url)}" alt="" style="max-width:100%;border-radius:8px;border:1px solid #e5e7eb;" />` : ''}
+    <p style="margin:20px 0 0;font-size:14px;color:#6b7280;">
+      ${approved ? 'Ready to go into production.' : 'Redraw it and send a new mockup for approval.'}
+    </p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `${approved ? 'Approved' : 'Changes requested'}: ${mockup.name || 'mockup'}${mockup.quote_id ? ` · Quote #${mockup.quote_id}` : ''}`,
+      html: baseLayout(approved ? 'Mockup Approved' : 'Changes Requested', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send mockup decision:', err);
+  }
+}
+
 export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [], campaignId = 0 }) {
   const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to, campaignId });
   return resend.emails.send({

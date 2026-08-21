@@ -134,7 +134,7 @@ import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
 type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'hero-slides' | 'prospects' | 'settings';
-type QuoteFilter = 'all' | 'pending' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
+type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
 // Sidebar nav, grouped. Categories, Orders, and Promotions are deliberately
@@ -193,10 +193,13 @@ const STATUS_COLORS: Record<string, string> = {
   sent: 'bg-blue-100 text-blue-800',
   paid: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
-  // Gang sheet (DTF) order states, so a paid sheet on the dashboard does
-  // not fall through to the grey default and read as inert.
+  // The order ladder between deposit and done. in_production and ready are
+  // shared with the gang sheet queue — same word, same meaning, same colour.
+  awaiting_approval: 'bg-indigo-100 text-indigo-800',
   in_production: 'bg-amber-100 text-amber-800',
   ready: 'bg-teal-100 text-teal-800',
+  // Gang-sheet-only states, so a DTF row does not fall through to the grey
+  // default and read as inert.
   pending_payment: 'bg-gray-100 text-gray-500',
   canceled: 'bg-gray-100 text-gray-500',
   cancelled: 'bg-gray-100 text-gray-500',
@@ -2333,7 +2336,9 @@ export default function AdminPage() {
 
             {/* Filter Tabs - scrollable on mobile */}
             <div className="flex gap-1 mb-4 md:mb-6 bg-gray-100 rounded-lg p-1 w-full md:w-fit overflow-x-auto">
-              {(['all', 'pending', 'quoted', 'accepted', 'completed'] as QuoteFilter[]).map((f) => (
+              {/* The ladder, in travel order, so the tab strip doubles as a
+                  map of where a job goes next. */}
+              {(['all', 'pending', 'quoted', 'accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'] as QuoteFilter[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setQuoteFilter(f)}
@@ -2343,7 +2348,7 @@ export default function AdminPage() {
                       : 'text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  {f}
+                  {f === 'accepted' ? 'deposit paid' : f.replace(/_/g, ' ')}
                 </button>
               ))}
             </div>
@@ -8185,7 +8190,7 @@ function StatusBadge({ status }: { status: string }) {
         STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-800'
       }`}
     >
-      {status}
+      {status.replace(/_/g, ' ')}
     </span>
   );
 }
