@@ -217,6 +217,11 @@ export interface GangSheetOrder {
   tier: string | null;
   price_cents: number | null;
   delivery: string | null;
+  /** Pixel dimensions of the uploaded artwork. 300 DPI, so these read as
+   *  inches when divided — and they are frequently SMALLER than the sheet
+   *  length that was purchased. */
+  file_width_px: number | null;
+  file_height_px: number | null;
   status: string;
   paid_at: string | null;
   created_at: string;

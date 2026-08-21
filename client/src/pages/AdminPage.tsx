@@ -7775,6 +7775,28 @@ function StatCard({
  * behind it. Actions link out to the DTF orders page, which is where the
  * status transitions and the print file actually live.
  */
+// Gang sheet files are 300 DPI and the store treats 1 ft as 3,600 px, so the
+// pixel dimensions are readable as inches — worth showing, because the sheet
+// someone BUYS and the artwork they upload are often different sizes. India
+// booker's is the case in point: a 2 ft sheet carrying 12 inches of art.
+const DTF_DPI = 300;
+
+function sheetDims(order: GangSheetOrder): string {
+  if (!order.file_width_px || !order.file_height_px) return 'artwork size unknown';
+  const w = (order.file_width_px / DTF_DPI).toFixed(1).replace(/\.0$/, '');
+  const h = (order.file_height_px / DTF_DPI).toFixed(1).replace(/\.0$/, '');
+  return `art ${w}" x ${h}"`;
+}
+
+function sheetTitle(order: GangSheetOrder): string {
+  const parts = [
+    order.length_ft ? `${order.length_ft} ft gang sheet` : 'Gang sheet',
+    sheetDims(order),
+    order.delivery === 'ship' ? 'ship' : 'pickup',
+  ];
+  return parts.join(' — ');
+}
+
 /** The same gang sheet order as a phone card, matching the quote cards it
  *  sits between. */
 function GangSheetCard({ order }: { order: GangSheetOrder }) {
@@ -7793,10 +7815,13 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
         </div>
         <StatusBadge status={order.status} />
       </div>
-      <div className="flex items-center gap-1.5 text-sm text-gray-600">
-        <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide">DTF</span>
-        <span className="truncate">{size}</span>
-        {rush && <span className="text-orange-600 text-[10px] font-semibold uppercase">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-1.5 text-sm text-gray-900">
+          <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide">DTF</span>
+          <span className="font-medium">{size} gang sheet</span>
+          {rush && <span className="text-orange-600 text-[10px] font-semibold uppercase">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+        </div>
+        <div className="text-[11px] text-gray-500">{sheetDims(order)}</div>
       </div>
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>{new Date(when).toLocaleDateString()}</span>
@@ -7812,7 +7837,7 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
 
 function GangSheetRow({ order }: { order: GangSheetOrder }) {
   const when = order.paid_at || order.created_at;
-  const size = order.length_ft ? `${order.length_ft} ft gang sheet` : 'Gang sheet';
+  const size = order.length_ft ? `${order.length_ft} ft` : 'Gang sheet';
   const rush = order.tier === 'hot_rush' || order.tier === 'rush';
   return (
     <tr className="hover:bg-gray-50">
@@ -7825,13 +7850,20 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
       <td className="px-3 py-2 text-gray-600">
         <div className="max-w-[200px] truncate" title={order.customer_email ?? ''}>{order.customer_email || '—'}</div>
       </td>
+      {/* The length IS the product here — it is what she chose and what she
+          was charged for — so it gets its own line and never truncates. The
+          badge and tier sit under it rather than competing for the same
+          180px, which is what pushed "2 ft" out of view. */}
       <td className="px-3 py-2 text-gray-600">
-        <div className="max-w-[180px] truncate flex items-center gap-1.5" title={size}>
-          <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">DTF</span>
-          <span className="truncate">
-            {size}{order.price_cents != null ? ` — $${(order.price_cents / 100).toFixed(2)}` : ''}
-          </span>
-          {rush && <span className="text-orange-600 text-[10px] font-semibold uppercase shrink-0">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+        <div className="max-w-[220px]" title={sheetTitle(order)}>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">DTF</span>
+            <span className="font-medium text-gray-900 whitespace-nowrap">{size} gang sheet</span>
+          </div>
+          <div className="text-[11px] text-gray-500 truncate">
+            {sheetDims(order)}
+            {rush && <span className="text-orange-600 font-semibold uppercase ml-1">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+          </div>
         </div>
       </td>
       {/* One sheet is one sheet. The price rides in the product cell rather
