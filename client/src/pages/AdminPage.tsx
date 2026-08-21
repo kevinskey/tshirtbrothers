@@ -7801,7 +7801,9 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span>{new Date(when).toLocaleDateString()}</span>
         {order.price_cents != null && (
-          <span className="font-medium text-gray-900">${(order.price_cents / 100).toFixed(2)}</span>
+          <span className={order.paid_at ? 'font-medium text-green-700' : 'font-medium text-gray-900'}>
+            ${(order.price_cents / 100).toFixed(2)}{order.paid_at ? ' paid' : ''}
+          </span>
         )}
       </div>
     </Link>
@@ -7837,7 +7839,18 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
           as a quantity at a glance. */}
       <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">1</td>
       <td className="px-3 py-2 whitespace-nowrap">
-        <StatusBadge status={order.status} />
+        <div className="flex flex-col gap-0.5">
+          <StatusBadge status={order.status} />
+          {/* The badge above is the WORKFLOW state. Once an order moves to
+              in_production the fact that money was collected disappears from
+              the row entirely, which is how a paid job ends up looking
+              unpaid. State that separately and explicitly. */}
+          {order.paid_at && (
+            <span className="text-[11px] text-green-700 font-medium">
+              Paid{order.price_cents != null ? ` $${(order.price_cents / 100).toFixed(2)}` : ''}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-3 py-2 whitespace-nowrap">
         <Link to="/admin/dtf-orders" className="text-red-600 hover:text-red-700 text-sm">
