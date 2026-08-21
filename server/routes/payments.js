@@ -10,7 +10,7 @@ import {
   sendGangSheetPaidToAdmin,
   sendGangSheetOrphanPaymentAlert,
 } from '../services/email.js';
-import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer } from '../services/sms.js';
+import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
 
 const router = Router();
@@ -597,6 +597,13 @@ async function handleCheckoutSessionCompleted(session) {
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
+          // Deposit paid IS the starting gun: work begins, and the first
+          // piece of that work is the mockup. Both sides get told what
+          // happens next, not just that money moved. Applied on both
+          // confirmation paths — the webhook and the success-page fallback —
+          // whose UPDATEs are mutually exclusive, so this cannot double-send.
+          smsDepositReceivedToCustomer(quote).catch(() => {});
+          smsDepositPaidToAdmin(quote).catch(() => {});
         }
       }
     } catch (err) {
@@ -879,6 +886,13 @@ router.get('/success', async (req, res, next) => {
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
+          // Deposit paid IS the starting gun: work begins, and the first
+          // piece of that work is the mockup. Both sides get told what
+          // happens next, not just that money moved. Applied on both
+          // confirmation paths — the webhook and the success-page fallback —
+          // whose UPDATEs are mutually exclusive, so this cannot double-send.
+          smsDepositReceivedToCustomer(quote).catch(() => {});
+          smsDepositPaidToAdmin(quote).catch(() => {});
         }
       }
     }

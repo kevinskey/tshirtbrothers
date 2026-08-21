@@ -277,7 +277,17 @@ export async function sendDepositReceiptToCustomer(quote) {
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:#16a34a;">Deposit Received ✓</h2>
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
-    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Thanks for your order! We've received your deposit and your order is now in production. Below are your totals — save this email so you can pay the remaining balance whenever you're ready.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Thanks for your order! We've received your deposit and work has officially begun.</p>
+
+    <div style="margin:0 0 20px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:${BRAND_DARK};text-transform:uppercase;letter-spacing:0.04em;">What happens next</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>1. We make your mockup.</strong> Our art team lays out your design on the garment.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>2. You approve it.</strong> We email it over — nothing goes on the press until you say yes. Ask for changes and we'll redraw it.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>3. We print.</strong> Once approved, your order goes into production.</p>
+      <p style="margin:0;font-size:14px;color:#374151;"><strong>4. Pickup or delivery.</strong> We'll let you know the moment it's ready and settle the balance then.</p>
+    </div>
+
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Below are your totals — save this email so you can pay the remaining balance whenever you're ready.</p>
 
     ${detailsTable(
       detailRow('Order', `#${quote.id}`) +
@@ -293,7 +303,7 @@ export async function sendDepositReceiptToCustomer(quote) {
 
     ${balanceDue > 0 ? primaryButton('Pay Remaining Balance', payBalanceUrl) : ''}
 
-    <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">No rush — you can pay the balance any time before pickup. We'll send a reminder when your order is ready.</p>
+    <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">No rush — the balance isn't due until your order is ready. Watch for your mockup; that's the next thing you'll hear from us.</p>
     <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
   `;
 

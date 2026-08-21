@@ -134,6 +134,39 @@ export async function smsMockupDecisionToAdmin(mockup, action, note) {
   );
 }
 
+/**
+ * Deposit landed — tell the customer work has started and what comes next.
+ *
+ * The receipt email carries the detail; this is the reassurance that the
+ * money arrived and someone is now doing something with it. Deliberately
+ * names the mockup as the next contact, so an approval email a day later
+ * arrives expected instead of looking like a stray marketing send.
+ */
+export async function smsDepositReceivedToCustomer(quote) {
+  const phone = quote.customer_phone;
+  if (!phone) return;
+  await sendSMS(
+    phone,
+    `Thanks ${quote.customer_name || ''}! TShirt Brothers got your deposit and work has started. `
+    + `Next up: we'll email you a mockup to approve — nothing prints until you say yes. (Reply STOP to opt out.)`,
+  );
+}
+
+/**
+ * Deposit landed — tell the SHOP the next action, not just the fact.
+ *
+ * smsQuoteAcceptedToAdmin says a quote was accepted, which is also true of a
+ * balance payment. This one exists to say the thing that is actually owed:
+ * make the mockup.
+ */
+export async function smsDepositPaidToAdmin(quote) {
+  if (!ADMIN_PHONE) return;
+  await sendSMS(
+    ADMIN_PHONE,
+    `\u{1F4B0} Deposit paid on Quote #${quote.id} (${quote.customer_name || 'customer'}). Next: build the mockup and send it for approval.`,
+  );
+}
+
 // Send a paid-invoice receipt via SMS
 export async function smsInvoiceReceiptToCustomer(invoice) {
   const phone = invoice.customer_phone;
