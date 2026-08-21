@@ -533,6 +533,8 @@ export default function AdminPage() {
   // (Defined later via const, so do not move this above the toast helper.)
 
   // Toasts: short status messages that fade out after 3.5s.
+  // Which quote's attached files are open in the viewer.
+  const [filesQuote, setFilesQuote] = useState<Quote | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastIdRef = useRef(0);
   const toast = (message: string, tone: Toast['tone'] = 'success') => {
@@ -1262,23 +1264,37 @@ export default function AdminPage() {
     },
   });
 
+  // Adds EVERY file the customer attached, not just design_url. This used to
+  // read `design_url || mockup_image_url` and so quietly dropped every upload
+  // after the first — a four-file quote put one file in the library and gave
+  // no hint the others existed. For picking individual files, the Art column's
+  // thumbnail opens QuoteFilesModal.
   async function sendQuoteToArtLibrary(q: Quote) {
-    const url = q.design_url || q.mockup_image_url;
-    if (!url) { toast('No graphic on this quote', 'error'); return; }
-    const name = `Quote #${q.id} — ${q.customer_name || q.customerName || 'customer'}`;
-    try {
-      const res = await fetch('/api/admin/designs-library', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-        body: JSON.stringify({ name, image_url: url, thumbnail_url: url, category: 'general', tags: ['from-quote', `quote-${q.id}`] }),
-      });
-      if (!res.ok) { toast('Send to Art Library failed', 'error'); return; }
-      toast('Added to Art Library');
-      queryClient.invalidateQueries({ queryKey: ['admin', 'designs-library'] });
-    } catch {
-      toast('Network error sending to Art Library', 'error');
+    const urls = quoteArtwork(q);
+    if (urls.length === 0) { toast('No graphic on this quote', 'error'); return; }
+    const who = q.customer_name || q.customerName || 'customer';
+    let ok = 0;
+    // Sequential: a burst of parallel POSTs trips the endpoint's rate limit,
+    // and a half-added set is worse than a slower one.
+    for (const [i, url] of urls.entries()) {
+      const name = urls.length > 1
+        ? `Quote #${q.id} — ${who} (${i + 1}/${urls.length})`
+        : `Quote #${q.id} — ${who}`;
+      try {
+        const res = await fetch('/api/admin/designs-library', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+          body: JSON.stringify({ name, image_url: url, thumbnail_url: url, category: 'general', tags: ['from-quote', `quote-${q.id}`] }),
+        });
+        if (res.ok) ok += 1;
+      } catch { /* counted below */ }
     }
+    if (ok === 0) { toast('Send to Art Library failed', 'error'); return; }
+    toast(ok === urls.length
+      ? `Added ${ok} file${ok === 1 ? '' : 's'} to Art Library`
+      : `Added ${ok} of ${urls.length} files — retry the rest`);
+    queryClient.invalidateQueries({ queryKey: ['admin', 'designs-library'] });
   }
 
   async function downloadQuoteGraphic(q: Quote) {
@@ -2514,8 +2530,15 @@ export default function AdminPage() {
                       <GangSheetRow key={`gs-${row.order.id}`} order={row.order} />
                     ) : (() => { const q = row.quote; return (
                       <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
-                        <td className="px-3 py-2">
-                          <ArtThumb urls={quoteArtwork(q)} alt={`Artwork for ${q.customer_name || q.customerName}`} />
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setFilesQuote(q)}
+                            title={`${quoteArtwork(q).length} file(s) — click to view all`}
+                            className="block rounded hover:ring-2 hover:ring-red-300"
+                          >
+                            <ArtThumb urls={quoteArtwork(q)} alt={`Artwork for ${q.customer_name || q.customerName}`} />
+                          </button>
                         </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
@@ -6363,6 +6386,10 @@ export default function AdminPage() {
         )}
 
         {/* Quote / Order Detail Drawer */}
+        {filesQuote && (
+          <QuoteFilesModal quote={filesQuote} onClose={() => setFilesQuote(null)} />
+        )}
+
         {detailQuote && (() => {
           const q = detailQuote as Quote & { deposit_amount?: number | null; balance_paid_at?: string | null };
           const customerEmail = (q as Quote).customer_email || (q as Quote).customerEmail || '';
@@ -7822,6 +7849,162 @@ function quoteArtwork(q: Quote): string[] {
     ...(q.extra_design_urls ?? []),
   ].filter((u): u is string => typeof u === 'string' && u.length > 0);
   return [...new Set(urls)];
+}
+
+/**
+ * Every file a customer attached, one row each.
+ *
+ * Before this, the admin could reach exactly one: sendQuoteToArtLibrary and
+ * downloadQuoteGraphic both read `design_url || mockup_image_url`, so a quote
+ * with four uploads offered the first and silently dropped three. This lists
+ * all of them — preview, open, download, and add to the Art Library either
+ * one at a time or all at once.
+ */
+function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void }) {
+  const urls = quoteArtwork(quote);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [addingAll, setAddingAll] = useState(false);
+  const who = quote.customer_name || quote.customerName || 'customer';
+
+  async function addOne(url: string, index: number): Promise<boolean> {
+    const res = await fetch('/api/admin/designs-library', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}`,
+      },
+      body: JSON.stringify({
+        // Numbered so several files off one quote stay tellable apart in the
+        // library; a row of identical "Quote #58" entries is useless.
+        name: urls.length > 1 ? `Quote #${quote.id} — ${who} (${index + 1}/${urls.length})` : `Quote #${quote.id} — ${who}`,
+        image_url: url,
+        thumbnail_url: url,
+        category: 'general',
+        tags: ['from-quote', `quote-${quote.id}`],
+      }),
+    });
+    return res.ok;
+  }
+
+  async function handleAddOne(url: string, index: number) {
+    setBusy(url);
+    try {
+      if (await addOne(url, index)) {
+        setAdded((prev) => new Set(prev).add(url));
+        toast.success('Added to Art Library');
+      } else {
+        toast.error('Could not add that file');
+      }
+    } catch {
+      toast.error('Network error adding to Art Library');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleAddAll() {
+    setAddingAll(true);
+    // Sequential on purpose: firing a dozen POSTs at once got the library
+    // endpoint rate-limited, and a partial failure is hard to explain.
+    let ok = 0;
+    for (const [i, url] of urls.entries()) {
+      if (added.has(url)) continue;
+      try {
+        if (await addOne(url, i)) {
+          ok += 1;
+          setAdded((prev) => new Set(prev).add(url));
+        }
+      } catch { /* counted as a failure below */ }
+    }
+    setAddingAll(false);
+    if (ok > 0) toast.success(`Added ${ok} file${ok === 1 ? '' : 's'} to the Art Library`);
+    else toast.error('Nothing was added');
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 sticky top-0 bg-white">
+          <div>
+            <h3 className="font-semibold text-gray-900">Customer files</h3>
+            <p className="text-xs text-gray-500">
+              Quote #{quote.id} — {who} · {urls.length} file{urls.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {urls.length > 1 && (
+              <button
+                onClick={handleAddAll}
+                disabled={addingAll || urls.every((u) => added.has(u))}
+                className="text-xs font-medium text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                {addingAll ? 'Adding…' : 'Add all to Library'}
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {urls.length === 0 ? (
+          <p className="px-5 py-10 text-center text-sm text-gray-400">
+            No files were attached to this quote.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100">
+            {urls.map((url, i) => (
+              <li key={`${url}-${i}`} className="flex items-center gap-3 px-5 py-3">
+                <a href={url} target="_blank" rel="noreferrer" className="shrink-0">
+                  <img
+                    src={url}
+                    alt={`File ${i + 1}`}
+                    loading="lazy"
+                    className="w-16 h-16 rounded object-contain border border-gray-200 bg-gray-50"
+                  />
+                </a>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-gray-900">File {i + 1} of {urls.length}</div>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 hover:underline break-all line-clamp-1"
+                  >
+                    {url.split('/').pop()}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={url}
+                    download
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg"
+                  >
+                    Download
+                  </a>
+                  <button
+                    onClick={() => handleAddOne(url, i)}
+                    disabled={busy === url || added.has(url)}
+                    className="text-xs font-medium text-orange-700 bg-orange-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  >
+                    {added.has(url) ? 'In Library' : busy === url ? 'Adding…' : 'Add to Library'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
