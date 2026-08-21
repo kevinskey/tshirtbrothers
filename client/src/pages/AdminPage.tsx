@@ -44,6 +44,7 @@ import {
 import {
   fetchDashboardStats,
   fetchQuotes,
+  fetchGangSheetOrders,
   updateQuoteStatus,
   fetchAdminProducts,
   fetchCategories,
@@ -61,6 +62,7 @@ import {
   fetchSettings,
   updateSettings,
   type Quote,
+  type GangSheetOrder,
   type Product,
   type Category,
   type Customer,
@@ -111,6 +113,14 @@ import {
   fetchQuote,
   attachMockupToQuote,
 } from '@/lib/api';
+
+/** A row in the dashboard's combined list: a quote, or a gang sheet order.
+ *  Tagged rather than coerced into one shape — a gang sheet has no quantity,
+ *  no date_needed and no quote actions, and pretending otherwise is how the
+ *  Actions menu would end up offering to price something already paid for. */
+type DashboardRow =
+  | { kind: 'quote'; at: number; quote: Quote }
+  | { kind: 'gangsheet'; at: number; order: GangSheetOrder };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
@@ -183,6 +193,12 @@ const STATUS_COLORS: Record<string, string> = {
   sent: 'bg-blue-100 text-blue-800',
   paid: 'bg-green-100 text-green-800',
   overdue: 'bg-red-100 text-red-800',
+  // Gang sheet (DTF) order states, so a paid sheet on the dashboard does
+  // not fall through to the grey default and read as inert.
+  in_production: 'bg-amber-100 text-amber-800',
+  ready: 'bg-teal-100 text-teal-800',
+  pending_payment: 'bg-gray-100 text-gray-500',
+  canceled: 'bg-gray-100 text-gray-500',
   cancelled: 'bg-gray-100 text-gray-500',
   published: 'bg-green-100 text-green-800',
 };
@@ -962,6 +978,18 @@ export default function AdminPage() {
     queryFn: () => fetchQuotes(quoteFilter, quoteSearch, quoteSort),
     enabled: activeSection === 'dashboard' || activeSection === 'quotes',
     staleTime: 10000, // 10 seconds for admin
+    refetchOnWindowFocus: true,
+  });
+
+  // Gang sheet (DTF) orders — dashboard only. They are a separate table with
+  // a separate admin page, which is exactly why a paid one could not be found
+  // here: the dashboard promises "quotes, accepted orders, and completed jobs
+  // in one list" and was showing only quotes.
+  const gangSheetOrdersQuery = useQuery({
+    queryKey: ['admin', 'gang-sheet-orders'],
+    queryFn: fetchGangSheetOrders,
+    enabled: activeSection === 'dashboard',
+    staleTime: 10000,
     refetchOnWindowFocus: true,
   });
 
@@ -2031,6 +2059,57 @@ export default function AdminPage() {
   const stats = statsQuery.data;
   const quotes = quotesQuery.data ?? [];
 
+  // Gang sheet orders, shaped for the dashboard list and interleaved with
+  // quotes by date so "Newest first" means what it says.
+  //
+  // Filtering and search are applied here rather than server-side: the quotes
+  // endpoint does its own, and the gang sheet endpoint has no such params, so
+  // without this a search would silently hide quotes while leaving every gang
+  // sheet on screen.
+  //
+  // pending_payment and canceled are dropped — an abandoned checkout is not an
+  // order, and showing one is how a customer looks like they bought twice.
+  const gangSheetRows = useMemo(() => {
+    const all = gangSheetOrdersQuery.data ?? [];
+    const term = quoteSearch.trim().toLowerCase();
+    return all
+      .filter((g) => g.status !== 'pending_payment' && g.status !== 'canceled')
+      .filter((g) => {
+        if (quoteFilter === 'all') return true;
+        // Map DTF states onto the dashboard's tabs: money taken and work not
+        // finished reads as 'accepted'; finished reads as 'completed'. There
+        // is no gang sheet state that means 'pending' or 'quoted' — it is
+        // bought outright, never quoted.
+        if (quoteFilter === 'accepted') return ['paid', 'in_production', 'ready'].includes(g.status);
+        if (quoteFilter === 'completed') return g.status === 'completed';
+        return false;
+      })
+      .filter((g) => {
+        if (!term) return true;
+        return (g.customer_name ?? '').toLowerCase().includes(term)
+          || (g.customer_email ?? '').toLowerCase().includes(term)
+          || 'gang sheet'.includes(term);
+      });
+  }, [gangSheetOrdersQuery.data, quoteFilter, quoteSearch]);
+
+  // One list, newest first. Gang sheets sort by when the money arrived and
+  // fall back to created_at for the rare row with no paid_at.
+  const dashboardRows = useMemo(() => {
+    const rows: DashboardRow[] = [
+      ...quotes.map((q: Quote) => ({
+        kind: 'quote' as const,
+        at: new Date(q.created_at || q.createdAt).getTime(),
+        quote: q,
+      })),
+      ...gangSheetRows.map((g) => ({
+        kind: 'gangsheet' as const,
+        at: new Date(g.paid_at || g.created_at).getTime(),
+        order: g,
+      })),
+    ];
+    return rows.sort((a, b) => b.at - a.at);
+  }, [quotes, gangSheetRows]);
+
   // When deep-linked to a specific quote (?id=X), scroll the row into view
   // and clear the highlight after a few seconds so it doesn't stick forever.
   useEffect(() => {
@@ -2253,9 +2332,13 @@ export default function AdminPage() {
             <div className="lg:hidden space-y-3">
               {quotesQuery.isLoading ? (
                 <div className="text-center py-12 text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-              ) : quotes.length === 0 ? (
+              ) : dashboardRows.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No quotes found</div>
-              ) : quotes.map((q: Quote) => {
+              ) : dashboardRows.map((row) => {
+                if (row.kind === 'gangsheet') {
+                  return <GangSheetCard key={`gs-${row.order.id}`} order={row.order} />;
+                }
+                const q = row.quote;
                 const needed = q.date_needed ? new Date(q.date_needed) : null;
                 const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
                 const isRush = daysUntil !== null && daysUntil <= 7;
@@ -2414,7 +2497,9 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {quotes.map((q: Quote) => (
+                    {dashboardRows.map((row) => row.kind === 'gangsheet' ? (
+                      <GangSheetRow key={`gs-${row.order.id}`} order={row.order} />
+                    ) : (() => { const q = row.quote; return (
                       <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
@@ -2508,8 +2593,8 @@ export default function AdminPage() {
                           )}
                         </td>
                       </tr>
-                    ))}
-                    {quotes.length === 0 && !quotesQuery.isLoading && (
+                    ); })())}
+                    {dashboardRows.length === 0 && !quotesQuery.isLoading && (
                       <tr>
                         <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
                           No quotes found
@@ -7676,6 +7761,86 @@ function StatCard({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One gang sheet (DTF) order on the dashboard's combined list.
+ *
+ * Deliberately NOT clickable into the quote detail modal — there is no quote
+ * behind it. Actions link out to the DTF orders page, which is where the
+ * status transitions and the print file actually live.
+ */
+/** The same gang sheet order as a phone card, matching the quote cards it
+ *  sits between. */
+function GangSheetCard({ order }: { order: GangSheetOrder }) {
+  const when = order.paid_at || order.created_at;
+  const size = order.length_ft ? `${order.length_ft} ft gang sheet` : 'Gang sheet';
+  const rush = order.tier === 'hot_rush' || order.tier === 'rush';
+  return (
+    <Link
+      to="/admin/dtf-orders"
+      className="block bg-white rounded-xl border border-gray-200 p-4 space-y-3 active:bg-gray-50"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-gray-900 truncate">{order.customer_name || '—'}</div>
+          <div className="text-xs text-gray-500 truncate">{order.customer_email || '—'}</div>
+        </div>
+        <StatusBadge status={order.status} />
+      </div>
+      <div className="flex items-center gap-1.5 text-sm text-gray-600">
+        <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide">DTF</span>
+        <span className="truncate">{size}</span>
+        {rush && <span className="text-orange-600 text-[10px] font-semibold uppercase">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+      </div>
+      <div className="flex items-center justify-between text-xs text-gray-500">
+        <span>{new Date(when).toLocaleDateString()}</span>
+        {order.price_cents != null && (
+          <span className="font-medium text-gray-900">${(order.price_cents / 100).toFixed(2)}</span>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+function GangSheetRow({ order }: { order: GangSheetOrder }) {
+  const when = order.paid_at || order.created_at;
+  const size = order.length_ft ? `${order.length_ft} ft gang sheet` : 'Gang sheet';
+  const rush = order.tier === 'hot_rush' || order.tier === 'rush';
+  return (
+    <tr className="hover:bg-gray-50">
+      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+        {new Date(when).toLocaleDateString()}
+      </td>
+      <td className="px-3 py-2 text-gray-900">
+        <div className="max-w-[160px] truncate" title={order.customer_name ?? ''}>{order.customer_name || '—'}</div>
+      </td>
+      <td className="px-3 py-2 text-gray-600">
+        <div className="max-w-[200px] truncate" title={order.customer_email ?? ''}>{order.customer_email || '—'}</div>
+      </td>
+      <td className="px-3 py-2 text-gray-600">
+        <div className="max-w-[180px] truncate flex items-center gap-1.5" title={size}>
+          <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">DTF</span>
+          <span className="truncate">
+            {size}{order.price_cents != null ? ` — $${(order.price_cents / 100).toFixed(2)}` : ''}
+          </span>
+          {rush && <span className="text-orange-600 text-[10px] font-semibold uppercase shrink-0">{order.tier === 'hot_rush' ? 'Hot rush' : 'Rush'}</span>}
+        </div>
+      </td>
+      {/* One sheet is one sheet. The price rides in the product cell rather
+          than here, because a dollar amount under a column headed "Qty" reads
+          as a quantity at a glance. */}
+      <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">1</td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        <StatusBadge status={order.status} />
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        <Link to="/admin/dtf-orders" className="text-red-600 hover:text-red-700 text-sm">
+          Open
+        </Link>
+      </td>
+    </tr>
   );
 }
 

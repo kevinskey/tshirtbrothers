@@ -198,6 +198,34 @@ export async function fetchQuotes(status?: string, search?: string, sort?: strin
   return authRequest<Quote[]>(`/quotes${query}`);
 }
 
+/**
+ * Gang sheet (DTF) orders, for the dashboard's combined list.
+ *
+ * These live in their own table and have their own admin page, so a paid
+ * gang sheet was invisible on the dashboard that calls itself "quotes,
+ * accepted orders, and completed jobs in one list" — a real $30 sale sat
+ * there unseen while an abandoned quote from the same customer showed.
+ *
+ * status=all because the dashboard does its own filtering; the endpoint's
+ * default hides everything except paid/in_production/ready.
+ */
+export interface GangSheetOrder {
+  id: number;
+  customer_name: string | null;
+  customer_email: string | null;
+  length_ft: number | null;
+  tier: string | null;
+  price_cents: number | null;
+  delivery: string | null;
+  status: string;
+  paid_at: string | null;
+  created_at: string;
+}
+
+export async function fetchGangSheetOrders() {
+  return authRequest<GangSheetOrder[]>('/gangsheet-store/admin/orders?status=all');
+}
+
 export async function updateAdminNotes(id: string, admin_notes: string) {
   return authRequest<{ id: string; admin_notes: string }>(`/quotes/${id}/admin-notes`, {
     method: 'PATCH',
