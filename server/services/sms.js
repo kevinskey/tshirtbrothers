@@ -101,7 +101,10 @@ export async function smsReviewRequest(quote) {
   if (!phone) return;
   const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
   const url = `https://search.google.com/local/writereview?placeid=${placeId}`;
-  const msg = `Thanks for the order from TShirt Brothers! If you loved it, would you take 30 sec to leave a Google review? ${url} (Reply STOP to opt out.)`;
+  // Kept to ~2 segments: the review link is the ask that matters, the photo
+  // request is the warm close. Anything longer and carriers split it badly.
+  const msg = `Thank you for your business! If you loved it, would you take 30 sec to leave us a Google review? ${url} `
+    + `And send us a pic of you wearing it — we love seeing it! Thank you for shopping with tshirtbrothers.com (Reply STOP to opt out.)`;
   await sendSMS(phone, msg);
 }
 

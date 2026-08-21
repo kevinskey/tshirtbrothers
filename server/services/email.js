@@ -411,8 +411,11 @@ export async function sendReviewRequestEmail(quote) {
   const body = `
     <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Loved your order? Tell Google! ⭐⭐⭐⭐⭐</h2>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Thank you so much for your business — we truly appreciate you choosing us.</p>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Now that your order is in your hands, would you take 30 seconds to leave us a quick Google review? It's the single most helpful thing you can do for a small business — and it helps other folks in Atlanta find us.</p>
     ${primaryButton('Leave a Google Review ⭐', reviewUrl)}
+    <p style="margin:20px 0 0;font-size:15px;color:#6b7280;">And one more thing — snap a picture of yourself wearing it and send it our way! We love seeing our work out in the world. 📸</p>
+    <p style="margin:16px 0 0;font-size:15px;color:${BRAND_DARK};font-weight:600;">Thank you for shopping with tshirtbrothers.com</p>
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Not happy with your order? Just reply to this email and we'll make it right. — Kevin</p>
   `;
   try {
