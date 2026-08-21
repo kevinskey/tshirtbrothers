@@ -109,6 +109,9 @@ export interface Quote {
   print_areas?: unknown;
   design_type?: string;
   design_url?: string | null;
+  /** Everything the customer uploaded. design_url is only the FIRST one, so
+   *  anything reading design_url alone silently drops the rest. */
+  source_upload_urls?: string[] | null;
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
   mockup_image_url_back?: string | null;
@@ -213,6 +216,7 @@ export interface GangSheetOrder {
   id: number;
   customer_name: string | null;
   customer_email: string | null;
+  customer_phone: string | null;
   length_ft: number | null;
   tier: string | null;
   price_cents: number | null;

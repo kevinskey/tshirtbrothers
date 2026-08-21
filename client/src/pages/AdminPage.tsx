@@ -2382,6 +2382,7 @@ export default function AdminPage() {
                   </div>
                   <div className="text-sm text-gray-700">
                     <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
+                    {q.color && <span className="text-gray-500"> · {q.color}</span>}
                   </div>
                   {(q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
@@ -2414,9 +2415,12 @@ export default function AdminPage() {
                   )}
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <span>Created {new Date(q.created_at || q.createdAt).toLocaleDateString()}</span>
-                    {q.estimated_price != null && (
-                      <span className="font-semibold text-gray-900">${Number(q.estimated_price).toFixed(2)}</span>
-                    )}
+                    <span className="flex items-center gap-2">
+                      <span className={paidState(q).className}>{paidState(q).label}</span>
+                      {q.estimated_price != null && (
+                        <span className="font-semibold text-gray-900">${Number(q.estimated_price).toFixed(2)}</span>
+                      )}
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
                     {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
@@ -2490,12 +2494,17 @@ export default function AdminPage() {
             <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
+                    {/* Phone rides under the name and colour under the product
+                        rather than each taking a column — nine columns of one
+                        value each is unreadable at shop-laptop width. */}
                     <tr className="bg-gray-50 text-left text-gray-500 text-xs">
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">Art</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Customer</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Product</th>
                       <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Qty</th>
+                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Cost</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Actions</th>
                     </tr>
@@ -2505,13 +2514,36 @@ export default function AdminPage() {
                       <GangSheetRow key={`gs-${row.order.id}`} order={row.order} />
                     ) : (() => { const q = row.quote; return (
                       <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
+                        <td className="px-3 py-2">
+                          <ArtThumb urls={quoteArtwork(q)} alt={`Artwork for ${q.customer_name || q.customerName}`} />
+                        </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
                         </td>
-                        <td className="px-3 py-2 text-gray-900"><div className="max-w-[160px] truncate" title={q.customer_name || q.customerName}>{q.customer_name || q.customerName}</div></td>
+                        <td className="px-3 py-2 text-gray-900">
+                          <div className="max-w-[160px] truncate" title={q.customer_name || q.customerName}>{q.customer_name || q.customerName}</div>
+                          {(q.customer_phone || q.customerPhone) && (
+                            <a
+                              href={`tel:${q.customer_phone || q.customerPhone}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[11px] text-gray-500 hover:text-red-600"
+                            >
+                              {q.customer_phone || q.customerPhone}
+                            </a>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={q.customer_email || q.customerEmail}>{q.customer_email || q.customerEmail}</div></td>
-                        <td className="px-3 py-2 text-gray-600"><div className="max-w-[180px] truncate" title={q.product_name || q.productName}>{q.product_name || q.productName}</div></td>
+                        <td className="px-3 py-2 text-gray-600">
+                          <div className="max-w-[180px] truncate" title={q.product_name || q.productName}>{q.product_name || q.productName}</div>
+                          {q.color && <div className="text-[11px] text-gray-500 truncate">{q.color}</div>}
+                        </td>
                         <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{q.quantity}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          <div className="text-gray-900">
+                            {q.estimated_price != null ? `$${Number(q.estimated_price).toFixed(2)}` : '—'}
+                          </div>
+                          <div className={`text-[11px] ${paidState(q).className}`}>{paidState(q).label}</div>
+                        </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <StatusBadge status={q.status} />
                         </td>
@@ -2600,7 +2632,7 @@ export default function AdminPage() {
                     ); })())}
                     {dashboardRows.length === 0 && !quotesQuery.isLoading && (
                       <tr>
-                        <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                        <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
                           No quotes found
                         </td>
                       </tr>
@@ -7775,6 +7807,63 @@ function StatCard({
  * behind it. Actions link out to the DTF orders page, which is where the
  * status transitions and the print file actually live.
  */
+/**
+ * Every image a customer attached to a quote, first one first.
+ *
+ * design_url is only the FIRST upload — source_upload_urls and
+ * extra_design_urls carry the rest, and anything reading design_url alone
+ * silently drops them. Deduped because the first file usually appears in both
+ * design_url and source_upload_urls.
+ */
+function quoteArtwork(q: Quote): string[] {
+  const urls = [
+    ...(q.source_upload_urls ?? []),
+    ...(q.design_url ? [q.design_url] : []),
+    ...(q.extra_design_urls ?? []),
+  ].filter((u): u is string => typeof u === 'string' && u.length > 0);
+  return [...new Set(urls)];
+}
+
+/**
+ * What has actually been collected on a quote.
+ *
+ * deposit_amount is set by the deposit webhook; balance_paid_at is set when
+ * the remainder clears (or immediately, when they pay in full up front). The
+ * grid showed neither, so an accepted quote and a fully paid one looked the
+ * same.
+ */
+function paidState(q: Quote): { label: string; className: string } {
+  const deposit = Number(q.deposit_amount ?? 0);
+  if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
+  if (deposit > 0) return { label: `Deposit $${deposit.toFixed(2)}`, className: 'text-amber-700' };
+  return { label: 'Unpaid', className: 'text-gray-400' };
+}
+
+/** Small square preview with a count when there is more than one file. */
+function ArtThumb({ urls, alt }: { urls: string[]; alt: string }) {
+  if (urls.length === 0) {
+    return <div className="w-10 h-10 rounded bg-gray-100 border border-gray-200 shrink-0" aria-hidden />;
+  }
+  return (
+    <div className="relative w-10 h-10 shrink-0">
+      <img
+        src={urls[0]}
+        alt={alt}
+        loading="lazy"
+        className="w-10 h-10 rounded object-cover border border-gray-200 bg-white"
+      />
+      {urls.length > 1 && (
+        <span
+          className="absolute -bottom-1 -right-1 bg-gray-900 text-white text-[9px] leading-none px-1 py-0.5 rounded-full font-semibold"
+          title={`${urls.length} files attached`}
+        >
+          {urls.length}
+        </span>
+      )}
+    </div>
+  );
+}
+
 // Gang sheet files are 300 DPI and the store treats 1 ft as 3,600 px, so the
 // pixel dimensions are readable as inches — worth showing, because the sheet
 // someone BUYS and the artwork they upload are often different sizes. India
@@ -7841,11 +7930,25 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
   const rush = order.tier === 'hot_rush' || order.tier === 'rush';
   return (
     <tr className="hover:bg-gray-50">
+      {/* No thumbnail: the print file lives in a private Spaces bucket and
+          needs a signed URL, which the DTF orders page mints on demand. A
+          broken <img> here would read as "no artwork attached" — worse than
+          an honest placeholder. */}
+      <td className="px-3 py-2">
+        <div className="w-10 h-10 rounded bg-gray-100 border border-gray-200 shrink-0 grid place-items-center text-[9px] text-gray-400 font-semibold">
+          FILE
+        </div>
+      </td>
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
         {new Date(when).toLocaleDateString()}
       </td>
       <td className="px-3 py-2 text-gray-900">
         <div className="max-w-[160px] truncate" title={order.customer_name ?? ''}>{order.customer_name || '—'}</div>
+        {order.customer_phone && (
+          <a href={`tel:${order.customer_phone}`} className="text-[11px] text-gray-500 hover:text-red-600">
+            {order.customer_phone}
+          </a>
+        )}
       </td>
       <td className="px-3 py-2 text-gray-600">
         <div className="max-w-[200px] truncate" title={order.customer_email ?? ''}>{order.customer_email || '—'}</div>
@@ -7870,19 +7973,18 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
           than here, because a dollar amount under a column headed "Qty" reads
           as a quantity at a glance. */}
       <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">1</td>
-      <td className="px-3 py-2 whitespace-nowrap">
-        <div className="flex flex-col gap-0.5">
-          <StatusBadge status={order.status} />
-          {/* The badge above is the WORKFLOW state. Once an order moves to
-              in_production the fact that money was collected disappears from
-              the row entirely, which is how a paid job ends up looking
-              unpaid. State that separately and explicitly. */}
-          {order.paid_at && (
-            <span className="text-[11px] text-green-700 font-medium">
-              Paid{order.price_cents != null ? ` $${(order.price_cents / 100).toFixed(2)}` : ''}
-            </span>
-          )}
+      <td className="px-3 py-2 text-right whitespace-nowrap">
+        <div className="text-gray-900">
+          {order.price_cents != null ? `$${(order.price_cents / 100).toFixed(2)}` : '—'}
         </div>
+        <div className={`text-[11px] ${order.paid_at ? 'text-green-700' : 'text-gray-400'}`}>
+          {order.paid_at ? 'Paid in full' : 'Unpaid'}
+        </div>
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        {/* Payment now lives in the Cost column alongside the quotes', so the
+            badge here is purely the workflow state. */}
+        <StatusBadge status={order.status} />
       </td>
       <td className="px-3 py-2 whitespace-nowrap">
         <Link to="/admin/dtf-orders" className="text-red-600 hover:text-red-700 text-sm">
