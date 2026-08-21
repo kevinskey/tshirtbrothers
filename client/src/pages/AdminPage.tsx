@@ -988,7 +988,11 @@ export default function AdminPage() {
   const gangSheetOrdersQuery = useQuery({
     queryKey: ['admin', 'gang-sheet-orders'],
     queryFn: fetchGangSheetOrders,
-    enabled: activeSection === 'dashboard',
+    // Both, and 'quotes' is the one that matters: the screen headed
+    // "Dashboard" in the UI is section 'quotes' internally (the sidebar label
+    // and the section id disagree). Gating on 'dashboard' alone meant the
+    // query never ran on the page it was written for.
+    enabled: activeSection === 'dashboard' || activeSection === 'quotes',
     staleTime: 10000,
     refetchOnWindowFocus: true,
   });
