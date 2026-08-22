@@ -1301,23 +1301,40 @@ export default function AdminPage() {
   }
 
   async function downloadQuoteGraphic(q: Quote) {
-    const url = q.design_url || q.mockup_image_url;
-    if (!url) { toast('No graphic on this quote', 'error'); return; }
-    try {
-      const res = await fetch(url, { credentials: 'omit' });
-      if (!res.ok) throw new Error('fetch failed');
-      const blob = await res.blob();
-      const ext = (blob.type.split('/')[1] || 'png').split(';')[0];
-      const safeName = (q.customer_name || q.customerName || 'customer').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `quote-${q.id}-${safeName}.${ext}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    } catch {
-      window.open(url, '_blank', 'noopener');
+    // Every graphic on the quote, not just the primary — customers upload
+    // several files and the press needs all of them. Chrome prompts once
+    // to allow multiple downloads, then the rest follow.
+    const urls = [q.design_url, ...(q.extra_design_urls || [])]
+      .filter((u): u is string => !!u)
+      .filter((u, i, arr) => arr.indexOf(u) === i);
+    if (urls.length === 0 && q.mockup_image_url) urls.push(q.mockup_image_url);
+    if (urls.length === 0) { toast('No graphic on this quote', 'error'); return; }
+    const safeName = (q.customer_name || q.customerName || 'customer').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    let failed = 0;
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i]!;
+      try {
+        const res = await fetch(url, { credentials: 'omit' });
+        if (!res.ok) throw new Error('fetch failed');
+        const blob = await res.blob();
+        const ext = (blob.type.split('/')[1] || 'png').split(';')[0];
+        const suffix = urls.length > 1 ? `-${i + 1}` : '';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `quote-${q.id}-${safeName}${suffix}.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        // Give the browser a beat between saves so none get dropped.
+        if (i < urls.length - 1) await new Promise((r) => setTimeout(r, 350));
+      } catch {
+        failed++;
+        window.open(url, '_blank', 'noopener');
+      }
+    }
+    if (urls.length > 1) {
+      toast(failed ? `Downloaded ${urls.length - failed} of ${urls.length} graphics` : `Downloaded ${urls.length} graphics`, failed ? 'error' : 'success');
     }
   }
 
