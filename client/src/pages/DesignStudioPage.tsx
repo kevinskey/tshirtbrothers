@@ -1390,6 +1390,9 @@ export default function DesignStudioPage() {
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [pendingUpload, setPendingUpload] = useState<string | null>(null); // base64 of just-uploaded image
+  // Files waiting their turn behind the "Remove background?" prompt — the
+  // picker/drop zone accept many files, but the prompt handles one at a time.
+  const [uploadQueue, setUploadQueue] = useState<File[]>([]);
   const [isRemovingBg, setIsRemovingBg] = useState(false);
 
   // Load user's saved upload library on mount
@@ -1913,6 +1916,21 @@ export default function DesignStudioPage() {
       setPendingUpload(base64); // Show the "Remove background?" prompt
     };
     reader.readAsDataURL(file);
+  }, []);
+
+  // Feed the queue into handleFile whenever the prompt is free. Every path
+  // out of the prompt (keep, remove-bg, thumbnail re-pick) ends with
+  // setPendingUpload(null), so this drains reliably.
+  useEffect(() => {
+    if (pendingUpload || uploadQueue.length === 0) return;
+    const [next, ...rest] = uploadQueue;
+    setUploadQueue(rest);
+    handleFile(next!);
+  }, [pendingUpload, uploadQueue, handleFile]);
+
+  const handleFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadQueue((q) => [...q, ...Array.from(files)]);
   }, []);
 
   const finishUpload = useCallback(async (imageUrl: string) => {
@@ -2762,8 +2780,7 @@ export default function DesignStudioPage() {
         onDragOver={e => e.preventDefault()}
         onDrop={e => {
           e.preventDefault();
-          const f = e.dataTransfer.files[0];
-          if (f) handleFile(f);
+          handleFiles(e.dataTransfer.files);
         }}
         onClick={() => fileRef.current?.click()}
         className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-8 text-center transition hover:border-red-500"
@@ -2776,10 +2793,11 @@ export default function DesignStudioPage() {
         ref={fileRef}
         type="file"
         accept=".png,.jpg,.jpeg,.svg"
+        multiple
         className="hidden"
         onChange={e => {
-          const f = e.target.files?.[0];
-          if (f) handleFile(f);
+          handleFiles(e.target.files);
+          e.target.value = '';
         }}
       />
       {uploadedImages.length > 0 && (
