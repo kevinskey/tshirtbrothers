@@ -1856,6 +1856,57 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const handleFile = useCallback((file: File) => {
+    const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+    if (isSvg) {
+      // Rasterize SVGs immediately. Left as an SVG data URL, the canvas
+      // export dies on Safari: an <svg> without explicit width/height has
+      // naturalWidth 0 there, drawImage paints nothing, and the quote's
+      // graphic files come out solid white (quote #135). Injecting the
+      // viewBox size and converting to PNG here makes every later step —
+      // autocrop, mockup, graphic export — see an ordinary bitmap.
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          let text = reader.result as string;
+          const viewBox = text.match(/viewBox\s*=\s*["']\s*[\d.eE+-]+[\s,]+[\d.eE+-]+[\s,]+([\d.eE+-]+)[\s,]+([\d.eE+-]+)/);
+          const hasW = /<svg[^>]*\swidth\s*=/i.test(text);
+          const hasH = /<svg[^>]*\sheight\s*=/i.test(text);
+          if (viewBox && (!hasW || !hasH)) {
+            text = text.replace(/<svg/i, `<svg width="${viewBox[1]}" height="${viewBox[2]}"`);
+          }
+          const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const i = new window.Image();
+            i.onload = () => resolve(i);
+            i.onerror = () => reject(new Error('SVG failed to load'));
+            i.src = url;
+          });
+          const w = img.naturalWidth || 1500;
+          const h = img.naturalHeight || 1500;
+          // Print art wants resolution: scale the longest edge up to 2000px.
+          const scale = Math.min(2000 / Math.max(w, h), 4);
+          const cv = document.createElement('canvas');
+          cv.width = Math.round(w * scale);
+          cv.height = Math.round(h * scale);
+          const ctx = cv.getContext('2d');
+          if (!ctx) throw new Error('no 2d context');
+          ctx.drawImage(img, 0, 0, cv.width, cv.height);
+          URL.revokeObjectURL(url);
+          // A canvas that stayed fully blank means the SVG never painted —
+          // refuse it rather than quietly quoting a white square.
+          const px = ctx.getImageData(0, 0, cv.width, cv.height).data;
+          let painted = false;
+          for (let i = 3; i < px.length; i += 4) { if (px[i]! > 8) { painted = true; break; } }
+          if (!painted) throw new Error('SVG rendered empty');
+          setPendingUpload(cv.toDataURL('image/png'));
+        } catch (e) {
+          console.error('[upload] SVG rasterize failed:', e);
+          alert('That SVG could not be read. Please export it as a PNG and upload that instead.');
+        }
+      };
+      reader.readAsText(file);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = reader.result as string;
