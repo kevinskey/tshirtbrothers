@@ -119,7 +119,7 @@ export default function FaqPage() {
             <HelpCircle className="h-3 w-3" /> Frequently Asked
           </div>
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl text-white tracking-tight"
+            className="text-4xl sm:text-5xl md:text-6xl text-white tracking-tight"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
             Questions, <span className="text-orange-500">Answered</span>.

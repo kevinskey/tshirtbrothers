@@ -39,7 +39,7 @@ export default function CityLandingPage() {
             <MapPin className="h-3 w-3" /> Serving {city.name}, GA
           </div>
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl text-white tracking-tight"
+            className="text-4xl sm:text-5xl md:text-6xl text-white tracking-tight"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
             Custom T-Shirt Printing in <span className="text-orange-500">{city.name}</span>

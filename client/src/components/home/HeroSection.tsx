@@ -73,39 +73,36 @@ export default function HeroSection() {
               the text block with the image card to its right on lg. */}
           <div className="text-center lg:text-left lg:self-center">
             <h1
-              className="text-3xl sm:text-4xl md:text-5xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              {/* Fluid size below sm: clamp() keeps this nowrap line inside
-                  a 390px phone. Scale runs one step below the old sizing so
-                  the hero doesn't dwarf the header at stacked widths. */}
               {/* This line stays nowrap, so its size must track its column:
-                  fluid clamp below sm AND at lg+ (where the 3-col grid caps
-                  the column near 390px — fixed steps overflowed into the
-                  slide graphic). Cap 1.9rem keeps it inside at max-w-7xl. */}
-              <span className="whitespace-nowrap text-[clamp(1.375rem,7vw,1.875rem)] sm:text-4xl md:text-5xl lg:text-[clamp(1.6rem,2.9vw,2.4rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
+                  fluid clamp below sm (keeps it inside a 390px phone) AND at
+                  lg+ (where the 3-col grid caps the column near 390px —
+                  fixed steps overflowed into the slide graphic). */}
+              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-[clamp(1.6rem,2.9vw,2.4rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
               <span
-                className="block my-1 sm:my-2 text-4xl sm:text-5xl md:text-6xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
+                className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
                 style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
               >
                 Custom Printing
               </span>
               <span className="text-orange-600">Done Right.</span>
             </h1>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-gray-600">
+            <p className="mt-2 sm:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
               Now Shipping Nationwide!
             </p>
 
             <div className="mt-4 sm:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
               <Link
                 to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3 sm:px-8 sm:py-3.5 text-sm sm:text-lg lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3.5 sm:px-8 sm:py-3.5 text-base sm:text-lg lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
                 Get a Free Quote
               </Link>
               <Link
                 to="/design"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3 sm:px-8 sm:py-3.5 text-sm sm:text-lg lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
+                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3.5 sm:px-8 sm:py-3.5 text-base sm:text-lg lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
               >
                 <Palette className="h-4 w-4 sm:h-5 sm:w-5 lg:h-4 lg:w-4" />
                 Design Studio

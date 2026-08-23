@@ -63,7 +63,7 @@ export default function AboutPage() {
             <Heart className="h-3 w-3" /> Fairburn, GA · Local Shop
           </div>
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl text-white tracking-tight"
+            className="text-4xl sm:text-5xl md:text-6xl text-white tracking-tight"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
             A real <span className="text-orange-500">print shop</span>,<br />run by real people.
