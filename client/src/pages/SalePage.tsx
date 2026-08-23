@@ -143,7 +143,7 @@ export default function SalePage() {
       <section className="bg-gray-900 text-white">
         <div className="container mx-auto max-w-6xl px-4 py-6 sm:py-8 text-center">
           <p className="text-[11px] sm:text-xs font-bold uppercase tracking-[0.2em] text-orange-400">Limited-time sale</p>
-          <h1 className="mt-1 font-display text-2xl sm:text-4xl font-bold">
+          <h1 className="mt-1 font-display text-3xl sm:text-4xl font-bold">
             15% Off All Gildan <span className="text-orange-500">Tees &amp; Hoodies</span>
           </h1>
           <p className="mt-2 text-xs sm:text-sm text-gray-300">

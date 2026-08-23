@@ -33,7 +33,7 @@ export default function HomePageEs() {
             <MapPin className="h-3 w-3" /> Fairburn, GA · Atlanta
           </div>
           <h1
-            className="text-3xl sm:text-5xl md:text-6xl text-gray-900 tracking-tight leading-[1.05]"
+            className="text-4xl sm:text-5xl md:text-6xl text-gray-900 tracking-tight leading-[1.05]"
             style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
           >
             Apoya lo Local <span className="text-orange-500">Atlanta</span>,
