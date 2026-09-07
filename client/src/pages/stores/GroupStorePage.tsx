@@ -8,7 +8,7 @@ import Seo from '@/components/Seo';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import {
   Loader2, ShoppingBag, MapPin, Truck, ShieldCheck, ArrowRight,
-  Bell, Target, ChevronRight, Star, Package,
+  Bell, Target, ChevronRight, Star, Package, ExternalLink,
 } from 'lucide-react';
 
 interface StoreProfile {
@@ -248,6 +248,9 @@ export default function GroupStorePage() {
             )}
             {store.is_fundraiser && <a href="#fundraiser" className="hover:text-black">Fundraiser</a>}
             <a href="#about" className="hover:text-black">About</a>
+            <a href="https://tshirtbrothers.com" className="inline-flex items-center gap-1 text-gray-500 hover:text-black">
+              TShirtBrothers.com <ExternalLink className="w-3 h-3" />
+            </a>
           </nav>
           <div className="flex-1" />
           <Link to={storeLink(slug, '/admin')}
@@ -576,7 +579,11 @@ export default function GroupStorePage() {
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Fulfilled by</p>
-            <p className="mt-3 text-sm text-gray-700 font-semibold">TShirt Brothers</p>
+            <p className="mt-3 text-sm font-semibold">
+              <a href="https://tshirtbrothers.com" className="text-gray-700 hover:text-black hover:underline">
+                TShirtBrothers.com — custom printing
+              </a>
+            </p>
             <p className="text-sm text-gray-600">6010 Renaissance Parkway<br />Fairburn, GA 30213</p>
             <p className="text-sm text-gray-500 mt-2">
               <a href="mailto:info@tshirtbrothers.com" className="hover:text-black">info@tshirtbrothers.com</a>
