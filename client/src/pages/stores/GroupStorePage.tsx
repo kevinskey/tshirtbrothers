@@ -2,7 +2,7 @@
 // header w/ cart chrome, big hero + Shop CTA, clean product grid.
 // The "empty" state still reads as a store: a launch banner with
 // email-notify signup and category-preview strip, not a lookbook.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
@@ -416,7 +416,7 @@ export default function GroupStorePage() {
                 {featuredProducts.length} {featuredProducts.length === 1 ? 'item' : 'items'}
               </span>
             </div>
-            <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x snap-mandatory [scrollbar-width:thin]">
+            <ShelfScroller primary={primary}>
               {featuredProducts.map((p) => (
                 <Link key={p.id} to={storeLink(slug, `/product/${p.slug}`)}
                   className="group block w-44 sm:w-56 lg:w-64 shrink-0 snap-start">
@@ -442,7 +442,7 @@ export default function GroupStorePage() {
                   </p>
                 </Link>
               ))}
-            </div>
+            </ShelfScroller>
           </div>
         </section>
       )}
@@ -754,12 +754,62 @@ function EmptyShopStrip({ primary, storeSlug }: { primary: string; storeSlug: st
   );
 }
 
+// Horizontal shelf scroller with big paddle arrows. The right arrow only
+// shows while there's more content off-screen; the left one appears once
+// the user has scrolled.
+function ShelfScroller({ children, primary }: { children: React.ReactNode; primary: string }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      setCanLeft(el.scrollLeft > 8);
+      setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(el);
+    return () => { el.removeEventListener('scroll', update); ro?.disconnect(); };
+  }, []);
+
+  const nudge = (dir: number) => {
+    const el = ref.current;
+    if (el) el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: 'smooth' });
+  };
+
+  const paddle = (dir: number, show: boolean) => show && (
+    <button
+      type="button"
+      aria-label={dir > 0 ? 'More products' : 'Back'}
+      onClick={() => nudge(dir)}
+      className={`absolute top-[38%] -translate-y-1/2 z-10 w-12 h-12 rounded-full text-white shadow-xl flex items-center justify-center transition-transform hover:scale-110 ${dir > 0 ? 'right-1' : 'left-1'}`}
+      style={{ background: primary }}
+    >
+      <ArrowRight className={`w-6 h-6 ${dir < 0 ? 'rotate-180' : ''}`} />
+    </button>
+  );
+
+  return (
+    <div className="relative">
+      <div ref={ref} className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x snap-mandatory [scrollbar-width:thin]">
+        {children}
+      </div>
+      {paddle(-1, canLeft)}
+      {paddle(1, canRight)}
+    </div>
+  );
+}
+
 // Single-row shelf: each collection renders as ONE horizontally
 // scrollable strip (snap scrolling), so the page reads as a vertical
 // stack of collections instead of tall wrapped grids.
 function ProductGrid({ products, slug, primary }: { products: StoreProduct[]; slug: string; primary: string }) {
   return (
-    <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x snap-mandatory [scrollbar-width:thin]">
+    <ShelfScroller primary={primary}>
       {products.map((p) => (
         <Link
           key={p.id}
@@ -789,6 +839,6 @@ function ProductGrid({ products, slug, primary }: { products: StoreProduct[]; sl
           </p>
         </Link>
       ))}
-    </div>
+    </ShelfScroller>
   );
 }
