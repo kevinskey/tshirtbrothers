@@ -31,6 +31,9 @@ interface StoreProfile {
       // lifestyle/mockup renders). When absent, falls back to video_url.
       media?: Array<{ type: 'image' | 'video'; url: string; poster?: string }>;
     };
+    // Declared collections, rendered as shelves in this order even when
+    // empty (products join a shelf via matching campaign_ref).
+    collections?: Array<{ key: string; title: string }>;
   };
   store_type: 'franchise' | 'group';
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
@@ -140,19 +143,37 @@ export default function GroupStorePage() {
     ? products.filter((p) => p.campaign_ref !== featured.key)
     : products;
 
-  // Group the main grid by collection (campaign_ref). Tagged collections
-  // render as titled sections; untagged products close out the page.
-  const collectionLabel = (key: string) =>
-    key.length <= 3 ? `The ${key.toUpperCase()} Collection`
+  // Group the main grid by collection (campaign_ref). Declared collections
+  // (brand_json.collections) render first in their configured order — even
+  // when empty — then any undeclared tags, then untagged products.
+  const declared = (store.brand_json.collections ?? []).filter((c) => c.key !== featured?.key);
+  const declaredTitle = new Map(declared.map((c) => [c.key, c.title]));
+  const collectionLabel = (key: string) => {
+    const t = declaredTitle.get(key);
+    if (t) return `The ${t} Collection`;
+    return key.length <= 3
+      ? `The ${key.toUpperCase()} Collection`
       : `The ${key.charAt(0).toUpperCase()}${key.slice(1).replace(/-/g, ' ')} Collection`;
-  const collections: Array<[string, StoreProduct[]]> = [];
+  };
+  const collections: Array<[string, StoreProduct[]]> = declared.map((c) => [c.key, []]);
   for (const p of regularProducts) {
     const key = p.campaign_ref ?? '';
     const hit = collections.find(([k]) => k === key);
     if (hit) hit[1].push(p);
     else collections.push([key, [p]]);
   }
-  collections.sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+  collections.sort(([a, ai], [b, bi]) => {
+    // Declared keep config order; undeclared tags after; untagged last.
+    const da = declared.findIndex((c) => c.key === a);
+    const db = declared.findIndex((c) => c.key === b);
+    if (da !== -1 && db !== -1) return da - db;
+    if (da !== -1) return -1;
+    if (db !== -1) return 1;
+    if (a === '') return 1;
+    if (b === '') return -1;
+    void ai; void bi;
+    return a.localeCompare(b);
+  });
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -445,11 +466,22 @@ export default function GroupStorePage() {
                   <h3 className="text-xl font-bold mb-6 flex items-baseline gap-3">
                     {key ? collectionLabel(key) : 'Everyday'}
                     <span className="text-xs font-normal text-gray-400">
-                      {items.length} {items.length === 1 ? 'item' : 'items'}
+                      {items.length > 0
+                        ? `${items.length} ${items.length === 1 ? 'item' : 'items'}`
+                        : 'coming soon'}
                     </span>
                   </h3>
                 )}
-                <ProductGrid products={items} slug={slug} primary={primary} />
+                {items.length > 0 ? (
+                  <ProductGrid products={items} slug={slug} primary={primary} />
+                ) : (
+                  <div
+                    className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-gray-500"
+                    style={{ borderColor: tint(primary, 0.35), background: tint(primary, 0.04) }}
+                  >
+                    First drop in the works — check back soon.
+                  </div>
+                )}
               </div>
             ))}
           </div>
