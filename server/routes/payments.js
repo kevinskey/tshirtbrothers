@@ -12,6 +12,7 @@ import {
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import { parcelOunces, rateForOunces } from '../lib/shippingRates.js';
 
 const router = Router();
 
@@ -430,9 +431,11 @@ router.post('/create-store-checkout', async (req, res, next) => {
       `SELECT sp.id AS product_id, sp.store_id, sp.title, sp.slug, sp.cover_image,
               sp.retail_price_cents, sp.is_active,
               sp.opens_at, sp.closes_at,
-              s.name AS store_name, s.slug AS store_slug
+              s.name AS store_name, s.slug AS store_slug, s.fulfillment_mode,
+              p.weight_oz
          FROM store_products sp
          JOIN stores s ON s.id = sp.store_id
+         LEFT JOIN products p ON p.ss_id = sp.tsb_blank_ss_id
         WHERE s.status = 'active'
           AND (s.slug = $1 OR lower(s.subdomain) = lower($1))
           AND sp.slug = $2`,
@@ -456,8 +459,39 @@ router.post('/create-store-checkout', async (req, res, next) => {
       ? Object.entries(variant).map(([k, v]) => `${k}: ${v}`).join(', ')
       : null;
 
+    // Weight-based shipping: parcel weight from the blank's S&S weight
+    // (backfilled into products.weight_oz) × qty + packaging, mapped to
+    // a rate tier. Pickup-capable stores also offer a free pickup option.
+    const totalOz = parcelOunces([{ weightOz: product.weight_oz, qty }]);
+    const rate = rateForOunces(totalOz);
+    const shippingOptions = [];
+    if (product.fulfillment_mode !== 'pickup_only') {
+      shippingOptions.push({
+        shipping_rate_data: {
+          type: 'fixed_amount',
+          fixed_amount: { amount: rate.cents, currency: 'usd' },
+          display_name: rate.label,
+          delivery_estimate: {
+            minimum: { unit: 'business_day', value: 3 },
+            maximum: { unit: 'business_day', value: 7 },
+          },
+        },
+      });
+    }
+    if (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both') {
+      shippingOptions.push({
+        shipping_rate_data: {
+          type: 'fixed_amount',
+          fixed_amount: { amount: 0, currency: 'usd' },
+          display_name: 'Free local pickup (Fairburn, GA)',
+        },
+      });
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
+      shipping_address_collection: { allowed_countries: ['US'] },
+      shipping_options: shippingOptions,
       line_items: [
         {
           price_data: {
