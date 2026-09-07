@@ -140,6 +140,20 @@ export default function GroupStorePage() {
     ? products.filter((p) => p.campaign_ref !== featured.key)
     : products;
 
+  // Group the main grid by collection (campaign_ref). Tagged collections
+  // render as titled sections; untagged products close out the page.
+  const collectionLabel = (key: string) =>
+    key.length <= 3 ? `The ${key.toUpperCase()} Collection`
+      : `The ${key.charAt(0).toUpperCase()}${key.slice(1).replace(/-/g, ' ')} Collection`;
+  const collections: Array<[string, StoreProduct[]]> = [];
+  for (const p of regularProducts) {
+    const key = p.campaign_ref ?? '';
+    const hit = collections.find(([k]) => k === key);
+    if (hit) hit[1].push(p);
+    else collections.push([key, [p]]);
+  }
+  collections.sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
       <Seo
@@ -423,7 +437,21 @@ export default function GroupStorePage() {
         {isEmpty ? (
           <EmptyShopStrip primary={primary} storeSlug={store.slug} />
         ) : (
-          <ProductGrid products={regularProducts} slug={slug} primary={primary} />
+          <div className="space-y-14">
+            {collections.map(([key, items]) => (
+              <div key={key || 'general'}>
+                {(collections.length > 1 || key !== '') && (
+                  <h3 className="text-xl font-bold mb-6 flex items-baseline gap-3">
+                    {key ? collectionLabel(key) : 'Everyday'}
+                    <span className="text-xs font-normal text-gray-400">
+                      {items.length} {items.length === 1 ? 'item' : 'items'}
+                    </span>
+                  </h3>
+                )}
+                <ProductGrid products={items} slug={slug} primary={primary} />
+              </div>
+            ))}
+          </div>
         )}
       </section>
 
