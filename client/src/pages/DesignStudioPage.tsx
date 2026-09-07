@@ -1978,9 +1978,11 @@ export default function DesignStudioPage() {
     // Belt-and-suspenders: always close the Upload panel so the canvas is
     // visible immediately.
     setActiveTool(null);
-    // Save to user's upload library if logged in
+    // Save to user's upload library if logged in. Skip images that are
+    // already hosted URLs (re-picked library items) — resaving them sent
+    // the URL string through base64 decoding and stored garbage.
     const token = getAuthToken();
-    if (token) {
+    if (token && !/^https?:\/\//i.test(imageUrl)) {
       try {
         const res = await fetch('/api/designs/uploads', {
           method: 'POST',
@@ -2085,20 +2087,28 @@ export default function DesignStudioPage() {
     showDebugToast('Rm BG: starting (upload flow)...');
 
     try {
-      // Upload to DO Spaces first so the /remove-bg call passes a tiny
-      // imageUrl instead of a multi-MB base64 body.
-      let bgBody: Record<string, string> = { imageBase64: original };
-      try {
-        const up = await fetch('/api/quotes/upload-design', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageBase64: original, filename: 'studio-upload.png', customerEmail: 'studio-anonymous' }),
-        });
-        if (up.ok) {
-          const d = await up.json();
-          if (d.url) bgBody = { imageUrl: d.url };
-        }
-      } catch { /* fall back to base64 */ }
+      // Re-picked library thumbnails hold a hosted https URL, not base64 —
+      // sending one through the imageBase64 path made the server base64-
+      // decode the URL string into a 75-byte garbage "PNG". Pass URLs
+      // straight to /remove-bg as imageUrl instead.
+      let bgBody: Record<string, string> = /^https?:\/\//i.test(original)
+        ? { imageUrl: original }
+        : { imageBase64: original };
+      // Upload base64 to DO Spaces first so the /remove-bg call passes a
+      // tiny imageUrl instead of a multi-MB base64 body.
+      if (bgBody.imageBase64) {
+        try {
+          const up = await fetch('/api/quotes/upload-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: original, filename: 'studio-upload.png', customerEmail: 'studio-anonymous' }),
+          });
+          if (up.ok) {
+            const d = await up.json();
+            if (d.url) bgBody = { imageUrl: d.url };
+          }
+        } catch { /* fall back to base64 */ }
+      }
 
       showDebugToast(bgBody.imageUrl ? 'Rm BG: uploaded, calling Replicate...' : 'Rm BG: calling Replicate (base64)...');
       const res = await fetch('/api/design/remove-bg', {
