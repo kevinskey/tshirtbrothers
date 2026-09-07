@@ -4021,7 +4021,9 @@ export default function DesignStudioPage() {
               under ?canvas=fabric — the Fabric canvas paints its own
               background and we don't want a stray overlay catching clicks.
               Anchor the rectangle where the print will actually land:
-                front  → ~3in below the collar (t-shirts, hoodies, sweatshirts)
+                front  → chest, below the collar — but hooded styles photo
+                         with the hood + drawcords eating the top third, so
+                         their chest zone starts markedly lower
                 back   → ~5in below the collar
                 sleeve → centered on the sleeve
               Approximations assume a standard adult shirt ~28in tall,
@@ -4031,7 +4033,13 @@ export default function DesignStudioPage() {
             <div
               className="absolute inset-x-0 flex justify-center pointer-events-none"
               style={{
-                top: currentView === 'sleeve' ? '45%' : currentView === 'back' ? '25%' : '18%',
+                top: currentView === 'sleeve'
+                  ? '45%'
+                  : currentView === 'back'
+                    ? '25%'
+                    : /hood/i.test(`${selectedProduct?.category ?? ''} ${selectedProduct?.name ?? ''}`)
+                      ? '34%'
+                      : '18%',
               }}
             >
               <div className="border-2 border-dashed border-gray-300 rounded-xl w-[28%] aspect-[3/2] flex flex-col items-center justify-center gap-1">
