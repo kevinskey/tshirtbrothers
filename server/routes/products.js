@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { fetchProducts as fetchSSProducts } from '../services/ssActivewear.js';
+import { expandRetailCategory, groupIntoRetailCategories } from '../lib/retailCategories.js';
 
 const router = Router();
 
@@ -133,8 +134,16 @@ router.get('/', async (req, res, next) => {
         }
       }
       if (category) {
-        conditions.push(`category ILIKE $${paramIndex}`);
-        params.push(`%${category}%`);
+        // Retail labels ("Hoodies") expand to the raw S&S categories they
+        // cover; anything else falls back to the old fuzzy raw match.
+        const rawSet = expandRetailCategory(category);
+        if (rawSet) {
+          conditions.push(`category = ANY($${paramIndex})`);
+          params.push(rawSet);
+        } else {
+          conditions.push(`category ILIKE $${paramIndex}`);
+          params.push(`%${category}%`);
+        }
         paramIndex++;
       }
       if (brand) {
@@ -190,7 +199,10 @@ router.get('/', async (req, res, next) => {
       styles = styles.filter(s => s.brand === brand);
     }
     if (category) {
-      styles = styles.filter(s => s.category?.toLowerCase().includes(category.toLowerCase()));
+      const rawSet = expandRetailCategory(category);
+      styles = rawSet
+        ? styles.filter(s => rawSet.includes(s.category))
+        : styles.filter(s => s.category?.toLowerCase().includes(category.toLowerCase()));
     }
 
     const total = styles.length;
@@ -308,7 +320,7 @@ router.get('/filters', async (req, res, next) => {
     ]);
     res.json({
       brands: brandsResult.rows.map(r => r.brand),
-      categories: categoriesResult.rows.map(r => r.category),
+      categories: groupIntoRetailCategories(categoriesResult.rows.map(r => r.category)),
     });
   } catch (err) {
     next(err);
