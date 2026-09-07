@@ -13,19 +13,29 @@ export const PACKAGING_OZ = 4;
 export const DEFAULT_ITEM_OZ = 8;
 
 const TIERS = [
-  { maxOz: 8,   cents: 495,  label: 'USPS Ground (up to 8 oz)' },
-  { maxOz: 16,  cents: 695,  label: 'USPS Ground (up to 1 lb)' },
-  { maxOz: 32,  cents: 995,  label: 'USPS Ground (up to 2 lb)' },
-  { maxOz: 80,  cents: 1295, label: 'USPS Ground (up to 5 lb)' },
-  { maxOz: 160, cents: 1795, label: 'USPS Ground (up to 10 lb)' },
+  { maxOz: 8,   ground: 495,  priority: 895,  express: 2495 },
+  { maxOz: 16,  ground: 695,  priority: 995,  express: 2795 },
+  { maxOz: 32,  ground: 995,  priority: 1295, express: 3295 },
+  { maxOz: 80,  ground: 1295, priority: 1795, express: 4495 },
+  { maxOz: 160, ground: 1795, priority: 2495, express: 5995 },
 ];
-const OVERWEIGHT = { cents: 2495, label: 'Ground freight (over 10 lb)' };
+const OVERWEIGHT = { ground: 2495, priority: 3495, express: 7995 };
 
 export function rateForOunces(totalOz) {
-  for (const t of TIERS) {
-    if (totalOz <= t.maxOz) return { cents: t.cents, label: t.label };
-  }
-  return OVERWEIGHT;
+  const t = TIERS.find((x) => totalOz <= x.maxOz) ?? OVERWEIGHT;
+  return { cents: t.ground, label: 'USPS Ground' };
+}
+
+// Speed choices for checkout, cheapest first — all derived from the
+// same weight tier. Not live carrier quotes: Stripe hosted checkout
+// fixes shipping options before the address is known.
+export function shippingChoicesForOunces(totalOz) {
+  const t = TIERS.find((x) => totalOz <= x.maxOz) ?? OVERWEIGHT;
+  return [
+    { cents: t.ground,   label: 'USPS Ground',        minDays: 3, maxDays: 7 },
+    { cents: t.priority, label: 'USPS Priority Mail', minDays: 2, maxDays: 3 },
+    { cents: t.express,  label: 'Express (UPS 2nd Day Air)', minDays: 1, maxDays: 2 },
+  ];
 }
 
 // Total parcel weight for a cart of { weightOz|null, qty } lines.
