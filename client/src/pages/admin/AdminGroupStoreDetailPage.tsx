@@ -10,6 +10,7 @@ import {
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
   setGroupStoreProductActive, deleteGroupStoreProduct,
   uploadGroupStoreMockup, updateGroupStoreProduct,
+  fetchGroupStoreCoupons, createGroupStoreCoupon, deactivateGroupStoreCoupon, type StoreCoupon,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
   deleteGroupStore,
@@ -300,6 +301,8 @@ export default function AdminGroupStoreDetailPage() {
             )}
           </div>
         </section>
+
+        <CouponsSection storeId={storeId} />
 
         <PendingDesignsSection storeId={storeId} />
       </main>
@@ -797,6 +800,157 @@ function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => voi
 }
 
 // ── Mockup picker + publish form ─────────────────────────────────────────
+// ── Coupons ──────────────────────────────────────────────────────────────
+// Stripe promotion codes scoped to this store. Buyers enter the code on
+// the Stripe checkout page ("Add promotion code" link).
+function CouponsSection({ storeId }: { storeId: number }) {
+  const [coupons, setCoupons] = useState<StoreCoupon[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [code, setCode] = useState('');
+  const [kind, setKind] = useState<'percent' | 'amount'>('percent');
+  const [value, setValue] = useState('10');
+  const [maxRedemptions, setMaxRedemptions] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const d = await fetchGroupStoreCoupons(storeId);
+      setCoupons(d.coupons);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+
+  const create = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const v = parseFloat(value || '0');
+      await createGroupStoreCoupon(storeId, {
+        code,
+        ...(kind === 'percent' ? { percent_off: v } : { amount_off_cents: Math.round(v * 100) }),
+        ...(maxRedemptions ? { max_redemptions: parseInt(maxRedemptions, 10) } : {}),
+        ...(expiresAt ? { expires_at: expiresAt } : {}),
+      });
+      toast.success(`Coupon ${code.toUpperCase()} created`);
+      setCode(''); setValue(kind === 'percent' ? '10' : '5'); setMaxRedemptions(''); setExpiresAt('');
+      void load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-gray-900 mb-3">Coupons</h2>
+      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <form onSubmit={create} className="p-4 border-b border-gray-100 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+          <div className="col-span-2 md:col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Code</label>
+            <input required value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+              placeholder="SPOOKY10"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Type</label>
+            <select value={kind} onChange={(e) => setKind(e.target.value as 'percent' | 'amount')}
+              className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm">
+              <option value="percent">% off</option>
+              <option value="amount">$ off</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">{kind === 'percent' ? 'Percent' : 'Dollars'}</label>
+            <input required type="number" min="0.01" step={kind === 'percent' ? '1' : '0.01'}
+              max={kind === 'percent' ? 100 : undefined}
+              value={value} onChange={(e) => setValue(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Max uses</label>
+            <input type="number" min="1" value={maxRedemptions} onChange={(e) => setMaxRedemptions(e.target.value)}
+              placeholder="∞"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-xs text-gray-500 mb-1">Expires</label>
+              <input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-2 py-2 text-sm" />
+            </div>
+            <button type="submit" disabled={busy}
+              className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+              {busy ? '…' : 'Create'}
+            </button>
+          </div>
+        </form>
+
+        {loading ? (
+          <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin text-gray-400 mx-auto" /></div>
+        ) : coupons.length === 0 ? (
+          <p className="p-6 text-sm text-gray-500 text-center">
+            No coupons yet. Codes are redeemed on the Stripe checkout page via "Add promotion code."
+          </p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+              <tr>
+                <th className="px-4 py-3 text-left">Code</th>
+                <th className="px-4 py-3 text-left">Discount</th>
+                <th className="px-4 py-3 text-left">Used</th>
+                <th className="px-4 py-3 text-left">Expires</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {coupons.map((c) => (
+                <tr key={c.id}>
+                  <td className="px-4 py-3 font-mono font-semibold">{c.code}</td>
+                  <td className="px-4 py-3">
+                    {c.percent_off != null ? `${c.percent_off}% off` : `$${((c.amount_off_cents ?? 0) / 100).toFixed(2)} off`}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600">
+                    {c.times_redeemed}{c.max_redemptions ? ` / ${c.max_redemptions}` : ''}
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">
+                    {c.expires_at ? new Date(c.expires_at).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
+                      c.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                    }`}>{c.active ? 'Active' : 'Off'}</span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {c.active && (
+                      <button className="text-gray-400 hover:text-red-600" title="Deactivate coupon"
+                        onClick={async () => {
+                          if (!confirm(`Deactivate ${c.code}?`)) return;
+                          try {
+                            await deactivateGroupStoreCoupon(storeId, c.id);
+                            toast.success(`${c.code} deactivated`);
+                            void load();
+                          } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+                        }}>
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
 // ── Edit product modal ───────────────────────────────────────────────────
 // Title, pricing, description, sizes/colors, collection tag, cover photo.
 function EditProductModal({ storeId, storeSlug, product, onClose, onSaved }: {

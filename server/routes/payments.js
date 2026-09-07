@@ -491,6 +491,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
+      allow_promotion_codes: true,
       shipping_address_collection: { allowed_countries: ['US'] },
       shipping_options: shippingOptions,
       line_items: [
