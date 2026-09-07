@@ -21,6 +21,13 @@ interface StoreProfile {
     footer_note?: string;
     hero_url?: string;
     tagline?: string;
+    featured_collection?: {
+      key: string;          // matches store_products.campaign_ref
+      title: string;
+      subtitle?: string;
+      video_url?: string;   // autoplaying hero loop
+      poster_url?: string;  // first frame / fallback image
+    };
   };
   store_type: 'franchise' | 'group';
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
@@ -49,6 +56,7 @@ interface StoreProduct {
   cover_image: string | null;
   retail_price_cents: number;
   variants_json: { sizes?: string[]; colors?: string[] };
+  campaign_ref: string | null;
 }
 
 function usd(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
@@ -117,6 +125,17 @@ export default function GroupStorePage() {
 
   const primary = store.brand_json.primary_color || '#111827';
   const isEmpty = products.length === 0;
+
+  // Featured collection: brand_json names it, products opt in via campaign_ref.
+  // Only feature it when at least one live product carries the tag.
+  const featuredCfg = store.brand_json.featured_collection;
+  const featuredProducts = featuredCfg
+    ? products.filter((p) => p.campaign_ref === featuredCfg.key)
+    : [];
+  const featured = featuredCfg && featuredProducts.length > 0 ? featuredCfg : null;
+  const regularProducts = featured
+    ? products.filter((p) => p.campaign_ref !== featured.key)
+    : products;
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
@@ -200,14 +219,27 @@ export default function GroupStorePage() {
                 <Target className="w-3.5 h-3.5" /> Fundraiser
               </span>
             )}
+            {featured && (
+              <span
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider"
+                style={{ background: tint(primary, 0.18), color: primary }}
+              >
+                <Star className="w-3.5 h-3.5" /> Featured drop
+              </span>
+            )}
 
             <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]">
-              {isEmpty ? 'The first drop is on the way.' : `Shop official ${store.name} merch.`}
+              {isEmpty
+                ? 'The first drop is on the way.'
+                : featured
+                  ? featured.title
+                  : `Shop official ${store.name} merch.`}
             </h1>
             <p className="mt-5 text-lg text-gray-600 max-w-xl">
               {isEmpty
                 ? `We're printing the first collection right now. Drop your email and be the first to know when it goes live.`
-                : store.brand_json.tagline
+                : featured?.subtitle
+                  || store.brand_json.tagline
                   || `Official merchandise for ${store.name}. Designed and screenprinted by TShirt Brothers in Fairburn, GA.`}
             </p>
 
@@ -216,15 +248,15 @@ export default function GroupStorePage() {
                 <NotifyForm primary={primary} storeSlug={store.slug} />
               ) : (
                 <>
-                  <a href="#shop"
+                  <a href={featured ? '#featured' : '#shop'}
                     className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-white font-semibold shadow-sm hover:opacity-90"
                     style={{ background: primary }}
                   >
-                    Shop the collection <ArrowRight className="w-4 h-4" />
+                    {featured ? `Shop ${featured.title}` : 'Shop the collection'} <ArrowRight className="w-4 h-4" />
                   </a>
-                  <a href="#about"
+                  <a href={featured ? '#shop' : '#about'}
                     className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full border border-gray-300 font-semibold hover:border-gray-900">
-                    Learn more
+                    {featured ? 'Shop everything' : 'Learn more'}
                   </a>
                 </>
               )}
@@ -243,7 +275,16 @@ export default function GroupStorePage() {
 
           {/* Hero visual */}
           <div className="relative">
-            {store.brand_json.hero_url ? (
+            {featured?.video_url ? (
+              <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none bg-black">
+                <video
+                  src={featured.video_url}
+                  poster={featured.poster_url}
+                  autoPlay muted loop playsInline
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : store.brand_json.hero_url ? (
               <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none">
                 <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
               </div>
@@ -285,6 +326,52 @@ export default function GroupStorePage() {
         </div>
       </section>
 
+      {/* ── FEATURED COLLECTION ──────────────────────────────────────── */}
+      {featured && (
+        <section id="featured" className="bg-gray-950 text-white">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16">
+            <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: primary }}>
+                  Featured collection
+                </p>
+                <h2 className="text-3xl md:text-4xl font-bold mt-1">{featured.title}</h2>
+                {featured.subtitle && <p className="mt-2 text-gray-400 max-w-2xl">{featured.subtitle}</p>}
+              </div>
+              <span className="text-sm text-gray-400">
+                {featuredProducts.length} {featuredProducts.length === 1 ? 'item' : 'items'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+              {featuredProducts.map((p) => (
+                <Link key={p.id} to={storeLink(slug, `/product/${p.slug}`)} className="group block">
+                  <div className="aspect-square rounded-xl overflow-hidden bg-gray-900 border border-gray-800">
+                    {p.cover_image ? (
+                      <img
+                        src={p.cover_image}
+                        alt={p.title}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <ShoppingBag className="w-10 h-10 text-gray-700" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex items-start justify-between gap-3">
+                    <h3 className="font-semibold line-clamp-2 leading-tight">{p.title}</h3>
+                    <p className="font-bold shrink-0">{usd(p.retail_price_cents)}</p>
+                  </div>
+                  <p className="mt-1 text-xs font-semibold group-hover:underline" style={{ color: primary }}>
+                    Shop now →
+                  </p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ── FUNDRAISER (if applicable) ───────────────────────────────── */}
       {store.is_fundraiser && (
         <section id="fundraiser" className="max-w-7xl mx-auto px-4 sm:px-6 pt-16">
@@ -321,17 +408,19 @@ export default function GroupStorePage() {
         <div className="flex items-end justify-between mb-8">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Shop</p>
-            <h2 className="text-3xl font-bold mt-1">{isEmpty ? 'The first collection is coming' : 'The collection'}</h2>
+            <h2 className="text-3xl font-bold mt-1">
+              {isEmpty ? 'The first collection is coming' : featured ? 'More from the store' : 'The collection'}
+            </h2>
           </div>
           {!isEmpty && (
-            <span className="text-sm text-gray-500">{products.length} {products.length === 1 ? 'item' : 'items'}</span>
+            <span className="text-sm text-gray-500">{regularProducts.length} {regularProducts.length === 1 ? 'item' : 'items'}</span>
           )}
         </div>
 
         {isEmpty ? (
           <EmptyShopStrip primary={primary} storeSlug={store.slug} />
         ) : (
-          <ProductGrid products={products} slug={slug} primary={primary} />
+          <ProductGrid products={regularProducts} slug={slug} primary={primary} />
         )}
       </section>
 
