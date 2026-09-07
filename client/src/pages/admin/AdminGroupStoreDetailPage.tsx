@@ -1,13 +1,13 @@
 // TSB-internal detail page for one group store. Shows/edits the store,
 // lists products, and offers an S&S catalog picker to publish new
 // products. Route: /admin/group-stores/:id.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangle } from 'lucide-react';
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
-  searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin,
+  searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
   deleteGroupStore,
@@ -325,7 +325,14 @@ function htmlToPlainText(html: string | null | undefined): string {
 // Normalize S&S sizes/colors that may arrive as [] / [""] / strings.
 function cleanList(x: unknown): string[] {
   if (!Array.isArray(x)) return [];
-  return x.map((v) => String(v).trim()).filter(Boolean);
+  return x
+    .map((v) => {
+      // Colors are stored as { name, hex, swatch, image } objects; sizes
+      // as plain strings. Accept both so neither renders "[object Object]".
+      if (v && typeof v === 'object' && 'name' in v) return String((v as { name: unknown }).name).trim();
+      return String(v).trim();
+    })
+    .filter((v) => Boolean(v) && v !== '[object Object]');
 }
 
 // Reusable pill toggle. Selected state uses filled dark; unselected is
@@ -345,25 +352,75 @@ function PillToggle({ label, active, onClick }: { label: string; active: boolean
 function PublishProductForm({ storeId, item, onClose, onAdded }: {
   storeId: number; item: SsCatalogItem; onClose: () => void; onAdded: () => void;
 }) {
-  const baseCostCents = Math.round(Number(item.base_cost || 0) * 100);
-  const availableSizes  = useMemo(() => cleanList(item.sizes),  [item.sizes]);
-  const availableColors = useMemo(() => cleanList(item.colors), [item.colors]);
-  const fallbackSizes   = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+  const itemBaseCostCents = Math.round(Number(item.base_cost || 0) * 100);
+  const itemSizes  = useMemo(() => cleanList(item.sizes),  [item.sizes]);
+  const itemColors = useMemo(() => cleanList(item.colors), [item.colors]);
+  const fallbackSizes = ['S', 'M', 'L', 'XL', '2XL', '3XL'];
+
+  // Live enrichment: the picker row comes from the products table, whose
+  // nightly sync doesn't carry SKU-level data — most styles have empty
+  // colors/sizes and a $0 blank cost. Pull the real SKU list from S&S
+  // on demand (the server heals the products row as a side effect).
+  const [liveSizes, setLiveSizes] = useState<string[]>([]);
+  const [liveColors, setLiveColors] = useState<string[]>([]);
+  const [liveBaseCostCents, setLiveBaseCostCents] = useState<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const availableSizes  = itemSizes.length > 0 ? itemSizes : liveSizes;
+  const availableColors = itemColors.length > 0 ? itemColors : liveColors;
+  const baseCostCents   = itemBaseCostCents > 0 ? itemBaseCostCents : (liveBaseCostCents ?? 0);
   const sizeOptions     = availableSizes.length > 0 ? availableSizes : fallbackSizes;
 
   const [title, setTitle] = useState(item.name);
   const [slug, setSlug] = useState(item.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
-  const [retailDollars, setRetailDollars] = useState(((baseCostCents + 900) / 100).toFixed(2));
+  const [retailDollars, setRetailDollars] = useState(((itemBaseCostCents + 900) / 100).toFixed(2));
+  const retailTouched = useRef(false);
   const [decorationDollars, setDecorationDollars] = useState('5.00');
   const [description, setDescription] = useState(() => htmlToPlainText(item.description_html));
   const [minQty, setMinQty] = useState(1);
   const [sizes, setSizes] = useState<string[]>(() =>
-    availableSizes.length > 0
-      ? availableSizes.filter((s) => ['S', 'M', 'L', 'XL', '2XL'].includes(s.toUpperCase()))
+    itemSizes.length > 0
+      ? itemSizes.filter((s) => ['S', 'M', 'L', 'XL', '2XL'].includes(s.toUpperCase()))
       : ['S', 'M', 'L', 'XL'],
   );
   const [colors, setColors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (itemSizes.length > 0 && itemColors.length > 0 && itemBaseCostCents > 0) return;
+    let cancelled = false;
+    setDetailLoading(true);
+    fetchSsStyleDetail(item.ss_id)
+      .then((d) => {
+        if (cancelled) return;
+        const dSizes = cleanList(d.sizes);
+        const dColors = cleanList(d.colors);
+        setLiveSizes(dSizes);
+        setLiveColors(dColors);
+        const cost = Math.round(Number(d.base_cost || 0) * 100);
+        if (cost > 0) {
+          setLiveBaseCostCents(cost);
+          // Re-derive the suggested retail (blank + $9) if the admin
+          // hasn't typed their own price yet.
+          if (itemBaseCostCents <= 0 && !retailTouched.current) {
+            setRetailDollars(((cost + 900) / 100).toFixed(2));
+          }
+        }
+        // Seed the size selection from the real size run if the form
+        // started on fallbacks and the admin hasn't toggled anything.
+        if (itemSizes.length === 0 && dSizes.length > 0) {
+          setSizes((prev) =>
+            prev.join('|') === 'S|M|L|XL'
+              ? dSizes.filter((s) => ['S', 'M', 'L', 'XL', '2XL'].includes(s.toUpperCase()))
+              : prev.filter((s) => dSizes.includes(s)),
+          );
+        }
+      })
+      .catch(() => { /* fall back to manual entry — warnings below cover it */ })
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.ss_id]);
 
   const margin = useMemo(() => {
     const r = Math.round(parseFloat(retailDollars || '0') * 100);
@@ -448,7 +505,7 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                   <input required type="number" step="0.01" value={retailDollars}
-                    onChange={(e) => setRetailDollars(e.target.value)}
+                    onChange={(e) => { retailTouched.current = true; setRetailDollars(e.target.value); }}
                     className="w-full pl-6 pr-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 focus:outline-none" />
                 </div>
               </div>
@@ -490,7 +547,9 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
             </div>
             {availableSizes.length === 0 && (
               <p className="mt-2 text-[11px] text-amber-600">
-                S&S didn't return specific sizes for this style — fallbacks shown. Verify with the S&S catalog before publishing.
+                {detailLoading
+                  ? 'Fetching the size run from S&S…'
+                  : "S&S didn't return specific sizes for this style — fallbacks shown. Verify with the S&S catalog before publishing."}
               </p>
             )}
           </section>
@@ -516,7 +575,9 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
                   placeholder="Type colors, comma-separated"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
                 <p className="mt-1 text-[11px] text-amber-600">
-                  S&S didn't return colors for this style — enter them manually.
+                  {detailLoading
+                    ? 'Fetching colors from S&S…'
+                    : "S&S didn't return colors for this style — enter them manually."}
                 </p>
               </div>
             )}
