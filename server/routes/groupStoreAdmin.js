@@ -48,10 +48,12 @@ function hashCode(code) {
 }
 
 async function findGroupStore(slug) {
+  // Accept either the store slug or its subdomain — on
+  // <sub>.tshirtbrothers.com the client passes the subdomain label.
   const { rows } = await pool.query(
     `SELECT id, slug, name, store_type, status
        FROM stores
-      WHERE slug = $1`,
+      WHERE slug = $1 OR lower(subdomain) = lower($1)`,
     [slug],
   );
   const s = rows[0];
