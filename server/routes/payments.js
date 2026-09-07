@@ -430,7 +430,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
     // <sub>.tshirtbrothers.com works without special-casing.
     const q = await pool.query(
       `SELECT sp.id AS product_id, sp.store_id, sp.title, sp.slug, sp.cover_image,
-              sp.retail_price_cents, sp.is_active,
+              sp.retail_price_cents, sp.is_active, sp.campaign_ref,
               sp.opens_at, sp.closes_at,
               s.name AS store_name, s.slug AS store_slug, s.fulfillment_mode,
               p.weight_oz
@@ -459,6 +459,46 @@ router.post('/create-store-checkout', async (req, res, next) => {
     const variantSummary = variant && typeof variant === 'object'
       ? Object.entries(variant).map(([k, v]) => `${k}: ${v}`).join(', ')
       : null;
+
+    // ── Upsells ─────────────────────────────────────────────────────────
+    // Up to two cheaper companions from the same store (same collection
+    // first) offered as Stripe optional_items under the order summary.
+    // optional_items needs real Price objects, so each upsell product
+    // caches a Stripe Price (re-minted when its retail changes).
+    let upsells = [];
+    try {
+      const { rows: candidates } = await pool.query(
+        `SELECT sp.id, sp.title, sp.cover_image, sp.retail_price_cents,
+                sp.stripe_price_id, sp.stripe_price_cents
+           FROM store_products sp
+          WHERE sp.store_id = $1 AND sp.is_active AND sp.id <> $2
+            AND sp.retail_price_cents < $3
+          ORDER BY (sp.campaign_ref IS NOT DISTINCT FROM $4) DESC,
+                   sp.retail_price_cents ASC
+          LIMIT 2`,
+        [product.store_id, product.product_id, product.retail_price_cents,
+         product.campaign_ref ?? null],
+      );
+      for (const u of candidates) {
+        let priceId = u.stripe_price_id;
+        if (!priceId || u.stripe_price_cents !== u.retail_price_cents) {
+          const price = await stripe.prices.create({
+            unit_amount: u.retail_price_cents,
+            currency: 'usd',
+            product_data: { name: u.title },
+          });
+          priceId = price.id;
+          await pool.query(
+            `UPDATE store_products SET stripe_price_id = $1, stripe_price_cents = $2 WHERE id = $3`,
+            [priceId, u.retail_price_cents, u.id],
+          );
+        }
+        upsells.push({ store_product_id: u.id, price_id: priceId });
+      }
+    } catch (err) {
+      console.error('[create-store-checkout] upsell prep failed (continuing without):', err.message);
+      upsells = [];
+    }
 
     // Weight-based shipping: parcel weight from the blank's S&S weight
     // (backfilled into products.weight_oz) × qty + packaging, mapped to
@@ -490,7 +530,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
       });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams = {
       payment_method_types: ['card'],
       allow_promotion_codes: true,
       shipping_address_collection: { allowed_countries: ['US'] },
@@ -524,8 +564,34 @@ router.post('/create-store-checkout', async (req, res, next) => {
         product_slug,
         qty: String(qty),
         ...(variant ? { variant: JSON.stringify(variant).slice(0, 500) } : {}),
+        ...(upsells.length
+          ? { upsell_map: JSON.stringify(Object.fromEntries(upsells.map((u) => [u.price_id, u.store_product_id]))).slice(0, 500) }
+          : {}),
       },
-    });
+    };
+
+    // optional_items (Stripe's native checkout upsell) needs a newer API
+    // version than the SDK default. Try with it; if the account/API
+    // rejects the parameter or version, retry as a plain session.
+    let session;
+    if (upsells.length) {
+      try {
+        session = await stripe.checkout.sessions.create(
+          {
+            ...sessionParams,
+            optional_items: upsells.map((u) => ({
+              price: u.price_id,
+              quantity: 1,
+              adjustable_quantity: { enabled: true, maximum: 10 },
+            })),
+          },
+          { apiVersion: '2025-03-31.basil' },
+        );
+      } catch (err) {
+        console.error('[create-store-checkout] optional_items unsupported, retrying without:', err.message);
+      }
+    }
+    if (!session) session = await stripe.checkout.sessions.create(sessionParams);
 
     res.json({ checkoutUrl: session.url, sessionId: session.id });
   } catch (err) {
