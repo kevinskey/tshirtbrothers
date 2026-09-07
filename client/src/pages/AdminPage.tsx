@@ -1086,6 +1086,22 @@ export default function AdminPage() {
     enabled: activeSection === 'mockups',
   });
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
+  // Default decoration placement per garment type, in % of the product
+  // photo — chest for tees/fleece, front panel for headwear, left chest
+  // for polos/outerwear. Seeded when a product is picked; the sliders
+  // still allow free adjustment afterwards.
+  const defaultPlacementFor = (category?: string | null, name?: string | null) => {
+    const c = (category || '').toLowerCase();
+    const n = (name || '').toLowerCase();
+    if (c.includes('headwear') || /\bcaps?\b|\bhats?\b|beanie|visor/.test(n)) return { x: 36, y: 34, width: 28 };
+    if (c.includes('hood')) return { x: 34, y: 30, width: 32 };
+    if (c.includes('fleece') && c.includes('crew')) return { x: 32, y: 28, width: 36 };
+    if (c.includes('polos') || c.includes('outerwear') || c.includes('wovens')) return { x: 56, y: 26, width: 14 };
+    if (c.includes('bags')) return { x: 33, y: 36, width: 34 };
+    if (c.includes('bottoms')) return { x: 55, y: 18, width: 12 };
+    if (c.includes('t-shirts')) return { x: 32, y: 26, width: 36 };
+    return { x: 35, y: 30, width: 30 };
+  };
   const [mockupForm, setMockupForm] = useState<{
     name: string;
     customer_id: string;
@@ -6066,7 +6082,7 @@ export default function AdminPage() {
                                   <button
                                     key={p.id}
                                     type="button"
-                                    onClick={() => { setMockupForm((f) => ({ ...f, product_id: String(p.id) })); setMockupProductSearch(''); }}
+                                    onClick={() => { setMockupForm((f) => ({ ...f, product_id: String(p.id), placement: defaultPlacementFor(p.category, p.name) })); setMockupProductSearch(''); }}
                                     className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50"
                                   >
                                     {p.image_url && <img src={p.image_url} alt="" className="w-8 h-8 object-contain rounded" />}
