@@ -30,7 +30,8 @@ export async function storeAdminSession(req, res, next) {
     const { rows } = await pool.query(
       `SELECT s.id AS session_id, s.store_id, s.admin_id, s.expires_at, s.revoked_at,
               a.email, a.name, a.role,
-              st.slug AS store_slug, st.status AS store_status
+              st.slug AS store_slug, st.subdomain AS store_subdomain,
+              st.status AS store_status
          FROM store_admin_sessions s
          JOIN store_admins a       ON a.id  = s.admin_id
          JOIN stores       st      ON st.id = s.store_id
@@ -48,8 +49,14 @@ export async function storeAdminSession(req, res, next) {
       return res.status(403).json({ error: 'Store is not active' });
     }
 
+    // The :slug URL segment may be the store's slug or its subdomain
+    // (subdomain hosts pass the leftmost label as the handle).
     const requestedSlug = req.params.slug;
-    if (requestedSlug && requestedSlug !== row.store_slug) {
+    if (
+      requestedSlug
+      && requestedSlug !== row.store_slug
+      && requestedSlug.toLowerCase() !== (row.store_subdomain ?? '').toLowerCase()
+    ) {
       return res.status(403).json({ error: 'Session does not authorize this store' });
     }
 
