@@ -534,7 +534,7 @@ router.get('/ss-catalog', async (req, res, next) => {
       const where  = ['ss_id IS NOT NULL'];
       if (q) {
         params.push(`%${q}%`);
-        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length})`);
+        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length} OR lower(brand) LIKE $${params.length})`);
       }
       if (brand) {
         params.push(brand);
@@ -562,7 +562,7 @@ router.get('/ss-catalog', async (req, res, next) => {
       const where  = [];
       if (q) {
         params.push(`%${q}%`);
-        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length})`);
+        where.push(`(lower(name) LIKE $${params.length} OR lower(ss_id) LIKE $${params.length} OR lower(brand) LIKE $${params.length})`);
       }
       if (brand) {
         params.push(brand);
@@ -588,7 +588,7 @@ router.get('/ss-catalog', async (req, res, next) => {
       const live = await fetchProducts({ limit });
       const filtered = (live.products || [])
         .filter((p) => {
-          if (q && !(`${p.name} ${p.ss_id}`.toLowerCase().includes(q))) return false;
+          if (q && !(`${p.name} ${p.ss_id} ${p.brand ?? ''}`.toLowerCase().includes(q))) return false;
           if (brand && p.brand !== brand) return false;
           return true;
         })
