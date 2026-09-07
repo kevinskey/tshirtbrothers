@@ -58,6 +58,11 @@ router.post('/uploads', async (req, res, next) => {
   try {
     const { imageBase64, filename } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+    // A URL sent here would get base64-decoded into a garbage blob and
+    // stored as a broken "image" — reject it so callers fail loudly.
+    if (/^https?:\/\//i.test(String(imageBase64).trim())) {
+      return res.status(400).json({ error: 'imageBase64 must be image data (data URL or base64), not a URL' });
+    }
 
     const url = await uploadToSpaces(
       imageBase64,

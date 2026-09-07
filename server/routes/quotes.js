@@ -28,6 +28,11 @@ router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, 
   try {
     const { imageBase64, filename, customerEmail } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'imageBase64 is required' });
+    // A URL sent here would get base64-decoded into a garbage blob and
+    // stored as a broken "image" — reject it so callers fail loudly.
+    if (/^https?:\/\//i.test(String(imageBase64).trim())) {
+      return res.status(400).json({ error: 'imageBase64 must be image data (data URL or base64), not a URL' });
+    }
 
     if (!process.env.SPACES_KEY || !process.env.SPACES_SECRET) {
       return res.status(500).json({ error: 'File storage not configured' });
