@@ -866,7 +866,10 @@ function CouponsSection({ storeId }: { storeId: number }) {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">{kind === 'percent' ? 'Percent' : 'Dollars'}</label>
-            <input required type="number" min="0.01" step={kind === 'percent' ? '1' : '0.01'}
+            {/* step="any": min 0.01 + step 1 put valid values on a
+                .01 grid (…, 99.01) and made 100 fail validation. */}
+            <input required type="number" step="any"
+              min={kind === 'percent' ? 1 : 0.01}
               max={kind === 'percent' ? 100 : undefined}
               value={value} onChange={(e) => setValue(e.target.value)}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
