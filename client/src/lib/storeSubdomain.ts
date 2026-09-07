@@ -16,9 +16,11 @@ const ROOT_DOMAINS = new Set([
 ]);
 
 // Reserved subdomains we NEVER treat as a store — these are TSB's own.
+// Note: `shop` is intentionally NOT reserved — shop.tshirtbrothers.com is
+// TSB Direct, the house store for ready-made decorated products.
 const RESERVED = new Set([
   'www', 'admin', 'api', 'staging', 'stage', 'dev', 'preview',
-  'app', 'shop', 'mail', 'smtp', 'ftp', 'blog', 'help', 'status',
+  'app', 'mail', 'smtp', 'ftp', 'blog', 'help', 'status',
 ]);
 
 /**
