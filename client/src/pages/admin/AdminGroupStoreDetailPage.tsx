@@ -716,7 +716,10 @@ function MockupPicker({ storeId, onClose, onAdded }: { storeId: number; onClose:
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        {/* min-h-0 is load-bearing: without it this flex child won't shrink
+            below its content height, the parent's overflow-hidden clips the
+            grid, and the list can never scroll. */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {busy && <div className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin text-gray-400 mx-auto" /></div>}
           {!busy && results.length === 0 && (
             <div className="p-8 text-center text-gray-500 text-sm">
