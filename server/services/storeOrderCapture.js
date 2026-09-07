@@ -18,8 +18,38 @@
 // amounts land wholly in tsb_earnings and split_snapshot_json records
 // them separately from the sale amount.
 
+import Stripe from 'stripe';
 import pool from '../db.js';
 import { dispatchStoreEvent } from './storeWebhookDispatcher.js';
+
+let _stripe = null;
+function stripeClient() {
+  if (!_stripe && process.env.STRIPE_SECRET_KEY) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  return _stripe;
+}
+
+// When the session carried checkout upsells (metadata.upsell_map maps
+// Stripe price id → store_product_id), pull the real line items to learn
+// which upsells the buyer added and at what quantity. Returns [] on any
+// failure — the main product line still captures.
+async function fetchUpsellLines(session) {
+  const map = tryParseJson(session.metadata?.upsell_map || '');
+  const stripe = stripeClient();
+  if (!map || !stripe) return [];
+  try {
+    const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 20 });
+    return items.data
+      .filter((li) => li.price?.id && map[li.price.id] != null && (li.quantity ?? 0) > 0)
+      .map((li) => ({
+        store_product_id: parseInt(String(map[li.price.id]), 10),
+        qty: li.quantity ?? 1,
+      }))
+      .filter((l) => Number.isInteger(l.store_product_id));
+  } catch (err) {
+    console.error('[captureStoreOrder] listLineItems failed (capturing main line only):', err.message);
+    return [];
+  }
+}
 
 /** Compute per-line split. Returns { tsb_earnings_cents, store_earnings_cents }. */
 export function computeLineSplit({ retail_cents, qty, fee_config }) {
@@ -89,7 +119,46 @@ export async function captureStoreOrder(session) {
     fee_config: product.fee_config_json,
   });
 
-  const subtotal_cents  = product.retail_price_cents * qty;
+  const lines = [
+    {
+      store_product_id: storeProductId,
+      qty,
+      variant: variantRaw ? tryParseJson(variantRaw) : null,
+      retail_cents: product.retail_price_cents,
+      line_retail_cents: product.retail_price_cents * qty,
+      store_earnings_cents: split.store_earnings_cents,
+      tsb_earnings_cents: split.tsb_earnings_cents,
+    },
+  ];
+
+  // Checkout upsells the buyer added on the Stripe page. Same frozen
+  // agreement (same store) applies.
+  for (const up of await fetchUpsellLines(session)) {
+    const upRes = await pool.query(
+      `SELECT id, retail_price_cents FROM store_products WHERE id = $1 AND store_id = $2`,
+      [up.store_product_id, storeId],
+    );
+    const upProduct = upRes.rows[0];
+    if (!upProduct) continue;
+    const upSplit = computeLineSplit({
+      retail_cents: upProduct.retail_price_cents,
+      qty: up.qty,
+      fee_config: product.fee_config_json,
+    });
+    lines.push({
+      store_product_id: upProduct.id,
+      qty: up.qty,
+      variant: null,
+      retail_cents: upProduct.retail_price_cents,
+      line_retail_cents: upProduct.retail_price_cents * up.qty,
+      store_earnings_cents: upSplit.store_earnings_cents,
+      tsb_earnings_cents: upSplit.tsb_earnings_cents,
+    });
+  }
+
+  const subtotal_cents  = lines.reduce((s, l) => s + l.line_retail_cents, 0);
+  const store_earnings_total = lines.reduce((s, l) => s + l.store_earnings_cents, 0);
+  const tsb_earnings_total   = lines.reduce((s, l) => s + l.tsb_earnings_cents, 0);
   const shipping_cents  = session.shipping_cost?.amount_total || 0;
   const tax_cents       = session.total_details?.amount_tax || 0;
   const gross_total     = session.amount_total ?? (subtotal_cents + shipping_cents + tax_cents);
@@ -98,17 +167,7 @@ export async function captureStoreOrder(session) {
     agreement_id: product.agreement_id,
     fee_percent: split.fee_percent,
     fee_min_per_item_cents: split.fee_min_per_item_cents,
-    lines: [
-      {
-        store_product_id: storeProductId,
-        qty,
-        variant: variantRaw ? tryParseJson(variantRaw) : null,
-        retail_cents: product.retail_price_cents,
-        line_retail_cents: subtotal_cents,
-        store_earnings_cents: split.store_earnings_cents,
-        tsb_earnings_cents: split.tsb_earnings_cents,
-      },
-    ],
+    lines,
     // Shipping + tax land in TSB's earnings — TSB collects and remits.
     shipping_cents,
     tax_cents,
@@ -130,8 +189,8 @@ export async function captureStoreOrder(session) {
       [
         storeId, session.id, buyerEmail,
         subtotal_cents, shipping_cents, tax_cents, gross_total,
-        split_snapshot, split.store_earnings_cents,
-        split.tsb_earnings_cents + shipping_cents + tax_cents,
+        split_snapshot, store_earnings_total,
+        tsb_earnings_total + shipping_cents + tax_cents,
       ],
     );
     const orderId = orderRes.rows[0].id;
@@ -141,9 +200,9 @@ export async function captureStoreOrder(session) {
        VALUES ($1, 'sale', $2, $3, $4)`,
       [
         storeId,
-        split.store_earnings_cents,
+        store_earnings_total,
         orderId,
-        `Sale: store_product ${storeProductId} × ${qty}`,
+        `Sale: ${lines.map((l) => `store_product ${l.store_product_id} × ${l.qty}`).join(', ')}`,
       ],
     );
     await client.query('COMMIT');
@@ -157,7 +216,7 @@ export async function captureStoreOrder(session) {
       shipping_cents,
       tax_cents,
       gross_total_cents: gross_total,
-      store_earnings_cents: split.store_earnings_cents,
+      store_earnings_cents: store_earnings_total,
       lines: split_snapshot.lines,
       status: 'paid',
     }).catch((err) => {
@@ -166,7 +225,7 @@ export async function captureStoreOrder(session) {
 
     console.log(
       `[captureStoreOrder] captured order ${orderId} for store ${storeId}: ` +
-      `store earns ${split.store_earnings_cents}¢, TSB earns ${split.tsb_earnings_cents + shipping_cents + tax_cents}¢`
+      `store earns ${store_earnings_total}¢, TSB earns ${tsb_earnings_total + shipping_cents + tax_cents}¢`
     );
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
