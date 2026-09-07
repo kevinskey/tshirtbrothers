@@ -492,29 +492,46 @@ export default function GroupStorePage() {
         {isEmpty ? (
           <EmptyShopStrip primary={primary} storeSlug={store.slug} />
         ) : (
-          <div className="space-y-14">
+          <div className="space-y-8">
             {collections.map(([key, items]) => (
-              <div key={key || 'general'} id={`collection-${key || 'everyday'}`} className="scroll-mt-24">
-                {(collections.length > 1 || key !== '') && (
-                  <h3 className="text-xl font-bold mb-6 flex items-baseline gap-3">
-                    {key ? collectionLabel(key) : 'Everyday'}
-                    <span className="text-xs font-normal text-gray-400">
-                      {items.length > 0
-                        ? `${items.length} ${items.length === 1 ? 'item' : 'items'}`
-                        : 'coming soon'}
-                    </span>
+              /* Each collection is a bounded card: tinted header band with a
+                 brand-color accent marks where the section begins, the card
+                 border + footer edge mark where it ends, and the shelf clips
+                 to the card so cards never bleed into the next section. */
+              <div
+                key={key || 'general'}
+                id={`collection-${key || 'everyday'}`}
+                className="scroll-mt-24 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+              >
+                <div
+                  className="px-5 sm:px-7 py-4 border-b border-gray-100 flex items-center justify-between gap-4"
+                  style={{ background: tint(primary, 0.05) }}
+                >
+                  <h3 className="text-lg sm:text-xl font-bold flex items-center gap-3 min-w-0">
+                    <span className="w-1.5 h-6 rounded-full shrink-0" style={{ background: primary }} />
+                    <span className="truncate">{key ? collectionLabel(key) : 'Everyday'}</span>
                   </h3>
-                )}
-                {items.length > 0 ? (
-                  <ProductGrid products={items} slug={slug} primary={primary} />
-                ) : (
-                  <div
-                    className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-gray-500"
-                    style={{ borderColor: tint(primary, 0.35), background: tint(primary, 0.04) }}
+                  <span
+                    className="shrink-0 text-[11px] font-semibold uppercase tracking-wider px-2.5 py-1 rounded-full"
+                    style={{ background: tint(primary, 0.12), color: primary }}
                   >
-                    First drop in the works — check back soon.
-                  </div>
-                )}
+                    {items.length > 0
+                      ? `${items.length} ${items.length === 1 ? 'item' : 'items'}`
+                      : 'coming soon'}
+                  </span>
+                </div>
+                <div className="px-4 sm:px-6 pt-6 pb-2">
+                  {items.length > 0 ? (
+                    <ProductGrid products={items} slug={slug} primary={primary} />
+                  ) : (
+                    <div
+                      className="mb-4 rounded-xl border border-dashed px-6 py-10 text-center text-sm text-gray-500"
+                      style={{ borderColor: tint(primary, 0.35), background: tint(primary, 0.04) }}
+                    >
+                      First drop in the works — check back soon.
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
