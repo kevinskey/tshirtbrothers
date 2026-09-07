@@ -27,6 +27,9 @@ interface StoreProfile {
       subtitle?: string;
       video_url?: string;   // autoplaying hero loop
       poster_url?: string;  // first frame / fallback image
+      // Optional hero carousel: rotates through these slides (video +
+      // lifestyle/mockup renders). When absent, falls back to video_url.
+      media?: Array<{ type: 'image' | 'video'; url: string; poster?: string }>;
     };
   };
   store_type: 'franchise' | 'group';
@@ -275,15 +278,15 @@ export default function GroupStorePage() {
 
           {/* Hero visual */}
           <div className="relative">
-            {featured?.video_url ? (
-              <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none bg-black">
-                <video
-                  src={featured.video_url}
-                  poster={featured.poster_url}
-                  autoPlay muted loop playsInline
-                  className="w-full h-full object-cover"
-                />
-              </div>
+            {featured && (featured.media?.length || featured.video_url) ? (
+              <HeroCarousel
+                slides={
+                  featured.media?.length
+                    ? featured.media
+                    : [{ type: 'video' as const, url: featured.video_url!, poster: featured.poster_url }]
+                }
+                primary={primary}
+              />
             ) : store.brand_json.hero_url ? (
               <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none">
                 <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
@@ -478,6 +481,59 @@ export default function GroupStorePage() {
 }
 
 // ── Sub-components ──────────────────────────────────────────────────────
+
+// Auto-rotating hero carousel for the featured collection. Crossfades
+// between slides; video slides keep playing muted underneath. Dots are
+// clickable and pause the auto-advance briefly after manual navigation.
+function HeroCarousel({ slides, primary }: {
+  slides: Array<{ type: 'image' | 'video'; url: string; poster?: string }>;
+  primary: string;
+}) {
+  const [idx, setIdx] = useState(0);
+  const [pausedUntil, setPausedUntil] = useState(0);
+
+  useEffect(() => {
+    if (slides.length < 2) return;
+    const t = setInterval(() => {
+      if (Date.now() < pausedUntil) return;
+      setIdx((i) => (i + 1) % slides.length);
+    }, 4500);
+    return () => clearInterval(t);
+  }, [slides.length, pausedUntil]);
+
+  return (
+    <div className="relative aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none bg-black">
+      {slides.map((s, i) => (
+        <div key={s.url}
+          className="absolute inset-0 transition-opacity duration-700"
+          style={{ opacity: i === idx ? 1 : 0, pointerEvents: i === idx ? 'auto' : 'none' }}
+        >
+          {s.type === 'video' ? (
+            <video src={s.url} poster={s.poster} autoPlay muted loop playsInline
+              className="w-full h-full object-cover" />
+          ) : (
+            <img src={s.url} alt="" loading={i === 0 ? 'eager' : 'lazy'}
+              className="w-full h-full object-cover" />
+          )}
+        </div>
+      ))}
+      {slides.length > 1 && (
+        <div className="absolute bottom-3 inset-x-0 flex justify-center gap-1.5">
+          {slides.map((_, i) => (
+            <button key={i} type="button" aria-label={`Slide ${i + 1}`}
+              onClick={() => { setIdx(i); setPausedUntil(Date.now() + 8000); }}
+              className="w-2 h-2 rounded-full transition-all"
+              style={{
+                background: i === idx ? primary : 'rgba(255,255,255,0.45)',
+                transform: i === idx ? 'scale(1.35)' : undefined,
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
