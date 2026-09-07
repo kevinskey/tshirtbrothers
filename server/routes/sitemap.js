@@ -148,9 +148,13 @@ async function buildSitemap() {
   try {
     const { rows: groupStores } = await pool.query(
       `SELECT slug, GREATEST(
-                created_at,
-                (SELECT MAX(created_at) FROM store_products sp WHERE sp.store_id = stores.id),
-                (SELECT MAX(created_at) FROM store_orders   so WHERE so.store_id = stores.id)
+                stores.created_at,
+                -- store_products has published_at, not created_at. The
+                -- unqualified created_at here silently bound to the OUTER
+                -- stores.created_at, turning the whole query into an
+                -- aggregate and erroring on slug. Qualify everything.
+                (SELECT MAX(sp.published_at) FROM store_products sp WHERE sp.store_id = stores.id),
+                (SELECT MAX(so.created_at)   FROM store_orders   so WHERE so.store_id = stores.id)
               )::date AS lastmod
          FROM stores
         WHERE store_type = 'group' AND status = 'active'
