@@ -298,22 +298,19 @@ export default function GroupStorePage() {
                 className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider"
                 style={{ background: tint(primary, 0.18), color: primary }}
               >
-                <Star className="w-3.5 h-3.5" /> Featured drop
+                <Star className="w-3.5 h-3.5" /> Featured: {featured.title}
               </span>
             )}
 
             <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]">
               {isEmpty
                 ? 'The first drop is on the way.'
-                : featured
-                  ? featured.title
-                  : `Shop official ${store.name} merch.`}
+                : `Welcome to ${store.name}.`}
             </h1>
             <p className="mt-5 text-lg text-gray-600 max-w-xl">
               {isEmpty
                 ? `We're printing the first collection right now. Drop your email and be the first to know when it goes live.`
-                : featured?.subtitle
-                  || store.brand_json.tagline
+                : store.brand_json.tagline
                   || `Official merchandise for ${store.name}. Designed and screenprinted by TShirt Brothers in Fairburn, GA.`}
             </p>
 
