@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
 import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin } from 'lucide-react';
+import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
 
 interface StoreProfile {
   slug: string;
@@ -204,13 +205,16 @@ export default function GroupStoreProductPage() {
                 <div>
                   <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">Size</label>
                   <div className="flex flex-wrap gap-2">
-                    {product.variants_json.sizes.map((s) => (
-                      <button key={s} onClick={() => setSize(s)}
-                        className={`px-3 py-1.5 border rounded-md text-sm ${
-                          size === s ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 hover:border-gray-500'
-                        }`}
-                      >{s}</button>
-                    ))}
+                    {product.variants_json.sizes.map((s) => {
+                      const up = sizeUpchargeCents(s);
+                      return (
+                        <button key={s} onClick={() => setSize(s)}
+                          className={`px-3 py-1.5 border rounded-md text-sm ${
+                            size === s ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300 hover:border-gray-500'
+                          }`}
+                        >{s}{up > 0 && <span className="ml-1 text-[10px] opacity-70">+${up / 100}</span>}</button>
+                      );
+                    })}
                   </div>
                 </div>
               ) : null}
@@ -295,7 +299,7 @@ export default function GroupStoreProductPage() {
               className="mt-6 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: primary }}
             >
-              {checkingOut ? 'Redirecting to checkout…' : `Buy for $${((product.retail_price_cents * qty) / 100).toFixed(2)}`}
+              {checkingOut ? 'Redirecting to checkout…' : `Buy for $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
             </button>
 
             <p className="mt-3 text-xs text-gray-500 text-center">

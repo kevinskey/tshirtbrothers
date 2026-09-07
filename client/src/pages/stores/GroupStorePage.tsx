@@ -67,6 +67,7 @@ interface StoreProduct {
 
 function usd(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
 
+
 // Lighten a hex color for gradient backgrounds
 function tint(hex: string, alpha = 0.08) {
   const clean = hex.replace('#', '');
