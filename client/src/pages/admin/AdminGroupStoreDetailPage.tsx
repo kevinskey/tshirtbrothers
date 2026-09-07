@@ -9,6 +9,7 @@ import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
   setGroupStoreProductActive, deleteGroupStoreProduct,
+  uploadGroupStoreMockup, updateGroupStoreProduct,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
   deleteGroupStore,
@@ -25,6 +26,12 @@ export default function AdminGroupStoreDetailPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [showMockupPicker, setShowMockupPicker] = useState(false);
   const [showAddAdmin, setShowAddAdmin] = useState(false);
+  // Change-cover flow: one shared hidden file input; the row's camera
+  // button records which product the next picked file belongs to.
+  const coverInputRef = useRef<HTMLInputElement | null>(null);
+  const [coverTargetId, setCoverTargetId] = useState<number | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [editProduct, setEditProduct] = useState<GroupStoreDetail['products'][number] | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -101,6 +108,29 @@ export default function AdminGroupStoreDetailPage() {
           onRetire={() => void setStatus('off')}
           onReactivate={() => void setStatus('active')}
         />
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept=".png,.jpg,.jpeg,.webp"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file || coverTargetId == null) return;
+            setCoverBusy(true);
+            try {
+              const url = await uploadGroupStoreMockup(file, store.slug);
+              await updateGroupStoreProduct(storeId, coverTargetId, { cover_image: url });
+              toast.success('Product photo updated');
+              void load();
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : String(err));
+            } finally {
+              setCoverBusy(false);
+              setCoverTargetId(null);
+            }
+          }}
+        />
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-900">Products ({products.length})</h2>
@@ -124,6 +154,7 @@ export default function AdminGroupStoreDetailPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
                   <tr>
+                    <th className="px-4 py-3 text-left">Photo</th>
                     <th className="px-4 py-3 text-left">Title</th>
                     <th className="px-4 py-3 text-left">S&S SKU</th>
                     <th className="px-4 py-3 text-left">Retail</th>
@@ -142,7 +173,35 @@ export default function AdminGroupStoreDetailPage() {
                       : null;
                     return (
                       <tr key={p.id}>
-                        <td className="px-4 py-3 font-semibold text-gray-900">{p.title}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            title="Click to upload a new product photo"
+                            disabled={coverBusy}
+                            onClick={() => { setCoverTargetId(p.id); coverInputRef.current?.click(); }}
+                            className="relative w-12 h-12 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden group/cover disabled:opacity-50"
+                          >
+                            {p.cover_image ? (
+                              <img src={p.cover_image} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="w-full h-full flex items-center justify-center text-gray-300 text-[9px]">no photo</span>
+                            )}
+                            <span className="absolute inset-0 hidden group-hover/cover:flex items-center justify-center bg-black/50 text-white text-[9px] font-semibold">
+                              {coverBusy && coverTargetId === p.id ? '…' : 'Change'}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button type="button" onClick={() => setEditProduct(p)}
+                            className="font-semibold text-gray-900 hover:underline text-left">
+                            {p.title}
+                          </button>
+                          {p.campaign_ref && (
+                            <span className="block mt-0.5 text-[10px] font-mono text-purple-600">
+                              ◆ {p.campaign_ref}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 font-mono text-xs text-gray-600">{p.tsb_blank_ss_id}</td>
                         <td className="px-4 py-3 text-gray-900">{usd(p.retail_price_cents)}</td>
                         <td className="px-4 py-3 text-gray-600">{usd(p.blank_cost_cents)}</td>
@@ -253,6 +312,15 @@ export default function AdminGroupStoreDetailPage() {
       )}
       {showAddAdmin && (
         <AddAdminModal storeId={storeId} onClose={() => setShowAddAdmin(false)} onAdded={() => { setShowAddAdmin(false); void load(); }} />
+      )}
+      {editProduct && (
+        <EditProductModal
+          storeId={storeId}
+          storeSlug={store.slug}
+          product={editProduct}
+          onClose={() => setEditProduct(null)}
+          onSaved={() => { setEditProduct(null); void load(); }}
+        />
       )}
     </div>
   );
@@ -415,6 +483,10 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
   );
   const [colors, setColors] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [collection, setCollection] = useState('');
+  const [coverUrl, setCoverUrl] = useState<string | null>(item.image_url);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const coverRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (itemSizes.length > 0 && itemColors.length > 0 && itemBaseCostCents > 0) return;
@@ -472,7 +544,8 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
         slug,
         retail_price_cents: Math.round(parseFloat(retailDollars) * 100),
         description: description || undefined,
-        cover_image: item.image_url || undefined,
+        cover_image: coverUrl || undefined,
+        campaign_ref: collection.trim() || undefined,
         variants: { sizes, colors },
         blank_cost_cents: baseCostCents,
         decoration_cost_cents: Math.round(parseFloat(decorationDollars) * 100),
@@ -523,6 +596,48 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
                   onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
                   className="flex-1 px-1 py-2.5 text-sm font-mono bg-transparent focus:outline-none" />
               </div>
+            </div>
+          </section>
+
+          {/* Cover photo + collection */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Product photo</p>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden shrink-0">
+                  {coverUrl ? <img src={coverUrl} alt="" className="w-full h-full object-cover" />
+                    : <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">none</div>}
+                </div>
+                <div>
+                  <button type="button" disabled={coverUploading} onClick={() => coverRef.current?.click()}
+                    className="px-3 py-1.5 border border-gray-300 rounded-md text-xs hover:bg-gray-50 disabled:opacity-50">
+                    {coverUploading ? 'Uploading…' : 'Upload photo'}
+                  </button>
+                  {coverUrl !== item.image_url && item.image_url && (
+                    <button type="button" onClick={() => setCoverUrl(item.image_url)}
+                      className="block mt-1 text-[11px] text-blue-600 hover:underline">Use S&S photo</button>
+                  )}
+                  <input ref={coverRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0]; e.target.value = '';
+                      if (!f) return;
+                      setCoverUploading(true);
+                      try { setCoverUrl(await uploadGroupStoreMockup(f, `store-${storeId}`)); }
+                      catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+                      finally { setCoverUploading(false); }
+                    }} />
+                </div>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Collection</p>
+              <input value={collection}
+                onChange={(e) => setCollection(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                placeholder="e.g. halloween (optional)"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:border-gray-900 focus:outline-none" />
+              <p className="mt-1 text-[11px] text-gray-400">
+                Tag matching the storefront's featured collection key.
+              </p>
             </div>
           </section>
 
@@ -682,6 +797,156 @@ function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => voi
 }
 
 // ── Mockup picker + publish form ─────────────────────────────────────────
+// ── Edit product modal ───────────────────────────────────────────────────
+// Title, pricing, description, sizes/colors, collection tag, cover photo.
+function EditProductModal({ storeId, storeSlug, product, onClose, onSaved }: {
+  storeId: number;
+  storeSlug: string;
+  product: GroupStoreDetail['products'][number];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(product.title);
+  const [retail, setRetail] = useState((product.retail_price_cents / 100).toFixed(2));
+  const [deco, setDeco] = useState(product.decoration_cost_cents != null ? (product.decoration_cost_cents / 100).toFixed(2) : '');
+  const [minQty, setMinQty] = useState(product.min_qty);
+  const [descr, setDescr] = useState(product.description ?? '');
+  const [collection, setCollection] = useState(product.campaign_ref ?? '');
+  const [sizesText, setSizesText] = useState((product.variants_json?.sizes ?? []).join(', '));
+  const [colorsText, setColorsText] = useState((product.variants_json?.colors ?? []).join(', '));
+  const [cover, setCover] = useState(product.cover_image);
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const pickCover = async (file: File) => {
+    setUploading(true);
+    try {
+      setCover(await uploadGroupStoreMockup(file, storeSlug));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setUploading(false); }
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const list = (s: string) => s.split(',').map((v) => v.trim()).filter(Boolean);
+      await updateGroupStoreProduct(storeId, product.id, {
+        title,
+        retail_price_cents: Math.round(parseFloat(retail || '0') * 100),
+        decoration_cost_cents: deco ? Math.round(parseFloat(deco) * 100) : null,
+        min_qty: minQty,
+        description: descr || null,
+        campaign_ref: collection.trim() || null,
+        variants: { sizes: list(sizesText), colors: list(colorsText) },
+        ...(cover ? { cover_image: cover } : {}),
+      });
+      toast.success('Product updated');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+      <form onSubmit={save} className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-gray-100 z-10 px-6 py-4 flex items-center gap-3">
+          <p className="font-semibold text-gray-900 flex-1 truncate">Edit · {product.title}</p>
+          <button type="button" onClick={onClose}
+            className="text-gray-400 hover:text-gray-900 rounded-full p-1 hover:bg-gray-100">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Cover photo */}
+          <section className="flex items-center gap-4">
+            <div className="w-24 h-24 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden shrink-0">
+              {cover ? <img src={cover} alt="" className="w-full h-full object-cover" />
+                : <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">no photo</div>}
+            </div>
+            <div>
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="px-3 py-1.5 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50">
+                {uploading ? 'Uploading…' : 'Upload photo'}
+              </button>
+              <p className="mt-1 text-[11px] text-gray-400">PNG/JPG — shown on the storefront card and product page.</p>
+              <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.webp" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void pickCover(f); }} />
+            </div>
+          </section>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Title</label>
+              <input required value={title} onChange={(e) => setTitle(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Retail ($)</label>
+              <input required type="number" step="0.01" min="0.01" value={retail} onChange={(e) => setRetail(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Decoration ($)</label>
+              <input type="number" step="0.01" min="0" value={deco} onChange={(e) => setDeco(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Min qty</label>
+              <input type="number" min={1} value={minQty}
+                onChange={(e) => setMinQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Collection</label>
+              <input value={collection} onChange={(e) => setCollection(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                placeholder="e.g. halloween"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:border-gray-900 focus:outline-none" />
+              <p className="mt-1 text-[11px] text-gray-400">
+                Matches the storefront's featured collection key. Blank = no collection.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Sizes</label>
+              <input value={sizesText} onChange={(e) => setSizesText(e.target.value)}
+                placeholder="S, M, L, XL, 2XL"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Colors</label>
+              <input value={colorsText} onChange={(e) => setColorsText(e.target.value)}
+                placeholder="Black, True Navy"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Description</label>
+            <textarea rows={4} value={descr} onChange={(e) => setDescr(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-gray-900 focus:outline-none" />
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur border-t border-gray-100 px-6 py-4 flex items-center justify-end gap-3">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-lg">Cancel</button>
+          <button type="submit" disabled={busy || uploading}
+            className="px-5 py-2 bg-gray-900 text-white rounded-lg text-sm font-semibold disabled:opacity-50 hover:bg-black">
+            {busy ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function MockupPicker({ storeId, onClose, onAdded }: { storeId: number; onClose: () => void; onAdded: () => void }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<MockupCatalogItem[]>([]);

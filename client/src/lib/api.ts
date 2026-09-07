@@ -1187,6 +1187,8 @@ export interface GroupStoreDetail {
     decoration_cost_cents: number | null; min_qty: number;
     is_active: boolean; opens_at: string | null; closes_at: string | null;
     cover_image: string | null; published_at: string;
+    campaign_ref: string | null; description: string | null;
+    variants_json: { sizes?: string[]; colors?: string[] } | null;
   }>;
   admins: Array<{
     id: number; email: string; name: string | null; role: string;
@@ -1261,6 +1263,7 @@ export async function addGroupStoreProduct(id: number, data: {
   variants?: { sizes?: string[]; colors?: string[] };
   blank_cost_cents?: number; decoration_cost_cents?: number;
   min_qty?: number; opens_at?: string; closes_at?: string;
+  campaign_ref?: string;
 }) {
   return authRequest(`/admin/group-stores/${id}/products`, {
     method: 'POST', body: JSON.stringify(data),

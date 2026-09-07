@@ -185,7 +185,8 @@ router.get('/:id', async (req, res, next) => {
     const products = await pool.query(
       `SELECT id, tsb_blank_ss_id, title, slug, retail_price_cents,
               blank_cost_cents, decoration_cost_cents, min_qty,
-              is_active, opens_at, closes_at, cover_image, published_at
+              is_active, opens_at, closes_at, cover_image, published_at,
+              campaign_ref, description, variants_json
          FROM store_products
         WHERE store_id = $1
         ORDER BY published_at DESC`,
@@ -274,7 +275,7 @@ router.post('/:id/products', async (req, res, next) => {
       tsb_blank_ss_id, title, slug, retail_price_cents,
       description, cover_image, variants,
       blank_cost_cents, decoration_cost_cents, min_qty,
-      opens_at, closes_at,
+      opens_at, closes_at, campaign_ref,
     } = req.body ?? {};
 
     if (!tsb_blank_ss_id) return res.status(400).json({ error: 'tsb_blank_ss_id required' });
@@ -304,14 +305,15 @@ router.post('/:id/products', async (req, res, next) => {
            (store_id, tsb_blank_ss_id, title, slug, description, cover_image,
             retail_price_cents, variants_json, active_agreement_id,
             blank_cost_cents, decoration_cost_cents, min_qty,
-            opens_at, closes_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            opens_at, closes_at, campaign_ref)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id, slug, title, retail_price_cents, min_qty, is_active, published_at`,
         [
           id, tsb_blank_ss_id, title, slug, description ?? null, cover_image ?? null,
           retail_price_cents, variants ?? {}, agr.rows[0].id,
           blank_cost_cents ?? null, decoration_cost_cents ?? null, min_qty ?? 1,
           opens_at ?? null, closes_at ?? null,
+          (typeof campaign_ref === 'string' && campaign_ref.trim()) ? campaign_ref.trim() : null,
         ],
       );
       res.status(201).json(rows[0]);
@@ -325,20 +327,43 @@ router.post('/:id/products', async (req, res, next) => {
 });
 
 // ── PATCH /:id/products/:productId ───────────────────────────────────────
-// Update a product's is_active flag (pause/resume selling).
+// Partial product update: pause/resume, cover photo, title, pricing,
+// description, min qty, variants, and campaign_ref (the "collection"
+// tag — products whose campaign_ref matches the storefront's
+// featured_collection key appear in that collection).
 router.patch('/:id/products/:productId', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     const productId = parseInt(req.params.productId, 10);
     if (!Number.isInteger(id) || !Number.isInteger(productId)) return next();
-    const { is_active } = req.body ?? {};
-    if (typeof is_active !== 'boolean') {
-      return res.status(400).json({ error: 'is_active (boolean) required' });
+    const body = req.body ?? {};
+
+    const sets = [];
+    const params = [id, productId];
+    const push = (col, val) => { params.push(val); sets.push(`${col} = $${params.length}`); };
+
+    if (typeof body.is_active === 'boolean') push('is_active', body.is_active);
+    if (typeof body.cover_image === 'string' && body.cover_image.trim()) push('cover_image', body.cover_image.trim());
+    if (typeof body.title === 'string' && body.title.trim()) push('title', body.title.trim());
+    if (Number.isInteger(body.retail_price_cents) && body.retail_price_cents > 0) push('retail_price_cents', body.retail_price_cents);
+    if (body.decoration_cost_cents === null || (Number.isInteger(body.decoration_cost_cents) && body.decoration_cost_cents >= 0)) {
+      push('decoration_cost_cents', body.decoration_cost_cents);
     }
+    if (Number.isInteger(body.min_qty) && body.min_qty >= 1) push('min_qty', body.min_qty);
+    if (body.description === null || typeof body.description === 'string') push('description', body.description || null);
+    if (body.campaign_ref === null || typeof body.campaign_ref === 'string') {
+      push('campaign_ref', (body.campaign_ref || '').trim() || null);
+    }
+    if (body.variants && typeof body.variants === 'object' && !Array.isArray(body.variants)) {
+      push('variants_json', JSON.stringify(body.variants));
+    }
+
+    if (sets.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
+
     const { rows } = await pool.query(
-      `UPDATE store_products SET is_active = $3 WHERE store_id = $1 AND id = $2
-       RETURNING id, title, is_active`,
-      [id, productId, is_active],
+      `UPDATE store_products SET ${sets.join(', ')} WHERE store_id = $1 AND id = $2
+       RETURNING id, title, is_active, cover_image, campaign_ref`,
+      params,
     );
     if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
     res.json(rows[0]);
