@@ -82,6 +82,7 @@ export default function GroupStorePage() {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading]   = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [navCollectionsOpen, setNavCollectionsOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -210,6 +211,40 @@ export default function GroupStorePage() {
           </Link>
           <nav className="hidden md:flex items-center gap-6 ml-6 text-sm font-medium text-gray-700">
             <a href="#shop" className="hover:text-black">Shop</a>
+            {(featured || collections.some(([k]) => k !== '')) && (
+              <div className="relative"
+                onMouseEnter={() => setNavCollectionsOpen(true)}
+                onMouseLeave={() => setNavCollectionsOpen(false)}
+              >
+                <button type="button"
+                  onClick={() => setNavCollectionsOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 hover:text-black">
+                  Collections <ChevronRight className={`w-3.5 h-3.5 transition-transform ${navCollectionsOpen ? 'rotate-90' : ''}`} />
+                </button>
+                {navCollectionsOpen && (
+                  <div className="absolute left-0 top-full pt-2 z-50">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-xl py-2 min-w-[220px]">
+                      {featured && (
+                        <a href="#featured" onClick={() => setNavCollectionsOpen(false)}
+                          className="flex items-center justify-between gap-4 px-4 py-2 hover:bg-gray-50">
+                          <span className="font-semibold">{featured.title}</span>
+                          <Star className="w-3.5 h-3.5" style={{ color: primary }} />
+                        </a>
+                      )}
+                      {collections.filter(([k]) => k !== '').map(([key, items]) => (
+                        <a key={key} href={`#collection-${key}`} onClick={() => setNavCollectionsOpen(false)}
+                          className="flex items-center justify-between gap-4 px-4 py-2 hover:bg-gray-50">
+                          <span>{collectionLabel(key).replace(/^The | Collection$/g, '')}</span>
+                          <span className="text-[11px] text-gray-400">
+                            {items.length > 0 ? items.length : 'soon'}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {store.is_fundraiser && <a href="#fundraiser" className="hover:text-black">Fundraiser</a>}
             <a href="#about" className="hover:text-black">About</a>
           </nav>
@@ -461,7 +496,7 @@ export default function GroupStorePage() {
         ) : (
           <div className="space-y-14">
             {collections.map(([key, items]) => (
-              <div key={key || 'general'}>
+              <div key={key || 'general'} id={`collection-${key || 'everyday'}`} className="scroll-mt-24">
                 {(collections.length > 1 || key !== '') && (
                   <h3 className="text-xl font-bold mb-6 flex items-baseline gap-3">
                     {key ? collectionLabel(key) : 'Everyday'}
