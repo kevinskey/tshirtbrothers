@@ -395,7 +395,40 @@ router.get('/customers', async (req, res, next) => {
       params
     );
 
-    res.json(rows);
+    // Guest customers: people invoiced or quoted without an account. They
+    // live only in quotes/invoices, so an accounts-only search hid them
+    // from the invoice picker. Deduped by email, newest record wins.
+    const guestParams = [];
+    let guestFilter = '';
+    if (search) {
+      guestParams.push(`%${search}%`);
+      guestFilter = ` AND (g.name ILIKE $${guestParams.length} OR g.email ILIKE $${guestParams.length})`;
+    }
+    const guests = await pool.query(
+      `SELECT DISTINCT ON (lower(g.email))
+              'guest:' || lower(g.email) AS id,
+              g.email, g.name, g.phone,
+              g.address AS address_street,
+              NULL::text AS address_city, NULL::text AS address_state, NULL::text AS address_zip,
+              g.created_at,
+              0::int AS design_count, 0::int AS quote_count
+         FROM (
+           SELECT customer_name AS name, customer_email AS email,
+                  customer_phone AS phone, customer_address AS address, created_at
+             FROM invoices
+            WHERE customer_email IS NOT NULL AND customer_email <> ''
+           UNION ALL
+           SELECT customer_name, customer_email, customer_phone, NULL, created_at
+             FROM quotes
+            WHERE customer_email IS NOT NULL AND customer_email <> ''
+         ) g
+        WHERE lower(g.email) NOT IN (SELECT lower(email) FROM users WHERE email IS NOT NULL)
+          ${guestFilter}
+        ORDER BY lower(g.email), g.created_at DESC`,
+      guestParams,
+    );
+
+    res.json([...rows, ...guests.rows]);
   } catch (err) {
     next(err);
   }
