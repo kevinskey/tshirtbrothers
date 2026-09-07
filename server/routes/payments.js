@@ -12,7 +12,7 @@ import {
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
-import { parcelOunces, rateForOunces } from '../lib/shippingRates.js';
+import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 const router = Router();
@@ -464,20 +464,21 @@ router.post('/create-store-checkout', async (req, res, next) => {
     // (backfilled into products.weight_oz) × qty + packaging, mapped to
     // a rate tier. Pickup-capable stores also offer a free pickup option.
     const totalOz = parcelOunces([{ weightOz: product.weight_oz, qty }]);
-    const rate = rateForOunces(totalOz);
     const shippingOptions = [];
     if (product.fulfillment_mode !== 'pickup_only') {
-      shippingOptions.push({
-        shipping_rate_data: {
-          type: 'fixed_amount',
-          fixed_amount: { amount: rate.cents, currency: 'usd' },
-          display_name: rate.label,
-          delivery_estimate: {
-            minimum: { unit: 'business_day', value: 3 },
-            maximum: { unit: 'business_day', value: 7 },
+      for (const choice of shippingChoicesForOunces(totalOz)) {
+        shippingOptions.push({
+          shipping_rate_data: {
+            type: 'fixed_amount',
+            fixed_amount: { amount: choice.cents, currency: 'usd' },
+            display_name: choice.label,
+            delivery_estimate: {
+              minimum: { unit: 'business_day', value: choice.minDays },
+              maximum: { unit: 'business_day', value: choice.maxDays },
+            },
           },
-        },
-      });
+        });
+      }
     }
     if (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both') {
       shippingOptions.push({
