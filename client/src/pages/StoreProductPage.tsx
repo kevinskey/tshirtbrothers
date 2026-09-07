@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { Loader2, ArrowLeft, ShoppingBag } from 'lucide-react';
+import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
 
 interface StoreProfile {
   slug: string;
@@ -254,7 +255,7 @@ export default function StoreProductPage() {
               className="mt-6 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundColor: primary }}
             >
-              {checkingOut ? 'Redirecting to checkout…' : `Buy for $${((product.retail_price_cents * qty) / 100).toFixed(2)}`}
+              {checkingOut ? 'Redirecting to checkout…' : `Buy for $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
             </button>
 
             <p className="mt-3 text-xs text-gray-500 text-center">

@@ -13,6 +13,7 @@ import {
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
 import { parcelOunces, rateForOunces } from '../lib/shippingRates.js';
+import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 const router = Router();
 
@@ -501,7 +502,8 @@ router.post('/create-store-checkout', async (req, res, next) => {
               description: `From ${product.store_name}`,
               ...(product.cover_image ? { images: [product.cover_image] } : {}),
             },
-            unit_amount: product.retail_price_cents,
+            unit_amount: product.retail_price_cents
+              + sizeUpchargeCents(variant && typeof variant === 'object' ? variant.size : null),
           },
           quantity: qty,
         },
