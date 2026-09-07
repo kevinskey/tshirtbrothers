@@ -52,6 +52,7 @@ import {
   deleteCategory,
   syncProducts,
   fetchCustomers,
+  fetchSsStyleDetail,
   fetchCustomer,
   fetchCustomerDesigns,
   fetchDesignsLibrary,
@@ -851,7 +852,7 @@ export default function AdminPage() {
       address_zip: addr.zip || p.address_zip,
     }));
   });
-  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string> }>(null);
+  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[] }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState('');
@@ -4245,12 +4246,30 @@ export default function AdminPage() {
                                 }
                                 // Open the size/color configurator instead of
                                 // immediately adding a single qty-1 line.
+                                // Sizes/colors come from the S&S catalog row
+                                // (colors may be {name,hex} objects); if the
+                                // row has no size run yet, pull it live from
+                                // S&S (which also heals the products row).
+                                const nameOf = (v: unknown) =>
+                                  v && typeof v === 'object' && 'name' in v ? String((v as { name: unknown }).name) : String(v ?? '');
+                                const rawSizes = (p as unknown as { sizes?: unknown }).sizes;
+                                let sizes = Array.isArray(rawSizes) ? rawSizes.map(nameOf).filter(Boolean) : [];
+                                let colorNames = Array.isArray(p.colors) ? p.colors.map(nameOf).filter(Boolean) : [];
+                                if ((sizes.length === 0 || colorNames.length === 0) && ssId) {
+                                  try {
+                                    const d = await fetchSsStyleDetail(String(ssId));
+                                    if (sizes.length === 0) sizes = (d.sizes ?? []).map(nameOf).filter(Boolean);
+                                    if (colorNames.length === 0) colorNames = (d.colors ?? []).map(nameOf).filter(Boolean);
+                                  } catch { /* fall back to the standard grid */ }
+                                }
                                 setProductConfig({
                                   product: p,
                                   unitPrice: customP || wholesale || 0,
                                   weightOz,
-                                  color: (p.colors && p.colors.length > 0) ? p.colors[0]! : '',
+                                  color: colorNames[0] ?? '',
                                   sizeQtys: {},
+                                  sizes,
+                                  colorNames,
                                 });
                                 setInvoiceProductSearch('');
                               }}
@@ -4794,7 +4813,11 @@ export default function AdminPage() {
 
             {/* Product Color/Size Configurator (for invoice line items) */}
             {productConfig && (() => {
-              const STANDARD_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
+              // Real size run from S&S when we have it (a cap shows One
+              // Size, not XS-5XL); the garment grid is only a fallback.
+              const STANDARD_SIZES = productConfig.sizes.length > 0
+                ? productConfig.sizes
+                : ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
               const totalQty = Object.values(productConfig.sizeQtys).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
               return (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -4806,7 +4829,7 @@ export default function AdminPage() {
                     <div className="p-6 space-y-4">
                       <p className="text-xs text-gray-500">Pick a color and enter quantities per size. One invoice line will be created per size with qty &gt; 0.</p>
 
-                      {productConfig.product.colors && productConfig.product.colors.length > 0 ? (
+                      {productConfig.colorNames.length > 0 ? (
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">Color</label>
                           <select
@@ -4814,7 +4837,7 @@ export default function AdminPage() {
                             onChange={(e) => setProductConfig((p) => p ? { ...p, color: e.target.value } : p)}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                           >
-                            {productConfig.product.colors.map((c) => (
+                            {productConfig.colorNames.map((c) => (
                               <option key={c} value={c}>{c}</option>
                             ))}
                           </select>
