@@ -45,9 +45,12 @@ async function fetchWeightOz(styleId, maxAttempts = 5) {
 }
 
 async function main() {
+  // --retry-empty also revisits rows stamped 0 (S&S had no weight data
+  // last time) — used by the monthly cron in case S&S has since added it.
+  const retryEmpty = process.argv.includes('--retry-empty');
   const { rows } = await pool.query(
     `SELECT id, ss_id, name FROM products
-      WHERE weight_oz IS NULL AND ss_id IS NOT NULL
+      WHERE (weight_oz IS NULL${retryEmpty ? ' OR weight_oz = 0' : ''}) AND ss_id IS NOT NULL
       ORDER BY id`,
   );
   console.log(`[backfill-weights] ${rows.length} products with no weight`);
