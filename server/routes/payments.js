@@ -485,8 +485,18 @@ router.post('/create-store-checkout', async (req, res, next) => {
           const price = await stripe.prices.create({
             unit_amount: u.retail_price_cents,
             currency: 'usd',
+            // product_data on prices.create only accepts name/metadata —
+            // the image must be set on the Product object afterwards so
+            // the upsell card renders a photo instead of a bare title.
             product_data: { name: u.title },
           });
+          if (u.cover_image) {
+            try {
+              await stripe.products.update(String(price.product), { images: [u.cover_image] });
+            } catch (imgErr) {
+              console.error('[create-store-checkout] upsell image attach failed:', imgErr.message);
+            }
+          }
           priceId = price.id;
           await pool.query(
             `UPDATE store_products SET stripe_price_id = $1, stripe_price_cents = $2 WHERE id = $3`,
