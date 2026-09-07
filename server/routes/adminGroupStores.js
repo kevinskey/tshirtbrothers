@@ -324,6 +324,68 @@ router.post('/:id/products', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── PATCH /:id/products/:productId ───────────────────────────────────────
+// Update a product's is_active flag (pause/resume selling).
+router.patch('/:id/products/:productId', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const productId = parseInt(req.params.productId, 10);
+    if (!Number.isInteger(id) || !Number.isInteger(productId)) return next();
+    const { is_active } = req.body ?? {};
+    if (typeof is_active !== 'boolean') {
+      return res.status(400).json({ error: 'is_active (boolean) required' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE store_products SET is_active = $3 WHERE store_id = $1 AND id = $2
+       RETURNING id, title, is_active`,
+      [id, productId, is_active],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── DELETE /:id/products/:productId ──────────────────────────────────────
+// Hard-deletes a product that has never been ordered. Products that
+// appear in any order's frozen split snapshot are deactivated instead,
+// so financial history keeps resolving. Any design draft pointing at the
+// product survives via its ON DELETE SET NULL FK.
+router.delete('/:id/products/:productId', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const productId = parseInt(req.params.productId, 10);
+    if (!Number.isInteger(id) || !Number.isInteger(productId)) return next();
+
+    const { rows: ordered } = await pool.query(
+      `SELECT EXISTS (
+         SELECT 1
+           FROM store_orders o,
+                jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines', '[]'::jsonb)) l
+          WHERE o.store_id = $1
+            AND (l->>'store_product_id')::int = $2
+       ) AS has_orders`,
+      [id, productId],
+    );
+
+    if (ordered[0]?.has_orders) {
+      const { rows } = await pool.query(
+        `UPDATE store_products SET is_active = false WHERE store_id = $1 AND id = $2
+         RETURNING id, title`,
+        [id, productId],
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
+      return res.json({ deleted: false, deactivated: true, title: rows[0].title });
+    }
+
+    const { rows } = await pool.query(
+      `DELETE FROM store_products WHERE store_id = $1 AND id = $2 RETURNING id, title`,
+      [id, productId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
+    res.json({ deleted: true, deactivated: false, title: rows[0].title });
+  } catch (err) { next(err); }
+});
+
 // ── GET /mockups ─────────────────────────────────────────────────────────
 // List existing TSB mockups that are candidates for publishing as store
 // products. Only returns mockups with a real preview or product image.

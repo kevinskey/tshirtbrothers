@@ -1267,6 +1267,22 @@ export async function addGroupStoreProduct(id: number, data: {
   });
 }
 
+export async function setGroupStoreProductActive(id: number, productId: number, isActive: boolean) {
+  return authRequest<{ id: number; title: string; is_active: boolean }>(
+    `/admin/group-stores/${id}/products/${productId}`,
+    { method: 'PATCH', body: JSON.stringify({ is_active: isActive }) },
+  );
+}
+
+// Hard-deletes an unsold product; the server deactivates instead when
+// the product appears in any order's frozen split snapshot.
+export async function deleteGroupStoreProduct(id: number, productId: number) {
+  return authRequest<{ deleted: boolean; deactivated: boolean; title: string }>(
+    `/admin/group-stores/${id}/products/${productId}`,
+    { method: 'DELETE' },
+  );
+}
+
 export async function searchSsCatalog(q: string, brand?: string) {
   const params = new URLSearchParams();
   if (q)     params.set('q', q);

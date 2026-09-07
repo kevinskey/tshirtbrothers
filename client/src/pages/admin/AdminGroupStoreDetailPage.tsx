@@ -8,6 +8,7 @@ import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangl
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
+  setGroupStoreProductActive, deleteGroupStoreProduct,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
   deleteGroupStore,
@@ -131,6 +132,7 @@ export default function AdminGroupStoreDetailPage() {
                     <th className="px-4 py-3 text-left">Margin</th>
                     <th className="px-4 py-3 text-left">Min Qty</th>
                     <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -150,9 +152,37 @@ export default function AdminGroupStoreDetailPage() {
                         </td>
                         <td className="px-4 py-3 text-gray-700">{p.min_qty}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${
-                            p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                          }`}>{p.is_active ? 'Active' : 'Off'}</span>
+                          <button
+                            type="button"
+                            title={p.is_active ? 'Click to pause selling' : 'Click to resume selling'}
+                            onClick={async () => {
+                              try {
+                                await setGroupStoreProductActive(storeId, p.id, !p.is_active);
+                                toast.success(p.is_active ? `"${p.title}" paused` : `"${p.title}" active`);
+                                void load();
+                              } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+                            }}
+                            className={`inline-block px-2 py-0.5 rounded-full text-xs cursor-pointer hover:ring-2 hover:ring-offset-1 ${
+                              p.is_active ? 'bg-green-100 text-green-700 hover:ring-green-300' : 'bg-gray-100 text-gray-600 hover:ring-gray-300'
+                            }`}>{p.is_active ? 'Active' : 'Off'}</button>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            title="Delete product"
+                            className="text-gray-400 hover:text-red-600"
+                            onClick={async () => {
+                              if (!confirm(`Delete "${p.title}" from this store?`)) return;
+                              try {
+                                const r = await deleteGroupStoreProduct(storeId, p.id);
+                                toast.success(r.deleted
+                                  ? `"${r.title}" deleted`
+                                  : `"${r.title}" has orders — deactivated instead`);
+                                void load();
+                              } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+                            }}>
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </td>
                       </tr>
                     );
