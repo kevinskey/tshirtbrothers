@@ -1201,6 +1201,19 @@ export interface SsCatalogItem {
   description_html?: string | null;
 }
 
+export interface SsStyleDetail {
+  ss_id: string;
+  colors: Array<string | { name: string }>;
+  sizes: string[];
+  base_cost: number | string | null;
+}
+
+// Live-enriches a style whose products row is missing SKU-level data
+// (colors/sizes/base cost); the server heals the row as a side effect.
+export async function fetchSsStyleDetail(ssId: string) {
+  return authRequest<SsStyleDetail>(`/admin/group-stores/ss-catalog/${encodeURIComponent(ssId)}/detail`);
+}
+
 export async function fetchGroupStores() {
   return authRequest<{ stores: GroupStoreSummary[] }>('/admin/group-stores/list');
 }

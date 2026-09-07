@@ -11,7 +11,7 @@ import { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { fetchProducts } from '../services/ssActivewear.js';
+import { fetchProducts, fetchStyleColors, fetchStyleSkuData } from '../services/ssActivewear.js';
 import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
@@ -608,6 +608,52 @@ router.get('/ss-catalog', async (req, res, next) => {
       console.error('[adminGroupStores] S&S live fetch failed:', err.message);
       res.json({ source: 'empty', results: [] });
     }
+  } catch (err) { next(err); }
+});
+
+// ── GET /ss-catalog/:ssId/detail ─────────────────────────────────────────
+// Live-enrich a single style. The nightly /styles/ sync doesn't include
+// SKU-level data, so most `products` rows have empty colors/sizes and a
+// $0 base_price. When the publish form opens a style with gaps, this
+// endpoint pulls the real SKU list from S&S on demand and writes it back
+// to the products row, so each style only ever costs one live call.
+router.get('/ss-catalog/:ssId/detail', async (req, res, next) => {
+  try {
+    const ssId = String(req.params.ssId).trim();
+    if (!ssId) return res.status(400).json({ error: 'ss id required' });
+
+    const { rows } = await pool.query(
+      `SELECT id, colors, sizes, base_price FROM products WHERE ss_id = $1 LIMIT 1`,
+      [ssId],
+    );
+    const row = rows[0] ?? null;
+    let colors = Array.isArray(row?.colors) ? row.colors : [];
+    let sizes  = Array.isArray(row?.sizes)  ? row.sizes  : [];
+    let basePrice = row ? Number(row.base_price) || 0 : 0;
+
+    if (colors.length === 0 || sizes.length === 0 || basePrice <= 0) {
+      const [liveColors, sku] = await Promise.all([
+        colors.length === 0 ? fetchStyleColors(ssId) : Promise.resolve(null),
+        (sizes.length === 0 || basePrice <= 0) ? fetchStyleSkuData(ssId) : Promise.resolve(null),
+      ]);
+      if (liveColors?.length) colors = liveColors;
+      if (sku) {
+        if (sizes.length === 0 && sku.sizes.length) sizes = sku.sizes;
+        if (basePrice <= 0 && sku.customer_price != null) basePrice = sku.customer_price;
+      }
+      if (row) {
+        await pool.query(
+          `UPDATE products SET
+             colors = CASE WHEN colors IS NULL OR colors::text = '[]' THEN $2::jsonb ELSE colors END,
+             sizes  = CASE WHEN sizes  IS NULL OR sizes::text  = '[]' THEN $3::jsonb ELSE sizes  END,
+             base_price = CASE WHEN base_price IS NULL OR base_price <= 0 THEN COALESCE($4, base_price) ELSE base_price END
+           WHERE id = $1`,
+          [row.id, JSON.stringify(colors), JSON.stringify(sizes), basePrice > 0 ? basePrice : null],
+        );
+      }
+    }
+
+    res.json({ ss_id: ssId, colors, sizes, base_cost: basePrice > 0 ? basePrice : null });
   } catch (err) { next(err); }
 });
 
