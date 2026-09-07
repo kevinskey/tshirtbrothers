@@ -359,9 +359,10 @@ export default function GroupStorePage() {
                 {featuredProducts.length} {featuredProducts.length === 1 ? 'item' : 'items'}
               </span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+            <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x snap-mandatory [scrollbar-width:thin]">
               {featuredProducts.map((p) => (
-                <Link key={p.id} to={storeLink(slug, `/product/${p.slug}`)} className="group block">
+                <Link key={p.id} to={storeLink(slug, `/product/${p.slug}`)}
+                  className="group block w-44 sm:w-56 lg:w-64 shrink-0 snap-start">
                   <div className="aspect-square rounded-xl overflow-hidden bg-gray-900 border border-gray-800">
                     {p.cover_image ? (
                       <img
@@ -685,20 +686,24 @@ function EmptyShopStrip({ primary, storeSlug }: { primary: string; storeSlug: st
   );
 }
 
+// Single-row shelf: each collection renders as ONE horizontally
+// scrollable strip (snap scrolling), so the page reads as a vertical
+// stack of collections instead of tall wrapped grids.
 function ProductGrid({ products, slug, primary }: { products: StoreProduct[]; slug: string; primary: string }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+    <div className="flex gap-5 overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 snap-x snap-mandatory [scrollbar-width:thin]">
       {products.map((p) => (
         <Link
           key={p.id}
           to={storeLink(slug, `/product/${p.slug}`)}
-          className="group block"
+          className="group block w-44 sm:w-56 lg:w-64 shrink-0 snap-start"
         >
           <div className="aspect-square rounded-xl overflow-hidden bg-gray-100 border border-gray-100">
             {p.cover_image ? (
               <img
                 src={p.cover_image}
                 alt={p.title}
+                loading="lazy"
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
               />
             ) : (
