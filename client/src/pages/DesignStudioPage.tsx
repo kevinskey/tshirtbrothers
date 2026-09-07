@@ -90,6 +90,9 @@ interface DesignElement {
   borderRadius?: number; // 0-50 percent
   opacity?: number; // 0-1
   filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  // 'multiply' blends the element into the product photo so fabric
+  // texture — folds, seams, hoodie drawcords — shows through the print.
+  blend?: 'normal' | 'multiply';
   // Phase 2 PR #14: text effects (Fabric-only painting; round-trip safe).
   shadow?: { offsetX: number; offsetY: number; blur: number; color: string };
   strokeColor?: string;
@@ -926,13 +929,45 @@ export default function DesignStudioPage() {
     let dataUrl: string;
     try {
       const html2canvas = (await import('html2canvas')).default;
-      const cv = await html2canvas(surface, {
-        backgroundColor: null,
-        useCORS: true,
-        scale: 2,
-        logging: false,
-      });
-      dataUrl = cv.toDataURL('image/png');
+      const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false } as const;
+
+      // html2canvas ignores CSS mix-blend-mode, so 'multiply' elements
+      // would export as opaque stickers. Capture in two passes instead:
+      // base (everything except blended elements), then blended elements
+      // alone on transparency, and multiply-composite them in a canvas —
+      // which matches what the browser shows live.
+      const blendNodes = [...surface.querySelectorAll<HTMLElement>('[data-blend="multiply"]')];
+      if (blendNodes.length === 0) {
+        const cv = await html2canvas(surface, opts);
+        dataUrl = cv.toDataURL('image/png');
+      } else {
+        const otherNodes = [...surface.querySelectorAll<HTMLElement>('[data-el-wrapper]:not([data-blend="multiply"])')];
+        blendNodes.forEach((n) => { n.style.visibility = 'hidden'; });
+        let baseCv: HTMLCanvasElement;
+        try {
+          baseCv = await html2canvas(surface, opts);
+        } finally {
+          blendNodes.forEach((n) => { n.style.visibility = ''; });
+        }
+        const productImg = productImgRef.current;
+        otherNodes.forEach((n) => { n.style.visibility = 'hidden'; });
+        if (productImg) productImg.style.visibility = 'hidden';
+        let overlayCv: HTMLCanvasElement;
+        try {
+          overlayCv = await html2canvas(surface, opts);
+        } finally {
+          otherNodes.forEach((n) => { n.style.visibility = ''; });
+          if (productImg) productImg.style.visibility = '';
+        }
+        const out = document.createElement('canvas');
+        out.width = baseCv.width;
+        out.height = baseCv.height;
+        const ctx = out.getContext('2d')!;
+        ctx.drawImage(baseCv, 0, 0);
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(overlayCv, 0, 0, out.width, out.height);
+        dataUrl = out.toDataURL('image/png');
+      }
     } finally {
       // Restore both the visible side and the previous selection.
       if (useFabricRenderer && fabricBridgeRef.current) {
@@ -3534,6 +3569,12 @@ export default function DesignStudioPage() {
 
       {/* Layer */}
       <div className="relative">
+        <button
+          type="button"
+          title="Blend the design into the fabric so folds and drawcords show through"
+          onClick={() => updateElement(selectedEl.id, { blend: (selectedEl.blend ?? 'normal') === 'multiply' ? 'normal' : 'multiply' })}
+          className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${(selectedEl.blend ?? 'normal') === 'multiply' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+        >👕<span>Fabric</span></button>
         <button type="button" onClick={() => setImgPop(imgPop === 'ly' ? null : 'ly')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'ly' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>☰<span>Layer</span></button>
         {imgPop === 'ly' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
           <button type="button" onClick={() => { bringToFront(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬆ Front</button>
@@ -3888,8 +3929,11 @@ export default function DesignStudioPage() {
                     setActiveTool(null);
                   }
                 }}
+                data-el-wrapper
+                data-blend={el.blend === 'multiply' ? 'multiply' : undefined}
                 className={`absolute cursor-move ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                 style={{
+                  mixBlendMode: el.blend === 'multiply' ? 'multiply' : undefined,
                   left: `${el.x}%`,
                   top: `${el.y}%`,
                   width: `${el.width}%`,
@@ -3918,7 +3962,7 @@ export default function DesignStudioPage() {
                   <img
                     src={el.content}
                     alt="Design element"
-                    className="w-full object-contain pointer-events-none drop-shadow-lg"
+                    className={`w-full object-contain pointer-events-none ${el.blend === 'multiply' ? '' : 'drop-shadow-lg'}`}
                     draggable={false}
                     style={{
                       borderRadius: el.borderRadius ? `${el.borderRadius}%` : undefined,
