@@ -744,6 +744,98 @@ router.get('/ss-catalog/:ssId/detail', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Coupons ──────────────────────────────────────────────────────────────
+// Backed entirely by Stripe: a Coupon (the discount) + a Promotion Code
+// (the customer-facing code). Store checkout sessions set
+// allow_promotion_codes, so buyers redeem right on the Stripe page.
+// Codes are scoped to a store via metadata for listing purposes only —
+// Stripe applies any active code account-wide at checkout.
+import Stripe from 'stripe';
+let _stripe = null;
+function stripeClient() {
+  if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe not configured');
+  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+  return _stripe;
+}
+
+// GET /:id/coupons — list this store's promotion codes.
+router.get('/:id/coupons', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+    const stripe = stripeClient();
+    const list = await stripe.promotionCodes.list({ limit: 100, expand: ['data.coupon'] });
+    const coupons = list.data
+      .filter((pc) => pc.metadata?.store_id === String(id))
+      .map((pc) => ({
+        id: pc.id,
+        code: pc.code,
+        active: pc.active,
+        percent_off: pc.coupon?.percent_off ?? null,
+        amount_off_cents: pc.coupon?.amount_off ?? null,
+        times_redeemed: pc.times_redeemed,
+        max_redemptions: pc.max_redemptions,
+        expires_at: pc.expires_at ? new Date(pc.expires_at * 1000).toISOString() : null,
+      }));
+    res.json({ coupons });
+  } catch (err) { next(err); }
+});
+
+// POST /:id/coupons — create a coupon + code.
+// Body: { code, percent_off? OR amount_off_cents?, max_redemptions?, expires_at? }
+router.post('/:id/coupons', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+    const { code, percent_off, amount_off_cents, max_redemptions, expires_at } = req.body ?? {};
+    const cleanCode = String(code ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+    if (!cleanCode) return res.status(400).json({ error: 'code required (letters/numbers)' });
+    const pct = Number(percent_off);
+    const amt = Number(amount_off_cents);
+    const hasPct = Number.isFinite(pct) && pct > 0 && pct <= 100;
+    const hasAmt = Number.isInteger(amt) && amt > 0;
+    if (hasPct === hasAmt) {
+      return res.status(400).json({ error: 'Provide percent_off (1-100) OR amount_off_cents' });
+    }
+
+    const stripe = stripeClient();
+    const coupon = await stripe.coupons.create({
+      duration: 'once',
+      name: cleanCode,
+      ...(hasPct ? { percent_off: pct } : { amount_off: amt, currency: 'usd' }),
+    });
+    const pc = await stripe.promotionCodes.create({
+      coupon: coupon.id,
+      code: cleanCode,
+      metadata: { store_id: String(id) },
+      ...(Number.isInteger(Number(max_redemptions)) && Number(max_redemptions) > 0
+        ? { max_redemptions: Number(max_redemptions) } : {}),
+      ...(expires_at ? { expires_at: Math.floor(new Date(expires_at).getTime() / 1000) } : {}),
+    });
+    res.status(201).json({ id: pc.id, code: pc.code });
+  } catch (err) {
+    if (err?.code === 'resource_already_exists' || /already exists/i.test(err?.message ?? '')) {
+      return res.status(409).json({ error: 'That code already exists' });
+    }
+    next(err);
+  }
+});
+
+// DELETE /:id/coupons/:promoId — deactivate (Stripe codes can't be deleted).
+router.delete('/:id/coupons/:promoId', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+    const stripe = stripeClient();
+    const pc = await stripe.promotionCodes.retrieve(String(req.params.promoId));
+    if (pc.metadata?.store_id !== String(id)) {
+      return res.status(404).json({ error: 'Coupon not found for this store' });
+    }
+    await stripe.promotionCodes.update(pc.id, { active: false });
+    res.json({ deactivated: true, code: pc.code });
+  } catch (err) { next(err); }
+});
+
 // ── POST /upload-mockup ──────────────────────────────────────────────────
 // Body: { data_url: "data:image/png;base64,...", filename?, store_slug? }
 // Uploads a store product mockup to DO Spaces and returns { url }. The

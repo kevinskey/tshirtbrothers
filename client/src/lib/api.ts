@@ -1216,6 +1216,32 @@ export async function fetchSsStyleDetail(ssId: string) {
   return authRequest<SsStyleDetail>(`/admin/group-stores/ss-catalog/${encodeURIComponent(ssId)}/detail`);
 }
 
+export interface StoreCoupon {
+  id: string; code: string; active: boolean;
+  percent_off: number | null; amount_off_cents: number | null;
+  times_redeemed: number; max_redemptions: number | null;
+  expires_at: string | null;
+}
+
+export async function fetchGroupStoreCoupons(id: number) {
+  return authRequest<{ coupons: StoreCoupon[] }>(`/admin/group-stores/${id}/coupons`);
+}
+
+export async function createGroupStoreCoupon(id: number, data: {
+  code: string; percent_off?: number; amount_off_cents?: number;
+  max_redemptions?: number; expires_at?: string;
+}) {
+  return authRequest<{ id: string; code: string }>(`/admin/group-stores/${id}/coupons`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+
+export async function deactivateGroupStoreCoupon(id: number, promoId: string) {
+  return authRequest<{ deactivated: boolean; code: string }>(
+    `/admin/group-stores/${id}/coupons/${promoId}`, { method: 'DELETE' },
+  );
+}
+
 export async function fetchGroupStores() {
   return authRequest<{ stores: GroupStoreSummary[] }>('/admin/group-stores/list');
 }
