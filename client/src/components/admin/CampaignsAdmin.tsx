@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye, Upload } from 'lucide-react';
 
-type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30';
+type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30' | 'prospects';
 
 interface CampaignRow {
   id: number;
@@ -59,6 +59,7 @@ const FILTER_LABELS: Record<Filter, string> = {
   recent_quoted: 'Quoted in last 90 days',
   past_invoiced: 'Past customers (have invoice)',
   new_30: 'New (joined last 30 days)',
+  prospects: 'Sales prospects (B2B leads)',
 };
 
 // Resize an image Blob to fit within `maxEdge` on its long side and re-encode

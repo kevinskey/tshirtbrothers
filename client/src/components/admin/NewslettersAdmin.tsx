@@ -6,12 +6,13 @@ import {
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
-type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30';
+type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30' | 'prospects';
 const FILTER_LABELS: Record<Filter, string> = {
   all: 'All customers',
   recent_quoted: 'Quoted in last 90 days',
   past_invoiced: 'Past customers (have invoice)',
   new_30: 'New (joined last 30 days)',
+  prospects: 'Sales prospects (B2B leads)',
 };
 
 interface Block { id: string; type: string; enabled: boolean; data: Record<string, unknown> }

@@ -85,6 +85,19 @@ router.use(authenticate, adminOnly);
 // preview endpoint and the send endpoint so the count the admin sees is
 // the count we actually send to.
 export async function resolveRecipients(filter) {
+  // Prospects live in their own table (B2B leads, not customer accounts).
+  // Same unsubscribe suppression as every other segment.
+  if (filter === 'prospects') {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT LOWER(TRIM(p.contact_email)) AS email, p.name
+         FROM prospects p
+         LEFT JOIN email_unsubscribes us ON us.email = LOWER(TRIM(p.contact_email))
+        WHERE p.contact_email IS NOT NULL AND TRIM(p.contact_email) <> ''
+          AND p.contact_email LIKE '%@%'
+          AND us.email IS NULL`,
+    );
+    return rows;
+  }
   const params = [];
   let where = `WHERE u.role = 'customer' AND u.email IS NOT NULL AND u.email <> ''`;
   if (filter === 'recent_quoted') {
