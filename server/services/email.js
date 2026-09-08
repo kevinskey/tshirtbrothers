@@ -957,6 +957,29 @@ export async function sendMockupDecisionToAdmin(mockup, action, note) {
   }
 }
 
+/**
+ * Send one newsletter email. The newsletter renderer produced the full
+ * document; this injects the SAME per-recipient compliance + tracking the
+ * classic campaign path uses (unsubscribe link, open pixel, click proxy)
+ * so newsletters flow through the existing analytics untouched.
+ */
+export async function sendNewsletterEmail({ to, subject, renderHtml, campaignId }) {
+  const token = unsubscribeToken(to);
+  const unsubUrl = `${DOMAIN}/api/email/unsubscribe?e=${encodeURIComponent(to)}&t=${token}${campaignId ? `&c=${campaignId}` : ''}`;
+  const unsubHtml = `
+    <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;text-align:center;font-family:Arial,sans-serif;">
+      You're getting this because you've worked with T-Shirt Brothers before.
+      <a href="${unsubUrl}" style="color:#9ca3af;text-decoration:underline;">Unsubscribe</a>.
+    </p>`;
+  const openTok = trackingToken(to, 'open');
+  const openPixelHtml = campaignId
+    ? `<img src="${DOMAIN}/api/email/track/open?c=${campaignId}&e=${encodeURIComponent(to)}&t=${openTok}" alt="" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" />`
+    : '';
+  let html = renderHtml({ unsubHtml, openPixelHtml });
+  if (campaignId) html = wrapLinksForTracking(html, campaignId, to);
+  return resend.emails.send({ from: FROM_EMAIL, to: [to], subject, html });
+}
+
 export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [], campaignId = 0 }) {
   const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to, campaignId });
   return resend.emails.send({
