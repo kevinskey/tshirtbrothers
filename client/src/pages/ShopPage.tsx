@@ -331,23 +331,24 @@ export default function ShopPage() {
   return (
     <Layout>
       <Seo title={seoTitle} description={seoDesc} path="/shop" />
-      <section className="py-12">
+      <section className="py-4 sm:py-8">
         <div className="container mx-auto px-4">
-          {/* Header */}
-          <div className="text-center mb-10">
-            <h1 className="font-display text-4xl md:text-5xl font-bold">
-              TSHIRT Brothers Catalogue
+          {/* Header — compact so results are visible without scrolling.
+              The subtitle only renders from sm up. */}
+          <div className="mb-3 sm:mb-6 flex items-baseline justify-between gap-3">
+            <h1 className="font-display text-xl sm:text-3xl md:text-4xl font-bold">
+              Catalogue
             </h1>
-            <p className="mt-3 text-gray-500 max-w-xl mx-auto">
-              Browse our complete catalog with thousands of products ready for
-              custom printing.
+            <p className="hidden sm:block text-sm text-gray-500">
+              Thousands of blanks, ready for custom printing.
             </p>
           </div>
 
-          {/* Toolbar */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-8">
+          {/* Toolbar — search full width; brand + category share one row
+              on phones so the grid starts high on the page. */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
             {/* Search */}
-            <div className="relative flex-1">
+            <div className="relative col-span-2 sm:flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
@@ -394,7 +395,7 @@ export default function ShopPage() {
             </select>
 
             {/* Count */}
-            <span className="text-xs text-gray-500 whitespace-nowrap self-center">
+            <span className="col-span-2 sm:col-span-1 text-xs text-gray-500 whitespace-nowrap self-center text-center sm:text-left">
               Showing {products.length} of {totalProducts} products
             </span>
           </div>
