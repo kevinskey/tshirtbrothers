@@ -187,7 +187,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
-  const [quoteDesigns, setQuoteDesigns] = useState<{ id: number; customer_name: string; design_url: string; product_name: string; paid: boolean }[]>([]);
+  const [quoteDesigns, setQuoteDesigns] = useState<{ id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[]>([]);
   // Production focus: default to art from quotes whose deposit was paid.
   const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
 
@@ -1521,17 +1521,31 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
     fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
-      .then((quotes: { id: number; customer_name: string; design_url: string | null; product_name: string; status: string; accepted_at?: string | null }[]) => {
+      .then((quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[]) => {
         // Keep every quote with artwork available (re-prints, reorders),
         // but tag deposit-paid ones (accepted/completed = deposit taken)
-        // so the panel can default to production-ready work.
-        setQuoteDesigns(quotes.filter(q => q.design_url).map(q => ({
-          id: q.id,
-          customer_name: q.customer_name,
-          design_url: q.design_url!,
-          product_name: q.product_name,
-          paid: Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed',
-        })));
+        // so the panel can default to production-ready work. EVERY file
+        // attached to a quote gets its own entry — primary design, extra
+        // designs, and raw source uploads — deduped by URL.
+        const entries: { id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[] = [];
+        for (const q of quotes) {
+          const files = [...new Set([
+            q.design_url,
+            ...(Array.isArray(q.extra_design_urls) ? q.extra_design_urls : []),
+            ...(Array.isArray(q.source_upload_urls) ? q.source_upload_urls : []),
+          ].filter((u): u is string => typeof u === 'string' && u.length > 0))];
+          const paid = Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed';
+          files.forEach((url, i) => entries.push({
+            id: `${q.id}:${i}`,
+            customer_name: q.customer_name,
+            design_url: url,
+            product_name: q.product_name,
+            paid,
+            fileNo: i + 1,
+            fileCount: files.length,
+          }));
+        }
+        setQuoteDesigns(entries);
       })
       .catch(() => {});
   }, [mode]);
@@ -1941,12 +1955,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                           ) : (
                             <div className="space-y-2">
                               {shown.map(q => (
-                                <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                                <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}${q.fileCount > 1 ? ` (file ${q.fileNo})` : ''}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
                                   className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
                                   <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
                                   <div className="min-w-0 flex-1">
                                     <p className="text-xs font-semibold text-gray-900 truncate">{q.customer_name}</p>
-                                    <p className="text-[10px] text-gray-400 truncate">{q.product_name}</p>
+                                    <p className="text-[10px] text-gray-400 truncate">
+                                      {q.product_name}{q.fileCount > 1 ? ` · file ${q.fileNo}/${q.fileCount}` : ''}
+                                    </p>
                                   </div>
                                   {q.paid && <span className="text-[9px] font-bold text-green-600 shrink-0">💰</span>}
                                 </button>
