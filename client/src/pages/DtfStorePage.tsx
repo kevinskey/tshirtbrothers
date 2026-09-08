@@ -498,9 +498,15 @@ export default function DtfStorePage() {
                   {uploadedFile.preview && (
                     <div className="mt-3 rounded-xl border border-orange-200 bg-white p-2">
                       {/* Frame = the sheet being purchased (22" × chosenFt) */}
+                      {/* Width derives from the height cap via the ratio, so
+                          the sheet never distorts: the old maxHeight clamp
+                          squashed tall sheets because w-full held the width. */}
                       <div
-                        className="relative w-full overflow-hidden rounded-md border border-gray-200"
-                        style={{ aspectRatio: `6600 / ${chosenPx}`, maxHeight: '20rem' }}
+                        className="relative mx-auto overflow-hidden rounded-md border border-gray-200"
+                        style={{
+                          aspectRatio: `6600 / ${chosenPx}`,
+                          width: `min(100%, calc(20rem * 6600 / ${chosenPx}))`,
+                        }}
                       >
                         <img
                           src={uploadedFile.preview}
