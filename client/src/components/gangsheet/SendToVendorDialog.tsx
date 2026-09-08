@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
 import { X, Send } from 'lucide-react';
 
-// Preset print vendors. TSTG's order address hasn't been confirmed yet
-// (tstgdirect2film.com has no MX record as of 2026-09-08), so its email
-// starts blank — whatever gets typed is remembered in localStorage and
-// pre-filled next time, per vendor.
+// Preset print vendors. A typed-in address is remembered in localStorage
+// per vendor and takes precedence over these defaults.
 const PRESETS = [
   { key: 'kolormatrix', label: 'KolorMatrix', email: 'order@kolormatrix.com' },
-  { key: 'tstg', label: 'TSTG Direct2Film', email: '' },
+  { key: 'tstg', label: 'TSTG Direct2Film', email: 'tstgdirect2film@gmail.com' },
   { key: 'custom', label: 'Other vendor', email: '' },
 ] as const;
 
