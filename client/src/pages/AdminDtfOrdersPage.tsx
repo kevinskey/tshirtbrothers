@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsheet/SendToVendorDialog';
 
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Types — mirror server/routes/gangsheetStore.js's admin/orders shape    */
@@ -26,6 +27,9 @@ type OrderRow = {
   status: string;
   paid_at: string | null;
   created_at: string;
+  vendor_name: string | null;
+  vendor_email: string | null;
+  vendor_sent_at: string | null;
 };
 
 // Server-side height check (1 ft = 3,600 px) as a display value, so a
@@ -485,6 +489,22 @@ function DtfOrdersQueue() {
     advance.mutate({ id, status });
   }
 
+  // Which order the Send-to-Vendor dialog is open for (null = closed).
+  const [vendorOrder, setVendorOrder] = useState<OrderRow | null>(null);
+
+  async function sendOrderToVendor(payload: VendorSendPayload) {
+    if (!vendorOrder) return;
+    const r = await fetch(`/api/gangsheet-store/admin/orders/${vendorOrder.id}/send-to-vendor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || 'Send failed');
+    toast.success(`Order #${vendorOrder.id} sent to ${payload.vendor_email}`);
+    queryClient.invalidateQueries({ queryKey: ['dtf-admin-orders'] });
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <div className="mx-auto max-w-6xl">
@@ -606,6 +626,19 @@ function DtfOrdersQueue() {
                           >
                             <Download className="h-3.5 w-3.5" /> Download
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setVendorOrder(order)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 px-2.5 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-50"
+                          >
+                            <Send className="h-3.5 w-3.5" /> Send to vendor
+                          </button>
+                          {order.vendor_sent_at && (
+                            <span className="text-[11px] text-gray-500">
+                              Sent to {order.vendor_name || order.vendor_email}{' '}
+                              {new Date(order.vendor_sent_at).toLocaleDateString()}
+                            </span>
+                          )}
                           {action && (
                             <button
                               type="button"
@@ -636,6 +669,13 @@ function DtfOrdersQueue() {
           </div>
         )}
       </div>
+
+      <SendToVendorDialog
+        open={vendorOrder !== null}
+        onClose={() => setVendorOrder(null)}
+        onSend={sendOrderToVendor}
+        subject={vendorOrder ? `Order #${vendorOrder.id} — 22in × ${vendorOrder.length_ft}ft` : ''}
+      />
     </div>
   );
 }

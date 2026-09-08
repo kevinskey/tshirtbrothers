@@ -1260,6 +1260,70 @@ export async function sendGangSheetReadyToCustomer({ order }) {
   });
 }
 
+// Outsource a gang sheet to a print vendor (KolorMatrix, TSTG, ...). The
+// email is the production handoff, so it carries the full document spec —
+// DPI, pixel + physical dimensions, print count, per-design breakdown —
+// plus a download link. replyTo is the shop admin so vendor questions come
+// back to a monitored inbox, not noreply@.
+export async function sendGangSheetToVendor({
+  vendorName,
+  vendorEmail,
+  reference,        // human label: 'Order #123' or the sheet name
+  widthPx,
+  heightPx,
+  dpi = 300,
+  totalPrints = null,
+  designs = null,   // [{ name, quantity, printWidthInches }] when known
+  downloadUrl,
+  linkExpiresDays = null, // null => permanent public link
+  note = null,
+}) {
+  const widthIn = widthPx ? (widthPx / dpi) : null;
+  const heightIn = heightPx ? (heightPx / dpi) : null;
+  const sizeLabel = widthIn && heightIn
+    ? `${widthIn.toFixed(1)}in &times; ${heightIn.toFixed(1)}in (${(heightIn / 12).toFixed(2)} ft long)`
+    : 'see file';
+  const designRows = Array.isArray(designs) && designs.length
+    ? `
+      <p style="margin:18px 0 6px;font-size:14px;font-weight:600;color:${BRAND_DARK};">Designs on this sheet</p>
+      ${detailsTable(designs.map((d) => detailRow(
+        escapeHtml(d.name || 'design'),
+        `${Number(d.quantity) || 1} print${(Number(d.quantity) || 1) === 1 ? '' : 's'}${d.printWidthInches ? ` @ ${escapeHtml(String(d.printWidthInches))}in wide` : ''}`
+      )).join(''))}
+    `
+    : '';
+  const expiryLine = linkExpiresDays
+    ? `<p style="font-size:13px;color:#b91c1c;margin-top:8px;">This download link expires in ${linkExpiresDays} days — please download promptly.</p>`
+    : '';
+  const subject = `DTF gang sheet order from T-Shirt Brothers — ${reference}`;
+  const body = `
+    <p>Hello${vendorName ? ` ${escapeHtml(vendorName)}` : ''},</p>
+    <p>Please print the attached DTF gang sheet for T-Shirt Brothers. Full document specs below.</p>
+    ${detailsTable(
+      detailRow('Reference', escapeHtml(reference)) +
+      detailRow('Resolution', `${dpi} DPI`) +
+      detailRow('Print size', sizeLabel) +
+      (widthPx && heightPx ? detailRow('Pixel dimensions', `${widthPx} &times; ${heightPx} px`) : '') +
+      (totalPrints ? detailRow('Number of prints', String(totalPrints)) : '') +
+      detailRow('File format', 'PNG, transparent background') +
+      (note ? detailRow('Notes', escapeHtml(note)) : '')
+    )}
+    ${designRows}
+    ${primaryButton('Download print file', downloadUrl)}
+    <p style="font-size:13px;color:#6b7280;margin-top:12px;">Direct link: <a href="${downloadUrl}" style="color:${BRAND_ORANGE};word-break:break-all;">${downloadUrl}</a></p>
+    ${expiryLine}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-4845.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [vendorEmail],
+    replyTo: ADMIN_EMAIL,
+    bcc: [ADMIN_EMAIL],
+    subject,
+    html: baseLayout('Gang Sheet Print Order', body),
+  });
+}
+
 export async function sendGangSheetPaidToAdmin({ order }) {
   const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
   const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';

@@ -9,7 +9,8 @@ import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
-import { sendGangSheetReadyToCustomer } from '../services/email.js';
+import { sendGangSheetReadyToCustomer, sendGangSheetToVendor } from '../services/email.js';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const router = Router();
 
@@ -808,6 +809,117 @@ router.get('/admin/orders/:id/file', ...adminGuard, async (req, res, next) => {
       if (typeof obj.Body.destroy === 'function') obj.Body.destroy();
     });
     obj.Body.pipe(res);
+  } catch (err) { next(err); }
+});
+
+// ── Admin: outsource a sheet to a print vendor ────────────────────────────
+//
+// Production files are private in Spaces, so the vendor gets a presigned
+// GET link. 7 days is the S3 presign ceiling — the email warns them the
+// link expires.
+
+const VENDOR_LINK_DAYS = 7;
+
+async function presignFileKey(fileKey) {
+  return getSignedUrl(
+    getSpacesClient(),
+    new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: fileKey }),
+    { expiresIn: VENDOR_LINK_DAYS * 24 * 3600 },
+  );
+}
+
+function parseVendorBody(body) {
+  const vendorEmail = String(body?.vendor_email || '').trim();
+  if (!EMAIL_RE.test(vendorEmail)) return { error: 'A valid vendor email is required' };
+  return {
+    vendorEmail,
+    vendorName: String(body?.vendor_name || '').trim().slice(0, 120) || null,
+    note: String(body?.note || '').trim().slice(0, 2000) || null,
+  };
+}
+
+// Paid-order queue path: the order row already holds the private file_key
+// (dimensions are baked into the key by /upload and /compose).
+router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, next) => {
+  try {
+    const parsed = parseVendorBody(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { rows } = await pool.query('SELECT * FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.file_key) return res.status(400).json({ error: 'Order has no production file' });
+    const dims = order.file_key.match(FILE_KEY_RE);
+    const downloadUrl = await presignFileKey(order.file_key);
+    await sendGangSheetToVendor({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      reference: `TSB Order #${order.id}`,
+      widthPx: dims ? Number(dims[1]) : null,
+      heightPx: dims ? Number(dims[2]) : null,
+      downloadUrl,
+      linkExpiresDays: VENDOR_LINK_DAYS,
+      note: parsed.note,
+    });
+    const { rows: updated } = await pool.query(
+      `UPDATE gang_sheet_orders SET vendor_name = $1, vendor_email = $2, vendor_sent_at = now()
+       WHERE id = $3 RETURNING *`,
+      [parsed.vendorName, parsed.vendorEmail, order.id],
+    );
+    res.json(updated[0]);
+  } catch (err) { next(err); }
+});
+
+// Builder path: the admin composes the sheet server-side first (POST
+// /compose, same pipeline as customer checkout), then hands the resulting
+// file_key here along with the design breakdown for the email spec sheet.
+router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
+  try {
+    const parsed = parseVendorBody(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { file_key, sheet_id, sheet_name, designs } = req.body || {};
+    const dims = typeof file_key === 'string' ? file_key.match(FILE_KEY_RE) : null;
+    if (!dims) return res.status(400).json({ error: 'Invalid file_key' });
+    // Belt & suspenders: confirm the object actually exists before emailing
+    // a vendor a link to nothing.
+    try {
+      await getSpacesClient().send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: file_key }));
+    } catch {
+      return res.status(400).json({ error: 'Print file not found — re-compose the sheet and try again' });
+    }
+    const cleanDesigns = Array.isArray(designs)
+      ? designs.slice(0, 200).map((d) => ({
+          name: String(d?.name || 'design').slice(0, 120),
+          quantity: Math.max(1, Math.min(10000, Number(d?.quantity) || 1)),
+          printWidthInches: Number(d?.printWidthInches) > 0 ? Number(d.printWidthInches) : null,
+        }))
+      : null;
+    const totalPrints = cleanDesigns
+      ? cleanDesigns.reduce((sum, d) => sum + d.quantity, 0)
+      : null;
+    const reference = String(sheet_name || '').trim().slice(0, 120) || `Gang sheet${sheet_id ? ` #${sheet_id}` : ''}`;
+    const downloadUrl = await presignFileKey(file_key);
+    await sendGangSheetToVendor({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      reference,
+      widthPx: Number(dims[1]),
+      heightPx: Number(dims[2]),
+      totalPrints,
+      designs: cleanDesigns,
+      downloadUrl,
+      linkExpiresDays: VENDOR_LINK_DAYS,
+      note: parsed.note,
+    });
+    let sentAt = new Date().toISOString();
+    if (sheet_id) {
+      const { rows } = await pool.query(
+        `UPDATE gang_sheets SET vendor_name = $1, vendor_email = $2, vendor_sent_at = now(), updated_at = now()
+         WHERE id = $3 RETURNING vendor_sent_at`,
+        [parsed.vendorName, parsed.vendorEmail, sheet_id],
+      );
+      if (rows[0]) sentAt = rows[0].vendor_sent_at;
+    }
+    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, vendor_sent_at: sentAt });
   } catch (err) { next(err); }
 });
 

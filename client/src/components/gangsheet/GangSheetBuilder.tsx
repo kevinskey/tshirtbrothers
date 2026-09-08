@@ -4,8 +4,9 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus, Check,
-  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2
+  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send
 } from 'lucide-react';
+import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
   DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MAJOR, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
@@ -89,6 +90,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   // loading tracks a loadSheet() in flight. It must NOT gate the whole
   // render (see below): the canvas has to mount before loadSheet can
   // populate it, so starting `true` here deadlocked deep-linked /:id
@@ -1171,6 +1173,70 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
   }
 
+  // ─── Send to vendor (admin mode) ───────────────────────────────────────
+  // Outsource the sheet to a DTF print vendor: compose server-side through
+  // the same /compose pipeline checkout uses (avoids browser canvas limits),
+  // then /admin/vendor-send presigns the file and emails the vendor the full
+  // spec sheet. Throws with a user-facing message — SendToVendorDialog
+  // displays it.
+  async function handleVendorSend({ vendor_name, vendor_email, note }: VendorSendPayload) {
+    if (designs.length === 0) throw new Error('Add at least one design first');
+    const canvas = fabricRef.current;
+    if (!canvas) throw new Error('Canvas not ready — try again');
+    // Same guard as checkout: a design still on a data: URL was never
+    // persisted anywhere the server can fetch it from.
+    const unfinished = designs.find((d) => d.imageUrl.startsWith('data:'));
+    if (unfinished) throw new Error(`"${unfinished.name}" didn't finish uploading — delete it and re-add it, then try again.`);
+    // Best-effort save so the layout survives if compose/send fails partway.
+    try {
+      await persistSheet('exported', { stampUrl: false });
+    } catch (err) {
+      console.error('Sheet save before vendor send failed (non-fatal):', err);
+    }
+    const designById = new Map(designs.map((d) => [d.id, d]));
+    const placements = canvas.getObjects()
+      .filter((obj) => !(obj as any).data?.isGrid)
+      .map((obj) => {
+        const designId = (obj as any).data?.designId as string | undefined;
+        const design = designId ? designById.get(designId) : undefined;
+        if (!design) return null;
+        return {
+          image_url: design.imageUrl,
+          left: Math.round(obj.left || 0),
+          top: Math.round(obj.top || 0),
+          width: Math.round(obj.getScaledWidth?.() || 0),
+          height: Math.round(obj.getScaledHeight?.() || 0),
+          rotation: 0, // see PLACEMENT CONTRACT comment below
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+    if (placements.length === 0) throw new Error('Add at least one design first');
+
+    const composeRes = await fetch('/api/gangsheet-store/compose', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ placements }),
+    });
+    const composeData = await composeRes.json().catch(() => ({}));
+    if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose the sheet — try again');
+
+    const sendRes = await fetch('/api/gangsheet-store/admin/vendor-send', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        file_key: composeData.file_key,
+        sheet_id: dbId,
+        sheet_name: sheetName,
+        vendor_name,
+        vendor_email,
+        note,
+        designs: designs.map((d) => ({ name: d.name, quantity: d.quantity, printWidthInches: d.printWidthInches })),
+      }),
+    });
+    const sendData = await sendRes.json().catch(() => ({}));
+    if (!sendRes.ok) throw new Error(sendData.error || 'Vendor email failed — try again');
+  }
+
   // ─── Checkout handoff (customer mode only) ─────────────────────────────
   // SERVER-SIDE COMPOSITION (iOS Safari fix): this used to run the same
   // full-res canvas export as the Export PNG download (generateFullResExport,
@@ -1620,6 +1686,15 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         <button onClick={handleExport} disabled={exporting || checkingOut} className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600 disabled:opacity-50">
           <Download className="w-3 h-3" /> {exporting ? '...' : 'Export PNG'}
         </button>
+        {mode === 'admin' && (
+          <button
+            onClick={() => setVendorDialogOpen(true)}
+            disabled={exporting || designs.length === 0}
+            className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            <Send className="w-3 h-3" /> Send to Vendor
+          </button>
+        )}
         {mode === 'customer' && (
           <button
             onClick={handleCheckoutSheet}
@@ -1631,6 +1706,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           </button>
         )}
       </header>
+
+      <SendToVendorDialog
+        open={vendorDialogOpen}
+        onClose={() => setVendorDialogOpen(false)}
+        onSend={handleVendorSend}
+        subject={`${sheetName || 'Untitled Sheet'} — 22in × ${sheetLengthFt}ft`}
+      />
 
       {mode === 'customer' && (
         <div className="hidden sm:block bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">
