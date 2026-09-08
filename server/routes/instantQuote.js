@@ -100,10 +100,15 @@ export function computeQuote(inputs, tables) {
   const method = tables.printMethods.find((m) => m.name === methodName && m.active !== false);
   if (!method) throw new Error(`Unknown print method: ${methodName}`);
 
+  // Quantity-tier lookup pools across the whole order when the caller
+  // passes discountQuantity (total pieces across all garment lines), so
+  // 5 tees + 6 caps earn the 11+ discount together. Defaults to this
+  // line's own quantity — single-item behavior is unchanged.
+  const discountQuantity = Math.max(quantity, Number(inputs.discountQuantity) || 0);
   const tier = tables.quantityTiers.find(
-    (t) => quantity >= t.min_qty && (t.max_qty === null || t.max_qty === undefined || quantity <= t.max_qty)
+    (t) => discountQuantity >= t.min_qty && (t.max_qty === null || t.max_qty === undefined || discountQuantity <= t.max_qty)
   );
-  if (!tier) throw new Error(`No quantity tier matches quantity ${quantity}`);
+  if (!tier) throw new Error(`No quantity tier matches quantity ${discountQuantity}`);
 
   const settings = tables.settings;
   if (!settings) throw new Error('Missing instant_quote_settings row');
@@ -148,8 +153,11 @@ export function computeQuote(inputs, tables) {
   // quantity_discount = base × tier_discount_pct
   const quantityDiscount = base * discountPct;
 
-  // rush_surcharge = rush ? base × rush_surcharge_pct : 0
-  const rushSurcharge = rush ? base * rushPct : 0;
+  // Graduated rush: rushDays = how many days EARLIER than the standard
+  // turnaround the customer needs it; each day adds rush_surcharge_pct
+  // of base. Legacy callers sending only rush:true price as one day.
+  const rushDays = Math.max(0, Number(inputs.rushDays) || (rush ? 1 : 0));
+  const rushSurcharge = rushDays > 0 ? base * rushPct * rushDays : 0;
 
   // total = (base - quantity_discount + setup + rush_surcharge) × markup
   const subtotal = base - quantityDiscount + setup + rushSurcharge;
@@ -176,7 +184,9 @@ export function computeQuote(inputs, tables) {
       setup: r2(setup),
       quantity_discount: r2(quantityDiscount),
       discount_pct: discountPct,
+      discount_quantity: discountQuantity,
       rush_surcharge: r2(rushSurcharge),
+      rush_days: rushDays,
       markup_multiplier: markup,
       subtotal: r2(subtotal),
     },
@@ -294,6 +304,16 @@ router.post('/save', async (req, res, next) => {
 
     const tables = await loadPricingTables();
 
+    // Pool quantities across all priced garment lines so the quantity-tier
+    // discount reflects the whole order (5 tees + 6 caps ⇒ the 11+ tier).
+    const pooledQty = items.reduce((sum, item) => {
+      if (!item || item.kind === 'custom' || !item.inputs) return sum;
+      if (Array.isArray(item.inputs.sizes)) {
+        return sum + item.inputs.sizes.reduce((s, sz) => s + (Number(sz?.quantity) || 0), 0);
+      }
+      return sum + (Number(item.inputs.quantity) || 0);
+    }, 0);
+
     // Compute each item server-side. Server is the source of truth for
     // catalog product price (custom_price ?? base_price × 2). Custom items
     // skip pricing — the admin sets the price manually after review.
@@ -343,7 +363,7 @@ router.post('/save', async (req, res, next) => {
       if (!item.inputs || typeof item.inputs !== 'object') {
         return res.status(400).json({ error: `items[${i}].inputs is required` });
       }
-      const effectiveInputs = { ...item.inputs };
+      const effectiveInputs = { ...item.inputs, discountQuantity: pooledQty };
       let pickedProductMeta = null;
       if (effectiveInputs.productSsId) {
         const picked = await resolvePickedProductPrice(effectiveInputs.productSsId);
