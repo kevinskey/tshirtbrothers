@@ -187,7 +187,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
-  const [quoteDesigns, setQuoteDesigns] = useState<{ id: number; customer_name: string; design_url: string; product_name: string }[]>([]);
+  const [quoteDesigns, setQuoteDesigns] = useState<{ id: number; customer_name: string; design_url: string; product_name: string; paid: boolean }[]>([]);
+  // Production focus: default to art from quotes whose deposit was paid.
+  const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
 
   // ─── Canvas Initialization ──────────────────────────────────────────────
 
@@ -1519,16 +1521,16 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
     fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
-      .then((quotes: { id: number; customer_name: string; design_url: string | null; product_name: string; status: string }[]) => {
-        // Show every quote that has uploaded artwork, regardless of status.
-        // The previous filter (accepted/quoted only) hid customer designs as
-        // soon as the quote moved to 'completed' — making them unavailable
-        // for re-prints and reorders from the gangsheet builder.
+      .then((quotes: { id: number; customer_name: string; design_url: string | null; product_name: string; status: string; accepted_at?: string | null }[]) => {
+        // Keep every quote with artwork available (re-prints, reorders),
+        // but tag deposit-paid ones (accepted/completed = deposit taken)
+        // so the panel can default to production-ready work.
         setQuoteDesigns(quotes.filter(q => q.design_url).map(q => ({
           id: q.id,
           customer_name: q.customer_name,
           design_url: q.design_url!,
           product_name: q.product_name,
+          paid: Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed',
         })));
       })
       .catch(() => {});
@@ -1915,25 +1917,45 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
               return (
                 <div className="space-y-4">
-                  {/* Customer / user graphics first */}
+                  {/* Customer / user graphics first — defaults to quotes
+                      with a paid deposit so production sheets get built
+                      from committed work; toggle shows everything. */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">User Graphics ({quoteDesigns.length})</p>
-                    {quoteDesigns.length === 0 ? (
-                      <p className="text-xs text-gray-400 text-center py-4">No customer designs</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {quoteDesigns.map(q => (
-                          <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
-                            className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
-                            <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold text-gray-900 truncate">{q.customer_name}</p>
-                              <p className="text-[10px] text-gray-400 truncate">{q.product_name}</p>
+                    {(() => {
+                      const shown = paidQuotesOnly ? quoteDesigns.filter((q) => q.paid) : quoteDesigns;
+                      return (
+                        <>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase">User Graphics ({shown.length})</p>
+                            <button type="button" onClick={() => setPaidQuotesOnly((v) => !v)}
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition ${
+                                paidQuotesOnly ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                              }`}>
+                              {paidQuotesOnly ? '💰 Deposit paid' : 'All quotes'}
+                            </button>
+                          </div>
+                          {shown.length === 0 ? (
+                            <p className="text-xs text-gray-400 text-center py-4">
+                              {paidQuotesOnly ? 'No deposit-paid quotes with artwork' : 'No customer designs'}
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {shown.map(q => (
+                                <button key={q.id} onClick={async () => { await addDesignToCanvas(q.design_url, `${q.customer_name} - ${q.product_name}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                                  className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
+                                  <img src={q.design_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-semibold text-gray-900 truncate">{q.customer_name}</p>
+                                    <p className="text-[10px] text-gray-400 truncate">{q.product_name}</p>
+                                  </div>
+                                  {q.paid && <span className="text-[9px] font-bold text-green-600 shrink-0">💰</span>}
+                                </button>
+                              ))}
                             </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Design Lab grouped by category */}
