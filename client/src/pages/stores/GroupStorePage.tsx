@@ -8,7 +8,7 @@ import Seo from '@/components/Seo';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import {
   Loader2, ShoppingBag, MapPin, Truck, ShieldCheck, ArrowRight,
-  Bell, Target, ChevronRight, Star, Package, ExternalLink,
+  Bell, Target, ChevronRight, Star, Package, ExternalLink, Menu, X,
 } from 'lucide-react';
 
 interface StoreProfile {
@@ -84,6 +84,7 @@ export default function GroupStorePage() {
   const [loading, setLoading]   = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [navCollectionsOpen, setNavCollectionsOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -265,7 +266,37 @@ export default function GroupStorePage() {
             <span className="hidden sm:inline">Cart</span>
             <span className="ml-1 bg-white/20 rounded-full px-1.5 py-0.5 text-xs">0</span>
           </button>
+          {/* Mobile menu toggle — the inline nav is desktop-only */}
+          <button type="button" aria-label="Menu"
+            onClick={() => setMobileNavOpen((v) => !v)}
+            className="md:hidden p-2 -mr-1 rounded-lg text-gray-700 hover:bg-gray-100">
+            {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
         </div>
+        {mobileNavOpen && (
+          <nav className="md:hidden border-t border-gray-100 bg-white px-4 py-3 space-y-1 text-sm font-medium text-gray-800">
+            <a href="#shop" onClick={() => setMobileNavOpen(false)} className="block px-2 py-2 rounded-lg hover:bg-gray-50">Shop</a>
+            {featured && (
+              <a href="#featured" onClick={() => setMobileNavOpen(false)} className="block px-2 py-2 rounded-lg hover:bg-gray-50">
+                <Star className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5" style={{ color: primary }} />{featured.title}
+              </a>
+            )}
+            {collections.filter(([k]) => k !== '').map(([key, items]) => (
+              <a key={key} href={`#collection-${key}`} onClick={() => setMobileNavOpen(false)}
+                className="flex items-center justify-between px-2 py-2 rounded-lg hover:bg-gray-50">
+                <span className="pl-5">{collectionLabel(key).replace(/^The | Collection$/g, '')}</span>
+                <span className="text-[11px] text-gray-400">{items.length > 0 ? items.length : 'soon'}</span>
+              </a>
+            ))}
+            {store.is_fundraiser && (
+              <a href="#fundraiser" onClick={() => setMobileNavOpen(false)} className="block px-2 py-2 rounded-lg hover:bg-gray-50">Fundraiser</a>
+            )}
+            <a href="#about" onClick={() => setMobileNavOpen(false)} className="block px-2 py-2 rounded-lg hover:bg-gray-50">About</a>
+            <a href="https://tshirtbrothers.com" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-gray-500 hover:bg-gray-50">
+              TShirtBrothers.com <ExternalLink className="w-3 h-3" />
+            </a>
+          </nav>
+        )}
       </header>
 
       {/* ── HERO ──────────────────────────────────────────────────────── */}

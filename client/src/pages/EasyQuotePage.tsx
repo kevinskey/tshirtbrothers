@@ -63,6 +63,14 @@ type CalcLine = {
   rush_surcharge: number;
 };
 
+// Live phone mask: digits only, rendered as XXX-XXX-XXXX.
+function formatPhone(v: string): string {
+  const d = v.replace(/\D/g, '').slice(0, 10);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
 const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'art', 'quote'] as const;
 type Step = typeof STEPS[number];
 
@@ -398,7 +406,8 @@ export default function EasyQuotePage() {
 
         {step === 'phone' && (
           <Card title={`Nice to meet you, ${name.trim().split(' ')[0] || 'friend'}! What's your phone number?`}>
-            <BigInput autoFocus type="tel" value={phone} onChange={setPhone} placeholder="(555) 555-5555"
+            <BigInput autoFocus type="tel" value={phone} onChange={(v) => setPhone(formatPhone(v))}
+              placeholder="404-555-1234"
               onEnter={() => canNext && go(1)} />
           </Card>
         )}
