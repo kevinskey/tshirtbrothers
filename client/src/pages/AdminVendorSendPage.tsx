@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2, Send, Upload, X, FileImage } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsheet/SendToVendorDialog';
+import Layout from '../components/layout/Layout';
 
 // Copied idiom from AdminDtfOrdersPage.tsx rather than imported — page
 // modules in this app don't import helpers from each other.
@@ -152,8 +153,14 @@ function VendorFileSender() {
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
 
   return (
+    <Layout>
     <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
       <div className="mx-auto max-w-2xl">
+        <div className="mb-1">
+          <Link to="/admin" className="text-xs font-semibold text-gray-500 hover:text-orange-600">
+            ← Admin Dashboard
+          </Link>
+        </div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-display text-xl font-bold text-gray-900">Send Files to Vendor</h1>
           <Link to="/admin/dtf-orders" className="text-xs font-semibold text-orange-600 hover:underline">
@@ -292,5 +299,6 @@ function VendorFileSender() {
         }
       />
     </div>
+    </Layout>
   );
 }
