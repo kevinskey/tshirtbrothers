@@ -507,6 +507,31 @@ export async function sendAbandonedQuoteFollowUp(quote) {
 export async function sendReviewRequestEmail(quote) {
   const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
   const reviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
+  const es = quoteLang(quote) === 'es';
+  if (es) {
+    const bodyEs = `
+      <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">¿Te encantó tu pedido? ¡Cuéntaselo a Google! ⭐⭐⭐⭐⭐</h2>
+      <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''},</p>
+      <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Muchas gracias por tu compra — de verdad apreciamos que nos hayas elegido.</p>
+      <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Ahora que tienes tu pedido en tus manos, ¿nos regalas 30 segundos para dejarnos una reseña en Google? Es lo más útil que puedes hacer por un negocio pequeño — y ayuda a que más gente en Atlanta nos encuentre.</p>
+      ${primaryButton('Dejar una Reseña en Google ⭐', reviewUrl)}
+      <p style="margin:20px 0 0;font-size:15px;color:#6b7280;">Y una cosa más — ¡tómate una foto usándolo y envíanosla! Nos encanta ver nuestro trabajo por el mundo. 📸</p>
+      <p style="margin:16px 0 0;font-size:15px;color:${BRAND_DARK};font-weight:600;">Gracias por comprar en tshirtbrothers.com</p>
+      <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿No quedaste satisfecho con tu pedido? Responde a este correo y lo arreglamos. — Kevin</p>
+    `;
+    try {
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [quote.customer_email],
+        subject: 'Un favor rápido — ¿una reseña de 30 segundos en Google? · TShirt Brothers',
+        html: baseLayout('Déjanos una Reseña', bodyEs),
+      });
+      console.log(`[Email] Review request (es) sent to ${quote.customer_email}`);
+    } catch (err) {
+      console.error('[Email] Failed to send review request:', err);
+    }
+    return;
+  }
   const body = `
     <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Loved your order? Tell Google! ⭐⭐⭐⭐⭐</h2>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
@@ -535,6 +560,41 @@ export async function sendReviewRequestEmail(quote) {
  */
 export async function sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue }) {
   const payUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token}&type=balance`;
+  const es = quoteLang(quote) === 'es';
+  if (es) {
+    const bodyEs = `
+      <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Saldo Restante Pendiente</h2>
+      <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name},</p>
+      <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">¡Gracias por tu depósito! Tu pedido está en proceso. Por favor paga el saldo restante para completar tu pedido.</p>
+
+      ${detailsTable(
+        detailRow('Producto', quote.product_name || 'Ropa Personalizada') +
+        detailRow('Cantidad', String(quote.quantity)) +
+        detailRow('Total del Pedido', formatCurrency(total)) +
+        detailRow('Depósito Pagado', '<span style="color:#16a34a;font-weight:700;">' + formatCurrency(depositPaid) + '</span>') +
+        `<tr>
+          <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Saldo Pendiente</td>
+          <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(balanceDue)}</td>
+        </tr>`
+      )}
+
+      ${primaryButton('Pagar Saldo Restante', payUrl)}
+
+      <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
+    `;
+    try {
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [quote.customer_email],
+        subject: `Saldo pendiente — Pedido #${quote.id} · TShirt Brothers`,
+        html: baseLayout('Saldo Pendiente', bodyEs),
+      });
+      console.log(`[Email] Balance due (es) sent to ${quote.customer_email}`);
+    } catch (err) {
+      console.error('[Email] Failed to send balance due email:', err);
+    }
+    return;
+  }
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Remaining Balance Due</h2>
@@ -719,24 +779,40 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
   console.log(`[Email] Mockup share sent to ${toEmail}`);
 }
 
-export async function sendMockupForApproval(mockup, approveUrl) {
+export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
   const productImg = mockup.product_image_url || '';
   const graphic = mockup.graphic_url || '';
   const placement = typeof mockup.placement === 'string' ? JSON.parse(mockup.placement) : (mockup.placement || { x: 35, y: 30, width: 30 });
+  const es = lang === 'es';
 
-  const body = `
+  const previewBlock = mockup.preview_image_url
+    ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
+    : `
+      <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
+        ${graphic ? `<img src="${graphic}" alt="${es ? 'Tu diseño' : 'Your design'}" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
+      </div>
+    `;
+
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Tu Diseño de Muestra Está Listo para Aprobar</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${mockup.customer_name || ''},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Preparamos una muestra de tu diseño sobre el producto que elegiste. Revísala y dinos si la apruebas o qué te gustaría cambiar.</p>
+
+    ${previewBlock}
+
+    <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Producto:</strong> ${mockup.product_name || 'Ropa Personalizada'}</p>
+    ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notas:</strong> ${mockup.notes}</p>` : ''}
+
+    ${primaryButton('Ver y Aprobar la Muestra', approveUrl)}
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
+  ` : `
     <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Mockup Ready for Your Approval</h2>
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${mockup.customer_name || 'there'},</p>
     <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We put together a mockup of your design on the product you picked. Please take a look and let us know if it's approved, or what you'd like changed.</p>
 
-    ${mockup.preview_image_url
-      ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
-      : `
-        <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-          ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
-          ${graphic ? `<img src="${graphic}" alt="Your design" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
-        </div>
-      `}
+    ${previewBlock}
 
     <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
     ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notes:</strong> ${mockup.notes}</p>` : ''}
@@ -750,8 +826,10 @@ export async function sendMockupForApproval(mockup, approveUrl) {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [mockup.customer_email],
-      subject: 'Mockup Approval - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
-      html: baseLayout('Mockup Approval', body),
+      subject: es
+        ? 'Aprobación de Muestra - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : '')
+        : 'Mockup Approval - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
+      html: baseLayout(es ? 'Aprobación de Muestra' : 'Mockup Approval', body),
     });
     console.log('[Email] Mockup approval sent to ' + mockup.customer_email);
   } catch (err) {
