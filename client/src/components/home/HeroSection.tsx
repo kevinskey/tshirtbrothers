@@ -1,7 +1,15 @@
+// Landing hero — "Custom Apparel Made Easy." model (2026-09 redesign):
+// headline + trust icons with the rotating poster beside it, then three
+// action cards (Quick Quote / Design Studio / DTF Transfers), a shop-by-
+// category tile row, and the dark trust bar. Mobile-first: everything
+// stacks in that order on phones.
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Palette, Clock, MapPin, Users } from 'lucide-react';
+import {
+  Truck, Tag, ShieldCheck, Clock, MapPin, Users, ChevronRight,
+  FileText, Palette, Film, Shirt, GraduationCap, ShoppingBag as BagIcon,
+} from 'lucide-react';
 
 interface HeroSlide {
   id: number;
@@ -12,18 +20,25 @@ interface HeroSlide {
 
 // Default fallback so the page never renders a totally empty hero — if
 // the API is unreachable or has zero active rows, we still show one slide.
-// Must be one of the 4:5 portrait posters so it fills the frame like the
-// live slides do.
 const FALLBACK_WEBP =
   'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/hero-slides/v4/spirit-wear.webp';
 const FALLBACK_SLIDES: HeroSlide[] = [
   { id: 0, image_url: FALLBACK_WEBP, label: 'Spirit Wear', link_url: null },
 ];
 
-// Every optimized v3/v4 slide was exported as a webp + avif pair — derive
-// the avif so <picture> can prefer it. Admin uploads elsewhere stay plain.
 const avifFor = (url: string) =>
   /\/hero-slides\/v[34]\/[^/]+\.webp$/.test(url) ? url.replace(/\.webp$/, '.avif') : null;
+
+// Shop-by-category tiles — labels match the retail categories the
+// /api/products filter understands.
+const CATEGORY_TILES = [
+  { label: 'T-Shirts',    param: 'T-Shirts',             icon: Shirt },
+  { label: 'Hoodies',     param: 'Hoodies',              icon: GraduationCap },
+  { label: 'Hats',        param: 'Headwear',             icon: Tag },
+  { label: 'Polos',       param: 'Polos',                icon: Shirt },
+  { label: 'Bags',        param: 'Bags',                 icon: BagIcon },
+  { label: 'Sweatshirts', param: 'Crewneck Sweatshirts', icon: Shirt },
+];
 
 export default function HeroSection() {
   const { data } = useQuery<{ slides: HeroSlide[] }>({
@@ -38,9 +53,8 @@ export default function HeroSection() {
   const slides = data?.slides && data.slides.length > 0 ? data.slides : FALLBACK_SLIDES;
 
   const [active, setActive] = useState(0);
-  const next = useCallback(() => setActive(s => (s + 1) % slides.length), [slides.length]);
+  const next = useCallback(() => setActive((s) => (s + 1) % slides.length), [slides.length]);
   useEffect(() => {
-    // Clamp active when slide list shrinks (e.g. admin deleted some).
     if (active >= slides.length) setActive(0);
   }, [slides.length, active]);
   useEffect(() => {
@@ -51,116 +65,39 @@ export default function HeroSection() {
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-2 pb-6 sm:pt-4 sm:pb-10">
-        {/* lg+ : 2-column layout, text/CTAs LEFT and rotating image RIGHT.
-            Below lg the TEXT block renders first so the headline and the
-            two CTA buttons sit above the fold on phones; the slide image
-            follows. (Source order = mobile order; the lg grid auto-places
-            text into column 1 and image into column 2.) */}
-        {/* Asymmetric 5/7 split — the text column only needs ~5 columns,
-            so giving the image the rest closes the dead gap between them
-            on wide desktops. */}
-        {/* Desktop: three columns — headline / product slide / DTF card —
-            so the transfer service is visible without scrolling. Below lg
-            the DTF card hides (the DtfPromo band covers phones). */}
-        {/* Column split follows the slides: they're 4:5 portrait posters,
-            so the middle column stays narrow (4fr) to keep the hero above
-            the fold, and the reclaimed width goes to the headline (5fr). */}
-        <div className="lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_minmax(0,3fr)] lg:gap-5 xl:gap-6 lg:items-stretch">
-
-          {/* Headline + CTAs — first in source so phones lead with the
-              actions, not the promo slide. self-center vertically aligns
-              the text block with the image card to its right on lg. */}
-          <div className="text-center lg:text-left lg:self-center">
+      {/* ── Headline + poster ─────────────────────────────────────────── */}
+      <div className="bg-gray-50">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10 items-center">
+          <div>
             <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-4xl xl:text-5xl 2xl:text-6xl text-gray-900 leading-[1.1] lg:leading-[1.05] tracking-tight"
+              className="text-4xl sm:text-5xl lg:text-6xl leading-[1.02] tracking-tight text-gray-900"
               style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
             >
-              {/* This line stays nowrap, so its size must track its column:
-                  fluid clamp below sm (keeps it inside a 390px phone) AND at
-                  lg+ (where the 3-col grid caps the column near 390px —
-                  fixed steps overflowed into the slide graphic). */}
-              <span className="whitespace-nowrap text-[clamp(1.5rem,8.2vw,2.25rem)] sm:text-5xl md:text-6xl lg:text-[clamp(1.6rem,2.9vw,2.4rem)]">Support Local <span className="text-orange-600">Atlanta</span>,</span>
-              <span
-                className="block my-1.5 sm:my-3 text-5xl sm:text-6xl md:text-7xl lg:text-5xl xl:text-6xl 2xl:text-7xl text-gray-900"
-                style={{ fontFamily: "'Caveat', cursive", fontWeight: 700, letterSpacing: '0.01em' }}
-              >
-                Custom Printing
-              </span>
-              <span className="text-orange-600">Done Right.</span>
+              Custom Apparel<br />
+              <span className="text-orange-600">Made Easy.</span>
             </h1>
-            <p className="mt-2 sm:mt-3 text-base sm:text-lg lg:text-base text-gray-600">
-              Now Shipping Nationwide!
+            <p className="mt-3 text-lg sm:text-xl text-gray-700">
+              Quality printing. Fast turnaround. No minimums.
             </p>
 
-            <div className="mt-4 sm:mt-6 flex items-stretch justify-center lg:justify-start gap-2 sm:gap-3">
-              <Link
-                to="/quote"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center rounded-xl bg-orange-700 hover:bg-orange-800 px-3 py-3.5 sm:px-8 sm:py-3.5 text-base sm:text-lg lg:text-base font-bold text-white shadow-lg shadow-orange-700/25 transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
-              >
-                Get a Free Quote
-              </Link>
-              <Link
-                to="/design"
-                className="inline-flex flex-1 sm:flex-initial items-center justify-center gap-1.5 sm:gap-2 rounded-xl bg-gray-900 hover:bg-gray-800 px-3 py-3.5 sm:px-8 sm:py-3.5 text-base sm:text-lg lg:text-base font-bold text-white transition-colors whitespace-nowrap sm:min-w-[10rem] lg:min-w-0"
-              >
-                <Palette className="h-4 w-4 sm:h-5 sm:w-5 lg:h-4 lg:w-4" />
-                Design Studio
-              </Link>
+            <div className="mt-6 grid grid-cols-3 max-w-md divide-x divide-gray-200 text-center">
+              <div className="px-2">
+                <Truck className="h-7 w-7 mx-auto text-gray-800" />
+                <p className="mt-1.5 text-xs sm:text-sm text-gray-600 leading-tight">2–7 Day<br />Turnaround</p>
+              </div>
+              <div className="px-2">
+                <Tag className="h-7 w-7 mx-auto text-gray-800" />
+                <p className="mt-1.5 text-xs sm:text-sm text-gray-600 leading-tight">Competitive<br />Pricing</p>
+              </div>
+              <div className="px-2">
+                <ShieldCheck className="h-7 w-7 mx-auto text-gray-800" />
+                <p className="mt-1.5 text-xs sm:text-sm text-gray-600 leading-tight">Nationwide<br />Shipping</p>
+              </div>
             </div>
-
-            {/* DTF strip — phones + iPads (below lg, where the desktop DTF
-                card is hidden). Slim so it fits above the fold without
-                pushing the CTAs down; full card lives in column 3 on lg+. */}
-            <Link
-              to="/dtf"
-              className="lg:hidden mt-3 sm:mt-4 flex items-center justify-between gap-3 rounded-xl bg-gray-900 px-4 py-3 text-left shadow-sm"
-            >
-              <span className="flex min-w-0 items-center gap-3">
-                {/* mini film-ribbon glyph */}
-                <svg aria-hidden="true" viewBox="0 0 44 28" className="h-7 w-11 shrink-0">
-                  <rect x="0" y="4" width="44" height="20" rx="3" fill="#374151" />
-                  <circle cx="10" cy="14" r="6" fill="#ffffff" />
-                  <circle cx="10" cy="14" r="4" fill="#ec4899" />
-                  <rect x="20" y="8" width="18" height="12" rx="3" fill="#ffffff" />
-                  <rect x="22" y="10" width="14" height="8" rx="2" fill="#ea580c" />
-                </svg>
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold text-white">
-                    New — We print DTF <span className="text-orange-500">from $9/ft</span>
-                  </span>
-                  <span className="block truncate text-xs text-gray-400">
-                    22&Prime; gang sheets · upload or build online
-                  </span>
-                </span>
-              </span>
-              <span className="shrink-0 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-bold text-white">
-                Order →
-              </span>
-            </Link>
-
-            <div className="mt-4 sm:mt-8 lg:mt-5 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-2 text-xs sm:text-sm text-gray-500">
-              <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> No minimums</span>
-              <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
-              <span className="flex items-center gap-1.5"><MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA</span>
-            </div>
-
-            {/* Spanish-language toggle. Small, unobtrusive — only the
-                people who need it will notice it. */}
-            <p className="mt-3 text-xs text-gray-600">
-              <a href="/es" className="text-orange-700 hover:underline font-semibold">
-                ¿Hablas español? Ver en español →
-              </a>
-            </p>
           </div>
 
-          {/* Hero image card — second in source so it drops below the fold
-              on phones. aspect-[4/5] matches the portrait poster slides
-              (768×960); object-cover absorbs the one 806px-wide outlier by
-              shaving ~2% off its bleed margins instead of letterboxing.
-              Capped width between sm and lg so tablets don't get a
-              near-fullscreen poster. */}
-          <div className="mt-5 lg:mt-0 -mx-4 sm:mx-auto sm:w-full sm:max-w-[26rem] lg:max-w-none lg:self-center relative overflow-hidden sm:rounded-3xl shadow-sm aspect-[4/5] bg-white">
+          {/* Rotating poster (admin hero slides) */}
+          <div className="relative overflow-hidden rounded-3xl shadow-sm aspect-[4/5] sm:max-w-[26rem] sm:mx-auto lg:max-w-none w-full bg-white">
             {slides.map((s, i) => {
               const avif = avifFor(s.image_url);
               const img = (
@@ -180,15 +117,12 @@ export default function HeroSection() {
                   {img}
                 </picture>
               ) : img;
-              // Admin-set link_url makes the slide clickable; otherwise it's
-              // a static image so the rotator dots can still steal focus.
               return s.link_url ? (
                 <a key={s.id} href={s.link_url} className="absolute inset-0" aria-label={s.label || `Slide ${i + 1}`}>{picture}</a>
               ) : (
                 <div key={s.id}>{picture}</div>
               );
             })}
-            {/* Dot indicators */}
             {slides.length > 1 && (
               <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5">
                 {slides.map((_, i) => (
@@ -202,56 +136,78 @@ export default function HeroSection() {
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* DTF card — third column, desktop only. Mirrors the /dtf hero
-              (film ribbon + foot ruler) so the campaign is one glance away
-              without scrolling. */}
-          <Link
-            to="/dtf"
-            className="hidden lg:flex relative flex-col justify-between overflow-hidden rounded-3xl bg-gray-900 p-6 shadow-sm transition hover:ring-2 hover:ring-orange-500"
-          >
-            <div className="relative z-10">
-              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-orange-400">New · DTF transfers</p>
-              <p
-                className="mt-2 font-display text-2xl font-bold uppercase leading-[0.95] tracking-tight text-white xl:text-3xl"
-                style={{ fontWeight: 900 }}
-              >
-                We print DTF.
-                <span className="block text-orange-500">By the foot.</span>
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-gray-300">
-                22&Prime; gang sheets from $9/ft — upload art or build a sheet online.
-              </p>
+      {/* ── Action cards ──────────────────────────────────────────────── */}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 mt-5">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          <Link to="/quote"
+            className="group rounded-2xl bg-orange-600 text-white p-5 flex flex-col justify-between shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
+            <FileText className="h-9 w-9" />
+            <div className="mt-4 flex items-end justify-between gap-2">
+              <div>
+                <p className="text-xl font-black">Quick Quote</p>
+                <p className="mt-1 text-sm text-orange-100">Choose a product and quantity to see pricing.</p>
+              </div>
+              <ChevronRight className="h-6 w-6 shrink-0 transition-transform group-hover:translate-x-1" />
             </div>
-            <span className="relative z-10 mt-4 inline-block w-max rounded-lg bg-orange-600 px-4 py-2 text-xs font-bold text-white">
-              Order transfers →
-            </span>
-            {/* mini ribbon along the card's bottom */}
-            <svg aria-hidden="true" viewBox="0 0 300 90" className="relative z-0 mt-5 w-full">
-              <rect x="-10" y="16" width="320" height="66" rx="5" fill="#1f2937" />
-              <circle cx="34" cy="50" r="15" fill="#ffffff" />
-              <circle cx="34" cy="50" r="11" fill="#ec4899" />
-              <rect x="62" y="34" width="46" height="26" rx="6" fill="#ffffff" />
-              <rect x="66" y="38" width="38" height="18" rx="4" fill="#22d3ee" />
-              <rect x="120" y="36" width="60" height="24" rx="6" fill="#ffffff" />
-              <rect x="124" y="40" width="52" height="16" rx="3" fill="#111827" />
-              <text x="150" y="52" textAnchor="middle" fontFamily="Inter, sans-serif" fontWeight="900" fontSize="10" fill="#ffffff" letterSpacing="1.5">TSB</text>
-              <circle cx="204" cy="48" r="13" fill="#ffffff" />
-              <circle cx="204" cy="48" r="9" fill="#facc15" />
-              <rect x="228" y="34" width="44" height="26" rx="6" fill="#ffffff" />
-              <rect x="232" y="38" width="36" height="18" rx="4" fill="#ea580c" />
-              {/* foot ruler */}
-              <rect x="-10" y="8" width="320" height="8" fill="#111827" />
-              {[0, 1, 2].map((ft) => (
-                <g key={ft}>
-                  <rect x={20 + ft * 110} y="8" width="2" height="8" fill="#ea580c" />
-                  <text x={28 + ft * 110} y="15" fontFamily="ui-monospace, monospace" fontSize="7" fill="#9ca3af">{ft + 1}FT</text>
-                </g>
-              ))}
-            </svg>
           </Link>
 
+          <Link to="/design"
+            className="group rounded-2xl bg-gray-900 text-white p-5 flex flex-col justify-between shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
+            <Palette className="h-9 w-9" />
+            <div className="mt-4 flex items-end justify-between gap-2">
+              <div>
+                <p className="text-xl font-black">Design Studio</p>
+                <p className="mt-1 text-sm text-gray-300">Create or upload your design.</p>
+              </div>
+              <ChevronRight className="h-6 w-6 shrink-0 transition-transform group-hover:translate-x-1" />
+            </div>
+          </Link>
+
+          <Link to="/dtf"
+            className="group rounded-2xl bg-gray-100 text-gray-900 p-5 flex flex-col justify-between shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
+            <Film className="h-9 w-9" />
+            <div className="mt-4 flex items-end justify-between gap-2">
+              <div>
+                <p className="text-xl font-black">DTF Transfers</p>
+                <p className="mt-1 text-sm text-gray-600">Gang sheets from $9/ft — press them anywhere.</p>
+              </div>
+              <ChevronRight className="h-6 w-6 shrink-0 transition-transform group-hover:translate-x-1" />
+            </div>
+          </Link>
         </div>
+
+        {/* ── Shop by category ────────────────────────────────────────── */}
+        <div className="mt-4 grid grid-cols-3 sm:grid-cols-6 gap-3">
+          {CATEGORY_TILES.map((c) => {
+            const Icon = c.icon;
+            return (
+              <Link key={c.label} to={`/shop?category=${encodeURIComponent(c.param)}`}
+                className="rounded-2xl bg-gray-50 border border-gray-100 p-4 text-center transition hover:border-orange-300 hover:bg-orange-50">
+                <Icon className="h-8 w-8 mx-auto text-gray-800" />
+                <p className="mt-2 text-xs sm:text-sm font-semibold text-gray-800">{c.label}</p>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* ── Trust bar ───────────────────────────────────────────────── */}
+        <div className="mt-4 rounded-2xl bg-gray-900 text-white px-4 py-4 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-sm">
+          <span className="flex items-center gap-2"><Users className="h-4 w-4" /> No Minimums</span>
+          <span className="flex items-center gap-2"><Truck className="h-4 w-4" /> Nationwide Shipping</span>
+          <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> 2–7 Day Turnaround</span>
+        </div>
+
+        <p className="mt-3 flex items-center justify-center gap-1.5 text-sm text-gray-600">
+          <MapPin className="h-4 w-4 text-orange-500" /> Fairburn, GA
+        </p>
+        <p className="mt-1 pb-2 text-center text-sm">
+          <a href="/es" className="font-bold text-orange-700 hover:underline">
+            ¿Hablas español? Ver en español →
+          </a>
+        </p>
       </div>
     </section>
   );
