@@ -599,6 +599,15 @@ const DEFS = [
     } },
 ];
 
+// Sentence-case default subject from the hero copy — a starting point the
+// admin edits, so a template-created newsletter is sendable immediately.
+function subjectFrom(c) {
+  const raw = `${c.headline || ''} ${c.highlight || ''}`.replace(/\s+/g, ' ').trim();
+  if (!raw) return 'News from T-Shirt Brothers';
+  const lower = raw.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 export const NEWSLETTER_TEMPLATES = DEFS.map((d) => ({
   slug: d.slug,
   name: d.name,
@@ -606,6 +615,8 @@ export const NEWSLETTER_TEMPLATES = DEFS.map((d) => ({
   description: d.description,
   months: d.months,
   theme: { ...d.theme },
+  defaultSubject: subjectFrom(d.content),
+  defaultPreheader: d.description,
   blocks: () => blocksFrom(d.content),
 }));
 

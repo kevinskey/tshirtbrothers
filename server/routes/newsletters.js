@@ -71,6 +71,8 @@ router.post('/', async (req, res, next) => {
       blocks = t.blocks();
       theme = { ...t.theme };
       slugRecord = t.slug;
+      subject = t.defaultSubject;
+      preheader = t.defaultPreheader;
     } else if (from_id) {
       const src = await pool.query('SELECT * FROM newsletters WHERE id = $1', [Number(from_id)]);
       if (src.rows.length === 0) return res.status(404).json({ error: 'Source newsletter not found' });
