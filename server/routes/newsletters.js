@@ -9,6 +9,7 @@ import { resolveRecipients } from './campaigns.js';
 import {
   renderNewsletterHtml, validateNewsletter, defaultBlocks, BLOCK_TYPES, safeUrl,
 } from '../services/newsletterRender.js';
+import { templateMeta, templateBySlug } from '../services/newsletterTemplates.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -43,25 +44,47 @@ router.get('/', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Create — blank default, or cloned from a template/newsletter (`from_id`).
+// System template library — code-defined; copied into newsletters at create.
+router.get('/templates', (_req, res) => {
+  res.json({ templates: templateMeta() });
+});
+
+router.get('/templates/:slug/preview', (req, res) => {
+  const t = templateBySlug(req.params.slug);
+  if (!t) return res.status(404).json({ error: 'Unknown template' });
+  res.json({ html: renderNewsletterHtml(t.blocks(), { theme: t.theme, preheader: t.description }) });
+});
+
+// Create — blank default, or cloned from a template/newsletter (`from_id`),
+// or from a library template (`template_slug`).
 router.post('/', async (req, res, next) => {
   try {
-    const { name, from_id } = req.body || {};
+    const { name, from_id, template_slug } = req.body || {};
     let blocks = defaultBlocks();
     let subject = '';
     let preheader = '';
-    if (from_id) {
+    let theme = {};
+    let slugRecord = null;
+    if (template_slug) {
+      const t = templateBySlug(template_slug);
+      if (!t) return res.status(404).json({ error: 'Unknown template' });
+      blocks = t.blocks();
+      theme = { ...t.theme };
+      slugRecord = t.slug;
+    } else if (from_id) {
       const src = await pool.query('SELECT * FROM newsletters WHERE id = $1', [Number(from_id)]);
       if (src.rows.length === 0) return res.status(404).json({ error: 'Source newsletter not found' });
       blocks = src.rows[0].blocks;
       subject = src.rows[0].subject;
       preheader = src.rows[0].preheader;
+      theme = src.rows[0].theme || {};
+      slugRecord = src.rows[0].template_slug || null;
     }
     const { rows } = await pool.query(
-      `INSERT INTO newsletters (name, subject, preheader, blocks, created_by)
-       VALUES ($1, $2, $3, $4::jsonb, $5) RETURNING *`,
+      `INSERT INTO newsletters (name, subject, preheader, blocks, theme, template_slug, created_by)
+       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7) RETURNING *`,
       [String(name || 'Untitled newsletter').slice(0, 160), subject, preheader,
-        JSON.stringify(blocks), req.user?.id || null],
+        JSON.stringify(blocks), JSON.stringify(theme), slugRecord, req.user?.id || null],
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
@@ -107,8 +130,8 @@ router.delete('/:id(\\d+)', async (req, res, next) => {
 router.post('/:id(\\d+)/duplicate', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `INSERT INTO newsletters (name, subject, preheader, blocks, created_by)
-       SELECT name || ' (copy)', subject, preheader, blocks, $2
+      `INSERT INTO newsletters (name, subject, preheader, blocks, theme, template_slug, created_by)
+       SELECT name || ' (copy)', subject, preheader, blocks, theme, template_slug, $2
          FROM newsletters WHERE id = $1
        RETURNING *`,
       [req.params.id, req.user?.id || null],
@@ -122,8 +145,8 @@ router.post('/:id(\\d+)/save-as-template', async (req, res, next) => {
   try {
     const { name } = req.body || {};
     const { rows } = await pool.query(
-      `INSERT INTO newsletters (name, subject, preheader, blocks, is_template, created_by)
-       SELECT $2, subject, preheader, blocks, true, $3
+      `INSERT INTO newsletters (name, subject, preheader, blocks, theme, template_slug, is_template, created_by)
+       SELECT $2, subject, preheader, blocks, theme, template_slug, true, $3
          FROM newsletters WHERE id = $1
        RETURNING *`,
       [req.params.id, String(name || 'Saved template').slice(0, 160), req.user?.id || null],
@@ -136,8 +159,8 @@ router.post('/:id(\\d+)/save-as-template', async (req, res, next) => {
 // Preview — render blocks posted from the editor (unsaved edits included).
 router.post('/preview', async (req, res, next) => {
   try {
-    const { blocks, preheader } = req.body || {};
-    const html = renderNewsletterHtml(cleanBlocks(blocks), { preheader: preheader || '' });
+    const { blocks, preheader, theme } = req.body || {};
+    const html = renderNewsletterHtml(cleanBlocks(blocks), { preheader: preheader || '', theme: theme || {} });
     res.json({ html });
   } catch (err) { next(err); }
 });
@@ -165,7 +188,7 @@ router.post('/:id(\\d+)/send', async (req, res, next) => {
     }
 
     // Campaign row = history + analytics home, exactly like classic blasts.
-    const previewHtml = renderNewsletterHtml(nl.blocks, { preheader: nl.preheader });
+    const previewHtml = renderNewsletterHtml(nl.blocks, { preheader: nl.preheader, theme: nl.theme || {} });
     const { rows } = await pool.query(
       `INSERT INTO email_campaigns (subject, body_html, example_image_urls, recipient_filter, recipient_count, status, created_by)
        VALUES ($1, $2, '[]'::jsonb, $3::jsonb, $4, 'sending', $5) RETURNING id`,
@@ -184,7 +207,7 @@ router.post('/:id(\\d+)/send', async (req, res, next) => {
             subject: nl.subject,
             campaignId,
             renderHtml: ({ unsubHtml, openPixelHtml }) =>
-              renderNewsletterHtml(nl.blocks, { preheader: nl.preheader, unsubHtml, openPixelHtml }),
+              renderNewsletterHtml(nl.blocks, { preheader: nl.preheader, theme: nl.theme || {}, unsubHtml, openPixelHtml }),
           });
           sent++;
         } catch (err) {

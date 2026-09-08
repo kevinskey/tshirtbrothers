@@ -14,6 +14,21 @@ const GRAY = '#6b7280';
 const LIGHT = '#f4f4f5';
 const WIDTH = 640;
 
+// Theme tokens — templates vary these; everything else is fixed design.
+// Resolved into module-level T at the top of renderNewsletterHtml (the
+// render pass is synchronous, so this cannot race).
+export const DEFAULT_THEME = {
+  primary: RED,        // CTAs, underlines, highlights
+  heading: DARK,       // headings on light surfaces
+  heroBg: DARK,        // hero panel background
+  specialBg: CHARCOAL, // promo panel background
+  footerBg: DARK,
+  background: LIGHT,   // page background
+  surface: '#ffffff',  // card background
+  script: RED,         // handwritten accents on light surfaces
+};
+let T = { ...DEFAULT_THEME };
+
 const FONT = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
 const SCRIPT_FONT = "'Brush Script MT', 'Segoe Script', 'Comic Sans MS', cursive";
 
@@ -33,9 +48,10 @@ export function safeUrl(u) {
   return '';
 }
 
-function btn(label, url, { bg = RED, color = '#ffffff', size = 15 } = {}) {
+function btn(label, url, { bg = undefined, color = '#ffffff', size = 15 } = {}) {
   const href = safeUrl(url);
   if (!label || !href) return '';
+  if (!bg) bg = T.primary;
   return `
     <table role="presentation" cellpadding="0" cellspacing="0" style="display:inline-table;">
       <tr><td bgcolor="${bg}" style="border-radius:8px;">
@@ -44,7 +60,8 @@ function btn(label, url, { bg = RED, color = '#ffffff', size = 15 } = {}) {
     </table>`;
 }
 
-function scriptNote(text, { color = RED, size = 22 } = {}) {
+function scriptNote(text, { color = undefined, size = 22 } = {}) {
+  if (!color) color = T.script;
   if (!text) return '';
   const lines = String(text).split('\n').map((l) => e(l)).join('<br/>');
   return `<div style="font-family:${SCRIPT_FONT};font-size:${size}px;line-height:1.35;color:${color};">${lines}</div>`;
@@ -52,8 +69,8 @@ function scriptNote(text, { color = RED, size = 22 } = {}) {
 
 function sectionTitle(title) {
   return `
-    <div style="font-family:${FONT};font-size:24px;font-weight:800;color:${DARK};letter-spacing:0.01em;">${e(title)}</div>
-    <div style="width:56px;height:4px;background:${RED};border-radius:2px;margin:8px 0 0;"></div>`;
+    <div style="font-family:${FONT};font-size:24px;font-weight:800;color:${T.heading};letter-spacing:0.01em;">${e(title)}</div>
+    <div style="width:56px;height:4px;background:${T.primary};border-radius:2px;margin:8px 0 0;"></div>`;
 }
 
 function iconCell(item, { size = 34 } = {}) {
@@ -64,7 +81,8 @@ function iconCell(item, { size = 34 } = {}) {
 }
 
 // Rounded white card wrapper on the light page background.
-function card(inner, { pad = 28, bg = '#ffffff' } = {}) {
+function card(inner, { pad = 28, bg = undefined } = {}) {
+  if (!bg) bg = T.surface;
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
       <tr><td bgcolor="${bg}" style="border-radius:14px;padding:${pad}px;">${inner}</td></tr>
@@ -80,7 +98,7 @@ function renderHeader(d) {
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           ${d.logo_url ? `<td valign="middle" style="padding-right:12px;"><img src="${e(d.logo_url)}" alt="${e(d.company || 'T-Shirt Brothers')}" width="52" style="display:block;width:52px;" /></td>` : ''}
           <td valign="middle">
-            <div style="font-family:${FONT};font-size:24px;font-weight:900;color:${DARK};letter-spacing:0.01em;">${e(d.company || 'T-SHIRT BROTHERS').replace(/BROTHERS/, `<span style="color:${RED};">BROTHERS</span>`)}</div>
+            <div style="font-family:${FONT};font-size:24px;font-weight:900;color:${T.heading};letter-spacing:0.01em;">${e(d.company || 'T-SHIRT BROTHERS').replace(/BROTHERS/, `<span style="color:${T.primary};">BROTHERS</span>`)}</div>
             ${d.subtitle ? `<div style="font-family:${FONT};font-size:12px;font-weight:bold;color:${GRAY};margin-top:2px;">${e(d.subtitle)}</div>` : ''}
           </td>
         </tr></table>
@@ -98,7 +116,7 @@ function renderHero(d) {
       <td>
         ${d.eyebrow ? `<div style="font-family:${FONT};font-size:12px;font-weight:bold;letter-spacing:0.28em;color:#e5e7eb;margin:0 0 12px;">${e(d.eyebrow)}</div>` : ''}
         <div style="font-family:${FONT};font-size:42px;line-height:1.02;font-weight:900;color:#ffffff;">${e(d.headline || '')}</div>
-        ${d.highlight ? `<div style="font-family:${SCRIPT_FONT};font-size:46px;line-height:1.05;color:${RED};margin:2px 0 0;">${e(d.highlight)}</div>` : ''}
+        ${d.highlight ? `<div style="font-family:${SCRIPT_FONT};font-size:46px;line-height:1.05;color:${T.primary};margin:2px 0 0;">${e(d.highlight)}</div>` : ''}
         ${d.body ? `<div style="font-family:${FONT};font-size:15px;line-height:1.6;color:#d1d5db;margin:16px 0 0;max-width:420px;">${e(d.body)}</div>` : ''}
         <div style="margin:22px 0 0;">${btn(d.cta_label, d.cta_url)}</div>
         ${d.tagline ? `<div style="font-family:${FONT};font-size:11px;font-weight:bold;letter-spacing:0.24em;color:#9ca3af;margin:18px 0 0;">${e(d.tagline)}</div>` : ''}
@@ -108,7 +126,7 @@ function renderHero(d) {
     ${bg ? `<img src="${e(bg)}" alt="${e(d.image_alt || d.headline || 'Featured apparel')}" width="${WIDTH - 56}" style="display:block;width:100%;border-radius:10px;margin:22px 0 0;" />` : ''}`;
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
-      <tr><td bgcolor="${DARK}" style="border-radius:14px;padding:28px;">${inner}</td></tr>
+      <tr><td bgcolor="${T.heroBg}" style="border-radius:14px;padding:28px;">${inner}</td></tr>
     </table>`;
 }
 
@@ -117,8 +135,8 @@ function renderEvents(d) {
   const cols = items.map((it) => `
     <td valign="top" align="center" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:10px 8px;border-left:1px solid #e5e7eb;">
       <div>${iconCell(it)}</div>
-      <div style="font-family:${FONT};font-size:14px;font-weight:800;color:${DARK};margin:8px 0 4px;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${DARK};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
-      ${it.date ? `<div style="font-family:${FONT};font-size:11px;font-weight:bold;color:${RED};margin:0 0 3px;">${e(it.date)}</div>` : ''}
+      <div style="font-family:${FONT};font-size:14px;font-weight:800;color:${T.heading};margin:8px 0 4px;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${T.heading};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
+      ${it.date ? `<div style="font-family:${FONT};font-size:11px;font-weight:bold;color:${T.primary};margin:0 0 3px;">${e(it.date)}</div>` : ''}
       ${it.description ? `<div style="font-family:${FONT};font-size:12px;line-height:1.5;color:${GRAY};">${e(it.description)}</div>` : ''}
     </td>`).join('');
   return card(`
@@ -143,10 +161,10 @@ function renderProducts(d) {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:12px;">
         <tr><td style="padding:14px;" align="center">
           ${p.image_url ? `<a href="${e(href)}"><img src="${e(p.image_url)}" alt="${e(p.name || 'Product')}" width="150" style="display:inline-block;width:100%;max-width:150px;border-radius:8px;" /></a>` : ''}
-          <div style="font-family:${FONT};font-size:15px;font-weight:800;color:${DARK};margin:10px 0 4px;">${e(p.name || '')}</div>
+          <div style="font-family:${FONT};font-size:15px;font-weight:800;color:${T.heading};margin:10px 0 4px;">${e(p.name || '')}</div>
           ${p.description ? `<div style="font-family:${FONT};font-size:12px;line-height:1.5;color:${GRAY};">${e(p.description)}</div>` : ''}
-          ${p.price ? `<div style="font-family:${FONT};font-size:13px;font-weight:bold;color:${RED};margin:6px 0 0;">${e(p.price)}</div>` : ''}
-          <div style="margin:10px 0 2px;"><a href="${e(href)}" style="font-family:${FONT};font-size:13px;font-weight:bold;color:${RED};text-decoration:none;">${e(p.cta_label || 'Shop now')} &rarr;</a></div>
+          ${p.price ? `<div style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};margin:6px 0 0;">${e(p.price)}</div>` : ''}
+          <div style="margin:10px 0 2px;"><a href="${e(href)}" style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};text-decoration:none;">${e(p.cta_label || 'Shop now')} &rarr;</a></div>
         </td></tr>
       </table>
     </td>`;
@@ -161,7 +179,7 @@ function renderDidYouKnow(d) {
   const cols = items.map((it) => `
     <td valign="top" align="center" style="padding:8px 6px;">
       <div>${iconCell(it, { size: 30 })}</div>
-      <div style="font-family:${FONT};font-size:12px;font-weight:800;color:${DARK};margin:6px 0 0;white-space:nowrap;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${DARK};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
+      <div style="font-family:${FONT};font-size:12px;font-weight:800;color:${T.heading};margin:6px 0 0;white-space:nowrap;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${T.heading};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
       ${it.description ? `<div style="font-family:${FONT};font-size:11px;color:${GRAY};margin:2px 0 0;">${e(it.description)}</div>` : ''}
     </td>`).join('');
   return card(`
@@ -178,11 +196,11 @@ function renderDidYouKnow(d) {
 function renderSpecial(d) {
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
-      <tr><td bgcolor="${CHARCOAL}" style="border-radius:14px;padding:28px;">
+      <tr><td bgcolor="${T.specialBg}" style="border-radius:14px;padding:28px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td valign="middle">
             <div style="font-family:${FONT};font-size:28px;font-weight:900;color:#ffffff;">
-              ${e(d.headline || '')} ${d.highlight ? `<span style="font-family:${SCRIPT_FONT};font-weight:normal;font-size:32px;color:${RED};">${e(d.highlight)}</span>` : ''}
+              ${e(d.headline || '')} ${d.highlight ? `<span style="font-family:${SCRIPT_FONT};font-weight:normal;font-size:32px;color:${T.primary};">${e(d.highlight)}</span>` : ''}
             </div>
             ${d.description ? `<div style="font-family:${FONT};font-size:14px;line-height:1.6;color:#d1d5db;margin:10px 0 0;max-width:340px;">${e(d.description)}</div>` : ''}
             ${d.coupon_code ? `<div style="font-family:${FONT};font-size:13px;font-weight:bold;color:#ffffff;background:#374151;display:inline-block;padding:6px 14px;border-radius:6px;margin:12px 0 0;letter-spacing:0.12em;">CODE: ${e(d.coupon_code)}</div>` : ''}
@@ -201,7 +219,7 @@ function renderSpecial(d) {
 
 function renderClosing(d) {
   const buttons = (d.buttons || []).slice(0, 3).map((b, i) =>
-    `<span style="display:inline-block;margin:4px 6px 4px 0;">${btn(b.label, b.url, i === 0 ? {} : { bg: DARK })}</span>`).join('');
+    `<span style="display:inline-block;margin:4px 6px 4px 0;">${btn(b.label, b.url, i === 0 ? {} : { bg: T.heading })}</span>`).join('');
   const values = (d.values || []).slice(0, 3).map((v) => `
     <td align="center" valign="top" style="padding:8px 10px;border-left:1px solid #e5e7eb;">
       <div style="font-size:22px;line-height:1;">${e(v.icon || '★')}</div>
@@ -222,7 +240,7 @@ function renderFooter(d) {
     `<a href="${e(safeUrl(d[k]))}" style="font-family:${FONT};font-size:12px;font-weight:bold;color:#ffffff;text-decoration:underline;margin-left:10px;">${label}</a>`).join('');
   return `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr><td bgcolor="${DARK}" style="border-radius:14px;padding:24px 28px;">
+      <tr><td bgcolor="${T.footerBg}" style="border-radius:14px;padding:24px 28px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td valign="middle">
             <table role="presentation" cellpadding="0" cellspacing="0"><tr>
@@ -263,7 +281,8 @@ export const BLOCK_TYPES = Object.keys(RENDERERS);
  * `extras.unsubHtml` / `extras.openPixelHtml` are appended by the sender —
  * pass nothing for admin previews.
  */
-export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', openPixelHtml = '' } = {}) {
+export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', openPixelHtml = '', theme = {} } = {}) {
+  T = { ...DEFAULT_THEME, ...(theme && typeof theme === 'object' ? theme : {}) };
   const body = (blocks || [])
     .filter((b) => b && b.enabled !== false && RENDERERS[b.type])
     .map((b) => RENDERERS[b.type](b.data || {}))
@@ -277,9 +296,9 @@ export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', o
 <meta name="x-apple-disable-message-reformatting" />
 <title>T-Shirt Brothers</title>
 </head>
-<body style="margin:0;padding:0;background:${LIGHT};">
-${preheader ? `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${LIGHT};">${e(preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>` : ''}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${LIGHT}">
+<body style="margin:0;padding:0;background:${T.background};">
+${preheader ? `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${T.background};">${e(preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>` : ''}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${T.background}">
   <tr><td align="center" style="padding:18px 10px;">
     <table role="presentation" width="${WIDTH}" cellpadding="0" cellspacing="0" style="width:100%;max-width:${WIDTH}px;">
       <tr><td>

@@ -19,7 +19,11 @@ interface NewsletterRow {
   id: number; name: string; subject: string; status: string; is_template: boolean;
   updated_at: string; sent_count: number | null; recipient_count: number | null; sent_at: string | null;
 }
-interface Newsletter extends NewsletterRow { preheader: string; blocks: Block[] }
+interface Newsletter extends NewsletterRow { preheader: string; blocks: Block[]; theme?: Record<string, string>; template_slug?: string | null }
+interface LibraryTemplate {
+  slug: string; name: string; category: string; description: string;
+  theme: Record<string, string>; recommended: boolean;
+}
 
 function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
@@ -262,6 +266,10 @@ export default function NewslettersAdmin() {
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
   const [busyAction, setBusyAction] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [chooser, setChooser] = useState(false);
+  const [library, setLibrary] = useState<LibraryTemplate[]>([]);
+  const [libCategory, setLibCategory] = useState<string>('All');
+  const [libPreview, setLibPreview] = useState<{ name: string; html: string } | null>(null);
 
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
@@ -282,7 +290,7 @@ export default function NewslettersAdmin() {
     const t = setTimeout(async () => {
       const res = await fetch('/api/admin/newsletters/preview', {
         method: 'POST', headers: jsonHeaders(),
-        body: JSON.stringify({ blocks: editing.blocks, preheader: editing.preheader }),
+        body: JSON.stringify({ blocks: editing.blocks, preheader: editing.preheader, theme: editing.theme || {} }),
       });
       if (res.ok) setPreviewHtml((await res.json()).html);
     }, 450);
@@ -301,18 +309,35 @@ export default function NewslettersAdmin() {
     })();
   }, [sendFilter, editing?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const create = async (fromId?: number) => {
-    const name = prompt('Internal name for this newsletter?', fromId ? undefined : `${new Date().toLocaleString('en-US', { month: 'long' })} Newsletter`);
+  const create = async (fromId?: number, templateSlug?: string, defaultName?: string) => {
+    const name = prompt('Internal name for this newsletter?', defaultName || (fromId ? undefined : `${new Date().toLocaleString('en-US', { month: 'long' })} Newsletter`));
     if (name === null) return;
     const res = await fetch('/api/admin/newsletters', {
-      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, from_id: fromId }),
+      method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name, from_id: fromId, template_slug: templateSlug }),
     });
     if (!res.ok) return flash('err', 'Could not create newsletter');
     const nl = await res.json();
+    setChooser(false);
+    setLibPreview(null);
     setEditing(nl);
     setOpenBlock(null);
     setDirty(false);
     void loadList();
+  };
+
+  const openChooser = async () => {
+    setChooser(true);
+    setLibCategory('All');
+    if (library.length === 0) {
+      const res = await fetch('/api/admin/newsletters/templates', { headers: authHeaders() });
+      if (res.ok) setLibrary((await res.json()).templates);
+    }
+  };
+
+  const openLibPreview = async (t: LibraryTemplate) => {
+    setLibPreview({ name: t.name, html: '' });
+    const res = await fetch(`/api/admin/newsletters/templates/${t.slug}/preview`, { headers: authHeaders() });
+    if (res.ok) setLibPreview({ name: t.name, html: (await res.json()).html });
   };
 
   const openEditor = async (id: number) => {
@@ -380,15 +405,82 @@ export default function NewslettersAdmin() {
   if (!editing) {
     const templates = list.filter((n) => n.is_template);
     const drafts = list.filter((n) => !n.is_template);
+    const categories = ['All', 'Recommended', ...Array.from(new Set(library.map((t) => t.category)))];
+    const visible = library.filter((t) =>
+      libCategory === 'All' ? true : libCategory === 'Recommended' ? t.recommended : t.category === libCategory);
     return (
       <div className="space-y-6">
         {notice && <Notice notice={notice} />}
+        {chooser && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto p-4 sm:p-8" onClick={() => { setChooser(false); setLibPreview(null); }}>
+            <div className="bg-white rounded-2xl max-w-5xl w-full p-5 sm:p-6" onClick={(ev) => ev.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-900">Choose a Newsletter Template</h3>
+                <button onClick={() => { setChooser(false); setLibPreview(null); }} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+              </div>
+              {library.some((t) => t.recommended) && libCategory === 'All' && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Recommended for {new Date().toLocaleString('en-US', { month: 'long' })}:{' '}
+                  <span className="font-semibold text-gray-700">{library.filter((t) => t.recommended).map((t) => t.name).join(' · ')}</span>
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {categories.map((c) => (
+                  <button key={c} onClick={() => setLibCategory(c)}
+                    className={`rounded-full px-3 py-1 text-xs font-bold transition ${libCategory === c ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              {library.length === 0 ? (
+                <div className="py-12 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>
+              ) : (
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+                  {visible.map((t) => (
+                    <div key={t.slug} className="rounded-xl border border-gray-200 overflow-hidden flex flex-col">
+                      <div className="h-16 flex items-end p-3" style={{ background: t.theme.heroBg || '#111' }}>
+                        <span className="font-black text-white text-sm leading-tight">{t.name}</span>
+                        <span className="ml-auto h-3 w-10 rounded-full" style={{ background: t.theme.primary || '#D7262C' }} />
+                      </div>
+                      <div className="p-3 flex-1 flex flex-col">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">{t.category}</span>
+                          {t.recommended && <span className="text-[10px] font-bold text-green-700 bg-green-50 rounded-full px-1.5 py-0.5">This month</span>}
+                        </div>
+                        <p className="mt-1 text-xs text-gray-600 flex-1">{t.description}</p>
+                        <div className="mt-2.5 flex gap-2">
+                          <button onClick={() => void create(undefined, t.slug, `${t.name} — ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}`)}
+                            className="flex-1 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold py-1.5">Use template</button>
+                          <button onClick={() => void openLibPreview(t)}
+                            className="rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 text-xs font-bold px-3 py-1.5">Preview</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {libPreview && (
+          <div className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4" onClick={() => setLibPreview(null)}>
+            <div className="bg-gray-100 rounded-2xl w-full max-w-3xl overflow-hidden" onClick={(ev) => ev.stopPropagation()}>
+              <div className="flex items-center justify-between bg-white px-4 py-2.5 border-b border-gray-200">
+                <p className="font-bold text-sm text-gray-800">{libPreview.name}</p>
+                <button onClick={() => setLibPreview(null)} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+              </div>
+              {libPreview.html
+                ? <iframe title="Template preview" srcDoc={libPreview.html} sandbox="" className="w-full bg-white" style={{ height: '75vh' }} />
+                : <div className="py-20 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Newsletters</h2>
             <p className="text-sm text-gray-500">Modular block newsletters — sent through the same pipeline and analytics as Email Blasts.</p>
           </div>
-          <button onClick={() => void create()} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
+          <button onClick={() => void openChooser()} className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg">
             <Plus className="h-4 w-4" /> Create Newsletter
           </button>
         </div>
