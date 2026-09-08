@@ -489,7 +489,11 @@ export default function DtfStorePage() {
               const chosenFt = lengthFt ?? fileFt;
               const chosenPx = chosenFt * 3600;
               const cropped = chosenPx < uploadedFile.height_px;
-              const contentPct = Math.min(100, (uploadedFile.height_px / chosenPx) * 100);
+              // Deliberately uncapped: >100% when the chosen length is
+              // shorter than the artwork, so the art renders at TRUE scale
+              // and the frame's overflow-hidden crops the bottom — capping
+              // at 100% squashed the whole sheet into the shorter frame.
+              const contentPct = (uploadedFile.height_px / chosenPx) * 100;
               return (
                 <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3">
                   <p className="text-sm font-semibold text-orange-800">

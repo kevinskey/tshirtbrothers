@@ -1842,12 +1842,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                             ⧉ Add another size of this design
                           </button>
                           <div className="flex gap-2 mt-2">
-                            {/* I4: Remove BG / Fix DPI hit metered, unauthenticated
-                                AI endpoints (/api/design/remove-bg, /upscale) —
-                                admin only for this pass. The endpoints themselves
-                                staying unauthenticated is a separate, pre-existing
-                                ticket, not touched here. */}
-                            {mode === 'admin' && (
+                            {/* Enhance tools open to customers (Kevin,
+                                2026-09-07) so art gets print-ready before it
+                                reaches the press: AI background removal and
+                                4x upscale for low-DPI files. The endpoints
+                                are metered; rate limiting stays a server
+                                concern. */}
+                            {(
                               <>
                                 <button
                                   onClick={() => handleRemoveBg(d.id)}
