@@ -16,11 +16,11 @@ const COLLAGE =
 // labels match the retail categories the /api/products filter understands.
 const SS = 'https://www.ssactivewear.com/Images/Style';
 const CATEGORY_TILES = [
-  { label: 'T-Shirts',    param: 'T-Shirts',             img: `${SS}/32_fl.jpg` },
+  { label: 'T-Shirts',    param: 'T-Shirts',             img: `${SS}/8907_fl.jpg` },
   { label: 'Hoodies',     param: 'Hoodies',              img: `${SS}/395_fl.jpg` },
   { label: 'Hats',        param: 'Headwear',             img: `${SS}/2998_fl.jpg` },
   { label: 'Polos',       param: 'Polos',                img: `${SS}/223_fl.jpg` },
-  { label: 'Bags',        param: 'Bags',                 img: `${SS}/14647_fl.jpg` },
+  { label: 'Bags',        param: 'Bags',                 img: `${SS}/15224_fl.jpg` },
   { label: 'Sweatshirts', param: 'Crewneck Sweatshirts', img: `${SS}/372_fl.jpg` },
 ];
 
@@ -98,8 +98,10 @@ export default function HeroSection() {
             <ChevronRight className="h-4 w-4 sm:h-6 sm:w-6 mt-1.5 self-end transition-transform group-hover:translate-x-1" />
           </Link>
 
-          {/* Customer-facing label per spec; the product-first "DTO" path. */}
-          <Link to="/shop"
+          {/* Customer-facing label per spec; the product-first path into
+              the Design Studio (pick a garment, build the design, submit
+              as a quote/mockup). */}
+          <Link to="/design"
             className="group rounded-2xl bg-gray-100 text-gray-900 p-3.5 sm:p-5 flex flex-col shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
             <Shirt className="h-7 w-7 sm:h-9 sm:w-9" />
             <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">Customize a Product</p>
