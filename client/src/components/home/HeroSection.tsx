@@ -31,7 +31,10 @@ export default function HeroSection() {
     <section className="bg-white">
       {/* ── Split hero: text LEFT, collage RIGHT — at every width ─────── */}
       <div className="bg-gray-100">
-        <div className="mx-auto max-w-7xl pl-4 sm:pl-6 lg:pl-8 grid grid-cols-[1.1fr_1fr] sm:grid-cols-2 items-center gap-2 sm:gap-6">
+        {/* lg+: auto-sized columns pulled to the center with a fixed gap —
+            stretching two 50% columns across the full container left a huge
+            dead zone between the text and the collage on wide screens. */}
+        <div className="mx-auto max-w-7xl pl-4 sm:pl-6 lg:pl-8 lg:pr-8 grid grid-cols-[1.1fr_1fr] sm:grid-cols-2 lg:grid-cols-[auto_auto] lg:justify-center lg:gap-20 xl:gap-28 items-center gap-2 sm:gap-6">
           <div className="py-6 sm:py-10 lg:py-14">
             <h1
               className="text-[26px] leading-[1.05] sm:text-5xl lg:text-[52px] tracking-tight"
@@ -73,7 +76,7 @@ export default function HeroSection() {
               alt="Custom printed t-shirt, hoodie, and cap by TShirt Brothers"
               width={424}
               height={476}
-              className="w-full max-w-[420px] ml-auto object-contain object-bottom"
+              className="w-full max-w-[420px] lg:w-[460px] lg:max-w-none ml-auto object-contain object-bottom"
               loading="eager"
               decoding="sync"
             />
