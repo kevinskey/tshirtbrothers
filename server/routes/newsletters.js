@@ -198,6 +198,12 @@ router.post('/:id(\\d+)/send', async (req, res, next) => {
     );
     const campaignId = rows[0].id;
     const isTest = Boolean(test_email);
+    // Real blasts flip to 'sending' immediately so the admin list reflects
+    // the in-flight state instead of sitting on 'draft' for the ~minutes
+    // the throttled worker needs.
+    if (!isTest) {
+      await pool.query(`UPDATE newsletters SET status = 'sending', updated_at = NOW() WHERE id = $1`, [nl.id]);
+    }
 
     (async () => {
       let sent = 0;
@@ -222,10 +228,10 @@ router.post('/:id(\\d+)/send', async (req, res, next) => {
         `UPDATE email_campaigns SET sent_count = $1, failed_count = $2, status = $3, sent_at = NOW() WHERE id = $4`,
         [sent, failed, failed === recipients.length ? 'failed' : 'sent', campaignId],
       );
-      if (!isTest && sent > 0) {
+      if (!isTest) {
         await pool.query(
-          `UPDATE newsletters SET status = 'sent', sent_campaign_id = $1, updated_at = NOW() WHERE id = $2`,
-          [campaignId, nl.id],
+          `UPDATE newsletters SET status = $1, sent_campaign_id = $2, updated_at = NOW() WHERE id = $3`,
+          [sent > 0 ? 'sent' : 'draft', campaignId, nl.id],
         );
       }
       console.log(`[newsletter ${nl.id}] campaign ${campaignId} complete: ${sent} sent, ${failed} failed`);

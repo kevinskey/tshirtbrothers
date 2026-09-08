@@ -522,7 +522,7 @@ export default function NewslettersAdmin() {
                     <td className="px-4 py-2.5 font-semibold text-gray-900">{n.name}</td>
                     <td className="px-4 py-2.5 text-gray-600 truncate max-w-[220px]">{n.subject || <span className="text-gray-300">—</span>}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${n.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{n.status}</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${n.status === 'sent' ? 'bg-green-100 text-green-700' : n.status === 'sending' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>{n.status}</span>
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{n.sent_count != null ? `${n.sent_count}/${n.recipient_count}` : '—'}</td>
                     <td className="px-4 py-2.5 text-right whitespace-nowrap">
