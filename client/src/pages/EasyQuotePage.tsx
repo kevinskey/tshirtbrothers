@@ -160,7 +160,9 @@ export default function EasyQuotePage() {
           lines.push({
             key: p.key, label: p.label,
             quantity: d.quantity, per_shirt: d.per_shirt, total: d.total,
-            rush_surcharge: d.breakdown?.rush_surcharge ?? 0,
+            // breakdown.rush_surcharge is pre-markup; show what it
+            // actually adds to the customer total.
+            rush_surcharge: (d.breakdown?.rush_surcharge ?? 0) * (d.breakdown?.markup_multiplier ?? 1),
           });
         }
         if (!cancelled) setCalcLines(lines);
@@ -521,8 +523,9 @@ export default function EasyQuotePage() {
                 <Note tone="amber">
                   ⚡ That&apos;s <strong>{rushDays} {rushDays === 1 ? 'day' : 'days'} sooner</strong> than our
                   standard {settings.standard_turnaround}-day turnaround — a{' '}
-                  <strong>{settings.rush_surcharge_pct}% per-day rush fee</strong> ({rushDays} × {settings.rush_surcharge_pct}% ={' '}
-                  {rushDays * settings.rush_surcharge_pct}%) applies and we&apos;ll move fast.
+                  <strong>{Math.round(settings.rush_surcharge_pct * 100)}% per-day rush fee</strong> ({rushDays} ×{' '}
+                  {Math.round(settings.rush_surcharge_pct * 100)}% = {Math.round(rushDays * settings.rush_surcharge_pct * 100)}%)
+                  applies and we&apos;ll move fast.
                 </Note>
               ) : (
                 <Note tone="green">✓ Plenty of time — standard turnaround, no rush fee.</Note>
