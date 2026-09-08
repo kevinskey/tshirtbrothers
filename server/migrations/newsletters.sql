@@ -18,3 +18,8 @@ CREATE TABLE IF NOT EXISTS newsletters (
 );
 
 CREATE INDEX IF NOT EXISTS idx_newsletters_updated ON newsletters(is_template, updated_at DESC);
+
+-- Run as the postgres superuser: hand the table to the app role so the API
+-- can read/write it (mirrors how the droplet is provisioned).
+ALTER TABLE newsletters OWNER TO tsbadmin;
+GRANT USAGE, SELECT ON SEQUENCE newsletters_id_seq TO tsbadmin;
