@@ -171,8 +171,14 @@ export function computeQuote(inputs, tables) {
   // Graduated rush: rushDays = how many days EARLIER than the standard
   // turnaround the customer needs it; each day adds rush_surcharge_pct
   // of base. Legacy callers sending only rush:true price as one day.
+  // Same-day (rushDays >= standard turnaround, i.e. need-by is today)
+  // charges the flat same_day_rush_pct premium instead of the ladder.
   const rushDays = Math.max(0, Number(inputs.rushDays) || (rush ? 1 : 0));
-  const rushSurcharge = rushDays > 0 ? base * rushPct * rushDays : 0;
+  const sameDayPct = Number(settings.same_day_rush_pct ?? 0.75);
+  const isSameDay = rushDays >= Number(settings.standard_turnaround || 10);
+  const rushSurcharge = isSameDay
+    ? base * sameDayPct
+    : rushDays > 0 ? base * rushPct * rushDays : 0;
 
   // total = (base - quantity_discount + setup + rush_surcharge) × markup
   const subtotal = base - quantityDiscount + setup + rushSurcharge;
@@ -202,6 +208,7 @@ export function computeQuote(inputs, tables) {
       discount_quantity: discountQuantity,
       rush_surcharge: r2(rushSurcharge),
       rush_days: rushDays,
+      same_day: isSameDay,
       markup_multiplier: markup,
       subtotal: r2(subtotal),
     },
@@ -670,6 +677,7 @@ router.get('/options', async (_req, res, next) => {
       settings: {
         markup_multiplier: Number(t.settings.markup_multiplier),
         rush_surcharge_pct: Number(t.settings.rush_surcharge_pct),
+        same_day_rush_pct: Number(t.settings.same_day_rush_pct ?? 0.75),
         standard_turnaround: t.settings.standard_turnaround,
         rush_turnaround: t.settings.rush_turnaround,
         size_upcharges: t.settings.size_upcharges || {},
