@@ -432,6 +432,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
       `SELECT sp.id AS product_id, sp.store_id, sp.title, sp.slug, sp.cover_image,
               sp.retail_price_cents, sp.is_active, sp.campaign_ref,
               sp.opens_at, sp.closes_at,
+              s.brand_json,
               s.name AS store_name, s.slug AS store_slug, s.fulfillment_mode,
               p.weight_oz
          FROM store_products sp
@@ -444,6 +445,10 @@ router.post('/create-store-checkout', async (req, res, next) => {
     );
     const product = q.rows[0];
     if (!product) return res.status(404).json({ error: 'Product not found' });
+    // Demo showroom stores are browsable but never sellable.
+    if (product.brand_json?.demo) {
+      return res.status(410).json({ error: 'This is a sample store — contact us to launch one for your organization.' });
+    }
     if (!product.is_active) return res.status(410).json({ error: 'Product not currently for sale' });
     const now = new Date();
     if (product.opens_at && now < new Date(product.opens_at)) {

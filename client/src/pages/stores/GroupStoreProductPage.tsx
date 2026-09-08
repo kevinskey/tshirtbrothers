@@ -14,6 +14,7 @@ interface StoreProfile {
     logo_url?: string;
     primary_color?: string;
     footer_note?: string;
+    demo?: boolean;
   };
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
   pickup_location_json: {
@@ -293,18 +294,36 @@ export default function GroupStoreProductPage() {
               </div>
             )}
 
-            <button
-              onClick={checkout}
-              disabled={!canCheckout || checkingOut}
-              className="mt-6 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundColor: primary }}
-            >
-              {checkingOut ? 'Redirecting to checkout…' : `Buy for $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
-            </button>
+            {store.brand_json.demo ? (
+              <>
+                <a
+                  href="https://tshirtbrothers.com/webstores"
+                  className="mt-6 block w-full py-3 rounded-md text-white font-semibold text-center"
+                  style={{ backgroundColor: primary }}
+                >
+                  Sample store — launch one like it for your group
+                </a>
+                <p className="mt-3 text-xs text-gray-500 text-center">
+                  This is a demonstration storefront by TShirt Brothers. Everything you see — branding,
+                  products, pricing — can be live for your organization within a week.
+                </p>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={checkout}
+                  disabled={!canCheckout || checkingOut}
+                  className="mt-6 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: primary }}
+                >
+                  {checkingOut ? 'Redirecting to checkout…' : `Buy for $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
+                </button>
 
-            <p className="mt-3 text-xs text-gray-500 text-center">
-              Payment via Stripe. {store.brand_json.footer_note || 'Designed and fulfilled by TShirt Brothers.'}
-            </p>
+                <p className="mt-3 text-xs text-gray-500 text-center">
+                  Payment via Stripe. {store.brand_json.footer_note || 'Designed and fulfilled by TShirt Brothers.'}
+                </p>
+              </>
+            )}
           </div>
         </div>
       </main>
