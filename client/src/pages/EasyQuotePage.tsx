@@ -116,15 +116,16 @@ export default function EasyQuotePage() {
   };
   const totalQty = pickedTypes.reduce((s, p) => s + typeQty(p.key), 0);
 
-  // Same-day/next-day cutoffs: order by 10am for today, by 12pm (noon)
-  // for tomorrow; past noon the earliest date is the day after tomorrow.
+  // Cutoffs are deadlines on the DELIVERY day: same-day orders must be
+  // in by 10am; a next-day date stays selectable right up until 12pm of
+  // that day itself (at which point it's "today" and the 10am rule has
+  // already closed it). Local date formatting — toISOString() is UTC and
+  // shifted evening users a day forward.
   const minNeedBy = useMemo(() => {
     const now = new Date();
-    const h = now.getHours();
-    const daysAhead = h < 10 ? 0 : h < 12 ? 1 : 2;
     const d = new Date(now);
-    d.setDate(d.getDate() + daysAhead);
-    return d.toISOString().slice(0, 10);
+    if (now.getHours() >= 10) d.setDate(d.getDate() + 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
 
   // Days EARLIER than standard turnaround the customer needs it — each
@@ -534,8 +535,8 @@ export default function EasyQuotePage() {
                 className="flex-1 text-lg font-semibold bg-transparent focus:outline-none" />
             </label>
             <p className="mt-2 text-xs text-gray-500">
-              ⏰ Same-day: order by <strong>10am</strong>. Next-day: order by <strong>12pm</strong>.
-              Same/next-day orders are picked up at our Fairburn, GA shop.
+              ⏰ Need it <strong>today</strong>? Order by 10am. Need it <strong>tomorrow</strong>? Orders
+              accepted until 12pm on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
             </p>
             {settings && needBy && (
               isRush ? (
