@@ -6,7 +6,7 @@
 import { DEFAULT_THEME } from './newsletterRender.js';
 
 const LOGO = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
-const RED = '#D7262C';
+const RED = '#ea580c'; // TSB brand orange
 
 export const TEMPLATE_CATEGORIES = [
   'Seasonal', 'School', 'Cultural', 'Holiday', 'Community', 'Sports', 'Sales', 'Business', 'Customer Retention', 'General',
@@ -24,7 +24,7 @@ function blocksFrom(o) {
     { id: id(), type: 'header', enabled: true, data: {
       logo_url: LOGO,
       company: 'T-SHIRT BROTHERS',
-      subtitle: 'Custom Apparel • DTF Printing • Embroidery • Event Shirts',
+      subtitle: 'Best Printing. Best Service!',
       right_message: o.headerNote || 'People.\nShirts.\nCommunities.\nStronger Together.',
     } },
     { id: id(), type: 'hero', enabled: true, data: {
@@ -538,7 +538,7 @@ const DEFS = [
   // ── Sales / Retention ──
   { slug: 'general-sale', name: 'General Sale', category: 'Sales', months: [1,2,3,4,5,6,7,8,9,10,11,12],
     description: 'Flash sales, bulk deals, free-setup promos — swap the offer and go.',
-    theme: { primary: '#111111', heroBg: '#b91c1c', specialBg: '#111111', script: '#fbbf24' },
+    theme: { primary: '#111111', heroBg: '#c2410c', specialBg: '#111111', script: '#fbbf24' },
     content: {
       eyebrow: 'LIMITED TIME', headline: 'THIS WEEK’S', highlight: 'TSB Special',
       body: 'Order more, save more — volume pricing pools across your whole order, and this week setup is on us.',

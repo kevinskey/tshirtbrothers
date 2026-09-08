@@ -7,7 +7,7 @@
 // rendered here — sendNewsletterEmail() injects them per recipient using
 // the existing campaign infrastructure.
 
-const RED = '#D7262C';
+const RED = '#ea580c'; // TSB brand orange (was red)
 const DARK = '#111111';
 const CHARCOAL = '#1f2937';
 const GRAY = '#6b7280';
@@ -367,7 +367,7 @@ export function defaultBlocks() {
     { id: id(), type: 'header', enabled: true, data: {
       logo_url: LOGO,
       company: 'T-SHIRT BROTHERS',
-      subtitle: 'Custom Apparel • DTF Printing • Embroidery • Event Shirts',
+      subtitle: 'Best Printing. Best Service!',
       right_message: 'People.\nShirts.\nCommunities.\nStronger Together.',
     } },
     { id: id(), type: 'hero', enabled: true, data: {
