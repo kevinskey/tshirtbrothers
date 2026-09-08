@@ -36,6 +36,7 @@ import DtfStorePage from '@/pages/DtfStorePage';
 import DtfBuilderPage from '@/pages/DtfBuilderPage';
 import DtfSuccessPage from '@/pages/DtfSuccessPage';
 import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
+import AdminVendorSendPage from '@/pages/AdminVendorSendPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
@@ -115,6 +116,7 @@ function App() {
           <Route path="/dtf/builder/:id" element={<DtfBuilderPage />} />
           <Route path="/dtf/success" element={<DtfSuccessPage />} />
           <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
+          <Route path="/admin/vendor-send" element={<AdminVendorSendPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/compare" element={<QualityTiersPage />} />
           <Route path="/webstores" element={<WebstoresPage />} />
