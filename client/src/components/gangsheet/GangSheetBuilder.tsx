@@ -1806,6 +1806,17 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                               </button>
                             ))}
                           </div>
+                          {/* Same art at another size: spawns an independent
+                              entry (own width + quantity) from the same file,
+                              so one sheet can mix e.g. full-fronts and
+                              left-chest hits of the same design. */}
+                          <button
+                            onClick={() => void addDesignToCanvas(d.imageUrl, d.name, Math.max(2, d.printWidthInches / 2), 1)}
+                            className="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] px-2 py-1.5 rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 font-semibold"
+                            title="Add this design again at a different size"
+                          >
+                            ⧉ Add another size of this design
+                          </button>
                           <div className="flex gap-2 mt-2">
                             {/* I4: Remove BG / Fix DPI hit metered, unauthenticated
                                 AI endpoints (/api/design/remove-bg, /upscale) —
