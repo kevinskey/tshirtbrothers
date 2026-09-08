@@ -168,6 +168,8 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'workspace', label: 'Art Editor',       icon: FolderOpen },
     { key: 'mockups',   label: 'Mockups',          icon: Eye },
     { key: 'gangsheet', label: 'Gang Sheets',      icon: Layers },
+    { key: 'vendor-send', label: 'Send to Vendor', icon: Send, to: '/admin/vendor-send' },
+    { key: 'dtf-orders', label: 'File Sender', icon: Send, to: '/admin/dtf-orders' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
   ]},
