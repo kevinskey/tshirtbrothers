@@ -320,6 +320,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           customer_email: email.trim(),
           customer_phone: phone.trim(),
           notes,
+          lang,
         }),
       });
       const data = await res.json();

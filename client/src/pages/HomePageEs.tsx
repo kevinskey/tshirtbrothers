@@ -18,7 +18,7 @@ import {
 
 export default function HomePageEs() {
   return (
-    <Layout>
+    <Layout lang="es">
       <Seo
         title="Estampado de Camisetas Personalizadas en Atlanta · TShirt Brothers"
         description="Camisetas, sudaderas y ropa personalizada en Atlanta. Estampado serigráfico, DTF y bordado — sin mínimos, entrega en 2–7 días, recogida gratis en Fairburn, GA."

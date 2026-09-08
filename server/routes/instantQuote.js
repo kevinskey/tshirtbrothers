@@ -455,6 +455,10 @@ router.post('/save', async (req, res, next) => {
       })),
       grand_total: grandTotal,
       grand_quantity: grandQuantity,
+      // 'es' when saved from /es/cotizacion — downstream customer emails
+      // (deposit receipt, status updates, follow-ups) read this via
+      // quoteLang() and switch to Spanish.
+      lang: req.body.lang === 'es' ? 'es' : 'en',
     };
 
     await client.query('BEGIN');
@@ -556,7 +560,7 @@ router.post('/save', async (req, res, next) => {
     // Fire emails — non-blocking from the customer's perspective; if either
     // fails we log but still return success since the row is persisted.
     Promise.allSettled([
-      sendInstantQuoteToCustomer({ quote, items: itemRows, grandTotal, grandQuantity }),
+      sendInstantQuoteToCustomer({ quote, items: itemRows, grandTotal, grandQuantity, lang: inputsJson.lang }),
       sendInstantQuoteToAdmin({ quote, items: itemRows, grandTotal, grandQuantity }),
     ]).then((results) => {
       results.forEach((r, i) => {

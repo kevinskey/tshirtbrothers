@@ -2,7 +2,97 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Phone, Mail, MapPin, Clock, Send, CheckCircle2 } from 'lucide-react';
 
-function NewsletterSignup() {
+type FooterLang = 'en' | 'es';
+
+// All user-visible footer strings, both languages. The /es pages pass
+// lang="es" through Layout; everything else defaults to English.
+const T = {
+  en: {
+    blurb: 'Premium custom apparel printing serving the south Atlanta metro area. From screen printing to DTF transfers, we bring your designs to life with quality you can feel.',
+    alerts: 'Get sale alerts & print tips',
+    emailPlaceholder: 'you@email.com',
+    subscribe: 'Subscribe',
+    thanks: "Thanks! We'll be in touch.",
+    noSpam: 'No spam — just print tips, sales, and new product alerts.',
+    subFailed: 'Subscription failed.',
+    services: 'Services',
+    quickLinks: 'Quick Links',
+    contact: 'Contact',
+    hours: 'Mon–Sat 8AM–8PM',
+    serviceArea: 'Service Area',
+    customShirts: (city: string) => `Custom Shirts ${city}`,
+    shirtsFor: 'Shirts For',
+    rights: '© 2026 TShirt Brothers. All rights reserved.',
+    privacy: 'Privacy Policy',
+    terms: 'Terms of Service',
+    serviceLinks: [
+      { label: 'Screen Printing', href: '/services#screen-printing' },
+      { label: 'DTF Transfers', href: '/services#dtf' },
+      { label: 'Embroidery', href: '/services#embroidery' },
+      { label: 'Custom Vinyl', href: '/services#vinyl' },
+    ],
+    quick: [
+      { label: 'Design Studio', href: '/design' },
+      { label: 'Get a Quote', href: '/quote' },
+      { label: 'Browse Catalog', href: '/shop' },
+      { label: 'My Account', href: '/account' },
+    ],
+    verticals: [
+      { slug: 'churches', name: 'Church Shirts' },
+      { slug: 'family-reunions', name: 'Family Reunions' },
+      { slug: 'teams', name: 'Team Jerseys' },
+      { slug: 'schools', name: 'Schools' },
+      { slug: 'businesses', name: 'Businesses' },
+      { slug: 'greek-life', name: 'Greek Life' },
+      { slug: 'fundraisers', name: 'Fundraisers' },
+      { slug: 'birthdays', name: 'Birthdays' },
+    ],
+  },
+  es: {
+    blurb: 'Impresión de ropa personalizada de primera calidad para el sur del área metropolitana de Atlanta. De serigrafía a transferencias DTF, damos vida a tus diseños con calidad que se siente.',
+    alerts: 'Recibe ofertas y consejos de impresión',
+    emailPlaceholder: 'tu@correo.com',
+    subscribe: 'Suscribirme',
+    thanks: '¡Gracias! Estaremos en contacto.',
+    noSpam: 'Sin spam — solo consejos de impresión, ofertas y productos nuevos.',
+    subFailed: 'No se pudo suscribir.',
+    services: 'Servicios',
+    quickLinks: 'Enlaces Rápidos',
+    contact: 'Contacto',
+    hours: 'Lun–Sáb 8AM–8PM',
+    serviceArea: 'Área de Servicio',
+    customShirts: (city: string) => `Camisetas Personalizadas ${city}`,
+    shirtsFor: 'Camisetas Para',
+    rights: '© 2026 TShirt Brothers. Todos los derechos reservados.',
+    privacy: 'Política de Privacidad',
+    terms: 'Términos de Servicio',
+    serviceLinks: [
+      { label: 'Serigrafía', href: '/services#screen-printing' },
+      { label: 'Transferencias DTF', href: '/services#dtf' },
+      { label: 'Bordado', href: '/services#embroidery' },
+      { label: 'Vinil Personalizado', href: '/services#vinyl' },
+    ],
+    quick: [
+      { label: 'Estudio de Diseño', href: '/design' },
+      { label: 'Obtener Cotización', href: '/es/cotizacion' },
+      { label: 'Ver Catálogo', href: '/shop' },
+      { label: 'Mi Cuenta', href: '/account' },
+    ],
+    verticals: [
+      { slug: 'churches', name: 'Iglesias' },
+      { slug: 'family-reunions', name: 'Reuniones Familiares' },
+      { slug: 'teams', name: 'Equipos' },
+      { slug: 'schools', name: 'Escuelas' },
+      { slug: 'businesses', name: 'Negocios' },
+      { slug: 'greek-life', name: 'Vida Griega' },
+      { slug: 'fundraisers', name: 'Recaudación de Fondos' },
+      { slug: 'birthdays', name: 'Cumpleaños' },
+    ],
+  },
+} as const;
+
+function NewsletterSignup({ lang }: { lang: FooterLang }) {
+  const t = T[lang];
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'submitting' | 'ok' | 'err'>('idle');
   const [errMsg, setErrMsg] = useState('');
@@ -20,13 +110,13 @@ function NewsletterSignup() {
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
-        throw new Error(body.error || 'Subscription failed.');
+        throw new Error(body.error || t.subFailed);
       }
       setStatus('ok');
       setEmail('');
     } catch (err) {
       setStatus('err');
-      setErrMsg(err instanceof Error ? err.message : 'Subscription failed.');
+      setErrMsg(err instanceof Error ? err.message : t.subFailed);
     }
   }
 
@@ -34,7 +124,7 @@ function NewsletterSignup() {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-orange-400/30 bg-orange-500/10 px-3 py-2.5 text-sm text-orange-200">
         <CheckCircle2 className="h-4 w-4 text-orange-400" />
-        Thanks! We&rsquo;ll be in touch.
+        {t.thanks}
       </div>
     );
   }
@@ -45,7 +135,7 @@ function NewsletterSignup() {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@email.com"
+          placeholder={t.emailPlaceholder}
           required
           className="flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 focus:border-orange-400 focus:ring-1 focus:ring-orange-400 outline-none px-3 py-2 text-sm text-white placeholder-gray-400"
           disabled={status === 'submitting'}
@@ -57,30 +147,19 @@ function NewsletterSignup() {
           className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-700 hover:bg-orange-800 disabled:opacity-50 px-3.5 py-2 text-sm font-bold text-white transition-colors"
         >
           <Send className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden sm:inline">Subscribe</span>
+          <span className="hidden sm:inline">{t.subscribe}</span>
         </button>
       </div>
       {status === 'err' && <p className="text-xs text-red-400">{errMsg}</p>}
-      <p className="text-xs text-gray-400">No spam — just print tips, sales, and new product alerts.</p>
+      <p className="text-xs text-gray-400">{t.noSpam}</p>
     </form>
   );
 }
 
-const services = [
-  { label: 'Screen Printing', href: '/services#screen-printing' },
-  { label: 'DTF Transfers', href: '/services#dtf' },
-  { label: 'Embroidery', href: '/services#embroidery' },
-  { label: 'Custom Vinyl', href: '/services#vinyl' },
-];
-
-const quickLinks = [
-  { label: 'Design Studio', href: '/design' },
-  { label: 'Get a Quote', href: '/quote' },
-  { label: 'Browse Catalog', href: '/shop' },
-  { label: 'My Account', href: '/account' },
-];
-
-export default function Footer() {
+export default function Footer({ lang = 'en' }: { lang?: FooterLang }) {
+  const t = T[lang];
+  const services = t.serviceLinks;
+  const quickLinks = t.quick;
   return (
     <footer className="bg-gray-950 text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
@@ -101,15 +180,13 @@ export default function Footer() {
               </span>
             </Link>
             <p className="mt-4 text-sm leading-relaxed text-gray-400">
-              Premium custom apparel printing serving the south Atlanta
-              metro area. From screen printing to DTF transfers, we bring
-              your designs to life with quality you can feel.
+              {t.blurb}
             </p>
             <div className="mt-5">
               <p className="text-xs font-semibold uppercase tracking-wider text-white mb-2">
-                Get sale alerts &amp; print tips
+                {t.alerts}
               </p>
-              <NewsletterSignup />
+              <NewsletterSignup lang={lang} />
             </div>
           </div>
 
@@ -119,7 +196,7 @@ export default function Footer() {
               className="text-sm font-semibold uppercase tracking-wider text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Services
+              {t.services}
             </h3>
             <ul className="mt-4 space-y-3">
               {services.map((item) => (
@@ -141,7 +218,7 @@ export default function Footer() {
               className="text-sm font-semibold uppercase tracking-wider text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Quick Links
+              {t.quickLinks}
             </h3>
             <ul className="mt-4 space-y-3">
               {quickLinks.map((item) => (
@@ -163,7 +240,7 @@ export default function Footer() {
               className="text-sm font-semibold uppercase tracking-wider text-white"
               style={{ fontFamily: "'Space Grotesk', sans-serif" }}
             >
-              Contact
+              {t.contact}
             </h3>
             <ul className="mt-4 space-y-3">
               <li className="flex items-start gap-2.5 text-sm text-gray-400">
@@ -184,7 +261,7 @@ export default function Footer() {
               </li>
               <li className="flex items-start gap-2.5 text-sm text-gray-400">
                 <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
-                <span>Mon&ndash;Sat 8AM&ndash;8PM</span>
+                <span>{t.hours}</span>
               </li>
             </ul>
           </div>
@@ -198,7 +275,7 @@ export default function Footer() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid gap-6 md:grid-cols-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
-              Service Area
+              {t.serviceArea}
             </p>
             <div className="flex flex-wrap gap-2">
               {[
@@ -216,26 +293,17 @@ export default function Footer() {
                   to={`/custom-shirts/${c.slug}`}
                   className="inline-flex items-center min-h-[28px] rounded-md px-2 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                 >
-                  Custom Shirts {c.name}
+                  {t.customShirts(c.name)}
                 </Link>
               ))}
             </div>
           </div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2.5">
-              Shirts For
+              {t.shirtsFor}
             </p>
             <div className="flex flex-wrap gap-2">
-              {[
-                { slug: 'churches',        name: 'Church Shirts' },
-                { slug: 'family-reunions', name: 'Family Reunions' },
-                { slug: 'teams',           name: 'Team Jerseys' },
-                { slug: 'schools',         name: 'Schools' },
-                { slug: 'businesses',      name: 'Businesses' },
-                { slug: 'greek-life',      name: 'Greek Life' },
-                { slug: 'fundraisers',     name: 'Fundraisers' },
-                { slug: 'birthdays',       name: 'Birthdays' },
-              ].map((v) => (
+              {t.verticals.map((v) => (
                 <Link
                   key={v.slug}
                   to={`/shirts-for/${v.slug}`}
@@ -252,13 +320,13 @@ export default function Footer() {
       {/* Bottom bar */}
       <div className="border-t border-gray-800">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-          <p>&copy; 2026 TShirt Brothers. All rights reserved.</p>
+          <p>{t.rights}</p>
           <div className="flex items-center gap-6">
             <Link to="/privacy" className="hover:text-white transition-colors">
-              Privacy Policy
+              {t.privacy}
             </Link>
             <Link to="/terms" className="hover:text-white transition-colors">
-              Terms of Service
+              {t.terms}
             </Link>
           </div>
         </div>
