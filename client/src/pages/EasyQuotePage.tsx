@@ -49,6 +49,7 @@ const ORANGE = '#f97316';
 
 type Settings = {
   rush_surcharge_pct: number;
+  same_day_rush_pct?: number;
   standard_turnaround: number;
   rush_turnaround: number;
 };
@@ -539,7 +540,13 @@ export default function EasyQuotePage() {
               accepted until 12pm on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
             </p>
             {settings && needBy && (
-              isRush ? (
+              rushDays >= settings.standard_turnaround ? (
+                <Note tone="amber">
+                  🚨 <strong>Same-day order</strong> — a flat{' '}
+                  <strong>{Math.round((settings.same_day_rush_pct ?? 0.75) * 100)}% rush premium</strong> applies.
+                  Pickup at our Fairburn shop; we drop everything for you.
+                </Note>
+              ) : isRush ? (
                 <Note tone="amber">
                   ⚡ That&apos;s <strong>{rushDays} {rushDays === 1 ? 'day' : 'days'} sooner</strong> than our
                   standard {settings.standard_turnaround}-day turnaround — a{' '}
