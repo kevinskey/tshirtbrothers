@@ -15,14 +15,14 @@ import {
 // key → pricing-table garment name (null = no instant price; goes to the
 // quote as a custom line the shop prices after review).
 const PRODUCT_TYPES = [
-  { key: 'tshirt',     label: 'T-Shirt',    emoji: '👕', pricing: 'T-shirt' },
-  { key: 'sweatshirt', label: 'Sweatshirt', emoji: '🧶', pricing: 'Sweatshirt' },
-  { key: 'hoodie',     label: 'Hoodie',     emoji: '🧥', pricing: 'Hoodie' },
-  { key: 'tank',       label: 'Tank',       emoji: '🎽', pricing: 'Tank' },
-  { key: 'jacket',     label: 'Jacket',     emoji: '🧷', pricing: null },
-  { key: 'cap',        label: 'Cap',        emoji: '🧢', pricing: 'Hat' },
-  { key: 'dtf',        label: 'DTF Prints', emoji: '🎞️', pricing: null },
-  { key: 'other',      label: 'Other',      emoji: '✨', pricing: null },
+  { key: 'tshirt',     label: 'T-Shirt',    labelEs: 'Camiseta',        emoji: '👕', pricing: 'T-shirt' },
+  { key: 'sweatshirt', label: 'Sweatshirt', labelEs: 'Sudadera',        emoji: '🧶', pricing: 'Sweatshirt' },
+  { key: 'hoodie',     label: 'Hoodie',     labelEs: 'Hoodie',          emoji: '🧥', pricing: 'Hoodie' },
+  { key: 'tank',       label: 'Tank',       labelEs: 'Camiseta s/mangas', emoji: '🎽', pricing: 'Tank' },
+  { key: 'jacket',     label: 'Jacket',     labelEs: 'Chaqueta',        emoji: '🧷', pricing: null },
+  { key: 'cap',        label: 'Cap',        labelEs: 'Gorra',           emoji: '🧢', pricing: 'Hat' },
+  { key: 'dtf',        label: 'DTF Prints', labelEs: 'Impresiones DTF', emoji: '🎞️', pricing: null },
+  { key: 'other',      label: 'Other',      labelEs: 'Otro',            emoji: '✨', pricing: null },
 ] as const;
 type ProductKey = typeof PRODUCT_TYPES[number]['key'];
 
@@ -40,9 +40,15 @@ const GILDAN_COLORS = [
 ] as const;
 
 const QUALITY_TIERS = [
-  { tier: 'Standard', label: 'Standard',           dollars: '$',   blurb: 'Gildan Heavy Cotton — the team-order workhorse.' },
-  { tier: 'Premium',  label: 'Mid-Level · Softer', dollars: '$$',  blurb: 'Next Level — soft ringspun retail fit people keep wearing.' },
-  { tier: 'Ultra',    label: 'Premium',            dollars: '$$$', blurb: 'Comfort Colors — garment-dyed, top-shelf feel. The good-good.' },
+  { tier: 'Standard', label: 'Standard',           labelEs: 'Estándar',            dollars: '$',
+    blurb: 'Gildan Heavy Cotton — the team-order workhorse.',
+    blurbEs: 'Gildan Heavy Cotton — el clásico para equipos y eventos.' },
+  { tier: 'Premium',  label: 'Mid-Level · Softer', labelEs: 'Nivel Medio · Más Suave', dollars: '$$',
+    blurb: 'Next Level — soft ringspun retail fit people keep wearing.',
+    blurbEs: 'Next Level — algodón suave con corte moderno.' },
+  { tier: 'Ultra',    label: 'Premium',            labelEs: 'Premium',             dollars: '$$$',
+    blurb: 'Comfort Colors — garment-dyed, top-shelf feel. The good-good.',
+    blurbEs: 'Comfort Colors — teñido en prenda, calidad superior.' },
 ] as const;
 
 const ORANGE = '#f97316';
@@ -74,7 +80,12 @@ function formatPhone(v: string): string {
 const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'art', 'quote'] as const;
 type Step = typeof STEPS[number];
 
-export default function EasyQuotePage() {
+export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
+  const es = lang === 'es';
+  // Tiny inline translator — keeps every string next to its usage.
+  const tr = (en: string, esStr: string) => (es ? esStr : en);
+  const pLabel = (p: { label: string; labelEs?: string }) => (es && p.labelEs ? p.labelEs : p.label);
+  const qLabel = (t: { label: string; labelEs: string }) => (es ? t.labelEs : t.label);
   const [step, setStep] = useState<Step>('name');
   const [settings, setSettings] = useState<Settings | null>(null);
 
@@ -202,7 +213,7 @@ export default function EasyQuotePage() {
           if (!res.ok) throw new Error(`Pricing failed for ${p.label}`);
           const d = await res.json();
           lines.push({
-            key: p.key, label: p.label,
+            key: p.key, label: pLabel(p),
             quantity: d.quantity, per_shirt: d.per_shirt, total: d.total,
             // breakdown.rush_surcharge is pre-markup; show what it
             // actually adds to the customer total.
@@ -362,13 +373,13 @@ export default function EasyQuotePage() {
           <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center" style={{ background: '#dcfce7' }}>
             <Mail className="w-8 h-8 text-green-600" />
           </div>
-          <h1 className="tsb-font-display text-3xl font-black mt-5">Quote saved &amp; emailed!</h1>
+          <h1 className="tsb-font-display text-3xl font-black mt-5">{tr('Quote saved & emailed!', '¡Cotización guardada y enviada!')}</h1>
           <p className="mt-3 text-gray-600">
-            Quote <span className="font-mono font-semibold">#{draftDone}</span> is in your inbox at{' '}
+            {tr('Quote ', 'La cotización ')}<span className="font-mono font-semibold">#{draftDone}</span>{tr(' is in your inbox at ', ' está en tu correo: ')}{' '}
             <span className="font-semibold">{email}</span>. We&apos;ll confirm final pricing and reach out.
           </p>
           <Link to="/" className="inline-block mt-8 px-6 py-3 rounded-full text-white font-bold" style={{ background: ORANGE }}>
-            Back to TShirt Brothers
+            {tr('Back to TShirt Brothers', 'Volver a TShirt Brothers')}
           </Link>
         </div>
       </Shell>
@@ -398,14 +409,17 @@ export default function EasyQuotePage() {
 
       <div ref={cardRef} key={step} className="animate-[eq-in_.35s_ease]" style={{ minHeight: 320 }}>
         {step === 'name' && (
-          <Card title="Hi! 👋 What's your name?">
-            <BigInput autoFocus value={name} onChange={setName} placeholder="Your name"
+          <Card title={tr("Hi! 👋 What's your name?", '¡Hola! 👋 ¿Cómo te llamas?')}>
+            <BigInput autoFocus value={name} onChange={setName} placeholder={tr('Your name', 'Tu nombre')}
               onEnter={() => canNext && go(1)} />
           </Card>
         )}
 
         {step === 'phone' && (
-          <Card title={`Nice to meet you, ${name.trim().split(' ')[0] || 'friend'}! What's your phone number?`}>
+          <Card title={tr(
+            `Nice to meet you, ${name.trim().split(' ')[0] || 'friend'}! What's your phone number?`,
+            `¡Mucho gusto, ${name.trim().split(' ')[0] || 'amigo'}! ¿Cuál es tu teléfono?`,
+          )}>
             <BigInput autoFocus type="tel" value={phone} onChange={(v) => setPhone(formatPhone(v))}
               placeholder="404-555-1234"
               onEnter={() => canNext && go(1)} />
@@ -413,14 +427,16 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'email' && (
-          <Card title="And your email?" sub="Your quote lands here.">
-            <BigInput autoFocus type="email" value={email} onChange={setEmail} placeholder="you@email.com"
+          <Card title={tr('And your email?', '¿Y tu correo electrónico?')}
+            sub={tr('Your quote lands here.', 'Aquí llegará tu cotización.')}>
+            <BigInput autoFocus type="email" value={email} onChange={setEmail} placeholder={tr('you@email.com', 'tu@correo.com')}
               onEnter={() => canNext && go(1)} />
           </Card>
         )}
 
         {step === 'products' && (
-          <Card title="What do you want printed?" sub="Pick everything that applies.">
+          <Card title={tr('What do you want printed?', '¿Qué quieres estampar?')}
+            sub={tr('Pick everything that applies.', 'Elige todo lo que aplique.')}>
             <div className="grid grid-cols-2 gap-3">
               {PRODUCT_TYPES.map((p) => {
                 const on = picked.includes(p.key);
@@ -436,7 +452,7 @@ export default function EasyQuotePage() {
                     style={on ? { background: ORANGE, borderColor: ORANGE } : undefined}
                   >
                     <span className="text-2xl">{p.emoji}</span>
-                    <span className="block mt-1 font-bold">{p.label}</span>
+                    <span className="block mt-1 font-bold">{pLabel(p)}</span>
                     {on && <Check className="w-4 h-4 mt-1" />}
                   </button>
                 );
@@ -444,28 +460,28 @@ export default function EasyQuotePage() {
             </div>
 
             {picked.includes('dtf') && (
-              <Note>DTF transfer prints are priced by the sheet — we&apos;ll size your art and quote that part after review. Want it now? Try the <Link to="/dtf/builder" className="underline font-semibold">gang sheet builder</Link>.</Note>
+              <Note>{tr('DTF transfer prints are priced by the sheet — we’ll size your art and quote that part after review. Want it now? Try the ', 'Las impresiones DTF se cotizan por hoja — revisaremos tu arte y cotizamos esa parte después. ¿La quieres ya? Prueba el ')}<Link to="/dtf/builder" className="underline font-semibold">{tr('gang sheet builder', 'creador de gang sheets')}</Link>.</Note>
             )}
             {picked.includes('jacket') && (
-              <Note>Jackets vary a lot, so that line gets priced by the shop after review — the rest of your quote is still instant.</Note>
+              <Note>{tr('Jackets vary a lot, so that line gets priced by the shop after review — the rest of your quote is still instant.', 'Las chaquetas varían mucho, así que el taller cotiza esa línea después de revisar — el resto de tu cotización sigue siendo instantánea.')}</Note>
             )}
             {picked.includes('other') && !otherAcked && (
               <div className="mt-4 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
                 <p className="flex items-start gap-2 text-sm text-amber-900">
                   <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-                  Items outside our standard list can&apos;t get an instant price — we&apos;ll review your request and follow up with a custom quote.
+                  {tr('Items outside our standard list can’t get an instant price — we’ll review your request and follow up with a custom quote.', 'Los artículos fuera de nuestra lista estándar no tienen precio instantáneo — revisaremos tu solicitud y te enviaremos una cotización personalizada.')}
                 </p>
                 <button type="button" onClick={() => setOtherAcked(true)}
                   className="mt-3 px-4 py-2 rounded-full bg-amber-600 text-white text-sm font-bold">
-                  Got it — let me describe it
+                  {tr('Got it — let me describe it', 'Entendido — déjame describirlo')}
                 </button>
               </div>
             )}
             {picked.includes('other') && otherAcked && (
               <div className="mt-4">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">What are you looking for?</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{tr('What are you looking for?', '¿Qué estás buscando?')}</label>
                 <input value={otherText} onChange={(e) => setOtherText(e.target.value)}
-                  placeholder="e.g. aprons with our logo"
+                  placeholder={tr('e.g. aprons with our logo', 'ej. delantales con nuestro logo')}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:outline-none" />
               </div>
             )}
@@ -473,12 +489,13 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'qty' && (
-          <Card title="How many?" sub="Quantities per size — skip sizes you don't need.">
+          <Card title={tr('How many?', '¿Cuántas?')}
+            sub={tr("Quantities per size — skip sizes you don't need.", 'Cantidades por talla — omite las tallas que no necesites.')}>
             <div className="space-y-6">
               {pricedTypes.map((p) => (
                 <div key={p.key}>
-                  <p className="font-bold mb-2">{p.emoji} {p.label}
-                    <span className="ml-2 text-xs font-semibold text-gray-400">{typeQty(p.key)} pcs</span>
+                  <p className="font-bold mb-2">{p.emoji} {pLabel(p)}
+                    <span className="ml-2 text-xs font-semibold text-gray-400">{typeQty(p.key)} {tr('pcs', 'pzas')}</span>
                   </p>
                   <div className="grid grid-cols-4 gap-2">
                     {SIZES.map((s) => (
@@ -498,10 +515,10 @@ export default function EasyQuotePage() {
               ))}
               {customTypes.map((p) => (
                 <div key={p.key}>
-                  <p className="font-bold mb-2">{p.emoji} {p.key === 'other' ? (otherText.trim() || 'Other') : p.label}
-                    <span className="ml-2 text-[11px] font-semibold text-amber-600">priced after review</span>
+                  <p className="font-bold mb-2">{p.emoji} {p.key === 'other' ? (otherText.trim() || tr('Other', 'Otro')) : pLabel(p)}
+                    <span className="ml-2 text-[11px] font-semibold text-amber-600">{tr('priced after review', 'se cotiza tras revisión')}</span>
                   </p>
-                  <input inputMode="numeric" pattern="[0-9]*" placeholder="How many?"
+                  <input inputMode="numeric" pattern="[0-9]*" placeholder={tr('How many?', '¿Cuántas?')}
                     value={qty[p.key]?.['_qty'] ?? ''}
                     onChange={(e) => setQty((prev) => ({
                       ...prev, [p.key]: { _qty: e.target.value.replace(/\D/g, '') },
@@ -514,7 +531,8 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'color' && (
-          <Card title="What color?" sub="Standard Gildan shade card — more colors available on request.">
+          <Card title={tr('What color?', '¿De qué color?')}
+            sub={tr('Standard Gildan shade card — more colors available on request.', 'Carta de colores Gildan — más colores disponibles a pedido.')}>
             <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
               {GILDAN_COLORS.map(([n, hex]) => {
                 const on = color === n;
@@ -533,7 +551,7 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'quality' && (
-          <Card title="What quality level?">
+          <Card title={tr('What quality level?', '¿Qué nivel de calidad?')}>
             <div className="space-y-3">
               {QUALITY_TIERS.map((t) => {
                 const on = quality === t.tier;
@@ -545,10 +563,10 @@ export default function EasyQuotePage() {
                     style={on ? { background: ORANGE, borderColor: ORANGE } : undefined}
                   >
                     <span className="flex items-baseline justify-between">
-                      <span className="font-bold text-lg">{t.label}</span>
+                      <span className="font-bold text-lg">{qLabel(t)}</span>
                       <span className={`font-black ${on ? '' : 'text-gray-400'}`}>{t.dollars}</span>
                     </span>
-                    <span className={`block mt-1 text-sm ${on ? 'text-white/85' : 'text-gray-500'}`}>{t.blurb}</span>
+                    <span className={`block mt-1 text-sm ${on ? 'text-white/85' : 'text-gray-500'}`}>{es ? t.blurbEs : t.blurb}</span>
                   </button>
                 );
               })}
@@ -557,7 +575,8 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'date' && (
-          <Card title="When do you need it?" sub="Pick your in-hands date.">
+          <Card title={tr('When do you need it?', '¿Para cuándo lo necesitas?')}
+            sub={tr('Pick your in-hands date.', 'Elige la fecha en que lo necesitas en mano.')}>
             <label className="flex items-center gap-3 rounded-2xl border-2 border-gray-200 bg-white px-4 py-4 focus-within:border-gray-900">
               <CalendarDays className="w-6 h-6 text-gray-400" />
               <input type="date" required value={needBy}
@@ -566,45 +585,43 @@ export default function EasyQuotePage() {
                 className="flex-1 text-lg font-semibold bg-transparent focus:outline-none" />
             </label>
             <p className="mt-2 text-xs text-gray-500">
-              ⏰ Need it <strong>today</strong>? Order by 10am ET. Need it <strong>tomorrow</strong>? Orders
-              accepted until 12pm ET on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
+              {tr('⏰ Need it ', '⏰ ¿Lo necesitas ')}<strong>{tr('today', 'hoy')}</strong>{tr('? Order by 10am ET. Need it ', '? Ordena antes de las 10am ET. ¿Para ')}<strong>{tr('tomorrow', 'mañana')}</strong>{tr('? Orders accepted until 12pm ET on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.', '? Aceptamos pedidos hasta las 12pm ET del mismo día. Los pedidos de hoy/mañana se recogen en nuestro taller de Fairburn, GA.')}
             </p>
             {needBy && needBy < minNeedBy && (
               <Note tone="amber">
-                🚫 That date has passed our cutoff — the earliest we can do is{' '}
-                <strong>{new Date(`${minNeedBy}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</strong>.
-                (Same-day needs the order in by 10am ET.)
+                {tr('🚫 That date has passed our cutoff — the earliest we can do is ', '🚫 Esa fecha ya pasó nuestro límite — lo más pronto posible es ')}
+                <strong>{new Date(`${minNeedBy}T12:00:00`).toLocaleDateString(es ? 'es-US' : undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</strong>.
+                {tr(' (Same-day needs the order in by 10am ET.)', ' (Para el mismo día, ordena antes de las 10am ET.)')}
               </Note>
             )}
             {settings && needBy && needBy >= minNeedBy && (
               rushDays >= settings.standard_turnaround ? (
                 <Note tone="amber">
-                  🚨 <strong>Same-day order</strong> — a flat{' '}
-                  <strong>{Math.round((settings.same_day_rush_pct ?? 0.75) * 100)}% rush premium</strong> applies.
-                  Pickup at our Fairburn shop; we drop everything for you.
+                  🚨 <strong>{tr('Same-day order', 'Pedido para hoy mismo')}</strong>{tr(' — a flat ', ' — aplica un recargo urgente fijo del ')}
+                  <strong>{Math.round((settings.same_day_rush_pct ?? 0.75) * 100)}%</strong>{tr(' rush premium applies. Pickup at our Fairburn shop; we drop everything for you.', '. Recogida en nuestro taller de Fairburn; dejamos todo para atenderte.')}
                 </Note>
               ) : isRush ? (
                 <Note tone="amber">
-                  ⚡ That&apos;s <strong>{rushDays} {rushDays === 1 ? 'day' : 'days'} sooner</strong> than our
-                  standard {settings.standard_turnaround}-day turnaround — a{' '}
-                  <strong>{Math.round(settings.rush_surcharge_pct * 100)}% per-day rush fee</strong> ({rushDays} ×{' '}
+                  {tr("⚡ That's ", '⚡ Eso es ')}<strong>{rushDays} {tr(rushDays === 1 ? 'day' : 'days', rushDays === 1 ? 'día' : 'días')} {tr('sooner', 'antes')}</strong>{tr(` than our standard ${settings.standard_turnaround}-day turnaround — a `, ` de nuestro plazo estándar de ${settings.standard_turnaround} días — aplica un recargo urgente de `)}
+                  <strong>{Math.round(settings.rush_surcharge_pct * 100)}%{tr(' per-day rush fee', ' por día')}</strong> ({rushDays} ×{' '}
                   {Math.round(settings.rush_surcharge_pct * 100)}% = {Math.round(rushDays * settings.rush_surcharge_pct * 100)}%)
-                  applies and we&apos;ll move fast.
+                  {tr(" applies and we'll move fast.", ' y nos moveremos rápido.')}
                 </Note>
               ) : (
-                <Note tone="green">✓ Plenty of time — standard turnaround, no rush fee.</Note>
+                <Note tone="green">{tr('✓ Plenty of time — standard turnaround, no rush fee.', '✓ Tiempo de sobra — plazo estándar, sin recargo urgente.')}</Note>
               )
             )}
           </Card>
         )}
 
         {step === 'art' && (
-          <Card title="Got art? 🎨" sub="Upload your logo or design — or skip and send it later.">
+          <Card title={tr('Got art? 🎨', '¿Tienes tu diseño? 🎨')}
+            sub={tr('Upload your logo or design — or skip and send it later.', 'Sube tu logo o diseño — o sáltalo y envíalo después.')}>
             <button type="button" onClick={() => artInputRef.current?.click()}
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center hover:border-gray-500 transition-colors">
               <p className="text-3xl">📂</p>
-              <p className="mt-2 font-bold">Tap to upload</p>
-              <p className="text-xs text-gray-400 mt-1">PNG, JPG — as many files as you need</p>
+              <p className="mt-2 font-bold">{tr('Tap to upload', 'Toca para subir')}</p>
+              <p className="text-xs text-gray-400 mt-1">{tr('PNG, JPG — as many files as you need', 'PNG, JPG — todos los archivos que necesites')}</p>
             </button>
             <input ref={artInputRef} type="file" accept=".png,.jpg,.jpeg,.webp" multiple className="hidden"
               onChange={(e) => { uploadArt(e.target.files); e.target.value = ''; }} />
@@ -629,7 +646,8 @@ export default function EasyQuotePage() {
         )}
 
         {step === 'quote' && (
-          <Card title="Your quote 🎉" sub="Standard pricing — final numbers confirmed by the shop.">
+          <Card title={tr('Your quote 🎉', 'Tu cotización 🎉')}
+            sub={tr('Standard pricing — final numbers confirmed by the shop.', 'Precios estándar — el taller confirma los números finales.')}>
             {calcBusy && (
               <div className="py-10 text-center"><Loader2 className="w-7 h-7 animate-spin text-gray-400 mx-auto" /></div>
             )}
@@ -640,7 +658,7 @@ export default function EasyQuotePage() {
                     <div key={l.key} className="px-4 py-3 flex items-baseline justify-between gap-3">
                       <div>
                         <p className="font-semibold">{l.label} × {l.quantity}</p>
-                        <p className="text-xs text-gray-500">${l.per_shirt.toFixed(2)} each · {color} · {QUALITY_TIERS.find((t) => t.tier === quality)?.label}</p>
+                        <p className="text-xs text-gray-500">${l.per_shirt.toFixed(2)} {tr('each', 'c/u')} · {color} · {(() => { const t = QUALITY_TIERS.find((x) => x.tier === quality); return t ? qLabel(t) : ''; })()}</p>
                       </div>
                       <p className="font-bold shrink-0">${l.total.toFixed(2)}</p>
                     </div>
@@ -648,8 +666,8 @@ export default function EasyQuotePage() {
                   {customTypes.map((p) => (
                     <div key={p.key} className="px-4 py-3 flex items-baseline justify-between gap-3">
                       <div>
-                        <p className="font-semibold">{p.key === 'other' ? (otherText.trim() || 'Other') : p.label} × {typeQty(p.key) || 1}</p>
-                        <p className="text-xs text-amber-600 font-semibold">priced by the shop after review</p>
+                        <p className="font-semibold">{p.key === 'other' ? (otherText.trim() || tr('Other', 'Otro')) : pLabel(p)} × {typeQty(p.key) || 1}</p>
+                        <p className="text-xs text-amber-600 font-semibold">{tr('priced by the shop after review', 'el taller lo cotiza tras revisión')}</p>
                       </div>
                       <p className="font-bold text-gray-400 shrink-0">TBD</p>
                     </div>
@@ -657,11 +675,11 @@ export default function EasyQuotePage() {
                   <div className="px-4 py-3 bg-gray-50">
                     {isRush && rushTotal > 0 && (
                       <p className="text-xs text-amber-700 font-semibold mb-1">
-                        Includes ${rushTotal.toFixed(2)} rush fee for your {needBy} date
+                        {tr(`Includes $${rushTotal.toFixed(2)} rush fee for your ${needBy} date`, `Incluye $${rushTotal.toFixed(2)} de recargo urgente para tu fecha ${needBy}`)}
                       </p>
                     )}
                     <p className="flex items-baseline justify-between">
-                      <span className="font-bold">Estimated total{customTypes.length > 0 ? ' (instant items)' : ''}</span>
+                      <span className="font-bold">{tr('Estimated total', 'Total estimado')}{customTypes.length > 0 ? tr(' (instant items)', ' (artículos instantáneos)') : ''}</span>
                       <span className="tsb-font-display text-2xl font-black">${pricedTotal.toFixed(2)}</span>
                     </p>
                   </div>
@@ -673,16 +691,16 @@ export default function EasyQuotePage() {
                     className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg disabled:opacity-60"
                     style={{ background: ORANGE }}>
                     {submitBusy === 'deposit' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                    Accept Quote &amp; Pay Deposit
+                    {tr('Accept Quote & Pay Deposit', 'Aceptar y Pagar Depósito')}
                   </button>
                   <button type="button" disabled={!!submitBusy}
                     onClick={() => submit('draft')}
                     className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full border-2 border-gray-300 font-bold disabled:opacity-60 hover:border-gray-900">
                     {submitBusy === 'draft' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mail className="w-5 h-5" />}
-                    Save Draft (email it to me)
+                    {tr('Save Draft (email it to me)', 'Guardar Borrador (envíamelo por correo)')}
                   </button>
                   <p className="text-center text-xs text-gray-400">
-                    Paying the deposit starts your order. <Sparkles className="inline w-3 h-3" /> Prefer the full calculator? <Link to="/quote/classic" className="underline">Classic version</Link>
+                    {tr('Paying the deposit starts your order.', 'Al pagar el depósito, tu pedido comienza.')} <Sparkles className="inline w-3 h-3" /> {tr('Prefer the full calculator?', '¿Prefieres la calculadora completa?')} <Link to="/quote/classic" className="underline">{tr('Classic version', 'Versión clásica')}</Link>
                   </p>
                 </div>
               </>
@@ -707,14 +725,14 @@ export default function EasyQuotePage() {
               <button type="button" disabled={!canNext} onClick={() => go(1)}
                 className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-xl transition-opacity disabled:opacity-40"
                 style={{ background: ORANGE }}>
-                {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
+                {step === 'art' && artUrls.length === 0 ? tr('Skip for now', 'Saltar por ahora') : tr('Next', 'Siguiente')} <ArrowRight className="w-5 h-5" />
               </button>
             </div>
           </div>
           <button type="button" disabled={!canNext} onClick={() => go(1)}
             className="hidden sm:inline-flex mt-8 w-full items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg transition-opacity disabled:opacity-40"
             style={{ background: ORANGE }}>
-            {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
+            {step === 'art' && artUrls.length === 0 ? tr('Skip for now', 'Saltar por ahora') : tr('Next', 'Siguiente')} <ArrowRight className="w-5 h-5" />
           </button>
         </>
       )}

@@ -50,7 +50,7 @@ export default function HomePageEs() {
           </p>
           <div className="mt-7 flex items-center justify-center gap-3 flex-wrap">
             <Link
-              to="/quote"
+              to="/es/cotizacion"
               className="inline-flex items-center gap-2 rounded-xl bg-orange-500 hover:bg-orange-600 px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-orange-500/25 transition-colors"
             >
               <Tag className="h-4 w-4" /> Cotización Gratis
@@ -178,7 +178,7 @@ export default function HomePageEs() {
             Cotización en tiempo real, sin compromiso, sin email requerido.
           </p>
           <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
-            <Link to="/quote" className="rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 py-3 text-sm shadow-md shadow-orange-500/25 transition-colors inline-flex items-center gap-2">
+            <Link to="/es/cotizacion" className="rounded-lg bg-orange-500 hover:bg-orange-600 text-white font-bold px-6 py-3 text-sm shadow-md shadow-orange-500/25 transition-colors inline-flex items-center gap-2">
               <Tag className="h-4 w-4" /> Cotización Gratis
             </Link>
             <Link to="/design" className="rounded-lg border border-white/30 hover:bg-white/10 text-white font-bold px-6 py-3 text-sm transition-colors inline-flex items-center gap-2">
