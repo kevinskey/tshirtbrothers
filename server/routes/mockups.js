@@ -277,9 +277,15 @@ router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res,
 
     // Fire-and-forget email. Uses the Resend client already configured in services/email.js.
     try {
-      const { sendMockupForApproval } = await import('../services/email.js');
+      const { sendMockupForApproval, quoteLang } = await import('../services/email.js');
+      // Mockups made from a Spanish-site quote email the customer in Spanish.
+      let lang = 'en';
+      if (updated.rows[0].quote_id) {
+        const q = await pool.query('SELECT inputs_json FROM quotes WHERE id = $1', [updated.rows[0].quote_id]);
+        if (q.rows[0]) lang = quoteLang(q.rows[0]);
+      }
       if (typeof sendMockupForApproval === 'function') {
-        await sendMockupForApproval(updated.rows[0], approveUrl);
+        await sendMockupForApproval(updated.rows[0], approveUrl, lang);
       }
     } catch (err) {
       console.error('[mockup send] email failed:', err.message);
