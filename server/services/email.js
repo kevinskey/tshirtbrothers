@@ -273,6 +273,55 @@ export async function sendDepositReceiptToCustomer(quote) {
   const depositPaid = Number(quote.deposit_amount || 0);
   const balanceDue = Math.max(0, total - depositPaid);
   const payBalanceUrl = `${DOMAIN}/payment/checkout?quote=${quote.id}&token=${quote.accept_token || ''}&type=balance`;
+  const es = quoteLang(quote) === 'es';
+
+  const bodyEs = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#16a34a;">Depósito Recibido ✓</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">¡Gracias por tu pedido! Recibimos tu depósito y el trabajo ya comenzó oficialmente.</p>
+
+    <div style="margin:0 0 20px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+      <p style="margin:0 0 10px;font-size:13px;font-weight:700;color:${BRAND_DARK};text-transform:uppercase;letter-spacing:0.04em;">Qué sigue</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>1. Preparamos tu diseño de muestra.</strong> Nuestro equipo de arte coloca tu diseño en la prenda.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>2. Tú lo apruebas.</strong> Te lo enviamos por correo — no imprimimos nada hasta que digas que sí. Pide cambios y lo ajustamos.</p>
+      <p style="margin:0 0 6px;font-size:14px;color:#374151;"><strong>3. Imprimimos.</strong> Una vez aprobado, tu pedido entra a producción.</p>
+      <p style="margin:0;font-size:14px;color:#374151;"><strong>4. Recogida o entrega.</strong> Te avisaremos en cuanto esté listo y ahí se paga el saldo restante.</p>
+    </div>
+
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Aquí están tus totales — guarda este correo para pagar el saldo restante cuando estés listo.</p>
+
+    ${detailsTable(
+      detailRow('Pedido', `#${quote.id}`) +
+      detailRow('Producto', quote.product_name || 'Ropa Personalizada') +
+      detailRow('Cantidad', String(quote.quantity || 'N/A')) +
+      detailRow('Total del Pedido', formatCurrency(total)) +
+      detailRow('Depósito Pagado', '<span style="color:#16a34a;font-weight:700;">' + formatCurrency(depositPaid) + '</span>') +
+      `<tr>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_DARK};font-weight:700;">Saldo Restante</td>
+        <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(balanceDue)}</td>
+      </tr>`
+    )}
+
+    ${balanceDue > 0 ? primaryButton('Pagar Saldo Restante', payBalanceUrl) : ''}
+
+    <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">Sin prisa — el saldo se paga cuando tu pedido esté listo. Pronto recibirás tu diseño de muestra.</p>
+    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-4845. Hablamos español.</p>
+  `;
+
+  if (es) {
+    try {
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: [quote.customer_email],
+        subject: `Depósito recibido — Confirmación del pedido #${quote.id}`,
+        html: baseLayout('Depósito Recibido', bodyEs),
+      });
+      console.log(`[Email] Deposit receipt (es) sent to ${quote.customer_email}`);
+    } catch (err) {
+      console.error('[Email] Failed to send deposit receipt:', err);
+    }
+    return;
+  }
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:#16a34a;">Deposit Received ✓</h2>
@@ -324,7 +373,15 @@ export async function sendDepositReceiptToCustomer(quote) {
  * Sends status update email to customer.
  */
 export async function sendQuoteStatusUpdate(quote, newStatus) {
-  const subjectMap = {
+  const es = quoteLang(quote) === 'es';
+
+  const subjectMap = es ? {
+    approved: 'Tu Cotización Fue Aprobada - TShirt Brothers',
+    in_production: 'Tu Pedido Está En Producción - TShirt Brothers',
+    ready: 'Tu Pedido Está Listo — Saldo Pendiente - TShirt Brothers',
+    completed: '¡Tu Pedido Está Listo! - TShirt Brothers',
+    rejected: 'Actualización de Tu Cotización - TShirt Brothers',
+  } : {
     approved: 'Your Quote Has Been Approved - TShirt Brothers',
     in_production: 'Your Order Is In Production - TShirt Brothers',
     ready: 'Your Order Is Ready — Balance Due - TShirt Brothers',
@@ -332,7 +389,13 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
     rejected: 'Update on Your Quote Request - TShirt Brothers',
   };
 
-  const headingMap = {
+  const headingMap = es ? {
+    approved: 'Tu Cotización Fue Aprobada',
+    in_production: 'Tu Pedido Está En Producción',
+    ready: 'Tu Pedido Está Listo',
+    completed: '¡Tu Pedido Está Listo!',
+    rejected: 'Actualización de Tu Cotización',
+  } : {
     approved: 'Your Quote Has Been Approved',
     in_production: 'Your Order Is In Production',
     ready: 'Your Order Is Ready',
@@ -340,7 +403,13 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
     rejected: 'Update on Your Quote Request',
   };
 
-  const messageMap = {
+  const messageMap = es ? {
+    approved: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">¡Buenas noticias! Tu cotización de impresión personalizada fue aprobada. Estamos listos para comenzar en cuanto recibamos tu depósito.</p>`,
+    in_production: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Tu diseño fue aprobado y tu pedido está en la prensa. Te avisaremos en cuanto esté listo.</p>`,
+    ready: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Tu pedido está terminado y quedó excelente. Para entregarlo se debe pagar el saldo restante — encontrarás el enlace de pago en el correo aparte que te acabamos de enviar. Responde y dinos si prefieres <strong>recogerlo</strong> o que te lo <strong>entreguemos</strong>.</p>`,
+    completed: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">¡Tu pedido está completo y listo para recoger o enviar! Esperamos que te encante el producto terminado.</p>`,
+    rejected: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Lamentablemente no pudimos completar tu solicitud de cotización esta vez. No dudes en escribirnos si tienes preguntas o quieres enviar una nueva solicitud.</p>`,
+  } : {
     approved: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Great news! Your custom printing quote has been approved. We're ready to get started as soon as we receive your deposit.</p>`,
     in_production: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your artwork is approved and your order is on the press. We'll let you know the moment it's ready.</p>`,
     ready: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your order is finished and looking great. The remaining balance is due to release it — you'll find a payment link in the separate email we just sent. Just reply and let us know whether you'd like to <strong>pick it up</strong> or have us <strong>deliver</strong> it.</p>`,
@@ -348,25 +417,25 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
     rejected: `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Unfortunately, we were unable to fulfill your quote request at this time. Please feel free to reach out if you have any questions or would like to submit a new request.</p>`,
   };
 
-  const subject = subjectMap[newStatus] || `Quote Update - TShirt Brothers`;
-  const heading = headingMap[newStatus] || 'Quote Status Update';
-  const statusMessage = messageMap[newStatus] || `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Your quote status has been updated to: <strong>${newStatus}</strong>.</p>`;
+  const subject = subjectMap[newStatus] || (es ? 'Actualización de Cotización - TShirt Brothers' : `Quote Update - TShirt Brothers`);
+  const heading = headingMap[newStatus] || (es ? 'Actualización de Estado' : 'Quote Status Update');
+  const statusMessage = messageMap[newStatus] || `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">${es ? 'El estado de tu cotización cambió a' : 'Your quote status has been updated to'}: <strong>${newStatus}</strong>.</p>`;
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">${heading}</h2>
-    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">${es ? 'Hola' : 'Hi'} ${quote.customer_name},</p>
     ${statusMessage}
 
     ${detailsTable(
-      detailRow('Product', quote.product_name || 'Custom Apparel') +
-      detailRow('Quantity', quote.quantity) +
+      detailRow(es ? 'Producto' : 'Product', quote.product_name || (es ? 'Ropa Personalizada' : 'Custom Apparel')) +
+      detailRow(es ? 'Cantidad' : 'Quantity', quote.quantity) +
       (quote.estimated_price ? detailRow('Total', formatCurrency(quote.estimated_price)) : '') +
-      detailRow('Status', newStatus.charAt(0).toUpperCase() + newStatus.slice(1))
+      detailRow(es ? 'Estado' : 'Status', newStatus.charAt(0).toUpperCase() + newStatus.slice(1))
     )}
 
     ${newStatus === 'completed'
-      ? `<p style="margin:16px 0 0;font-size:15px;color:#6b7280;text-align:center;">Thank you for choosing T-Shirt Brothers!</p>`
-      : primaryButton('Contact Us', `mailto:info@tshirtbrothers.com`)
+      ? `<p style="margin:16px 0 0;font-size:15px;color:#6b7280;text-align:center;">${es ? '¡Gracias por elegir T-Shirt Brothers!' : 'Thank you for choosing T-Shirt Brothers!'}</p>`
+      : primaryButton(es ? 'Contáctanos' : 'Contact Us', `mailto:info@tshirtbrothers.com`)
     }
   `;
 
@@ -389,9 +458,21 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
  * checks follow_up_sent_at before invoking.
  */
 export async function sendAbandonedQuoteFollowUp(quote) {
+  const es = quoteLang(quote) === 'es';
   const lockInUrl = `${DOMAIN}/quote?id=${quote.id}&token=${quote.accept_token || ''}`;
   const total = quote.estimated_price ? formatCurrency(Number(quote.estimated_price)) : null;
-  const body = `
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">¿Todavía lo estás pensando?</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Guardamos la cotización que comenzaste ayer. Cuando estés listo, puedes retomarla — o ajustar el diseño, la cantidad o los colores y ver el precio actualizarse al instante.</p>
+    ${total ? detailsTable(
+      detailRow('Producto', quote.product_name || 'Ropa Personalizada') +
+      detailRow('Cantidad', quote.quantity) +
+      detailRow('Total Estimado', total)
+    ) : ''}
+    ${primaryButton('Abrir Mi Cotización', lockInUrl)}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español. — Kevin</p>
+  ` : `
     <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Still thinking it over?</h2>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">We saved the custom-print quote you started yesterday. Whenever you're ready, you can pick it back up — or tweak the design, quantity, or colors and watch the price update live.</p>
@@ -407,8 +488,10 @@ export async function sendAbandonedQuoteFollowUp(quote) {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [quote.customer_email],
-      subject: 'Your TShirt Brothers quote is saved · Ready when you are',
-      html: baseLayout('Quote Saved', body),
+      subject: es
+        ? 'Tu cotización de TShirt Brothers está guardada · Cuando estés listo'
+        : 'Your TShirt Brothers quote is saved · Ready when you are',
+      html: baseLayout(es ? 'Cotización Guardada' : 'Quote Saved', body),
     });
     console.log(`[Email] Abandoned-quote follow-up sent to ${quote.customer_email}`);
   } catch (err) {
@@ -890,43 +973,73 @@ function instantQuoteItemNoun(items) {
   return `${totalQty} pieces across ${items.length} products`;
 }
 
-export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, grandQuantity }) {
+// Quotes saved from the Spanish site (/es/cotizacion) carry lang:'es'
+// inside inputs_json — every customer-facing email for that quote should
+// then be written in Spanish. Admin emails always stay English.
+export function quoteLang(quote) {
+  try {
+    const ij = typeof quote?.inputs_json === 'string' ? JSON.parse(quote.inputs_json) : quote?.inputs_json;
+    return ij?.lang === 'es' ? 'es' : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
+export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, grandQuantity, lang = 'en' }) {
   // Custom-only quotes have no auto-price and no lock-in path — this is
   // an acknowledgment ("we got it, price coming"), not a receipt of a
   // price the customer already saw.
   const customOnly = items.length > 0 && items.every((it) => it.kind === 'custom');
+  const es = lang === 'es';
 
   const subject = customOnly
-    ? `We got your quote request — pricing coming shortly`
-    : `Your T-Shirt Brothers quote — ${formatCurrency(grandTotal)} for ${instantQuoteItemNoun(items)}`;
+    ? (es ? 'Recibimos tu solicitud de cotización — precio en camino' : `We got your quote request — pricing coming shortly`)
+    : (es
+      ? `Tu cotización de T-Shirt Brothers — ${formatCurrency(grandTotal)}`
+      : `Your T-Shirt Brothers quote — ${formatCurrency(grandTotal)} for ${instantQuoteItemNoun(items)}`);
 
   const intro = customOnly
-    ? `<p>Thanks for sending your custom request. Our team will review the details below and email you a price — usually within one business day.</p>`
-    : `<p>Thanks for using our instant-quote tool — here's the price you saw:</p>`;
+    ? (es
+      ? `<p>Gracias por enviar tu solicitud personalizada. Nuestro equipo revisará los detalles y te enviará un precio por correo — normalmente en un día hábil.</p>`
+      : `<p>Thanks for sending your custom request. Our team will review the details below and email you a price — usually within one business day.</p>`)
+    : (es
+      ? `<p>Gracias por usar nuestra cotización instantánea — aquí está el precio que viste:</p>`
+      : `<p>Thanks for using our instant-quote tool — here's the price you saw:</p>`);
 
   const footerNote = customOnly
-    ? `<p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll follow up with a price + a link to accept and pay a 50% deposit. Reply to this email if you need to add anything.</p>`
-    : `<p style="font-size:13px;color:#6b7280;margin-top:18px;">This is an estimate based on the inputs above. We'll review your artwork and confirm the final price before any work starts. Tax and shipping are calculated at checkout.</p>`;
+    ? (es
+      ? `<p style="font-size:13px;color:#6b7280;margin-top:18px;">Te enviaremos el precio junto con un enlace para aceptar y pagar un depósito del 50%. Responde a este correo si necesitas agregar algo.</p>`
+      : `<p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll follow up with a price + a link to accept and pay a 50% deposit. Reply to this email if you need to add anything.</p>`)
+    : (es
+      ? `<p style="font-size:13px;color:#6b7280;margin-top:18px;">Este es un estimado basado en la información anterior. Revisaremos tu diseño y confirmaremos el precio final antes de comenzar. Los impuestos y el envío se calculan al pagar.</p>`
+      : `<p style="font-size:13px;color:#6b7280;margin-top:18px;">This is an estimate based on the inputs above. We'll review your artwork and confirm the final price before any work starts. Tax and shipping are calculated at checkout.</p>`);
 
   const cta = customOnly
     ? ''
-    : primaryButton('Lock in your order', `${DOMAIN}/instant-quote?quote=${quote.id}`);
+    : primaryButton(es ? 'Confirmar mi pedido' : 'Lock in your order', `${DOMAIN}/instant-quote?quote=${quote.id}`);
 
   const body = `
-    <p>Hi ${quote.customer_name || 'there'},</p>
+    <p>${es ? 'Hola' : 'Hi'} ${quote.customer_name || (es ? '' : 'there')},</p>
     ${intro}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${footerNote}
-    <p style="font-size:13px;color:#6b7280;">Quote ID: <strong>#${quote.id}</strong> · Saved ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+    <p style="font-size:13px;color:#6b7280;">${es ? 'Cotización' : 'Quote ID'}: <strong>#${quote.id}</strong> · ${es ? 'Guardada el' : 'Saved'} ${new Date().toLocaleDateString(es ? 'es-US' : 'en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
     ${cta}
-    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Reply to this email and one of us will personally walk you through it.</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">${es
+      ? 'Responde a este correo y uno de nosotros te atenderá personalmente — hablamos español.'
+      : 'Reply to this email and one of us will personally walk you through it.'}</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,
     to: [quote.customer_email],
     subject,
-    html: baseLayout(customOnly ? 'We got your quote request' : 'Your Instant Quote', body),
+    html: baseLayout(
+      customOnly
+        ? (es ? 'Recibimos tu solicitud' : 'We got your quote request')
+        : (es ? 'Tu Cotización Instantánea' : 'Your Instant Quote'),
+      body,
+    ),
   });
 }
 
