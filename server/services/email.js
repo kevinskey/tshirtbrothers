@@ -1277,6 +1277,7 @@ export async function sendGangSheetToVendor({
   downloadUrl,
   linkExpiresDays = null, // null => permanent public link
   note = null,
+  fileFormat = 'PNG, transparent background',
 }) {
   const widthIn = widthPx ? (widthPx / dpi) : null;
   const heightIn = heightPx ? (heightPx / dpi) : null;
@@ -1305,7 +1306,7 @@ export async function sendGangSheetToVendor({
       detailRow('Print size', sizeLabel) +
       (widthPx && heightPx ? detailRow('Pixel dimensions', `${widthPx} &times; ${heightPx} px`) : '') +
       (totalPrints ? detailRow('Number of prints', String(totalPrints)) : '') +
-      detailRow('File format', 'PNG, transparent background') +
+      detailRow('File format', escapeHtml(fileFormat)) +
       (note ? detailRow('Notes', escapeHtml(note)) : '')
     )}
     ${designRows}

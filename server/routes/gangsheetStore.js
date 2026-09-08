@@ -923,6 +923,51 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Direct-from-computer path: the admin picks any local print file and it
+// goes straight to a vendor — no sheet or order involved. Unlike the
+// customer /upload lane there's no 6,600px-width requirement: vendors can
+// take loose graphics, not just full 22in gang sheets.
+const VENDOR_FILE_LABELS = {
+  'image/png': 'PNG',
+  'application/pdf': 'PDF',
+  'image/tiff': 'TIFF',
+};
+const vendorUpload = multer({
+  dest: '/tmp/gangsheet-uploads',
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, file.mimetype in VENDOR_FILE_LABELS),
+});
+
+router.post('/admin/vendor-send-file', ...adminGuard, vendorUpload.single('file'), async (req, res, next) => {
+  const tmpPath = req.file?.path;
+  try {
+    const parsed = parseVendorBody(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    if (!req.file) return res.status(400).json({ error: 'File must be a PNG, PDF, or TIFF' });
+    const fileBuf = fs.readFileSync(tmpPath);
+    // Physical size in the spec email is only derivable for PNGs (header
+    // dims @ 300 DPI); other formats just say "see file".
+    const dims = req.file.mimetype === 'image/png' ? pngDimensions(fileBuf.subarray(0, 24)) : null;
+    const safeName = (req.file.originalname || 'print-file').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+    const key = `vendor-files/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${safeName}`;
+    await uploadObject({ key, body: fileBuf, contentType: req.file.mimetype, acl: 'private' });
+    const downloadUrl = await presignFileKey(key);
+    await sendGangSheetToVendor({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      reference: safeName,
+      widthPx: dims?.width ?? null,
+      heightPx: dims?.height ?? null,
+      downloadUrl,
+      linkExpiresDays: VENDOR_LINK_DAYS,
+      note: parsed.note,
+      fileFormat: VENDOR_FILE_LABELS[req.file.mimetype] || 'see file',
+    });
+    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, file_key: key });
+  } catch (err) { next(err); }
+  finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
+});
+
 // Router-level error handler — catches Multer errors thrown by the
 // upload.single('file') middleware (oversized file, etc.) and turns them
 // into a friendly 400 instead of falling through to the app's generic

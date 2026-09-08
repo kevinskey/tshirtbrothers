@@ -489,8 +489,29 @@ function DtfOrdersQueue() {
     advance.mutate({ id, status });
   }
 
-  // Which order the Send-to-Vendor dialog is open for (null = closed).
+  // Which order the Send-to-Vendor dialog is open for (null = closed) —
+  // or, for the pick-a-local-file path, which File is queued to send.
   const [vendorOrder, setVendorOrder] = useState<OrderRow | null>(null);
+  const [vendorFile, setVendorFile] = useState<File | null>(null);
+
+  async function sendFileToVendor(payload: VendorSendPayload) {
+    if (!vendorFile) return;
+    const fd = new FormData();
+    fd.append('file', vendorFile);
+    fd.append('vendor_name', payload.vendor_name);
+    fd.append('vendor_email', payload.vendor_email);
+    fd.append('note', payload.note);
+    // authHeaders() is Authorization-only — the browser sets the multipart
+    // Content-Type (with boundary) itself.
+    const r = await fetch('/api/gangsheet-store/admin/vendor-send-file', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: fd,
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.error || 'Send failed');
+    toast.success(`${vendorFile.name} sent to ${payload.vendor_email}`);
+  }
 
   async function sendOrderToVendor(payload: VendorSendPayload) {
     if (!vendorOrder) return;
@@ -533,6 +554,20 @@ function DtfOrdersQueue() {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
             </button>
+            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
+              <Send className="h-3.5 w-3.5" /> Send a file to vendor
+              <input
+                type="file"
+                accept=".png,.pdf,.tif,.tiff,image/png,application/pdf,image/tiff"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setVendorFile(f);
+                  // Reset so picking the same file again re-fires onChange.
+                  e.target.value = '';
+                }}
+              />
+            </label>
           </div>
         </div>
 
@@ -671,10 +706,16 @@ function DtfOrdersQueue() {
       </div>
 
       <SendToVendorDialog
-        open={vendorOrder !== null}
-        onClose={() => setVendorOrder(null)}
-        onSend={sendOrderToVendor}
-        subject={vendorOrder ? `Order #${vendorOrder.id} — 22in × ${vendorOrder.length_ft}ft` : ''}
+        open={vendorOrder !== null || vendorFile !== null}
+        onClose={() => { setVendorOrder(null); setVendorFile(null); }}
+        onSend={vendorFile ? sendFileToVendor : sendOrderToVendor}
+        subject={
+          vendorFile
+            ? `${vendorFile.name} (${(vendorFile.size / 1024 / 1024).toFixed(1)} MB)`
+            : vendorOrder
+              ? `Order #${vendorOrder.id} — 22in × ${vendorOrder.length_ft}ft`
+              : ''
+        }
       />
     </div>
   );
