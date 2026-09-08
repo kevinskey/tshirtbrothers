@@ -157,21 +157,17 @@ function renderProducts(d) {
   const cols = items.map((p) => {
     const href = safeUrl(p.cta_url || '/shop');
     return `
-    <td class="stk" valign="top" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:6px;">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:12px;">
-        <tr><td style="padding:14px;" align="center">
-          ${p.image_url ? `<a href="${e(href)}"><img src="${e(p.image_url)}" alt="${e(p.name || 'Product')}" width="150" style="display:inline-block;width:100%;max-width:150px;border-radius:8px;" /></a>` : ''}
-          <div style="font-family:${FONT};font-size:15px;font-weight:800;color:${T.heading};margin:10px 0 4px;">${e(p.name || '')}</div>
-          ${p.description ? `<div style="font-family:${FONT};font-size:12px;line-height:1.5;color:${GRAY};">${e(p.description)}</div>` : ''}
-          ${p.price ? `<div style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};margin:6px 0 0;">${e(p.price)}</div>` : ''}
-          <div style="margin:10px 0 2px;"><a href="${e(href)}" style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};text-decoration:none;">${e(p.cta_label || 'Shop now')} &rarr;</a></div>
-        </td></tr>
-      </table>
+    <td class="stk" valign="top" align="center" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="border:1px solid #e5e7eb;border-radius:12px;padding:14px;">
+      ${p.image_url ? `<a href="${e(href)}"><img src="${e(p.image_url)}" alt="${e(p.name || 'Product')}" width="150" style="display:inline-block;width:100%;max-width:150px;border-radius:8px;" /></a>` : ''}
+      <div style="font-family:${FONT};font-size:15px;font-weight:800;color:${T.heading};margin:10px 0 4px;">${e(p.name || '')}</div>
+      ${p.description ? `<div style="font-family:${FONT};font-size:12px;line-height:1.5;color:${GRAY};">${e(p.description)}</div>` : ''}
+      ${p.price ? `<div style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};margin:6px 0 0;">${e(p.price)}</div>` : ''}
+      <div style="margin:10px 0 2px;"><a href="${e(href)}" style="font-family:${FONT};font-size:13px;font-weight:bold;color:${T.primary};text-decoration:none;">${e(p.cta_label || 'Shop now')} &rarr;</a></div>
     </td>`;
   }).join('');
   return card(`
     ${sectionTitle(d.title || 'FEATURED PRODUCTS')}
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 0;"><tr>${cols}</tr></table>`);
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="8" style="margin:8px 0 0;border-collapse:separate;"><tr>${cols}</tr></table>`);
 }
 
 function renderDidYouKnow(d) {
