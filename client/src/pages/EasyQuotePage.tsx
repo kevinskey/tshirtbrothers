@@ -62,7 +62,7 @@ type CalcLine = {
   rush_surcharge: number;
 };
 
-const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'quote'] as const;
+const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'art', 'quote'] as const;
 type Step = typeof STEPS[number];
 
 export default function EasyQuotePage() {
@@ -80,6 +80,9 @@ export default function EasyQuotePage() {
   const [color, setColor] = useState('');
   const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>('');
   const [needBy, setNeedBy] = useState('');
+  const [artUrls, setArtUrls] = useState<string[]>([]);
+  const [artUploading, setArtUploading] = useState(0);
+  const artInputRef = useRef<HTMLInputElement | null>(null);
 
   const [calcLines, setCalcLines] = useState<CalcLine[] | null>(null);
   const [calcBusy, setCalcBusy] = useState(false);
@@ -168,6 +171,35 @@ export default function EasyQuotePage() {
   const pricedTotal = (calcLines ?? []).reduce((s, l) => s + l.total, 0);
   const rushTotal = (calcLines ?? []).reduce((s, l) => s + l.rush_surcharge, 0);
 
+  const uploadArt = (files: FileList | null) => {
+    if (!files) return;
+    for (const file of Array.from(files)) {
+      setArtUploading((n) => n + 1);
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const res = await fetch('/api/quotes/upload-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              imageBase64: reader.result,
+              filename: file.name || 'easy-quote-art.png',
+              customerEmail: email.trim() || 'easy-quote',
+            }),
+          });
+          const d = await res.json();
+          if (res.ok && d.url) setArtUrls((prev) => [...prev, d.url]);
+          else setError(d.error || 'Upload failed — try a PNG or JPG');
+        } catch {
+          setError('Upload failed — check your connection and try again');
+        } finally {
+          setArtUploading((n) => n - 1);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const buildItems = () => {
     const items: unknown[] = [];
     for (const p of pricedTypes) {
@@ -195,6 +227,13 @@ export default function EasyQuotePage() {
           ? 'DTF transfer prints (priced by sheet — shop will size and quote)'
           : `${p.label} (no instant pricing — shop to quote)`;
       items.push({ kind: 'custom', custom: { description, quantity: q, notes: null } });
+    }
+    // Uploaded art rides on the first item: first file as the design,
+    // the rest as extras (matches /save's design_url contract).
+    if (items.length > 0 && artUrls.length > 0) {
+      const first = items[0] as Record<string, unknown>;
+      first.design_url = artUrls[0];
+      if (artUrls.length > 1) first.extra_design_urls = artUrls.slice(1);
     }
     return items;
   };
@@ -253,6 +292,7 @@ export default function EasyQuotePage() {
       case 'color': return !!color;
       case 'quality': return !!quality;
       case 'date': return !!needBy;
+      case 'art': return artUploading === 0; // optional — just wait for uploads
       default: return false;
     }
   })();
@@ -482,6 +522,36 @@ export default function EasyQuotePage() {
           </Card>
         )}
 
+        {step === 'art' && (
+          <Card title="Got art? 🎨" sub="Upload your logo or design — or skip and send it later.">
+            <button type="button" onClick={() => artInputRef.current?.click()}
+              className="w-full rounded-2xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center hover:border-gray-500 transition-colors">
+              <p className="text-3xl">📂</p>
+              <p className="mt-2 font-bold">Tap to upload</p>
+              <p className="text-xs text-gray-400 mt-1">PNG, JPG — as many files as you need</p>
+            </button>
+            <input ref={artInputRef} type="file" accept=".png,.jpg,.jpeg,.webp" multiple className="hidden"
+              onChange={(e) => { uploadArt(e.target.files); e.target.value = ''; }} />
+            {(artUrls.length > 0 || artUploading > 0) && (
+              <div className="mt-4 grid grid-cols-4 gap-2">
+                {artUrls.map((u) => (
+                  <div key={u} className="relative rounded-xl border border-gray-200 bg-white overflow-hidden aspect-square">
+                    <img src={u} alt="" className="w-full h-full object-contain" />
+                    <button type="button" aria-label="Remove"
+                      onClick={() => setArtUrls((prev) => prev.filter((x) => x !== u))}
+                      className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] leading-5">✕</button>
+                  </div>
+                ))}
+                {Array.from({ length: artUploading }).map((_, i) => (
+                  <div key={`up-${i}`} className="rounded-xl border border-gray-200 bg-gray-50 aspect-square flex items-center justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
         {step === 'quote' && (
           <Card title="Your quote 🎉" sub="Standard pricing — final numbers confirmed by the shop.">
             {calcBusy && (
@@ -551,7 +621,7 @@ export default function EasyQuotePage() {
         <button type="button" disabled={!canNext} onClick={() => go(1)}
           className="mt-6 w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg transition-opacity disabled:opacity-40"
           style={{ background: ORANGE }}>
-          Next <ArrowRight className="w-5 h-5" />
+          {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
         </button>
       )}
 
