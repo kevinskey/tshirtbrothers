@@ -61,10 +61,16 @@ export default function HomePageEs() {
             >
               <Sparkles className="h-4 w-4" /> Diseña Aquí
             </Link>
+            <Link
+              to="/compare"
+              className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-300 hover:border-orange-400 hover:text-orange-600 px-6 py-3.5 text-base font-bold text-gray-800 transition-colors"
+            >
+              <Shirt className="h-4 w-4" /> Compara Camisetas
+            </Link>
           </div>
           <div className="mt-5 flex items-center justify-center gap-5 text-xs sm:text-sm text-gray-600 flex-wrap">
             <span className="flex items-center gap-1.5"><Users className="h-4 w-4 text-orange-500" /> Sin mínimos</span>
-            <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> Entrega 2–7 días</span>
+            <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> Entrega 1–10 días</span>
             <span className="flex items-center gap-1.5"><Star className="h-4 w-4 text-orange-500 fill-orange-500" /> 5.0 en Google</span>
           </div>
         </div>
