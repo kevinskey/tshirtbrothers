@@ -84,7 +84,7 @@ router.use(authenticate, adminOnly);
 // Single source of truth for "who matches this filter". Used by both the
 // preview endpoint and the send endpoint so the count the admin sees is
 // the count we actually send to.
-async function resolveRecipients(filter) {
+export async function resolveRecipients(filter) {
   const params = [];
   let where = `WHERE u.role = 'customer' AND u.email IS NOT NULL AND u.email <> ''`;
   if (filter === 'recent_quoted') {

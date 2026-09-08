@@ -40,6 +40,7 @@ import {
   GalleryHorizontal,
   Store,
   Target,
+  Mail,
 } from 'lucide-react';
 import {
   fetchDashboardStats,
@@ -127,6 +128,7 @@ import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmi
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
+import NewslettersAdmin from '@/components/admin/NewslettersAdmin';
 import ProspectsAdmin from '@/components/admin/ProspectsAdmin';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
@@ -134,7 +136,7 @@ import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'hero-slides' | 'prospects' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -173,6 +175,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'prospects', label: 'Sales Prospects', icon: Target },
     { key: 'blog',      label: 'Blog',         icon: PenSquare },
     { key: 'campaigns', label: 'Email Blasts', icon: Send },
+    { key: 'newsletters', label: 'Newsletters', icon: Mail },
     { key: 'hero-slides', label: 'Hero Slides', icon: GalleryHorizontal },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
     { key: 'instant-quote-pricing', label: 'Instant Quote Pricing', icon: Calculator },
@@ -678,7 +681,7 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'hero-slides', 'prospects', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'settings'];
     if (section && validSections.includes(section as Section)) {
       // Dashboard was merged into Pipeline; old deep links land on the same page.
       setActiveSection(section === 'dashboard' ? 'quotes' : (section as Section));
@@ -6277,6 +6280,7 @@ export default function AdminPage() {
         {activeSection === 'fonts' && <CustomFontsAdmin />}
 
         {activeSection === 'campaigns' && <CampaignsAdmin />}
+        {activeSection === 'newsletters' && <NewslettersAdmin />}
 
         {activeSection === 'prospects' && <ProspectsAdmin />}
 
