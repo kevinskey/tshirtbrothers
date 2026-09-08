@@ -94,7 +94,7 @@ function card(inner, { pad = 28, bg = undefined } = {}) {
 function renderHeader(d) {
   return card(`
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td valign="middle">
+      <td class="stk" valign="middle">
         <table role="presentation" cellpadding="0" cellspacing="0"><tr>
           ${d.logo_url ? `<td valign="middle" style="padding-right:12px;"><img src="${e(d.logo_url)}" alt="${e(d.company || 'T-Shirt Brothers')}" width="52" style="display:block;width:52px;" /></td>` : ''}
           <td valign="middle">
@@ -103,7 +103,7 @@ function renderHeader(d) {
           </td>
         </tr></table>
       </td>
-      <td valign="middle" align="right" style="padding-left:12px;">
+      <td class="stk stk-right" valign="middle" align="right" style="padding-left:12px;">
         ${d.right_image_url ? `<img src="${e(d.right_image_url)}" alt="" width="90" style="display:inline-block;width:90px;" />` : scriptNote(d.right_message, { size: 19 })}
       </td>
     </tr></table>`, { pad: 20 });
@@ -113,7 +113,7 @@ function renderHero(d) {
   const bg = d.image_url;
   const inner = `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td>
+      <td class="stk">
         ${d.eyebrow ? `<div style="font-family:${FONT};font-size:12px;font-weight:bold;letter-spacing:0.28em;color:#e5e7eb;margin:0 0 12px;">${e(d.eyebrow)}</div>` : ''}
         <div style="font-family:${FONT};font-size:42px;line-height:1.02;font-weight:900;color:#ffffff;">${e(d.headline || '')}</div>
         ${d.highlight ? `<div style="font-family:${SCRIPT_FONT};font-size:46px;line-height:1.05;color:${T.primary};margin:2px 0 0;">${e(d.highlight)}</div>` : ''}
@@ -121,7 +121,7 @@ function renderHero(d) {
         <div style="margin:22px 0 0;">${btn(d.cta_label, d.cta_url)}</div>
         ${d.tagline ? `<div style="font-family:${FONT};font-size:11px;font-weight:bold;letter-spacing:0.24em;color:#9ca3af;margin:18px 0 0;">${e(d.tagline)}</div>` : ''}
       </td>
-      ${d.side_note ? `<td valign="top" align="right" style="padding-left:12px;">${scriptNote(d.side_note, { color: '#ffffff', size: 20 })}</td>` : ''}
+      ${d.side_note ? `<td class="stk stk-right" valign="top" align="right" style="padding-left:12px;">${scriptNote(d.side_note, { color: '#ffffff', size: 20 })}</td>` : ''}
     </tr></table>
     ${bg ? `<img src="${e(bg)}" alt="${e(d.image_alt || d.headline || 'Featured apparel')}" width="${WIDTH - 56}" style="display:block;width:100%;border-radius:10px;margin:22px 0 0;" />` : ''}`;
   return `
@@ -133,7 +133,7 @@ function renderHero(d) {
 function renderEvents(d) {
   const items = (d.items || []).slice(0, 6);
   const cols = items.map((it) => `
-    <td valign="top" align="center" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:10px 8px;border-left:1px solid #e5e7eb;">
+    <td class="stk" valign="top" align="center" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:10px 8px;border-left:1px solid #e5e7eb;">
       <div>${iconCell(it)}</div>
       <div style="font-family:${FONT};font-size:14px;font-weight:800;color:${T.heading};margin:8px 0 4px;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${T.heading};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
       ${it.date ? `<div style="font-family:${FONT};font-size:11px;font-weight:bold;color:${T.primary};margin:0 0 3px;">${e(it.date)}</div>` : ''}
@@ -157,7 +157,7 @@ function renderProducts(d) {
   const cols = items.map((p) => {
     const href = safeUrl(p.cta_url || '/shop');
     return `
-    <td valign="top" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:6px;">
+    <td class="stk" valign="top" width="${Math.floor(100 / Math.max(items.length, 1))}%" style="padding:6px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:12px;">
         <tr><td style="padding:14px;" align="center">
           ${p.image_url ? `<a href="${e(href)}"><img src="${e(p.image_url)}" alt="${e(p.name || 'Product')}" width="150" style="display:inline-block;width:100%;max-width:150px;border-radius:8px;" /></a>` : ''}
@@ -177,18 +177,18 @@ function renderProducts(d) {
 function renderDidYouKnow(d) {
   const items = (d.items || []).slice(0, 6);
   const cols = items.map((it) => `
-    <td valign="top" align="center" style="padding:8px 6px;">
+    <td class="stk-half" valign="top" align="center" style="padding:8px 6px;">
       <div>${iconCell(it, { size: 30 })}</div>
       <div style="font-family:${FONT};font-size:12px;font-weight:800;color:${T.heading};margin:6px 0 0;white-space:nowrap;">${it.url ? `<a href="${e(safeUrl(it.url))}" style="color:${T.heading};text-decoration:none;">${e(it.title || '')}</a>` : e(it.title || '')}</div>
       ${it.description ? `<div style="font-family:${FONT};font-size:11px;color:${GRAY};margin:2px 0 0;">${e(it.description)}</div>` : ''}
     </td>`).join('');
   return card(`
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td valign="top">
+      <td class="stk" valign="top">
         ${sectionTitle(d.title || 'DID YOU KNOW?')}
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:14px 0 0;"><tr>${cols}</tr></table>
       </td>
-      ${d.right_message ? `<td valign="middle" align="right" style="padding-left:14px;">${scriptNote(d.right_message, { size: 20 })}</td>` : ''}
+      ${d.right_message ? `<td class="stk stk-right" valign="middle" align="right" style="padding-left:14px;">${scriptNote(d.right_message, { size: 20 })}</td>` : ''}
     </tr></table>
     ${d.cta_label ? `<div style="margin:16px 0 0;" align="center">${btn(d.cta_label, d.cta_url)}</div>` : ''}`);
 }
@@ -198,7 +198,7 @@ function renderSpecial(d) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px;">
       <tr><td bgcolor="${T.specialBg}" style="border-radius:14px;padding:28px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td valign="middle">
+          <td class="stk" valign="middle">
             <div style="font-family:${FONT};font-size:28px;font-weight:900;color:#ffffff;">
               ${e(d.headline || '')} ${d.highlight ? `<span style="font-family:${SCRIPT_FONT};font-weight:normal;font-size:32px;color:${T.primary};">${e(d.highlight)}</span>` : ''}
             </div>
@@ -208,7 +208,7 @@ function renderSpecial(d) {
             ${d.expires ? `<div style="font-family:${FONT};font-size:11px;color:#9ca3af;margin:12px 0 0;">${e(d.expires)}</div>` : ''}
             ${d.terms ? `<div style="font-family:${FONT};font-size:10px;color:#6b7280;margin:6px 0 0;">${e(d.terms)}</div>` : ''}
           </td>
-          <td valign="middle" align="right" style="padding-left:14px;" width="220">
+          <td class="stk stk-right" valign="middle" align="right" style="padding-left:14px;" width="220">
             ${d.image_url ? `<img src="${e(d.image_url)}" alt="${e(d.image_alt || 'Special offer')}" width="200" style="display:inline-block;width:200px;border-radius:10px;" />` : ''}
             ${d.note ? `<div style="margin:10px 0 0;">${scriptNote(d.note, { color: '#ffffff', size: 18 })}</div>` : ''}
           </td>
@@ -228,8 +228,8 @@ function renderClosing(d) {
   return card(`
     ${sectionTitle(d.headline || 'WHAT ARE YOU PRINTING NEXT?')}
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0 0;"><tr>
-      <td valign="middle">${buttons}</td>
-      ${values ? `<td valign="middle" align="right"><table role="presentation" cellpadding="0" cellspacing="0"><tr>${values}</tr></table></td>` : ''}
+      <td class="stk" valign="middle">${buttons}</td>
+      ${values ? `<td class="stk stk-right" valign="middle" align="right"><table role="presentation" cellpadding="0" cellspacing="0" class="mob-center"><tr>${values}</tr></table></td>` : ''}
     </tr></table>`);
 }
 
@@ -242,7 +242,7 @@ function renderFooter(d) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr><td bgcolor="${T.footerBg}" style="border-radius:14px;padding:24px 28px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td valign="middle">
+          <td class="stk" valign="middle">
             <table role="presentation" cellpadding="0" cellspacing="0"><tr>
               ${d.logo_url ? `<td valign="middle" style="padding-right:10px;"><img src="${e(d.logo_url)}" alt="" width="40" style="display:block;width:40px;" /></td>` : ''}
               <td valign="middle">
@@ -251,7 +251,7 @@ function renderFooter(d) {
               </td>
             </tr></table>
           </td>
-          <td valign="middle" align="right">${socials}</td>
+          <td class="stk stk-right" valign="middle" align="right">${socials}</td>
         </tr></table>
         <div style="border-top:1px solid #374151;margin:16px 0 0;padding:14px 0 0;font-family:${FONT};font-size:12px;line-height:1.9;color:#d1d5db;">
           ${d.email ? `✉️ <a href="mailto:${e(d.email)}" style="color:#d1d5db;text-decoration:none;">${e(d.email)}</a> &nbsp; ` : ''}
@@ -304,6 +304,16 @@ export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', o
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="x-apple-disable-message-reformatting" />
 <title>T-Shirt Brothers</title>
+<style>
+@media only screen and (max-width:640px) {
+  .stk { display:block !important; width:100% !important; box-sizing:border-box !important;
+         border-left:none !important; padding:10px 0 !important; }
+  .stk-half { display:inline-block !important; width:46% !important; box-sizing:border-box !important;
+              border-left:none !important; padding:10px 2% !important; }
+  .stk-right { text-align:left !important; padding-left:0 !important; padding-top:14px !important; }
+  .mob-center { text-align:center !important; }
+}
+</style>
 </head>
 <body style="margin:0;padding:0;background:${T.background};">
 ${preheader ? `<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:${T.background};">${e(preheader)}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>` : ''}
