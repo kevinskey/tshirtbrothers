@@ -6,7 +6,7 @@
 import { Link } from 'react-router-dom';
 import {
   Truck, Tag, ShieldCheck, Clock, MapPin, Users, ChevronRight,
-  FileText, Palette, Shirt,
+  FileText, Palette, Film,
 } from 'lucide-react';
 
 const COLLAGE =
@@ -98,14 +98,14 @@ export default function HeroSection() {
             <ChevronRight className="h-4 w-4 sm:h-6 sm:w-6 mt-1.5 self-end transition-transform group-hover:translate-x-1" />
           </Link>
 
-          {/* Customer-facing label per spec; the product-first path into
-              the Design Studio (pick a garment, build the design, submit
-              as a quote/mockup). */}
-          <Link to="/design"
+          {/* DTF path: build a gang sheet from individual images (auto-
+              nested with a visual proof) or upload a prepared sheet priced
+              by the foot at 22" width — both pay in full before production. */}
+          <Link to="/dtf"
             className="group rounded-2xl bg-gray-100 text-gray-900 p-3.5 sm:p-5 flex flex-col shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
-            <Shirt className="h-7 w-7 sm:h-9 sm:w-9" />
-            <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">Customize a Product</p>
-            <p className="mt-1 text-[11px] sm:text-sm text-gray-600 leading-snug flex-1">Pick a product and customize it online.</p>
+            <Film className="h-7 w-7 sm:h-9 sm:w-9" />
+            <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">Create a DTF</p>
+            <p className="mt-1 text-[11px] sm:text-sm text-gray-600 leading-snug flex-1">Build a gang sheet from your images, or upload one ready to print.</p>
             <ChevronRight className="h-4 w-4 sm:h-6 sm:w-6 mt-1.5 self-end transition-transform group-hover:translate-x-1" />
           </Link>
         </div>
