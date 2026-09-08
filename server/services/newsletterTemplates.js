@@ -52,11 +52,11 @@ function blocksFrom(o) {
     { id: id(), type: 'didyouknow', enabled: true, data: {
       title: 'DID YOU KNOW?',
       items: o.services || [
-        { icon: '🧵', title: 'Embroidery' },
-        { icon: '📄', title: 'DTF Transfers' },
-        { icon: '👕', title: 'Custom Jerseys' },
-        { icon: '✏️', title: 'Design Help' },
-        { icon: '📦', title: 'Bulk Orders' },
+        { icon: '🧵', title: 'Embroidery', url: '/services#embroidery' },
+        { icon: '📄', title: 'DTF Transfers', url: '/dtf' },
+        { icon: '👕', title: 'Custom Jerseys', url: '/shop?search=jersey' },
+        { icon: '✏️', title: 'Design Help', url: '/design' },
+        { icon: '📦', title: 'Bulk Orders', url: '/quote' },
       ],
       right_message: o.knowNote || 'Your Vision.\nOur Brotherly Support.',
     } },
