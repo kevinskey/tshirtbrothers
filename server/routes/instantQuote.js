@@ -113,9 +113,24 @@ export function computeQuote(inputs, tables) {
   const settings = tables.settings;
   if (!settings) throw new Error('Missing instant_quote_settings row');
 
-  // Coerce — Postgres returns NUMERIC as strings via node-postgres
-  const garmentCost = Number(garment.base_cost);
-  const perPiecePrint = Number(method.base_per_piece_cost);
+  // Coerce — Postgres returns NUMERIC as strings via node-postgres.
+  // qty_breaks (JSONB [{min_qty, cost}]) let a garment or print method
+  // price per-piece by POOLED order size — calibrated so the customer
+  // total tracks ~$1 under Custom Ink at each volume. Highest matching
+  // min_qty wins; scalar base cost is the fallback.
+  const resolveBreak = (breaks, fallback) => {
+    if (!Array.isArray(breaks) || breaks.length === 0) return fallback;
+    let best = null;
+    for (const b of breaks) {
+      const mq = Number(b?.min_qty);
+      const v = Number(b?.cost);
+      if (!Number.isFinite(mq) || !Number.isFinite(v) || mq > discountQuantity) continue;
+      if (!best || mq > best.mq) best = { mq, v };
+    }
+    return best ? best.v : fallback;
+  };
+  const garmentCost = resolveBreak(garment.qty_breaks, Number(garment.base_cost));
+  const perPiecePrint = resolveBreak(method.qty_breaks, Number(method.base_per_piece_cost));
   const setupFee = Number(method.setup_fee_per_color);
   const chargesPerColor = method.charges_per_color === true;
   const discountPct = Number(tier.discount_pct);
