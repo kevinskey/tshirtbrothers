@@ -105,6 +105,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [sheetLengthFt, setSheetLengthFt] = useState(1);
   const [designCount, setDesignCount] = useState(0);
   const [fitError, setFitError] = useState<string | null>(null);
+  // Set when the declared sheet length exceeds what the designs need —
+  // blank feet are paid-for film, so we offer a one-tap trim.
+  const [trimSuggestFt, setTrimSuggestFt] = useState<number | null>(null);
   const [aiBusyId, setAiBusyId] = useState<string | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -667,6 +670,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       }
       setSheetLengthFt(neededFt);
     }
+    // Opposite direction: declared length longer than the content needs.
+    // Never auto-shrink (the customer may want spare film) — suggest it.
+    const contentFt = objects.length > 0
+      ? Math.max(1, Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX)))
+      : 1;
+    setTrimSuggestFt(sheetLengthFt > contentFt ? contentFt : null);
     setFitError(null);
     return true;
   }
@@ -1650,6 +1659,21 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
               <span className="font-semibold">⚠ Doesn't fit:</span>
               <span className="flex-1">{fitError}</span>
               <button onClick={() => setFitError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
+            </div>
+          )}
+          {!fitError && trimSuggestFt != null && trimSuggestFt < sheetLengthFt && (
+            <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
+              <span className="flex-1">
+                💡 Your designs fit in <strong>{trimSuggestFt} ft</strong> — you&apos;re paying for {sheetLengthFt} ft
+                ({sheetLengthFt - trimSuggestFt} ft blank).
+              </span>
+              <button
+                onClick={() => { setSheetLengthFt(trimSuggestFt); setTrimSuggestFt(null); }}
+                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white hover:bg-amber-700"
+              >
+                Trim to {trimSuggestFt} ft
+              </button>
+              <button onClick={() => setTrimSuggestFt(null)} className="text-amber-500 hover:text-amber-700 text-xs">Keep {sheetLengthFt} ft</button>
             </div>
           )}
           {checkoutError && (
