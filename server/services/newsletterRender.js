@@ -95,7 +95,7 @@ function renderHeader(d) {
   return card(`
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td class="stk" valign="middle">
-        <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <table role="presentation" cellpadding="0" cellspacing="0" align="left" class="mob-center" style="margin:0;"><tr>
           ${d.logo_url ? `<td valign="middle" style="padding-right:12px;"><img src="${e(d.logo_url)}" alt="${e(d.company || 'T-Shirt Brothers')}" width="52" style="display:block;width:52px;" /></td>` : ''}
           <td valign="middle">
             <div style="font-family:${FONT};font-size:24px;font-weight:900;color:${T.heading};letter-spacing:0.01em;">${e(d.company || 'T-SHIRT BROTHERS').replace(/BROTHERS/, `<span style="color:${T.primary};">BROTHERS</span>`)}</div>
@@ -103,7 +103,7 @@ function renderHeader(d) {
           </td>
         </tr></table>
       </td>
-      <td class="stk stk-right" valign="middle" align="right" style="padding-left:12px;">
+      <td class="mob-hide" valign="middle" align="right" style="padding-left:12px;">
         ${d.right_image_url ? `<img src="${e(d.right_image_url)}" alt="" width="90" style="display:inline-block;width:90px;" />` : scriptNote(d.right_message, { size: 19 })}
       </td>
     </tr></table>`, { pad: 20 });
@@ -312,6 +312,7 @@ export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', o
               border-left:none !important; padding:10px 2% !important; }
   .stk-right { text-align:left !important; padding-left:0 !important; padding-top:14px !important; }
   .mob-center { text-align:center !important; }
+  .mob-hide { display:none !important; }
 }
 </style>
 </head>
