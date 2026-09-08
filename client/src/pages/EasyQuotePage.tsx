@@ -92,6 +92,19 @@ export default function EasyQuotePage() {
   const [error, setError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
+  // Height of the on-screen keyboard (visual viewport shrinkage) so the
+  // Next button can ride above it instead of hiding underneath.
+  const [kbOffset, setKbOffset] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setKbOffset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); };
+  }, []);
+
   useEffect(() => {
     fetch('/api/quote/options')
       .then((r) => r.json())
@@ -659,12 +672,23 @@ export default function EasyQuotePage() {
 
       {error && <p className="mt-4 text-sm font-semibold text-red-600 text-center">{error}</p>}
 
+      {/* Floating Next: fixed to the VISUAL viewport bottom, lifted above
+          the on-screen keyboard so typing steps never hide the button.
+          Spacer below keeps the card content scrollable past it. */}
       {step !== 'quote' && (
-        <button type="button" disabled={!canNext} onClick={() => go(1)}
-          className="mt-6 w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg transition-opacity disabled:opacity-40"
-          style={{ background: ORANGE }}>
-          {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
-        </button>
+        <>
+          <div style={{ height: 84 }} />
+          <div className="fixed left-0 right-0 z-40 px-4 pb-4 pointer-events-none"
+            style={{ bottom: kbOffset }}>
+            <div className="max-w-md mx-auto pointer-events-auto">
+              <button type="button" disabled={!canNext} onClick={() => go(1)}
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-xl transition-opacity disabled:opacity-40"
+                style={{ background: ORANGE }}>
+                {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       <style>{`@keyframes eq-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }`}</style>
@@ -699,6 +723,7 @@ function BigInput({ value, onChange, onEnter, placeholder, type = 'text', autoFo
   return (
     <input
       type={type} value={value} autoFocus={autoFocus} placeholder={placeholder}
+      enterKeyHint="next"
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => { if (e.key === 'Enter') onEnter?.(); }}
       className="w-full rounded-2xl border-2 border-gray-200 bg-white px-5 py-4 text-xl font-semibold focus:border-gray-900 focus:outline-none"
