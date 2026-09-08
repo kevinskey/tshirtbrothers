@@ -12,7 +12,7 @@ interface LayoutProps {
 export default function Layout({ children, lang = 'en' }: LayoutProps) {
   return (
     <div className="flex min-h-screen flex-col">
-      <Navbar />
+      <Navbar lang={lang} />
       <main className="flex-1">{children}</main>
       {/* pb-20 on mobile reserves room for the sticky StickyMobileCTA
           so the bottom of the footer isn't permanently hidden under it. */}

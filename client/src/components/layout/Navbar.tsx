@@ -17,6 +17,16 @@ const catalogueLinks: NavLink[] = [
   { label: 'All Products', href: '/shop' },
 ];
 
+const catalogueLinksEs: NavLink[] = [
+  { label: 'Camisetas', href: '/shop?category=T-Shirts' },
+  { label: 'Sudaderas y Polar', href: '/shop?category=Fleece' },
+  { label: 'Gorras', href: '/shop?category=Headwear' },
+  { label: 'Polos', href: '/shop?category=Polos' },
+  { label: 'Chaquetas', href: '/shop?category=Outerwear' },
+  { label: 'Accesorios', href: '/shop?category=Accessories' },
+  { label: 'Todos los Productos', href: '/shop' },
+];
+
 // desktopOnly entries are hidden from the sub-nav pill on mobile (they
 // still appear in the hamburger menu). Keeps the mobile pill to just the
 // three high-intent CTAs — Design Studio, Catalogue, Get a Quote — so it
@@ -32,7 +42,39 @@ const subNavEntries: NavEntry[] = [
   { label: 'About', href: '/about', desktopOnly: true },
 ];
 
-export default function Navbar() {
+const subNavEntriesEs: NavEntry[] = [
+  { label: 'Estudio de Diseño', href: '/design' },
+  { label: 'Catálogo', children: catalogueLinksEs },
+  { label: 'Obtener Cotización', href: '/es/cotizacion' },
+  { label: 'Transferencias DTF', href: '/dtf' },
+  { label: 'Compara Camisetas', href: '/compare' },
+  { label: 'Tiendas para Organizaciones', href: '/webstores' },
+  { label: 'Servicios', href: '/services', desktopOnly: true },
+  { label: 'Nosotros', href: '/about', desktopOnly: true },
+];
+
+// User-visible chrome strings per language (menu labels live in the
+// entry arrays above).
+const NAV_T = {
+  en: {
+    promoShort: '15% Off Gildan Tees & Hoodies.', promoLong: '15% Off All Gildan Tees & Hoodies — Prices as Marked.',
+    shopSale: 'Shop Sale', search: 'Search for t-shirts, hoodies, hats, and more',
+    account: 'Account', signIn: 'Sign In', textUs: 'Text (470) 622-1392',
+    myAccount: 'My Account', admin: 'Admin Dashboard', logOut: 'Log Out',
+    signInCreate: 'Sign In / Create Account',
+  },
+  es: {
+    promoShort: '15% de descuento en Gildan.', promoLong: '15% de descuento en camisetas y sudaderas Gildan — precios ya marcados.',
+    shopSale: 'Ver Ofertas', search: 'Busca camisetas, sudaderas, gorras y más',
+    account: 'Cuenta', signIn: 'Iniciar Sesión', textUs: 'Envía un texto al (470) 622-1392',
+    myAccount: 'Mi Cuenta', admin: 'Panel de Administración', logOut: 'Cerrar Sesión',
+    signInCreate: 'Iniciar Sesión / Crear Cuenta',
+  },
+} as const;
+
+export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
+  const t = NAV_T[lang];
+  const entries = lang === 'es' ? subNavEntriesEs : subNavEntries;
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
   const navigate = useNavigate();
@@ -60,9 +102,9 @@ export default function Navbar() {
         to="/sale"
         className="block bg-gray-900 text-white text-center text-xs sm:text-sm py-1.5 sm:py-0.5 px-3 sm:px-4 sm:whitespace-nowrap hover:bg-gray-800 transition-colors"
       >
-        <span className="sm:hidden">15% Off Gildan Tees &amp; Hoodies.<sup>*</sup></span>
-        <span className="hidden sm:inline">15% Off All Gildan Tees &amp; Hoodies — Prices as Marked.<sup>*</sup></span>{' '}
-        <span className="font-bold underline">Shop Sale</span>
+        <span className="sm:hidden">{t.promoShort}<sup>*</sup></span>
+        <span className="hidden sm:inline">{t.promoLong}<sup>*</sup></span>{' '}
+        <span className="font-bold underline">{t.shopSale}</span>
       </Link>
 
       {/* Main header row — Custom Ink-style: hamburger + logo on left,
@@ -103,12 +145,12 @@ export default function Navbar() {
               {isLoggedIn ? (
                 <Link to="/account" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
                   <User className="h-6 w-6 sm:h-5 sm:w-5" />
-                  <span className="hidden sm:inline">Account</span>
+                  <span className="hidden sm:inline">{t.account}</span>
                 </Link>
               ) : (
                 <Link to="/auth" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
                   <User className="h-6 w-6 sm:h-5 sm:w-5" />
-                  <span className="hidden sm:inline">Sign In</span>
+                  <span className="hidden sm:inline">{t.signIn}</span>
                 </Link>
               )}
 
@@ -146,7 +188,7 @@ export default function Navbar() {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Search for t-shirts, hoodies, hats, and more"
+              placeholder={t.search}
               className="w-full rounded-full bg-gray-100 pl-11 pr-4 py-1.5 text-base text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white border border-transparent focus:border-orange-300"
               style={{ fontSize: '16px' }}
             />
@@ -165,7 +207,7 @@ export default function Navbar() {
         )}
       >
         <div className="px-4 py-3 space-y-1">
-          {subNavEntries.map((entry) => {
+          {entries.map((entry) => {
             if (isGroup(entry)) {
               return (
                 <div key={entry.label}>
@@ -212,7 +254,7 @@ export default function Navbar() {
             onClick={() => setMobileOpen(false)}
           >
             <MessageCircle className="h-4 w-4" />
-            Text (470) 622-1392
+            {t.textUs}
           </a>
 
           {/* Account section */}
@@ -225,7 +267,7 @@ export default function Navbar() {
                   onClick={() => setMobileOpen(false)}
                 >
                   <User className="h-4 w-4" />
-                  My Account
+                  {t.myAccount}
                 </Link>
                 <Link
                   to="/admin"
@@ -233,7 +275,7 @@ export default function Navbar() {
                   onClick={() => setMobileOpen(false)}
                 >
                   <User className="h-4 w-4" />
-                  Admin Dashboard
+                  {t.admin}
                 </Link>
                 <button
                   onClick={() => {
@@ -244,7 +286,7 @@ export default function Navbar() {
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors w-full text-left"
                 >
                   <LogOut className="h-4 w-4" />
-                  Log Out
+                  {t.logOut}
                 </button>
               </>
             ) : (
@@ -254,7 +296,7 @@ export default function Navbar() {
                 onClick={() => setMobileOpen(false)}
               >
                 <User className="h-4 w-4" />
-                Sign In / Create Account
+                {t.signInCreate}
               </Link>
             )}
           </div>
