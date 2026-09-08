@@ -52,11 +52,14 @@ export default function Navbar() {
     // absolutely positioned card below this sticky nav — isn't clipped.
     <nav className="sticky top-0 z-50 bg-white">
       {/* Top promo strip — same shape as the Custom Ink black banner. */}
+      {/* nowrap clipped the "Shop Sale" CTA on phones — wrap on mobile,
+          shorter copy under sm, single line from sm up. */}
       <Link
         to="/sale"
-        className="block bg-gray-900 text-white text-center text-xs sm:text-sm py-2.5 sm:py-0.5 px-2 sm:px-4 whitespace-nowrap overflow-hidden hover:bg-gray-800 transition-colors"
+        className="block bg-gray-900 text-white text-center text-xs sm:text-sm py-1.5 sm:py-0.5 px-3 sm:px-4 sm:whitespace-nowrap hover:bg-gray-800 transition-colors"
       >
-        15% Off All Gildan Tees &amp; Hoodies — Prices as Marked.<sup>*</sup>{' '}
+        <span className="sm:hidden">15% Off Gildan Tees &amp; Hoodies.<sup>*</sup></span>
+        <span className="hidden sm:inline">15% Off All Gildan Tees &amp; Hoodies — Prices as Marked.<sup>*</sup></span>{' '}
         <span className="font-bold underline">Shop Sale</span>
       </Link>
 
