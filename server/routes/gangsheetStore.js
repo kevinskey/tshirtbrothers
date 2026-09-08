@@ -9,7 +9,7 @@ import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
-import { sendGangSheetReadyToCustomer, sendGangSheetToVendor } from '../services/email.js';
+import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles } from '../services/email.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const router = Router();
@@ -938,34 +938,45 @@ const vendorUpload = multer({
   fileFilter: (req, file, cb) => cb(null, file.mimetype in VENDOR_FILE_LABELS),
 });
 
-router.post('/admin/vendor-send-file', ...adminGuard, vendorUpload.single('file'), async (req, res, next) => {
-  const tmpPath = req.file?.path;
+// Accepts 1–20 files under the 'files' field; every file is uploaded and
+// the vendor gets ONE email listing each file with its own presigned link
+// and (for PNGs) physical size at 300 DPI.
+router.post('/admin/vendor-send-file', ...adminGuard, vendorUpload.array('files', 20), async (req, res, next) => {
+  const tmpPaths = (req.files || []).map((f) => f.path);
   try {
     const parsed = parseVendorBody(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
-    if (!req.file) return res.status(400).json({ error: 'File must be a PNG, PDF, or TIFF' });
-    const fileBuf = fs.readFileSync(tmpPath);
-    // Physical size in the spec email is only derivable for PNGs (header
-    // dims @ 300 DPI); other formats just say "see file".
-    const dims = req.file.mimetype === 'image/png' ? pngDimensions(fileBuf.subarray(0, 24)) : null;
-    const safeName = (req.file.originalname || 'print-file').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
-    const key = `vendor-files/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${safeName}`;
-    await uploadObject({ key, body: fileBuf, contentType: req.file.mimetype, acl: 'private' });
-    const downloadUrl = await presignFileKey(key);
-    await sendGangSheetToVendor({
+    if (!req.files?.length) return res.status(400).json({ error: 'Files must be PNG, PDF, or TIFF' });
+    const month = new Date().toISOString().slice(0, 7);
+    const sent = [];
+    for (const f of req.files) {
+      const fileBuf = fs.readFileSync(f.path);
+      // Physical size in the spec email is only derivable for PNGs (header
+      // dims @ 300 DPI); other formats just say "see file".
+      const dims = f.mimetype === 'image/png' ? pngDimensions(fileBuf.subarray(0, 24)) : null;
+      const safeName = (f.originalname || 'print-file').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+      const key = `vendor-files/${month}/${crypto.randomUUID()}-${safeName}`;
+      await uploadObject({ key, body: fileBuf, contentType: f.mimetype, acl: 'private' });
+      sent.push({
+        name: safeName,
+        key,
+        downloadUrl: await presignFileKey(key),
+        widthPx: dims?.width ?? null,
+        heightPx: dims?.height ?? null,
+        format: VENDOR_FILE_LABELS[f.mimetype] || 'see file',
+        bytes: f.size,
+      });
+    }
+    await sendGangSheetVendorFiles({
       vendorName: parsed.vendorName,
       vendorEmail: parsed.vendorEmail,
-      reference: safeName,
-      widthPx: dims?.width ?? null,
-      heightPx: dims?.height ?? null,
-      downloadUrl,
+      files: sent,
       linkExpiresDays: VENDOR_LINK_DAYS,
       note: parsed.note,
-      fileFormat: VENDOR_FILE_LABELS[req.file.mimetype] || 'see file',
     });
-    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, file_key: key });
+    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, count: sent.length });
   } catch (err) { next(err); }
-  finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
+  finally { tmpPaths.forEach((p) => fs.unlink(p, () => {})); }
 });
 
 // Router-level error handler — catches Multer errors thrown by the
@@ -976,7 +987,7 @@ router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({
       error: err.code === 'LIMIT_FILE_SIZE'
-        ? 'That file is over the 100 MB limit — flatten layers or split the sheet in two.'
+        ? 'That file is over the upload size limit (100 MB for customer sheets, 200 MB per vendor file) — flatten layers or split it up.'
         : 'Upload failed — try again.',
     });
   }

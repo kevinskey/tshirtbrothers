@@ -1325,6 +1325,56 @@ export async function sendGangSheetToVendor({
   });
 }
 
+// Multi-file variant of sendGangSheetToVendor — one email listing every
+// uploaded file with its own presigned download link and per-file specs.
+// Used by the admin "send files from my computer" lane.
+export async function sendGangSheetVendorFiles({
+  vendorName,
+  vendorEmail,
+  files, // [{ name, downloadUrl, widthPx, heightPx, format, bytes }]
+  linkExpiresDays = null,
+  note = null,
+  dpi = 300,
+}) {
+  const mb = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
+  const fileBlocks = files.map((f, i) => {
+    const size = f.widthPx && f.heightPx
+      ? `${(f.widthPx / dpi).toFixed(1)}in &times; ${(f.heightPx / dpi).toFixed(1)}in (${(f.heightPx / dpi / 12).toFixed(2)} ft) at ${dpi} DPI — ${f.widthPx} &times; ${f.heightPx} px`
+      : 'see file';
+    return `
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:0 0 10px;">
+        <p style="margin:0 0 6px;font-size:14px;font-weight:600;color:${BRAND_DARK};">${i + 1}. ${escapeHtml(f.name)}</p>
+        ${detailsTable(
+          detailRow('Format', escapeHtml(f.format || 'see file')) +
+          detailRow('Print size', size) +
+          (f.bytes ? detailRow('File size', mb(f.bytes)) : '')
+        )}
+        <p style="margin:8px 0 0;font-size:13px;"><a href="${f.downloadUrl}" style="color:${BRAND_ORANGE};font-weight:600;">Download ${escapeHtml(f.name)}</a></p>
+      </div>
+    `;
+  }).join('');
+  const expiryLine = linkExpiresDays
+    ? `<p style="font-size:13px;color:#b91c1c;margin-top:8px;">These download links expire in ${linkExpiresDays} days — please download promptly.</p>`
+    : '';
+  const subject = `DTF print order from T-Shirt Brothers — ${files.length} file${files.length === 1 ? '' : 's'}`;
+  const body = `
+    <p>Hello${vendorName ? ` ${escapeHtml(vendorName)}` : ''},</p>
+    <p>Please print the following ${files.length === 1 ? 'file' : `${files.length} files`} for T-Shirt Brothers. Specs and a download link for each are below.</p>
+    ${note ? detailsTable(detailRow('Notes', escapeHtml(note))) : ''}
+    ${fileBlocks}
+    ${expiryLine}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-4845.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [vendorEmail],
+    replyTo: ADMIN_EMAIL,
+    bcc: [ADMIN_EMAIL],
+    subject,
+    html: baseLayout('Print Order', body),
+  });
+}
+
 export async function sendGangSheetPaidToAdmin({ order }) {
   const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
   const urgencyPrefix = order.tier === 'hot_rush' ? 'HOT RUSH — ' : order.tier === 'rush' ? 'RUSH — ' : '';

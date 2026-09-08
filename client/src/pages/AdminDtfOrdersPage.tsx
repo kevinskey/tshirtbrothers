@@ -492,12 +492,12 @@ function DtfOrdersQueue() {
   // Which order the Send-to-Vendor dialog is open for (null = closed) —
   // or, for the pick-a-local-file path, which File is queued to send.
   const [vendorOrder, setVendorOrder] = useState<OrderRow | null>(null);
-  const [vendorFile, setVendorFile] = useState<File | null>(null);
+  const [vendorFiles, setVendorFiles] = useState<File[]>([]);
 
-  async function sendFileToVendor(payload: VendorSendPayload) {
-    if (!vendorFile) return;
+  async function sendFilesToVendor(payload: VendorSendPayload) {
+    if (vendorFiles.length === 0) return;
     const fd = new FormData();
-    fd.append('file', vendorFile);
+    for (const f of vendorFiles) fd.append('files', f);
     fd.append('vendor_name', payload.vendor_name);
     fd.append('vendor_email', payload.vendor_email);
     fd.append('note', payload.note);
@@ -510,7 +510,12 @@ function DtfOrdersQueue() {
     });
     const body = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(body.error || 'Send failed');
-    toast.success(`${vendorFile.name} sent to ${payload.vendor_email}`);
+    const first = vendorFiles[0];
+    toast.success(
+      vendorFiles.length === 1 && first
+        ? `${first.name} sent to ${payload.vendor_email}`
+        : `${vendorFiles.length} files sent to ${payload.vendor_email}`
+    );
   }
 
   async function sendOrderToVendor(payload: VendorSendPayload) {
@@ -555,15 +560,16 @@ function DtfOrdersQueue() {
               <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} /> Refresh
             </button>
             <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
-              <Send className="h-3.5 w-3.5" /> Send a file to vendor
+              <Send className="h-3.5 w-3.5" /> Send files to vendor
               <input
                 type="file"
+                multiple
                 accept=".png,.pdf,.tif,.tiff,image/png,application/pdf,image/tiff"
                 className="hidden"
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) setVendorFile(f);
-                  // Reset so picking the same file again re-fires onChange.
+                  const picked = Array.from(e.target.files || []);
+                  if (picked.length) setVendorFiles(picked);
+                  // Reset so picking the same files again re-fires onChange.
                   e.target.value = '';
                 }}
               />
@@ -706,12 +712,14 @@ function DtfOrdersQueue() {
       </div>
 
       <SendToVendorDialog
-        open={vendorOrder !== null || vendorFile !== null}
-        onClose={() => { setVendorOrder(null); setVendorFile(null); }}
-        onSend={vendorFile ? sendFileToVendor : sendOrderToVendor}
+        open={vendorOrder !== null || vendorFiles.length > 0}
+        onClose={() => { setVendorOrder(null); setVendorFiles([]); }}
+        onSend={vendorFiles.length > 0 ? sendFilesToVendor : sendOrderToVendor}
         subject={
-          vendorFile
-            ? `${vendorFile.name} (${(vendorFile.size / 1024 / 1024).toFixed(1)} MB)`
+          vendorFiles.length > 0
+            ? vendorFiles.length === 1
+              ? `${vendorFiles.map((f) => f.name).join('')} (${(vendorFiles.reduce((s, f) => s + f.size, 0) / 1024 / 1024).toFixed(1)} MB)`
+              : `${vendorFiles.length} files: ${vendorFiles.map((f) => f.name).join(', ')} (${(vendorFiles.reduce((s, f) => s + f.size, 0) / 1024 / 1024).toFixed(1)} MB total)`
             : vendorOrder
               ? `Order #${vendorOrder.id} — 22in × ${vendorOrder.length_ft}ft`
               : ''
