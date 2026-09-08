@@ -3537,7 +3537,7 @@ export default function DesignStudioPage() {
       {/* Size */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'sz' ? null : 'sz')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'sz' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⤢<span>Size</span></button>
-        {imgPop === 'sz' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
+        {imgPop === 'sz' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={5} max={80} value={selectedEl.width} onChange={e => updateElement(selectedEl.id, { width: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.width}%</span></div></div>}
       </div>
 
       {/* Crop — opens the visual crop modal. Replaces el.content with the
@@ -3556,25 +3556,25 @@ export default function DesignStudioPage() {
       {/* Rotate */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'rt' ? null : 'rt')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'rt' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>↻<span>Rotate</span></button>
-        {imgPop === 'rt' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div></div>}
+        {imgPop === 'rt' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={-180} max={180} value={selectedEl.rotation ?? 0} onChange={e => updateElement(selectedEl.id, { rotation: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.rotation ?? 0}°</span></div></div>}
       </div>
 
       {/* Corners */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'cr' ? null : 'cr')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'cr' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>⬜<span>Corners</span></button>
-        {imgPop === 'cr' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={50} value={selectedEl.borderRadius ?? 0} onChange={e => updateElement(selectedEl.id, { borderRadius: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.borderRadius ?? 0}%</span></div></div>}
+        {imgPop === 'cr' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={50} value={selectedEl.borderRadius ?? 0} onChange={e => updateElement(selectedEl.id, { borderRadius: Number(e.target.value) })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{selectedEl.borderRadius ?? 0}%</span></div></div>}
       </div>
 
       {/* Opacity */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'op' ? null : 'op')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'op' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>◐<span>Opacity</span></button>
-        {imgPop === 'op' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={e => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div></div>}
+        {imgPop === 'op' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-3 w-48 z-50"><div className="flex items-center gap-2"><input type="range" min={0} max={100} value={Math.round((selectedEl.opacity ?? 1) * 100)} onChange={e => updateElement(selectedEl.id, { opacity: Number(e.target.value) / 100 })} className="flex-1 accent-blue-600" /><span className="text-xs w-10 text-right">{Math.round((selectedEl.opacity ?? 1) * 100)}%</span></div></div>}
       </div>
 
       {/* Filter */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'fl' ? null : 'fl')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'fl' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>🎨<span>Filter</span></button>
-        {imgPop === 'fl' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
+        {imgPop === 'fl' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
       </div>
 
       {/* Layer */}
@@ -3586,7 +3586,7 @@ export default function DesignStudioPage() {
           className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${(selectedEl.blend ?? 'normal') === 'multiply' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
         >👕<span>Fabric</span></button>
         <button type="button" onClick={() => setImgPop(imgPop === 'ly' ? null : 'ly')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'ly' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>☰<span>Layer</span></button>
-        {imgPop === 'ly' && <div className="absolute right-full top-1/2 -translate-y-1/2 mr-2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
+        {imgPop === 'ly' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-2 flex flex-col gap-1 min-w-[130px] z-50">
           <button type="button" onClick={() => { bringToFront(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">⬆ Front</button>
           <button type="button" onClick={() => { bringForward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↑ Forward</button>
           <button type="button" onClick={() => { sendBackward(selectedEl.id); setImgPop(null); }} className="px-3 py-1.5 rounded text-xs font-medium bg-gray-100 hover:bg-gray-200 text-left">↓ Backward</button>
