@@ -116,11 +116,14 @@ export default function EasyQuotePage() {
   };
   const totalQty = pickedTypes.reduce((s, p) => s + typeQty(p.key), 0);
 
-  const isRush = useMemo(() => {
-    if (!needBy || !settings) return false;
+  // Days EARLIER than standard turnaround the customer needs it — each
+  // day adds the per-day rush percentage on the server.
+  const rushDays = useMemo(() => {
+    if (!needBy || !settings) return 0;
     const days = Math.ceil((new Date(`${needBy}T12:00:00`).getTime() - Date.now()) / 86_400_000);
-    return days < settings.standard_turnaround;
+    return Math.max(0, settings.standard_turnaround - days);
   }, [needBy, settings]);
+  const isRush = rushDays > 0;
 
   /* Live pricing when the quote card opens. */
   useEffect(() => {
@@ -146,7 +149,10 @@ export default function EasyQuotePage() {
               numLocations: 1,
               colorsPerLocation: 1,
               rush: isRush,
+              rushDays,
               sizes,
+              // Pool the whole order for the quantity-tier discount.
+              discountQuantity: pricedTypes.reduce((s, t) => s + typeQty(t.key), 0),
             }),
           });
           if (!res.ok) throw new Error(`Pricing failed for ${p.label}`);
@@ -215,6 +221,7 @@ export default function EasyQuotePage() {
           numLocations: 1,
           colorsPerLocation: 1,
           rush: isRush,
+          rushDays,
           sizes,
         },
       });
@@ -512,8 +519,10 @@ export default function EasyQuotePage() {
             {settings && needBy && (
               isRush ? (
                 <Note tone="amber">
-                  ⚡ That&apos;s inside our standard {settings.standard_turnaround}-day turnaround — a{' '}
-                  <strong>{settings.rush_surcharge_pct}% rush fee</strong> applies and we&apos;ll move fast.
+                  ⚡ That&apos;s <strong>{rushDays} {rushDays === 1 ? 'day' : 'days'} sooner</strong> than our
+                  standard {settings.standard_turnaround}-day turnaround — a{' '}
+                  <strong>{settings.rush_surcharge_pct}% per-day rush fee</strong> ({rushDays} × {settings.rush_surcharge_pct}% ={' '}
+                  {rushDays * settings.rush_surcharge_pct}%) applies and we&apos;ll move fast.
                 </Note>
               ) : (
                 <Note tone="green">✓ Plenty of time — standard turnaround, no rush fee.</Note>

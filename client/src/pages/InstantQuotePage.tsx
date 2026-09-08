@@ -56,6 +56,7 @@ type Inputs = {
   locations: { front: boolean; back: boolean; sleeve: boolean };
   colorsPerLocation: number;
   rush: boolean;
+  rushDays?: number; // days earlier than standard turnaround (graduated rush)
 };
 
 type CatalogColor = string | { hex?: string; name?: string; swatch?: string; image?: string };
@@ -520,13 +521,19 @@ export default function InstantQuotePage() {
     return () => clearTimeout(t);
   }, [items]);
 
+  // Pool quantities across every item so the tier discount matches what
+  // /save will compute (5 tees + 6 caps together reach the 11+ tier).
+  const pooledDiscountQty = debouncedItems.reduce(
+    (s, it) => s + totalQuantity(it.inputs.sizes), 0,
+  );
+
   const calcQueries = useQueries({
     queries: debouncedItems.map((item) => {
       const numLocations = Object.values(item.inputs.locations).filter(Boolean).length;
       const qty = totalQuantity(item.inputs.sizes);
       const productSsId = item.pickedProduct?.ss_id || null;
       return {
-        queryKey: ['instant-quote', 'calc-item', item.id, item.inputs, productSsId],
+        queryKey: ['instant-quote', 'calc-item', item.id, item.inputs, productSsId, pooledDiscountQty],
         queryFn: async (): Promise<CalcResponse> => {
           const r = await fetch('/api/quote/calculate', {
             method: 'POST',
@@ -540,7 +547,9 @@ export default function InstantQuotePage() {
               numLocations,
               colorsPerLocation: item.inputs.colorsPerLocation,
               rush: item.inputs.rush,
+              rushDays: item.inputs.rush ? rushDaysEarly : 0,
               productSsId,
+              discountQuantity: pooledDiscountQty,
             }),
           });
           const body = await r.json();
@@ -593,11 +602,15 @@ export default function InstantQuotePage() {
     return Math.round((need.getTime() - today.getTime()) / 86_400_000);
   }, [dateNeeded]);
   const rushNeeded = daysUntilNeeded !== null && daysUntilNeeded < standardDays;
+  // Graduated rush: days earlier than standard; the server charges the
+  // per-day surcharge × this count.
+  const rushDaysEarly = daysUntilNeeded !== null ? Math.max(0, standardDays - daysUntilNeeded) : 0;
   useEffect(() => {
-    setItems((prev) => prev.some((it) => it.inputs.rush !== rushNeeded)
-      ? prev.map((it) => ({ ...it, inputs: { ...it.inputs, rush: rushNeeded } }))
+    const days = rushNeeded ? rushDaysEarly : 0;
+    setItems((prev) => prev.some((it) => it.inputs.rush !== rushNeeded || (it.inputs.rushDays ?? 0) !== days)
+      ? prev.map((it) => ({ ...it, inputs: { ...it.inputs, rush: rushNeeded, rushDays: days } }))
       : prev);
-  }, [rushNeeded]);
+  }, [rushNeeded, rushDaysEarly]);
 
   const anyCalcLoading = calcQueries.some((q) => q.isFetching);
   // Surface the first calc failure (e.g. pricing service down, bad input
