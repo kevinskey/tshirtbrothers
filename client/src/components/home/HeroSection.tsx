@@ -67,7 +67,10 @@ export default function HeroSection() {
     <section className="bg-white">
       {/* ── Headline + poster ─────────────────────────────────────────── */}
       <div className="bg-gray-50">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10 items-center">
+        {/* Desktop: text-weighted 7/5 split with the poster capped at a
+            sane width — the mobile-first mock's 50/50 giant-poster layout
+            left the text column drowning in whitespace. */}
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-12 grid grid-cols-1 lg:grid-cols-[7fr_5fr] gap-6 lg:gap-12 items-center">
           <div>
             <h1
               className="text-4xl sm:text-5xl lg:text-6xl leading-[1.02] tracking-tight text-gray-900"
@@ -80,7 +83,20 @@ export default function HeroSection() {
               Quality printing. Fast turnaround. No minimums.
             </p>
 
-            <div className="mt-6 grid grid-cols-3 max-w-md divide-x divide-gray-200 text-center">
+            {/* Desktop CTAs — on phones the big action cards directly below
+                serve this role, so these only render from lg up. */}
+            <div className="hidden lg:flex mt-7 gap-3">
+              <Link to="/quote"
+                className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-7 py-3.5 text-base font-bold text-white shadow-sm transition hover:bg-orange-700">
+                Get a Quick Quote <ChevronRight className="h-5 w-5" />
+              </Link>
+              <Link to="/design"
+                className="inline-flex items-center gap-2 rounded-full border-2 border-gray-900 px-7 py-3.5 text-base font-bold text-gray-900 transition hover:bg-gray-900 hover:text-white">
+                <Palette className="h-5 w-5" /> Design Studio
+              </Link>
+            </div>
+
+            <div className="mt-6 lg:mt-8 grid grid-cols-3 max-w-md divide-x divide-gray-200 text-center">
               <div className="px-2">
                 <Truck className="h-7 w-7 mx-auto text-gray-800" />
                 <p className="mt-1.5 text-xs sm:text-sm text-gray-600 leading-tight">2–7 Day<br />Turnaround</p>
@@ -97,7 +113,7 @@ export default function HeroSection() {
           </div>
 
           {/* Rotating poster (admin hero slides) */}
-          <div className="relative overflow-hidden rounded-3xl shadow-sm aspect-[4/5] sm:max-w-[26rem] sm:mx-auto lg:max-w-none w-full bg-white">
+          <div className="relative overflow-hidden rounded-3xl shadow-sm aspect-[4/5] sm:max-w-[26rem] sm:mx-auto lg:max-w-[26rem] lg:justify-self-end w-full bg-white">
             {slides.map((s, i) => {
               const avif = avifFor(s.image_url);
               const img = (
