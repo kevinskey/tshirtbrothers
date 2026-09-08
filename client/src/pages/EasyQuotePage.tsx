@@ -40,9 +40,9 @@ const GILDAN_COLORS = [
 ] as const;
 
 const QUALITY_TIERS = [
-  { tier: 'Standard', label: 'Standard',           dollars: '$',   blurb: 'Solid everyday cotton. Workhorse of team orders.' },
-  { tier: 'Premium',  label: 'Mid-Level · Softer', dollars: '$$',  blurb: 'Softer ringspun feel. Retail fit people keep wearing.' },
-  { tier: 'Ultra',    label: 'Premium',            dollars: '$$$', blurb: 'Top-shelf garment-dyed comfort. The good-good.' },
+  { tier: 'Standard', label: 'Standard',           dollars: '$',   blurb: 'Gildan Heavy Cotton — the team-order workhorse.' },
+  { tier: 'Premium',  label: 'Mid-Level · Softer', dollars: '$$',  blurb: 'Next Level — soft ringspun retail fit people keep wearing.' },
+  { tier: 'Ultra',    label: 'Premium',            dollars: '$$$', blurb: 'Comfort Colors — garment-dyed, top-shelf feel. The good-good.' },
 ] as const;
 
 const ORANGE = '#f97316';
