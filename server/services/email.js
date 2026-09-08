@@ -44,7 +44,7 @@ function baseLayout(title, bodyHtml) {
   <!-- Footer -->
   <tr><td style="background:#f9fafb;padding:24px 32px;border-top:1px solid #e5e7eb;">
     <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">T-Shirt Brothers &mdash; Custom Apparel &amp; Screen Printing</p>
-    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">Phone: (470) 622-4845 &bull; Email: info@tshirtbrothers.com</p>
+    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">Phone: (470) 622-1392 &bull; Email: info@tshirtbrothers.com</p>
     <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">6010 Renaissance Parkway, Fairburn, GA 30213</p>
   </td></tr>
 </table>
@@ -305,7 +305,7 @@ export async function sendDepositReceiptToCustomer(quote) {
     ${balanceDue > 0 ? primaryButton('Pagar Saldo Restante', payBalanceUrl) : ''}
 
     <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">Sin prisa — el saldo se paga cuando tu pedido esté listo. Pronto recibirás tu diseño de muestra.</p>
-    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-4845. Hablamos español.</p>
+    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
   `;
 
   if (es) {
@@ -353,7 +353,7 @@ export async function sendDepositReceiptToCustomer(quote) {
     ${balanceDue > 0 ? primaryButton('Pay Remaining Balance', payBalanceUrl) : ''}
 
     <p style="margin:24px 0 8px;font-size:13px;color:#6b7280;text-align:center;">No rush — the balance isn't due until your order is ready. Watch for your mockup; that's the next thing you'll hear from us.</p>
-    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
 
   try {
@@ -654,7 +654,7 @@ export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, ba
       </tr>`
     )}
 
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
 
   try {
@@ -1238,7 +1238,7 @@ export async function sendGangSheetReadyToCustomer({ order }) {
         <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:${BRAND_DARK};">Ready for pickup</p>
         <p style="margin:0 0 4px;font-size:14px;color:#374151;">${SHOP_ADDRESS}</p>
         <p style="margin:0;font-size:14px;color:#374151;">Hours: ${SHOP_HOURS}</p>
-        <p style="margin:8px 0 0;font-size:13px;color:#6b7280;">The facility is secure — please call us at (470) 622-4845 when you arrive and we'll bring it right out.</p>
+        <p style="margin:8px 0 0;font-size:13px;color:#6b7280;">The facility is secure — please call us at (470) 622-1392 when you arrive and we'll bring it right out.</p>
       </div>
     `;
   const body = `
@@ -1250,7 +1250,7 @@ export async function sendGangSheetReadyToCustomer({ order }) {
       detailRow('Total', `<strong>${total}</strong>`)
     )}
     ${deliveryBlock}
-    <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-4845.</p>
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,
@@ -1313,7 +1313,7 @@ export async function sendGangSheetToVendor({
     ${primaryButton('Download print file', downloadUrl)}
     <p style="font-size:13px;color:#6b7280;margin-top:12px;">Direct link: <a href="${downloadUrl}" style="color:${BRAND_ORANGE};word-break:break-all;">${downloadUrl}</a></p>
     ${expiryLine}
-    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-4845.</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-1392.</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,
@@ -1363,7 +1363,7 @@ export async function sendGangSheetVendorFiles({
     ${note ? detailsTable(detailRow('Notes', escapeHtml(note))) : ''}
     ${fileBlocks}
     ${expiryLine}
-    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-4845.</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-1392.</p>
   `;
   return resend.emails.send({
     from: FROM_EMAIL,

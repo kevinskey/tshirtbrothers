@@ -59,10 +59,49 @@ export default function AdminVendorSendPage() {
 /*  File sender                                                            */
 /* ────────────────────────────────────────────────────────────────────── */
 
+type SentFile = { name: string; key: string; bytes?: number | null; widthPx?: number | null; heightPx?: number | null };
+type VendorSendRow = {
+  id: number;
+  vendor_name: string | null;
+  vendor_email: string;
+  source: string; // 'upload' | 'builder' | 'order'
+  reference: string | null;
+  note: string | null;
+  files: SentFile[];
+  sent_at: string;
+};
+
+const SOURCE_LABEL: Record<string, string> = { upload: 'From computer', builder: 'Gang sheet builder', order: 'Customer order' };
+
 function VendorFileSender() {
   const [files, setFiles] = useState<File[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [log, setLog] = useState<VendorSendRow[] | null>(null);
+
+  async function refreshLog() {
+    try {
+      const r = await fetch('/api/gangsheet-store/admin/vendor-sends', { headers: authHeaders() });
+      if (r.ok) setLog(await r.json());
+    } catch {
+      // Best-effort — the sender still works without history.
+    }
+  }
+
+  useEffect(() => { refreshLog(); }, []);
+
+  // The 7-day links in the original vendor email expire — this mints a
+  // fresh one on demand and opens it.
+  async function openFileLink(key: string) {
+    try {
+      const r = await fetch(`/api/gangsheet-store/admin/vendor-file-link?key=${encodeURIComponent(key)}`, { headers: authHeaders() });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok || !body.url) throw new Error(body.error || 'Could not create link');
+      window.open(body.url, '_blank', 'noopener');
+    } catch (err: any) {
+      toast.error(err?.message || 'Could not create link');
+    }
+  }
 
   function addFiles(picked: File[]) {
     const ok: File[] = [];
@@ -107,6 +146,7 @@ function VendorFileSender() {
         : `${files.length} files sent to ${payload.vendor_email}`
     );
     setFiles([]);
+    refreshLog();
   }
 
   const totalBytes = files.reduce((s, f) => s + f.size, 0);
@@ -188,6 +228,57 @@ function VendorFileSender() {
             </button>
           </div>
         )}
+        <div className="mt-8">
+          <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">Send history</h2>
+          {log === null ? (
+            <p className="text-sm text-gray-400">Loading…</p>
+          ) : log.length === 0 ? (
+            <p className="text-sm text-gray-400">Nothing sent to a vendor yet.</p>
+          ) : (
+            <ul className="space-y-2">
+              {log.map((row) => (
+                <li key={row.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {row.vendor_name || row.vendor_email}
+                      </span>
+                      <span className="ml-2 text-xs text-gray-500">{row.vendor_email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+                        {SOURCE_LABEL[row.source] || row.source}
+                      </span>
+                      <span className="text-xs text-gray-500">{new Date(row.sent_at).toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <ul className="mt-2 space-y-1">
+                    {(row.files || []).map((f, i) => (
+                      <li key={`${row.id}-${i}`} className="flex items-center gap-2 text-sm">
+                        <FileImage className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                        <button
+                          type="button"
+                          onClick={() => openFileLink(f.key)}
+                          className="truncate text-left text-orange-600 hover:underline"
+                          title="Open a fresh download link"
+                        >
+                          {f.name}
+                        </button>
+                        {typeof f.bytes === 'number' && <span className="text-xs text-gray-400">{mb(f.bytes)}</span>}
+                        {f.widthPx && f.heightPx && (
+                          <span className="text-xs text-gray-400">
+                            {(f.widthPx / 300).toFixed(1)}in × {(f.heightPx / 300).toFixed(1)}in
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {row.note && <p className="mt-1.5 text-xs italic text-gray-500">“{row.note}”</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
 
       <SendToVendorDialog

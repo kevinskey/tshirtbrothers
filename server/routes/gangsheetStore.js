@@ -828,6 +828,20 @@ async function presignFileKey(fileKey) {
   );
 }
 
+// Best-effort history row for the admin File Sender page — a logging
+// failure must never fail a send that already emailed the vendor.
+async function logVendorSend({ vendorName, vendorEmail, source, reference, note, files }) {
+  try {
+    await pool.query(
+      `INSERT INTO vendor_sends (vendor_name, vendor_email, source, reference, note, files)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [vendorName, vendorEmail, source, reference, note, JSON.stringify(files)],
+    );
+  } catch (e) {
+    console.error('[dtf-store] vendor send log failed:', e.message);
+  }
+}
+
 function parseVendorBody(body) {
   const vendorEmail = String(body?.vendor_email || '').trim();
   if (!EMAIL_RE.test(vendorEmail)) return { error: 'A valid vendor email is required' };
@@ -865,6 +879,14 @@ router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, 
        WHERE id = $3 RETURNING *`,
       [parsed.vendorName, parsed.vendorEmail, order.id],
     );
+    await logVendorSend({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      source: 'order',
+      reference: `Order #${order.id}`,
+      note: parsed.note,
+      files: [{ name: `order-${order.id}.png`, key: order.file_key, widthPx: dims ? Number(dims[1]) : null, heightPx: dims ? Number(dims[2]) : null }],
+    });
     res.json(updated[0]);
   } catch (err) { next(err); }
 });
@@ -919,6 +941,14 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
       );
       if (rows[0]) sentAt = rows[0].vendor_sent_at;
     }
+    await logVendorSend({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      source: 'builder',
+      reference,
+      note: parsed.note,
+      files: [{ name: `${reference}.png`, key: file_key, widthPx: Number(dims[1]), heightPx: Number(dims[2]) }],
+    });
     res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, vendor_sent_at: sentAt });
   } catch (err) { next(err); }
 });
@@ -974,9 +1004,38 @@ router.post('/admin/vendor-send-file', ...adminGuard, vendorUpload.array('files'
       linkExpiresDays: VENDOR_LINK_DAYS,
       note: parsed.note,
     });
+    await logVendorSend({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      source: 'upload',
+      reference: sent.length === 1 ? sent[0].name : `${sent.length} files`,
+      note: parsed.note,
+      files: sent.map(({ name, key, bytes, widthPx, heightPx }) => ({ name, key, bytes, widthPx, heightPx })),
+    });
     res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, count: sent.length });
   } catch (err) { next(err); }
   finally { tmpPaths.forEach((p) => fs.unlink(p, () => {})); }
+});
+
+// Send history for the File Sender page.
+router.get('/admin/vendor-sends', ...adminGuard, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM vendor_sends ORDER BY sent_at DESC LIMIT 100');
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Fresh presigned link for a previously-sent file (the 7-day links in the
+// original email expire; the log page mints new ones on demand). The key
+// prefix check keeps this from presigning arbitrary bucket objects.
+router.get('/admin/vendor-file-link', ...adminGuard, async (req, res, next) => {
+  try {
+    const key = String(req.query.key || '');
+    if (!/^(gangsheet-orders|vendor-files)\//.test(key) || key.includes('..')) {
+      return res.status(400).json({ error: 'Invalid file key' });
+    }
+    res.json({ url: await presignFileKey(key) });
+  } catch (err) { next(err); }
 });
 
 // Router-level error handler — catches Multer errors thrown by the
