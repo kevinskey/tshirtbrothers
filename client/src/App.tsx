@@ -26,6 +26,7 @@ import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
 import QualityTiersPage from '@/pages/QualityTiersPage';
+import WebstoresPage from '@/pages/WebstoresPage';
 import BlogPage from '@/pages/BlogPage';
 import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
@@ -116,6 +117,7 @@ function App() {
           <Route path="/admin/dtf-orders" element={<AdminDtfOrdersPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/compare" element={<QualityTiersPage />} />
+          <Route path="/webstores" element={<WebstoresPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.
               Keep /instant-quote as a redirect for any links already in the wild. */}
