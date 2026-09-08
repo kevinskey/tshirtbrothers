@@ -17,6 +17,7 @@ interface StoreProfile {
   brand_json: {
     logo_url?: string;
     primary_color?: string;
+    demo?: boolean;
     back_url?: string;
     footer_note?: string;
     hero_url?: string;
@@ -180,6 +181,15 @@ export default function GroupStorePage() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900">
+      {store.brand_json.demo && (
+        <a
+          href="https://tshirtbrothers.com/webstores"
+          className="block text-center text-xs sm:text-sm font-bold text-white py-1.5 px-3 hover:opacity-90 transition"
+          style={{ backgroundColor: primary }}
+        >
+          Sample store by TShirt Brothers — tap to launch one like it for your organization
+        </a>
+      )}
       <Seo
         title={`${store.name} · Shop`}
         description={
