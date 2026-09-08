@@ -50,7 +50,7 @@ export default function HeroSection() {
             <div className="mt-6 hidden sm:grid grid-cols-3 max-w-md divide-x divide-gray-300 text-center">
               <div className="px-1.5 sm:px-2">
                 <Truck className="h-5 w-5 sm:h-7 sm:w-7 mx-auto text-gray-800" />
-                <p className="mt-1 text-[10px] sm:text-sm text-gray-600 leading-tight">2–7 Day<br />Turnaround</p>
+                <p className="mt-1 text-[10px] sm:text-sm text-gray-600 leading-tight">1–10 Day<br />Turnaround</p>
               </div>
               <div className="px-1.5 sm:px-2">
                 <Tag className="h-5 w-5 sm:h-7 sm:w-7 mx-auto text-gray-800" />
@@ -84,7 +84,7 @@ export default function HeroSection() {
         <div className="sm:hidden mx-auto max-w-7xl px-4 pb-4 grid grid-cols-3 divide-x divide-gray-300 text-center">
           <div className="px-2">
             <Truck className="h-5 w-5 mx-auto text-gray-800" />
-            <p className="mt-1 text-[11px] text-gray-600 leading-tight">2–7 Day<br />Turnaround</p>
+            <p className="mt-1 text-[11px] text-gray-600 leading-tight">1–10 Day<br />Turnaround</p>
           </div>
           <div className="px-2">
             <Tag className="h-5 w-5 mx-auto text-gray-800" />
@@ -148,7 +148,7 @@ export default function HeroSection() {
           style={{ background: NAVY }}>
           <span className="flex items-center gap-2"><Users className="h-4 w-4" /> No Minimums</span>
           <span className="flex items-center gap-2"><Truck className="h-4 w-4" /> Nationwide Shipping</span>
-          <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> 2–7 Day Turnaround</span>
+          <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> 1–10 Day Turnaround</span>
         </div>
 
         <p className="mt-3 flex items-center justify-center gap-1.5 text-sm text-gray-600">

@@ -223,7 +223,7 @@ export default function AboutPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { icon: CheckCircle2, title: 'No Minimums', body: 'One shirt or a thousand — every order is a real order.' },
-              { icon: Clock, title: '2–7 Day Turnaround', body: 'Standard turnaround beats most chains. Rush options available.' },
+              { icon: Clock, title: '1–10 Day Turnaround', body: 'Standard turnaround beats most chains. Rush options available.' },
               { icon: Star, title: '5.0 Stars · 40+ Reviews', body: 'Every order is one we want to be proud of. Read the Google reviews.' },
               { icon: MapPin, title: 'Atlanta Local', body: 'Real shop, real people. Pickup in Fairburn or shipped nationwide.' },
             ].map((v) => {
