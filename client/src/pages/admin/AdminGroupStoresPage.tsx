@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { AddressAutocompleteInput } from '@/components/AddressAutocomplete';
 import { Loader2, Plus, ShoppingBag, Target, ArrowLeft, Package, ExternalLink, Globe } from 'lucide-react';
 import {
   fetchGroupStores,
@@ -359,7 +360,10 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
                   className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
               </Field>
               <Field label="Address">
-                <input value={pickupAddr} onChange={(e) => setPickupAddr(e.target.value)}
+                <AddressAutocompleteInput
+                  mode="full"
+                  value={pickupAddr}
+                  onChange={setPickupAddr}
                   placeholder="350 Spelman Ln SW"
                   className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
               </Field>
