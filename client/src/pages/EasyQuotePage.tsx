@@ -698,8 +698,10 @@ export default function EasyQuotePage() {
           Spacer below keeps the card content scrollable past it. */}
       {step !== 'quote' && (
         <>
-          <div style={{ height: 84 }} />
-          <div className="fixed left-0 right-0 z-40 px-4 pb-4 pointer-events-none"
+          {/* Phones: Next floats fixed above the on-screen keyboard.
+              sm+: it sits inside the card like a normal dialog button. */}
+          <div className="sm:hidden" style={{ height: 84 }} />
+          <div className="sm:hidden fixed left-0 right-0 z-40 px-4 pb-4 pointer-events-none"
             style={{ bottom: kbOffset }}>
             <div className="max-w-md mx-auto pointer-events-auto">
               <button type="button" disabled={!canNext} onClick={() => go(1)}
@@ -709,6 +711,11 @@ export default function EasyQuotePage() {
               </button>
             </div>
           </div>
+          <button type="button" disabled={!canNext} onClick={() => go(1)}
+            className="hidden sm:inline-flex mt-8 w-full items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg transition-opacity disabled:opacity-40"
+            style={{ background: ORANGE }}>
+            {step === 'art' && artUrls.length === 0 ? 'Skip for now' : 'Next'} <ArrowRight className="w-5 h-5" />
+          </button>
         </>
       )}
 
@@ -720,9 +727,16 @@ export default function EasyQuotePage() {
 /* ── UI bits ──────────────────────────────────────────────────────────── */
 
 function Shell({ children }: { children: React.ReactNode }) {
+  // Phones: full-bleed flow. sm+: the wizard lives in a centered card so
+  // the page reads like a focused dialog instead of a mostly-empty screen.
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(180deg,#fff7ed 0%,#f7f4ee 100%)' }}>
-      <div className="max-w-md mx-auto px-4 py-6 sm:py-10">{children}</div>
+    <div className="min-h-screen sm:flex sm:items-center sm:justify-center sm:py-10"
+      style={{ background: 'linear-gradient(180deg,#fff7ed 0%,#f7f4ee 100%)' }}>
+      <div className="max-w-md w-full mx-auto px-4 py-6 sm:py-0">
+        <div className="sm:bg-white sm:rounded-3xl sm:shadow-2xl sm:border sm:border-orange-100 sm:p-8">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
