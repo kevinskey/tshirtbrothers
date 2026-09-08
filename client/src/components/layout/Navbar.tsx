@@ -74,10 +74,10 @@ export default function Navbar() {
               <img
                 src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
                 alt="TShirt Brothers"
-                className="h-12 w-12 sm:h-14 sm:w-14 object-contain"
+                className="h-9 w-9 sm:h-14 sm:w-14 object-contain"
               />
               <span
-                className="text-base sm:text-xl text-orange-700 leading-[0.95] tracking-tight"
+                className="text-[13px] sm:text-xl text-orange-700 leading-[0.95] tracking-tight"
                 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
               >
                 <span className="block sm:inline">TSHIRT</span>{' '}
@@ -94,19 +94,19 @@ export default function Navbar() {
                 aria-label="Favorites"
                 className="inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors"
               >
-                <Heart className="h-5 w-5" />
+                <Heart className="h-6 w-6 sm:h-5 sm:w-5" />
               </Link>
 
               {/* Account / Sign In (avatar + label) */}
               {isLoggedIn ? (
                 <Link to="/account" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
-                  <User className="h-5 w-5" />
-                  <span>Account</span>
+                  <User className="h-6 w-6 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline">Account</span>
                 </Link>
               ) : (
                 <Link to="/auth" className="flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors">
-                  <User className="h-5 w-5" />
-                  <span>Sign In</span>
+                  <User className="h-6 w-6 sm:h-5 sm:w-5" />
+                  <span className="hidden sm:inline">Sign In</span>
                 </Link>
               )}
 
@@ -116,17 +116,17 @@ export default function Navbar() {
                 aria-label="Quote builder"
                 className="inline-flex items-center justify-center p-2 rounded-lg text-gray-700 hover:text-orange-600 hover:bg-gray-100 transition-colors"
               >
-                <ShoppingCart className="h-5 w-5" />
+                <ShoppingCart className="h-6 w-6 sm:h-5 sm:w-5" />
               </Link>
 
               {/* Hamburger — far right of the header (all breakpoints) */}
               <button
                 type="button"
-                className="inline-flex items-center justify-center rounded-lg p-2 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+                className="inline-flex items-center justify-center rounded-lg p-2 -mr-2 sm:mr-0 text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-colors"
                 onClick={() => setMobileOpen(!mobileOpen)}
                 aria-label="Toggle menu"
               >
-                {mobileOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                {mobileOpen ? <X className="h-7 w-7 sm:h-6 sm:w-6" /> : <Menu className="h-7 w-7 sm:h-6 sm:w-6" />}
               </button>
             </div>
           </div>
