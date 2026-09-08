@@ -120,6 +120,7 @@ function App() {
           {/* /quote is the mobile-first Easy Quote card wizard; the full
               live-pricing calculator survives at /quote/classic. */}
           <Route path="/quote" element={<EasyQuotePage />} />
+          <Route path="/es/cotizacion" element={<EasyQuotePage lang="es" />} />
           <Route path="/quote/classic" element={<InstantQuotePage />} />
           <Route path="/instant-quote" element={<Navigate to="/quote" replace />} />
           <Route path="/blog" element={<BlogPage />} />
