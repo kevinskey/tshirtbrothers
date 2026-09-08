@@ -281,6 +281,15 @@ export const BLOCK_TYPES = Object.keys(RENDERERS);
  * `extras.unsubHtml` / `extras.openPixelHtml` are appended by the sender —
  * pass nothing for admin previews.
  */
+// Some email clients (and proxies) ignore <meta charset> and decode the
+// body as Latin-1, turning "\u2022" into mojibake and mangling emoji.
+// Encoding every non-ASCII code point as a numeric entity makes the
+// document charset-proof — entities decode identically everywhere.
+function entityEncodeNonAscii(html) {
+  return html.replace(/[\u0080-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g,
+    (ch) => `&#${ch.codePointAt(0)};`);
+}
+
 export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', openPixelHtml = '', theme = {} } = {}) {
   T = { ...DEFAULT_THEME, ...(theme && typeof theme === 'object' ? theme : {}) };
   const body = (blocks || [])
@@ -288,7 +297,7 @@ export function renderNewsletterHtml(blocks, { preheader = '', unsubHtml = '', o
     .map((b) => RENDERERS[b.type](b.data || {}))
     .join('\n');
 
-  return `<!DOCTYPE html>
+  return entityEncodeNonAscii(`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -310,7 +319,7 @@ ${openPixelHtml}
   </td></tr>
 </table>
 </body>
-</html>`;
+</html>`);
 }
 
 /**
