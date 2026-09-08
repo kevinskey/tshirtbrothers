@@ -74,10 +74,10 @@ export default function Navbar() {
               <img
                 src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
                 alt="TShirt Brothers"
-                className="h-9 w-9 sm:h-14 sm:w-14 object-contain"
+                className="h-11 w-11 sm:h-14 sm:w-14 object-contain"
               />
               <span
-                className="text-[13px] sm:text-xl text-orange-700 leading-[0.95] tracking-tight"
+                className="text-[15px] sm:text-xl text-orange-700 leading-[0.95] tracking-tight"
                 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
               >
                 <span className="block sm:inline">TSHIRT</span>{' '}

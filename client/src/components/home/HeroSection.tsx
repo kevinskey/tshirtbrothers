@@ -6,22 +6,25 @@
 import { Link } from 'react-router-dom';
 import {
   Truck, Tag, ShieldCheck, Clock, MapPin, Users, ChevronRight,
-  FileText, Palette, Film, Shirt, GraduationCap, ShoppingBag as BagIcon,
+  FileText, Palette, Shirt,
 } from 'lucide-react';
 
 const COLLAGE =
   'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/hero-collage.png';
 
-// Shop-by-category tiles — labels match the retail categories the
-// /api/products filter understands.
+// Shop-by-category tiles — real product photography (S&S style shots),
+// labels match the retail categories the /api/products filter understands.
+const SS = 'https://www.ssactivewear.com/Images/Style';
 const CATEGORY_TILES = [
-  { label: 'T-Shirts',    param: 'T-Shirts',             icon: Shirt },
-  { label: 'Hoodies',     param: 'Hoodies',              icon: GraduationCap },
-  { label: 'Hats',        param: 'Headwear',             icon: Tag },
-  { label: 'Polos',       param: 'Polos',                icon: Shirt },
-  { label: 'Bags',        param: 'Bags',                 icon: BagIcon },
-  { label: 'Sweatshirts', param: 'Crewneck Sweatshirts', icon: Shirt },
+  { label: 'T-Shirts',    param: 'T-Shirts',             img: `${SS}/32_fl.jpg` },
+  { label: 'Hoodies',     param: 'Hoodies',              img: `${SS}/395_fl.jpg` },
+  { label: 'Hats',        param: 'Headwear',             img: `${SS}/2998_fl.jpg` },
+  { label: 'Polos',       param: 'Polos',                img: `${SS}/223_fl.jpg` },
+  { label: 'Bags',        param: 'Bags',                 img: `${SS}/14647_fl.jpg` },
+  { label: 'Sweatshirts', param: 'Crewneck Sweatshirts', img: `${SS}/372_fl.jpg` },
 ];
+
+const NAVY = '#1f2a44';
 
 export default function HeroSection() {
   return (
@@ -31,8 +34,8 @@ export default function HeroSection() {
         <div className="mx-auto max-w-7xl pl-4 sm:pl-6 lg:pl-8 grid grid-cols-[1.1fr_1fr] sm:grid-cols-2 items-center gap-2 sm:gap-6">
           <div className="py-6 sm:py-10 lg:py-14">
             <h1
-              className="text-[26px] leading-[1.05] sm:text-5xl lg:text-6xl tracking-tight text-gray-900"
-              style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900 }}
+              className="text-[26px] leading-[1.05] sm:text-5xl lg:text-[52px] tracking-tight"
+              style={{ fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 900, color: NAVY }}
             >
               Custom Apparel<br />
               <span className="text-orange-600">Made Easy.</span>
@@ -56,18 +59,8 @@ export default function HeroSection() {
               </div>
             </div>
 
-            {/* Desktop-only CTAs — on phones the action cards below serve
-                this role. */}
-            <div className="hidden lg:flex mt-8 gap-3">
-              <Link to="/quote"
-                className="inline-flex items-center gap-2 rounded-full bg-orange-600 px-7 py-3.5 text-base font-bold text-white shadow-sm transition hover:bg-orange-700">
-                Get a Quick Quote <ChevronRight className="h-5 w-5" />
-              </Link>
-              <Link to="/design"
-                className="inline-flex items-center gap-2 rounded-full border-2 border-gray-900 px-7 py-3.5 text-base font-bold text-gray-900 transition hover:bg-gray-900 hover:text-white">
-                <Palette className="h-5 w-5" /> Design Studio
-              </Link>
-            </div>
+            {/* Per the layout spec: no CTA buttons in the hero — the three
+                ordering cards below are the primary actions. */}
           </div>
 
           {/* Collage — bleeds to the right edge like the mock */}
@@ -97,38 +90,41 @@ export default function HeroSection() {
           </Link>
 
           <Link to="/design"
-            className="group rounded-2xl bg-gray-900 text-white p-3.5 sm:p-5 flex flex-col shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
+            className="group rounded-2xl text-white p-3.5 sm:p-5 flex flex-col shadow-sm transition hover:shadow-lg hover:-translate-y-0.5"
+            style={{ background: NAVY }}>
             <Palette className="h-7 w-7 sm:h-9 sm:w-9" />
             <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">Design Studio</p>
             <p className="mt-1 text-[11px] sm:text-sm text-gray-300 leading-snug flex-1">Create or upload your design.</p>
             <ChevronRight className="h-4 w-4 sm:h-6 sm:w-6 mt-1.5 self-end transition-transform group-hover:translate-x-1" />
           </Link>
 
-          <Link to="/dtf"
+          {/* Customer-facing label per spec; the product-first "DTO" path. */}
+          <Link to="/shop"
             className="group rounded-2xl bg-gray-100 text-gray-900 p-3.5 sm:p-5 flex flex-col shadow-sm transition hover:shadow-lg hover:-translate-y-0.5">
-            <Film className="h-7 w-7 sm:h-9 sm:w-9" />
-            <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">DTF Transfers</p>
-            <p className="mt-1 text-[11px] sm:text-sm text-gray-600 leading-snug flex-1">Gang sheets from $9/ft.</p>
+            <Shirt className="h-7 w-7 sm:h-9 sm:w-9" />
+            <p className="mt-2.5 sm:mt-4 text-sm sm:text-xl font-black leading-tight">Customize a Product</p>
+            <p className="mt-1 text-[11px] sm:text-sm text-gray-600 leading-snug flex-1">Pick a product and customize it online.</p>
             <ChevronRight className="h-4 w-4 sm:h-6 sm:w-6 mt-1.5 self-end transition-transform group-hover:translate-x-1" />
           </Link>
         </div>
 
         {/* ── Shop by category ────────────────────────────────────────── */}
         <div className="mt-3 sm:mt-4 grid grid-cols-3 sm:grid-cols-6 gap-2.5 sm:gap-3">
-          {CATEGORY_TILES.map((c) => {
-            const Icon = c.icon;
-            return (
-              <Link key={c.label} to={`/shop?category=${encodeURIComponent(c.param)}`}
-                className="rounded-2xl bg-gray-50 border border-gray-100 p-3 sm:p-4 text-center transition hover:border-orange-300 hover:bg-orange-50">
-                <Icon className="h-6 w-6 sm:h-8 sm:w-8 mx-auto text-gray-800" />
-                <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-sm font-semibold text-gray-800">{c.label}</p>
-              </Link>
-            );
-          })}
+          {CATEGORY_TILES.map((c) => (
+            <Link key={c.label} to={`/shop?category=${encodeURIComponent(c.param)}`}
+              className="rounded-2xl bg-gray-50 border border-gray-100 p-2.5 sm:p-3 text-center transition hover:border-orange-300 hover:bg-orange-50">
+              <div className="aspect-square rounded-xl bg-white overflow-hidden flex items-center justify-center">
+                <img src={c.img} alt={c.label} loading="lazy"
+                  className="w-full h-full object-contain mix-blend-multiply" />
+              </div>
+              <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-sm font-semibold text-gray-800">{c.label}</p>
+            </Link>
+          ))}
         </div>
 
         {/* ── Trust bar ───────────────────────────────────────────────── */}
-        <div className="mt-3 sm:mt-4 rounded-2xl bg-gray-900 text-white px-4 py-3.5 sm:py-4 flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-8 gap-y-1.5 text-xs sm:text-sm">
+        <div className="mt-3 sm:mt-4 rounded-2xl text-white px-4 py-3.5 sm:py-4 flex flex-wrap items-center justify-center gap-x-6 sm:gap-x-8 gap-y-1.5 text-xs sm:text-sm"
+          style={{ background: NAVY }}>
           <span className="flex items-center gap-2"><Users className="h-4 w-4" /> No Minimums</span>
           <span className="flex items-center gap-2"><Truck className="h-4 w-4" /> Nationwide Shipping</span>
           <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> 2–7 Day Turnaround</span>
