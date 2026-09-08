@@ -1147,17 +1147,25 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     setExporting(true);
     try {
       const { dataUrl, heightPx } = await generateFullResExport();
+      // Chrome caps data: URLs in <a href> at ~2MB — a full-res 300dpi sheet
+      // PNG blows past that and the "downloaded" file arrives corrupt/blank.
+      // Convert to a Blob and download via an object URL, which has no cap.
+      const blob = await (await fetch(dataUrl)).blob();
+      const objUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = dataUrl;
+      link.href = objUrl;
       link.download = `gangsheet-${sheetName.replace(/\s+/g, '-')}-${SHEET_WIDTH_PX}x${Math.round(heightPx)}px-300dpi.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
     } catch (err: any) {
       console.error('Export failed:', err);
       alert(err?.message === 'TOO_LARGE'
         ? 'This sheet is too large to export in your browser — reduce the size/quantity of graphics, or split it into two sheets.'
-        : 'Export failed. Try again.');
+        : err?.name === 'SecurityError'
+          ? 'One of the graphics on this sheet was loaded without CORS and is blocking export. Remove and re-add it (or re-upload the file) and try again.'
+          : 'Export failed. Try again.');
     } finally {
       setExporting(false);
     }
