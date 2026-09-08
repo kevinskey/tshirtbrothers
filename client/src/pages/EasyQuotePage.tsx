@@ -143,7 +143,10 @@ export default function EasyQuotePage() {
     const d = new Date(now);
     if (now.getHours() >= 10) d.setDate(d.getDate() + 1);
     return fmtDate(d);
-  }, []);
+    // Recompute on step change so sitting on the page across the 10am
+    // ET boundary can't leave a stale same-day window open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
   // Days EARLIER than standard turnaround the customer needs it — each
   // day adds the per-day rush percentage on the server.
@@ -333,7 +336,9 @@ export default function EasyQuotePage() {
       case 'qty': return totalQty > 0;
       case 'color': return !!color;
       case 'quality': return !!quality;
-      case 'date': return !!needBy;
+      // ISO strings compare lexically; iOS date wheels ignore the input's
+      // min attribute, so enforce the cutoff here too.
+      case 'date': return !!needBy && needBy >= minNeedBy;
       case 'art': return artUploading === 0; // optional — just wait for uploads
       default: return false;
     }
@@ -555,7 +560,14 @@ export default function EasyQuotePage() {
               ⏰ Need it <strong>today</strong>? Order by 10am ET. Need it <strong>tomorrow</strong>? Orders
               accepted until 12pm ET on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
             </p>
-            {settings && needBy && (
+            {needBy && needBy < minNeedBy && (
+              <Note tone="amber">
+                🚫 That date has passed our cutoff — the earliest we can do is{' '}
+                <strong>{new Date(`${minNeedBy}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</strong>.
+                (Same-day needs the order in by 10am ET.)
+              </Note>
+            )}
+            {settings && needBy && needBy >= minNeedBy && (
               rushDays >= settings.standard_turnaround ? (
                 <Note tone="amber">
                   🚨 <strong>Same-day order</strong> — a flat{' '}
