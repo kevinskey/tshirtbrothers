@@ -117,25 +117,28 @@ export default function EasyQuotePage() {
   };
   const totalQty = pickedTypes.reduce((s, p) => s + typeQty(p.key), 0);
 
-  // Cutoffs are deadlines on the DELIVERY day: same-day orders must be
-  // in by 10am; a next-day date stays selectable right up until 12pm of
-  // that day itself (at which point it's "today" and the 10am rule has
-  // already closed it). Local date formatting — toISOString() is UTC and
-  // shifted evening users a day forward.
+  // Cutoffs are deadlines on the DELIVERY day, pinned to the shop's
+  // clock (Fairburn, GA — America/New_York), not the visitor's timezone:
+  // same-day orders must be in by 10am ET; a next-day date stays
+  // selectable until 12pm ET of that day itself (at which point it's
+  // "today" and the 10am rule has already closed it).
+  const etNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const fmtDate = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const minNeedBy = useMemo(() => {
-    const now = new Date();
+    const now = etNow();
     const d = new Date(now);
     if (now.getHours() >= 10) d.setDate(d.getDate() + 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return fmtDate(d);
   }, []);
 
   // Days EARLIER than standard turnaround the customer needs it — each
   // day adds the per-day rush percentage on the server.
   const rushDays = useMemo(() => {
     if (!needBy || !settings) return 0;
-    // Calendar-day difference so "today" = 0 days out (max rush) and
-    // "tomorrow" = 1, regardless of current time of day.
-    const today = new Date();
+    // Calendar-day difference against the SHOP's (Eastern) date so
+    // "today" = 0 days out (max rush) regardless of visitor timezone.
+    const today = etNow();
     today.setHours(0, 0, 0, 0);
     const days = Math.round((new Date(`${needBy}T00:00:00`).getTime() - today.getTime()) / 86_400_000);
     return Math.max(0, settings.standard_turnaround - days);
@@ -536,8 +539,8 @@ export default function EasyQuotePage() {
                 className="flex-1 text-lg font-semibold bg-transparent focus:outline-none" />
             </label>
             <p className="mt-2 text-xs text-gray-500">
-              ⏰ Need it <strong>today</strong>? Order by 10am. Need it <strong>tomorrow</strong>? Orders
-              accepted until 12pm on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
+              ⏰ Need it <strong>today</strong>? Order by 10am ET. Need it <strong>tomorrow</strong>? Orders
+              accepted until 12pm ET on the day itself. Same/next-day orders are picked up at our Fairburn, GA shop.
             </p>
             {settings && needBy && (
               rushDays >= settings.standard_turnaround ? (
