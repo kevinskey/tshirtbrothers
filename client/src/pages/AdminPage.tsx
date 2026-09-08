@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import { useGooglePlacesAutocomplete } from '@/lib/googlePlaces';
+import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -842,16 +842,6 @@ export default function AdminPage() {
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
   const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
-  const customerAddressRef = useRef<HTMLInputElement | null>(null);
-  useGooglePlacesAutocomplete(customerAddressRef, (addr) => {
-    setCustomerForm((p) => ({
-      ...p,
-      address_street: addr.street || p.address_street,
-      address_city: addr.city || p.address_city,
-      address_state: addr.state || p.address_state,
-      address_zip: addr.zip || p.address_zip,
-    }));
-  });
   const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[] }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
@@ -3609,14 +3599,12 @@ export default function AdminPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Street Address <span className="text-[10px] text-gray-400 font-normal">(start typing for Google suggestions)</span></label>
-                      <input
-                        ref={customerAddressRef}
-                        type="text"
+                      <AddressAutocompleteInput
                         value={customerForm.address_street}
-                        onChange={e => setCustomerForm(p => ({ ...p, address_street: e.target.value }))}
-                        autoComplete="off"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
+                        onChange={(v) => setCustomerForm(p => ({ ...p, address_street: v }))}
+                        onResolved={(a) => setCustomerForm(p => ({ ...p, address_street: a.line1, address_city: a.city, address_state: a.state, address_zip: a.zip }))}
                         placeholder="123 Main St"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none"
                       />
                     </div>
                     <div className="grid grid-cols-3 gap-3">
@@ -3633,6 +3621,10 @@ export default function AdminPage() {
                         <input type="text" value={customerForm.address_zip} onChange={e => setCustomerForm(p => ({ ...p, address_zip: e.target.value }))} placeholder="30290" className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20 focus:outline-none" />
                       </div>
                     </div>
+                    <AddressVerify
+                      line1={customerForm.address_street} city={customerForm.address_city} state={customerForm.address_state} zip={customerForm.address_zip}
+                      onApply={(a) => setCustomerForm(p => ({ ...p, address_street: a.line1, address_city: a.city, address_state: a.state, address_zip: a.zip }))}
+                    />
                     <button
                       type="submit"
                       disabled={savingCustomer || !customerForm.name || !customerForm.email}
@@ -4179,7 +4171,13 @@ export default function AdminPage() {
                     </div>
                     <div className="mt-3">
                       <label className="block text-xs text-gray-500 mb-1">Shipping Address</label>
-                      <input type="text" value={invoiceForm.customer_address} onChange={e => setInvoiceForm(p => ({ ...p, customer_address: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="Street address, City, State, ZIP" />
+                      <AddressAutocompleteInput
+                        mode="full"
+                        value={invoiceForm.customer_address}
+                        onChange={(v) => setInvoiceForm(p => ({ ...p, customer_address: v }))}
+                        placeholder="Street address, City, State, ZIP"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
                     </div>
                   </div>
 
@@ -6320,7 +6318,11 @@ export default function AdminPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 1</label>
-                    <input value={settingsForm.address1 || ''} onChange={e => handleSettingsChange('address1', e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    <AddressAutocompleteInput
+                      value={settingsForm.address1 || ''}
+                      onChange={(v) => handleSettingsChange('address1', v)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Address Line 2</label>

@@ -5,6 +5,7 @@ import {
   Minus, Plus, Upload, Loader2, CheckCircle2, AlertTriangle, ArrowUpCircle,
 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
+import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
 import Seo from '@/components/Seo';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -657,14 +658,16 @@ export default function DtfStorePage() {
               </div>
               {delivery === 'ship' && (
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    placeholder="Address line"
-                    value={shipAddr.line1}
-                    onChange={(e) => setShipAddr((s) => ({ ...s, line1: e.target.value }))}
-                    className="sm:col-span-2 rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    style={{ fontSize: '16px' }}
-                  />
+                  <div className="sm:col-span-2">
+                    <AddressAutocompleteInput
+                      value={shipAddr.line1}
+                      onChange={(v) => setShipAddr((s) => ({ ...s, line1: v }))}
+                      onResolved={(a) => setShipAddr({ line1: a.line1, city: a.city, state: a.state, zip: a.zip })}
+                      placeholder="Address line"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      inputStyle={{ fontSize: '16px' }}
+                    />
+                  </div>
                   <input
                     type="text"
                     placeholder="City"
@@ -689,6 +692,12 @@ export default function DtfStorePage() {
                       onChange={(e) => setShipAddr((s) => ({ ...s, zip: e.target.value }))}
                       className="rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
                       style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <AddressVerify
+                      line1={shipAddr.line1} city={shipAddr.city} state={shipAddr.state} zip={shipAddr.zip}
+                      onApply={(a) => setShipAddr(a)}
                     />
                   </div>
                 </div>
