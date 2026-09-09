@@ -82,13 +82,20 @@ export default function InvoiceViewPage() {
         </div>
 
         {/* Header */}
-        <div className="flex items-start justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">TShirt Brothers</h1>
-            <p className="text-xs text-gray-500">6010 Renaissance Parkway<br />Fairburn, GA 30213<br />(470) 622-1392</p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-2">
+          <div className="flex items-center gap-3">
+            <img
+              src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
+              alt="TShirt Brothers"
+              className="h-12 w-12 object-contain"
+            />
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-gray-900 leading-tight">TSHIRT <span className="text-orange-600">BROTHERS</span></h1>
+              <p className="text-xs text-gray-500">6010 Renaissance Parkway, Fairburn, GA 30213 · (470) 622-1392</p>
+            </div>
           </div>
-          <div className="text-right">
-            <h2 className="text-2xl font-bold text-gray-900">INVOICE</h2>
+          <div className="text-left sm:text-right">
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-wide">INVOICE</h2>
             <p className="text-sm text-gray-500">{inv.invoice_number}</p>
             {isPaid && (
               <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-bold uppercase">
@@ -97,16 +104,17 @@ export default function InvoiceViewPage() {
             )}
           </div>
         </div>
+        <div className="h-1 rounded-full bg-orange-600 mb-8" />
 
         {/* Bill to */}
-        <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8 text-sm">
           <div>
             <p className="text-xs uppercase text-gray-400 font-semibold mb-1">Bill To</p>
             <p className="font-medium text-gray-900">{inv.customer_name}</p>
-            {inv.customer_email && <p className="text-gray-600">{inv.customer_email}</p>}
+            {inv.customer_email && <p className="text-gray-600 break-all">{inv.customer_email}</p>}
             {inv.customer_phone && <p className="text-gray-600">{inv.customer_phone}</p>}
           </div>
-          <div className="text-right">
+          <div className="sm:text-right flex sm:block gap-8">
             <p className="text-xs uppercase text-gray-400 font-semibold mb-1">Date</p>
             <p className="text-gray-900">{new Date(inv.created_at).toLocaleDateString()}</p>
             {inv.due_date && (
@@ -139,8 +147,23 @@ export default function InvoiceViewPage() {
           </div>
         )}
 
-        {/* Items */}
-        <table className="w-full text-sm mb-8 border-t border-b border-gray-200">
+        {/* Items — cards on phones, table from sm up */}
+        <div className="sm:hidden mb-8 border-t border-gray-200 divide-y divide-gray-100">
+          {items.map((it: { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }, i: number) => (
+            <div key={i} className="py-3">
+              <div className="flex justify-between gap-3">
+                <p className="text-sm font-medium text-gray-900 leading-snug">{it.description || '—'}</p>
+                <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">${fmt(it.total)}</p>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                {[it.color, it.size].filter(Boolean).join(' · ')}
+                {(it.color || it.size) ? ' · ' : ''}
+                {it.quantity || 1} × ${fmt(it.unit_price)}
+              </p>
+            </div>
+          ))}
+        </div>
+        <table className="hidden sm:table w-full text-sm mb-8 border-t border-b border-gray-200">
           <thead>
             <tr className="text-xs uppercase text-gray-500">
               <th className="py-3 text-left font-semibold">Description</th>
@@ -167,7 +190,7 @@ export default function InvoiceViewPage() {
 
         {/* Totals */}
         <div className="flex justify-end mb-6">
-          <div className="w-64 space-y-1 text-sm">
+          <div className="w-full sm:w-64 space-y-1 text-sm">
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span><span>${fmt(inv.subtotal)}</span>
             </div>
@@ -204,7 +227,7 @@ export default function InvoiceViewPage() {
         {inv.notes && (
           <div className="text-xs text-gray-500 border-t border-gray-100 pt-4">
             <p className="uppercase font-semibold text-gray-400 mb-1">Notes</p>
-            <p>{inv.notes}</p>
+            <p className="whitespace-pre-line leading-relaxed">{inv.notes}</p>
           </div>
         )}
 
