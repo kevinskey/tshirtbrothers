@@ -720,13 +720,21 @@ const liveCostCache = new Map(); // ss_id -> { at, rows }
 // (Tees per the /compare tiers; fleece/long-sleeve are the Standard house
 // blanks. Missing combos fall through to text search.)
 const TIER_STYLE_SSIDS = {
-  'T-shirt|Standard': '16',      // Gildan 5000
-  'T-shirt|Premium': '3227',     // Next Level 6210
-  'T-shirt|Ultra': '1822',       // Comfort Colors 1717
-  'Hoodie|Standard': '395',      // Gildan 18500
-  'Sweatshirt|Standard': '372',  // Gildan 18000
-  'Long-sleeve|Standard': '135', // Gildan 2400
-  'Tank|Standard': '2766',       // Bella+Canvas 3480
+  'T-shirt|Standard': '16',        // Gildan 5000
+  'T-shirt|Premium': '3227',       // Next Level 6210
+  'T-shirt|Ultra': '1822',         // Comfort Colors 1717
+  'Hoodie|Standard': '395',        // Gildan 18500
+  'Hoodie|Premium': '10163',       // Next Level 9302 Malibu
+  'Hoodie|Ultra': '3946',          // Comfort Colors 1567
+  'Sweatshirt|Standard': '372',    // Gildan 18000
+  'Sweatshirt|Premium': '10142',   // Next Level 9002 Malibu Crew
+  'Sweatshirt|Ultra': '1610',      // Comfort Colors 1566
+  'Long-sleeve|Standard': '135',   // Gildan 2400
+  'Long-sleeve|Premium': '3215',   // Next Level 3601
+  'Long-sleeve|Ultra': '2217',     // Comfort Colors 6014
+  'Tank|Standard': '2766',         // Bella+Canvas 3480
+  'Tank|Premium': '3216',          // Next Level 3633
+  'Tank|Ultra': '2437',            // Comfort Colors 9360
 };
 
 router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) => {
