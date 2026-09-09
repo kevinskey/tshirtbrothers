@@ -910,6 +910,39 @@ export default function AdminPage() {
     sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
   }>(null);
   const [costError, setCostError] = useState('');
+  const [invCostStyleQ, setInvCostStyleQ] = useState('');
+  const [invCostColor, setInvCostColor] = useState('');
+  const [invCostLoading, setInvCostLoading] = useState(false);
+  const [invCostError, setInvCostError] = useState('');
+  const [invCostData, setInvCostData] = useState<null | {
+    style: { name: string; brand: string; style_number: string };
+    sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
+  }>(null);
+
+  async function fetchInvLiveCost() {
+    if (invCostStyleQ.trim().length < 2) return;
+    setInvCostLoading(true);
+    setInvCostError('');
+    try {
+      const res = await fetch(`/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(invCostStyleQ.trim())}&color=${encodeURIComponent(invCostColor.trim())}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `lookup failed (${res.status})`);
+      setInvCostData(d);
+    } catch (e: any) {
+      setInvCostData(null);
+      setInvCostError(e?.message || 'Cost lookup failed');
+    } finally {
+      setInvCostLoading(false);
+    }
+  }
+  function invCostForSize(size: string): number | null {
+    if (!invCostData) return null;
+    const norm = (x: string) => x.toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
+    for (const [k, v] of Object.entries(invCostData.sizes)) {
+      if (norm(k) === norm(size || '')) return v.cost;
+    }
+    return null;
+  }
 
   async function fetchLiveCost(styleQ: string, color: string) {
     if (styleQ.trim().length < 2) return;
@@ -1574,7 +1607,7 @@ export default function AdminPage() {
         const total = calcInvoiceTotal();
         const draft = await createInvoiceMutation.mutateAsync({
           customer_name: invoiceForm.customer_name,
-          customer_email: invoiceForm.customer_email,
+          customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
           customer_phone: invoiceForm.customer_phone || undefined,
           customer_address: invoiceForm.customer_address || undefined,
           items: invoiceForm.items,
@@ -1606,7 +1639,7 @@ export default function AdminPage() {
     const total = calcInvoiceTotal();
     const data: CreateInvoiceData = {
       customer_name: invoiceForm.customer_name,
-      customer_email: invoiceForm.customer_email,
+      customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
       customer_phone: invoiceForm.customer_phone || undefined,
       customer_address: invoiceForm.customer_address || undefined,
       items: invoiceForm.items,
@@ -1632,7 +1665,7 @@ export default function AdminPage() {
     const total = calcInvoiceTotal();
     const data: CreateInvoiceData = {
       customer_name: invoiceForm.customer_name,
-      customer_email: invoiceForm.customer_email,
+      customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
       customer_phone: invoiceForm.customer_phone || undefined,
       customer_address: invoiceForm.customer_address || undefined,
       items: invoiceForm.items,
@@ -4480,6 +4513,49 @@ export default function AdminPage() {
                           })}
                         </tbody>
                       </table>
+                    </div>
+                    {/* Live blank cost + margin (same S&S feed as the quote modal) */}
+                    <div className="mt-3 bg-blue-50/60 border border-blue-100 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-gray-900 mb-2">Live Blank Cost (S&amp;S)</p>
+                      <div className="flex gap-2 mb-2">
+                        <input value={invCostStyleQ} onChange={(e) => setInvCostStyleQ(e.target.value)} placeholder="Style # or name (e.g. 18500)"
+                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
+                        <input value={invCostColor} onChange={(e) => setInvCostColor(e.target.value)} placeholder="Color"
+                          className="w-28 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
+                        <button type="button" onClick={() => void fetchInvLiveCost()} disabled={invCostLoading}
+                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50">
+                          {invCostLoading ? '…' : 'Fetch'}
+                        </button>
+                      </div>
+                      {invCostError && <p className="text-xs text-red-600">{invCostError}</p>}
+                      {invCostData && (() => {
+                        let blanks = 0; let margin = 0; let matched = 0; let unmatched = 0;
+                        for (const it of invoiceForm.items) {
+                          const c = invCostForSize(it.size || '');
+                          if (c == null) { if (it.size) unmatched++; continue; }
+                          matched += it.quantity;
+                          blanks += c * it.quantity;
+                          margin += (it.unit_price - c) * it.quantity;
+                        }
+                        const saleExp = Object.values(invCostData.sizes).find((v) => v.sale_expires)?.sale_expires;
+                        const soon = saleExp && (new Date(saleExp).getTime() - Date.now()) < 4 * 86400000;
+                        return (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-gray-500">{invCostData.style.brand} {invCostData.style.name} ({invCostData.style.style_number})</p>
+                            {matched > 0 ? (
+                              <div className="flex justify-between text-xs font-bold">
+                                <span>{matched} pcs matched · blanks ${blanks.toFixed(2)}</span>
+                                <span className={margin >= 0 ? 'text-green-700' : 'text-red-600'}>gross margin ${margin.toFixed(2)}</span>
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-gray-400">No line items matched by size — fill the Size column to compute margin.</p>
+                            )}
+                            {unmatched > 0 && <p className="text-[10px] text-gray-400">{unmatched} line(s) had sizes with no S&amp;S match.</p>}
+                            {saleExp && <p className={`text-[10px] ${soon ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>{soon ? '⚠ ' : ''}Sale pricing expires {saleExp}</p>}
+                            <p className="text-[10px] text-gray-400">Margin is before print/labor, computed per line from Size × Qty × (Price − cost).</p>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
                       <Plus className="w-4 h-4" /> Add Item
