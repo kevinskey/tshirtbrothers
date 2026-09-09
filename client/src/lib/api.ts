@@ -486,6 +486,13 @@ export interface Customer {
   created_at: string;
   design_count: number;
   quote_count: number;
+  // Enrichment from GET /admin/customers (2026-09-09): has this email ever
+  // actually paid, how much, and first-party site activity counts.
+  buying: boolean;
+  paid_orders: number;
+  paid_cents: number;
+  activity: Record<string, number>;
+  last_active: string | null;
 }
 
 export interface CustomerInvoiceSummary {

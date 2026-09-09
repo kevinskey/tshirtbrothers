@@ -3362,8 +3362,12 @@ export default function AdminPage() {
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Name</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Phone</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">Type</th>
+                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Spent</th>
                       <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Designs</th>
                       <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Quotes</th>
+                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap" title="Design studio opens (first-party tracking)">Studio</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">Last Active</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Joined</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Actions</th>
                     </tr>
@@ -3374,8 +3378,24 @@ export default function AdminPage() {
                         <td className="px-3 py-2 text-gray-900 font-medium"><div className="max-w-[160px] truncate" title={c.name}>{c.name}</div></td>
                         <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={c.email}>{c.email}</div></td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{c.phone || '--'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {c.buying ? (
+                            <span className="inline-block rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-bold text-green-700">Buying</span>
+                          ) : (
+                            <span className="inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-500">Non-buying</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">
+                          {c.paid_cents > 0 ? `$${(c.paid_cents / 100).toFixed(2)}` : '--'}
+                        </td>
                         <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{c.design_count}</td>
                         <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{c.quote_count}</td>
+                        <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">
+                          {c.activity?.design_studio_open || 0}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                          {c.last_active ? new Date(c.last_active).toLocaleDateString() : '--'}
+                        </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(c.created_at).toLocaleDateString()}
                         </td>

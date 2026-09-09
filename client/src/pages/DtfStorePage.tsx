@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
+import { logActivityOnce } from '@/lib/activity';
 import Seo from '@/components/Seo';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -139,6 +140,7 @@ function probeImageDimensions(file: File): Promise<{ width: number; height: numb
 /* ────────────────────────────────────────────────────────────────────── */
 
 export default function DtfStorePage() {
+  useEffect(() => { logActivityOnce('dtf_store_open'); }, []);
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const fromBuilder = searchParams.get('from') === 'builder';

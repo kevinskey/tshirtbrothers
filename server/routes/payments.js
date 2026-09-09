@@ -12,6 +12,7 @@ import {
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import { recordActivity } from './events.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
@@ -151,6 +152,12 @@ async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, metho
   );
 
   const row = updated.rows[0];
+
+  recordActivity({
+    event: 'order_paid',
+    email: row.customer_email,
+    data: { kind: 'invoice', invoice_id: row.id, amount: Number(amount), status: newStatus },
+  });
 
   // Send the receipt only when the invoice flips to fully paid, so partial
   // (deposit) payments don't trigger a "thanks, paid in full" email.
@@ -745,6 +752,13 @@ async function handleCheckoutSessionCompleted(session) {
          WHERE id = $1 AND status = 'pending_payment' RETURNING *`,
         [gangSheetOrderId, session.customer_details?.email || null, session.customer_details?.name || null],
       );
+      if (rows[0]) {
+        recordActivity({
+          event: 'order_paid',
+          email: rows[0].customer_email,
+          data: { kind: 'gang_sheet', order_id: rows[0].id, cents: rows[0].price_cents + rows[0].shipping_cents },
+        });
+      }
       if (!rows[0]) {
         // Zero rows means either (a) this is a webhook replay of an event
         // we already processed — the order exists, is past pending_payment,

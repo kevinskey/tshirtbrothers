@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
+import { logActivity, logActivityOnce, rememberEmail } from '@/lib/activity';
 import {
   ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle, Mail, CreditCard,
   CalendarDays, Sparkles,
@@ -53,6 +54,7 @@ const QUALITY_TIERS = [
 
 const ORANGE = '#f97316';
 
+
 type Settings = {
   rush_surcharge_pct: number;
   same_day_rush_pct?: number;
@@ -81,6 +83,7 @@ const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 
 type Step = typeof STEPS[number];
 
 export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
+  useEffect(() => { logActivityOnce('quote_wizard_open'); }, []);
   const es = lang === 'es';
   // Tiny inline translator — keeps every string next to its usage.
   const tr = (en: string, esStr: string) => (es ? esStr : en);
@@ -334,6 +337,10 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      // Tie this browser's future activity to the person who just told us
+      // who they are. quote_submitted itself is logged server-side.
+      rememberEmail(email.trim());
+      logActivity('quote_wizard_submitted', { quote_id: data.id, mode });
       if (mode === 'draft') {
         setDraftDone(data.id);
         return;

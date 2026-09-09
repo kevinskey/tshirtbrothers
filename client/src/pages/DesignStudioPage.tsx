@@ -14,6 +14,7 @@ import {
 import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
 import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
+import { logActivityOnce } from '@/lib/activity';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
 
@@ -429,6 +430,7 @@ const DEFAULT_PRODUCT_SSID = '32';
 const STORE_ADMIN_STORAGE_KEY = (slug: string) => `tsb_gsa_${slug}`;
 
 export default function DesignStudioPage() {
+  useEffect(() => { logActivityOnce('design_studio_open'); }, []);
   const [searchParams] = useSearchParams();
   // Franchise-store whitelabel context. When ?store=<slug> is on the URL
   // (e.g., launched from a GleeWorld tenant's admin), swap the logo /

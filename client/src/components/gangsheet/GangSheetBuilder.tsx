@@ -7,6 +7,7 @@ import {
   DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send
 } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
+import { logActivityOnce } from '@/lib/activity';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
   DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
@@ -155,6 +156,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
+  useEffect(() => {
+    if (mode === 'customer') logActivityOnce('gang_sheet_builder_open');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // loading tracks a loadSheet() in flight. It must NOT gate the whole
   // render (see below): the canvas has to mount before loadSheet can
   // populate it, so starting `true` here deadlocked deep-linked /:id

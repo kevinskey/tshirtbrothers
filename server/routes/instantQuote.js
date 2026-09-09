@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Stripe from 'stripe';
 import pool from '../db.js';
 import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services/email.js';
+import { recordActivity } from './events.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = Router();
@@ -486,6 +487,11 @@ router.post('/save', async (req, res, next) => {
       ],
     );
     const quote = headerRes.rows[0];
+    recordActivity({
+      event: 'quote_submitted',
+      email: quote.customer_email,
+      data: { quote_id: quote.id, total: grandTotal, quantity: grandQuantity },
+    });
 
     for (const r of itemRows) {
       if (r.kind === 'custom') {

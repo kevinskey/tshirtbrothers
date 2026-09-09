@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import { logActivityOnce } from '@/lib/activity';
 import {
   Shirt,
   Palette,
@@ -338,6 +339,7 @@ function newItem(initial?: Partial<Inputs>, kind: ItemKind = 'unset'): ItemDraft
 /* ────────────────────────────────────────────────────────────────────── */
 
 export default function InstantQuotePage() {
+  useEffect(() => { logActivityOnce('quote_calculator_open'); }, []);
   // ?service=dtf preselects the print method on the FIRST item only — so a
   // customer landing from "Get a DTF Quote" doesn't have to re-pick.
   const initialInputs = useMemo<Inputs>(() => {

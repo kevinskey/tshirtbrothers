@@ -453,7 +453,53 @@ router.get('/customers', async (req, res, next) => {
       guestParams,
     );
 
-    res.json([...rows, ...guests.rows]);
+    // Enrich every row (accounts + guests) with buying status and
+    // first-party activity, keyed by lowercased email. "Buying" = money has
+    // actually moved: a paid/partial invoice or a paid gang-sheet order.
+    const spend = await pool.query(
+      `SELECT lower(email) AS email,
+              SUM(cents)::bigint AS paid_cents,
+              COUNT(*)::int AS paid_orders
+         FROM (
+           SELECT customer_email AS email, ROUND(amount_paid * 100)::bigint AS cents
+             FROM invoices
+            WHERE amount_paid > 0 AND customer_email IS NOT NULL AND customer_email <> ''
+           UNION ALL
+           SELECT customer_email, (price_cents + COALESCE(shipping_cents, 0))::bigint
+             FROM gang_sheet_orders
+            WHERE paid_at IS NOT NULL AND customer_email IS NOT NULL AND customer_email <> ''
+         ) p
+        GROUP BY 1`,
+    );
+    const activity = await pool.query(
+      `SELECT lower(email) AS email, event, COUNT(*)::int AS n, MAX(created_at) AS last_at
+         FROM activity_events
+        WHERE email IS NOT NULL
+        GROUP BY 1, 2`,
+    );
+    const spendByEmail = new Map(spend.rows.map((r) => [r.email, r]));
+    const activityByEmail = new Map();
+    for (const r of activity.rows) {
+      const cur = activityByEmail.get(r.email) || { events: {}, last_active: null };
+      cur.events[r.event] = r.n;
+      if (!cur.last_active || r.last_at > cur.last_active) cur.last_active = r.last_at;
+      activityByEmail.set(r.email, cur);
+    }
+    const enrich = (row) => {
+      const key = (row.email || '').toLowerCase();
+      const s = spendByEmail.get(key);
+      const a = activityByEmail.get(key);
+      return {
+        ...row,
+        buying: !!s,
+        paid_orders: s ? s.paid_orders : 0,
+        paid_cents: s ? Number(s.paid_cents) : 0,
+        activity: a ? a.events : {},
+        last_active: a ? a.last_active : null,
+      };
+    };
+
+    res.json([...rows.map(enrich), ...guests.rows.map(enrich)]);
   } catch (err) {
     next(err);
   }

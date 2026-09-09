@@ -10,6 +10,7 @@ import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
 import authRouter from './routes/auth.js';
+import eventsRouter from './routes/events.js';
 import adminRouter from './routes/admin.js';
 import designRouter from './routes/design.js';
 import designsRouter from './routes/designs.js';
@@ -69,6 +70,7 @@ app.use('/api/quotes', quotesRouter);
 app.use('/api/quote', instantQuoteRouter); // Instant Quote Calculator (singular path, distinct from /api/quotes)
 app.use('/api/admin/instant-quote-pricing', instantQuotePricingAdminRouter); // Admin: edit pricing tables
 app.use('/api/auth', authRouter);
+app.use('/api/events', eventsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/design', designRouter);
 app.use('/api/designs', designsRouter);
