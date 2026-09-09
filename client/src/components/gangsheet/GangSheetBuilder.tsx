@@ -606,6 +606,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     resolveOverlaps();
     checkFit();
     recalculateSheet();
+    // Restored a previous bitmap — re-measure its visible-art bounds.
+    void measureAlphaTrim(prev.imageUrl).then((trim) => {
+      setDesigns((prevDesigns) => prevDesigns.map((x) => (x.id === designId ? { ...x, trim } : x)));
+    });
   }
 
   async function rotateDesign(designId: string) {
@@ -872,6 +876,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     resolveOverlaps();
     checkFit();
     recalculateSheet();
+    // New bitmap (rotate/BG-removal/upscale) — re-measure visible bounds.
+    void measureAlphaTrim(dataUrl).then((trim) => {
+      setDesigns((prevD) => prevD.map((x) => (x.id === designId ? { ...x, trim } : x)));
+    });
   }
 
   async function handleRemoveBg(designId: string) {
@@ -1045,13 +1053,71 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // ─── Auto Layout ────────────────────────────────────────────────────────
 
-  function autoLayout() {
+  async function autoLayout() {
     const canvas = fabricRef.current;
-    if (!canvas || designs.length === 0) return;
+    if (!canvas || designs.length === 0 || aiBusyId) return;
 
+    // Orientation pass: would turning portrait designs landscape shorten
+    // the sheet? Pack both ways; if landscape wins, bake a 90° turn into
+    // those designs' bitmaps (house style — no live fabric rotation, so
+    // exports and the server compose contract stay rotation: 0).
+    const usable = SHEET_WIDTH_PX - 2 * EDGE_PADDING_PX;
+    const baseDims: Record<string, ReturnType<typeof packDims>> = {};
+    for (const d of designs) baseDims[d.id] = packDims(d);
+    const wantsSwap = (d: DesignItem) => {
+      const dm = baseDims[d.id]!;
+      return dm.h > dm.w && dm.h <= usable;
+    };
+    const packWith = (swapIds: Set<string>) => packDesigns(designs.map((d) => {
+      const dm = baseDims[d.id]!;
+      const swap = swapIds.has(d.id);
+      return { id: d.id, width: swap ? dm.h : dm.w, height: swap ? dm.w : dm.h, quantity: d.quantity };
+    }));
+    const swapCandidates = new Set(designs.filter(wantsSwap).map((d) => d.id));
+    let rotated = new Set<string>();
+    if (swapCandidates.size > 0) {
+      const asIs = packWith(new Set());
+      const landscape = packWith(swapCandidates);
+      if (landscape.totalHeight < asIs.totalHeight - 1) rotated = swapCandidates;
+    }
+    if (rotated.size > 0) {
+      setAiBusyId('auto-layout');
+      try {
+        for (const id of rotated) {
+          const d = designs.find((x) => x.id === id)!;
+          // eslint-disable-next-line no-await-in-loop
+          const turned = await rotateImage90(d.imageUrl);
+          // eslint-disable-next-line no-await-in-loop
+          await applyProcessedImage(id, turned, true);
+        }
+      } catch (err) {
+        console.error('[auto-layout] rotate pass failed, packing as-is:', err);
+        rotated = new Set();
+      } finally {
+        setAiBusyId(null);
+      }
+    }
+
+    // Final dims: rotateImage90 is a clockwise quarter-turn, so trimmed
+    // size swaps and the trim offsets rotate with it. Computing locally
+    // avoids racing the async state updates above.
     const dimsById: Record<string, ReturnType<typeof packDims>> = {};
     const items: PackItem[] = designs.map(d => {
-      dimsById[d.id] = packDims(d);
+      if (rotated.has(d.id)) {
+        const t = d.trim;
+        const rt = t ? { x: 1 - (t.y + t.h), y: t.x, w: t.h, h: t.w } : undefined;
+        const rotD: DesignItem = {
+          ...d,
+          naturalWidth: d.naturalHeight,
+          naturalHeight: d.naturalWidth,
+          printWidthInches: d.printHeightInches,
+          printHeightInches: d.printWidthInches,
+          trim: rt,
+        };
+        dimsById[d.id] = packDims(rotD);
+      } else {
+        dimsById[d.id] = packDims(d);
+      }
       return {
         id: d.id,
         width: dimsById[d.id]!.w,
