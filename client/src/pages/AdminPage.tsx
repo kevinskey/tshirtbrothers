@@ -3360,7 +3360,7 @@ export default function AdminPage() {
                               onClick={() => {
                                 setCustomerForm({
                                   name: c.name || '',
-                                  email: c.email || '',
+                                  email: (c.email || '').replace(/^mailto:/i, '').trim(),
                                   phone: c.phone || '',
                                   address_street: c.address_street || '',
                                   address_city: c.address_city || '',
@@ -3452,7 +3452,7 @@ export default function AdminPage() {
                           onClick={() => {
                             setCustomerForm({
                               name: customerDetail.name || '',
-                              email: customerDetail.email || '',
+                              email: (customerDetail.email || '').replace(/^mailto:/i, '').trim(),
                               phone: customerDetail.phone || '',
                               address_street: customerDetail.address_street || '',
                               address_city: customerDetail.address_city || '',
@@ -3634,7 +3634,9 @@ export default function AdminPage() {
                         const r = await fetch(url, {
                           method,
                           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-                          body: JSON.stringify(customerForm),
+                          // Strip "mailto:" paste artifacts so the browser
+                          // email validator and the server both get a clean address.
+                          body: JSON.stringify({ ...customerForm, email: customerForm.email.replace(/^mailto:/i, '').trim() }),
                         });
                         if (r.ok) {
                           queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] });

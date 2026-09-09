@@ -313,13 +313,38 @@ router.put('/customers/:id', async (req, res, next) => {
   try {
     const {
       name,
-      email,
       phone,
       address_street,
       address_city,
       address_state,
       address_zip,
     } = req.body || {};
+    // Emails arrive pasted from mail clients as "mailto:x@y.com" — strip it.
+    const email = req.body?.email ? String(req.body.email).replace(/^mailto:/i, '').trim() : req.body?.email;
+
+    // Guest customers (no account) live only on their quotes/invoices; their
+    // list id is "guest:<email>". Update those records directly.
+    if (String(req.params.id).startsWith('guest:')) {
+      const gEmail = String(req.params.id).slice(6).toLowerCase();
+      await pool.query(
+        `UPDATE quotes SET customer_name = COALESCE($1, customer_name),
+           customer_phone = COALESCE($2, customer_phone),
+           customer_email = COALESCE($3, customer_email)
+         WHERE LOWER(customer_email) = $4`,
+        [name || null, phone || null, email || null, gEmail],
+      );
+      await pool.query(
+        `UPDATE invoices SET customer_name = COALESCE($1, customer_name),
+           customer_phone = COALESCE($2, customer_phone),
+           customer_email = COALESCE($3, customer_email)
+         WHERE LOWER(customer_email) = $4`,
+        [name || null, phone || null, email || null, gEmail],
+      );
+      return res.json({
+        id: `guest:${(email || gEmail).toLowerCase()}`,
+        name: name || null, email: email || gEmail, phone: phone || null, guest: true,
+      });
+    }
 
     // If email is being changed, ensure it's not already in use
     if (email) {
