@@ -35,6 +35,8 @@ export default function InvoiceViewPage() {
   const { id } = useParams<{ id: string }>();
   const [inv, setInv] = useState<PublicInvoice | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (k: string) => setOpenGroups((p) => ({ ...p, [k]: !p[k] }));
 
   useEffect(() => {
     if (!id) return;
@@ -66,6 +68,23 @@ export default function InvoiceViewPage() {
 
   const items = Array.isArray(inv.items) ? inv.items : (() => { try { return JSON.parse(String(inv.items || '[]')); } catch { return []; } })();
   const isPaid = inv.status === 'paid' || Number(inv.amount_due) <= 0;
+
+  // Group identical design+color runs so a 27-row size breakdown reads as a
+  // handful of summary lines with expandable size detail. Groups of one
+  // render as plain rows.
+  type Item = { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string };
+  const groups: { key: string; description: string; color: string; items: Item[]; qty: number; total: number }[] = [];
+  for (const it of items as Item[]) {
+    const key = `${it.description || ''}|${it.color || ''}`;
+    let g = groups.find((x) => x.key === key);
+    if (!g) {
+      g = { key, description: it.description || '—', color: it.color || '', items: [], qty: 0, total: 0 };
+      groups.push(g);
+    }
+    g.items.push(it);
+    g.qty += Number(it.quantity) || 1;
+    g.total += Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unit_price) || 0);
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 print:bg-white print:p-0">
@@ -147,21 +166,48 @@ export default function InvoiceViewPage() {
           </div>
         )}
 
-        {/* Items — cards on phones, table from sm up */}
+        {/* Items — grouped by design+color; size detail expands on tap and
+            is always shown when printing. Cards on phones, table from sm. */}
         <div className="sm:hidden mb-8 border-t border-gray-200 divide-y divide-gray-100">
-          {items.map((it: { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }, i: number) => (
-            <div key={i} className="py-3">
-              <div className="flex justify-between gap-3">
-                <p className="text-sm font-medium text-gray-900 leading-snug">{it.description || '—'}</p>
-                <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">${fmt(it.total)}</p>
+          {groups.map((g) => {
+            const single = g.items.length === 1;
+            const it0 = g.items[0]!;
+            const open = !!openGroups[g.key];
+            return (
+              <div key={g.key} className="py-3">
+                <button
+                  type="button"
+                  onClick={() => !single && toggleGroup(g.key)}
+                  className="w-full text-left"
+                  disabled={single}
+                >
+                  <div className="flex justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-900 leading-snug">
+                      {!single && <span className="text-gray-400 mr-1 print:hidden">{open ? '▾' : '▸'}</span>}
+                      {g.description}
+                    </p>
+                    <p className="text-sm font-semibold text-gray-900 whitespace-nowrap">${fmt(g.total)}</p>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {g.color && `${g.color} · `}
+                    {single
+                      ? `${it0.size ? `${it0.size} · ` : ''}${it0.quantity || 1} × $${fmt(it0.unit_price)}`
+                      : `${g.qty} pieces · ${g.items.length} sizes${open ? '' : ' — tap for detail'}`}
+                  </p>
+                </button>
+                {!single && (
+                  <div className={`${open ? 'block' : 'hidden'} print:block mt-2 ml-3 border-l-2 border-gray-100 pl-3 space-y-1`}>
+                    {g.items.map((it, j) => (
+                      <p key={j} className="text-xs text-gray-500 flex justify-between">
+                        <span>{it.size || '—'} · {it.quantity || 1} × ${fmt(it.unit_price)}</span>
+                        <span>${fmt(it.total)}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-              <p className="mt-1 text-xs text-gray-500">
-                {[it.color, it.size].filter(Boolean).join(' · ')}
-                {(it.color || it.size) ? ' · ' : ''}
-                {it.quantity || 1} × ${fmt(it.unit_price)}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <table className="hidden sm:table w-full text-sm mb-8 border-t border-b border-gray-200">
           <thead>
@@ -175,16 +221,44 @@ export default function InvoiceViewPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map((it: { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }, i: number) => (
-              <tr key={i}>
-                <td className="py-3 text-gray-900">{it.description || '—'}</td>
-                <td className="py-3 text-gray-600">{it.color || '—'}</td>
-                <td className="py-3 text-gray-600">{it.size || '—'}</td>
-                <td className="py-3 text-center text-gray-600">{it.quantity || 1}</td>
-                <td className="py-3 text-right text-gray-600">${fmt(it.unit_price)}</td>
-                <td className="py-3 text-right font-medium text-gray-900">${fmt(it.total)}</td>
-              </tr>
-            ))}
+            {groups.map((g) => {
+              const single = g.items.length === 1;
+              const it0 = g.items[0]!;
+              const open = !!openGroups[g.key];
+              if (single) {
+                return (
+                  <tr key={g.key}>
+                    <td className="py-3 text-gray-900">{g.description}</td>
+                    <td className="py-3 text-gray-600">{g.color || '—'}</td>
+                    <td className="py-3 text-gray-600">{it0.size || '—'}</td>
+                    <td className="py-3 text-center text-gray-600">{it0.quantity || 1}</td>
+                    <td className="py-3 text-right text-gray-600">${fmt(it0.unit_price)}</td>
+                    <td className="py-3 text-right font-medium text-gray-900">${fmt(it0.total)}</td>
+                  </tr>
+                );
+              }
+              return [
+                <tr key={g.key} onClick={() => toggleGroup(g.key)} className="cursor-pointer hover:bg-gray-50 print:hover:bg-transparent">
+                  <td className="py-3 text-gray-900 font-medium">
+                    <span className="text-gray-400 mr-1 print:hidden">{open ? '▾' : '▸'}</span>{g.description}
+                  </td>
+                  <td className="py-3 text-gray-600">{g.color || '—'}</td>
+                  <td className="py-3 text-gray-500 text-xs">{g.items.length} sizes</td>
+                  <td className="py-3 text-center text-gray-600">{g.qty}</td>
+                  <td className="py-3 text-right text-gray-400 text-xs print:hidden">{open ? '' : 'view'}</td>
+                  <td className="py-3 text-right font-medium text-gray-900">${fmt(g.total)}</td>
+                </tr>,
+                ...g.items.map((it, j) => (
+                  <tr key={`${g.key}-${j}`} className={`${open ? '' : 'hidden'} print:table-row bg-gray-50/60`}>
+                    <td className="py-1.5 pl-6 text-xs text-gray-400" colSpan={2}>↳</td>
+                    <td className="py-1.5 text-xs text-gray-600">{it.size || '—'}</td>
+                    <td className="py-1.5 text-center text-xs text-gray-600">{it.quantity || 1}</td>
+                    <td className="py-1.5 text-right text-xs text-gray-600">${fmt(it.unit_price)}</td>
+                    <td className="py-1.5 text-right text-xs text-gray-600">${fmt(it.total)}</td>
+                  </tr>
+                )),
+              ];
+            })}
           </tbody>
         </table>
 
