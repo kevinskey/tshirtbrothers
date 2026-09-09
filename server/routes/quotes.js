@@ -715,20 +715,66 @@ router.post('/accept/:id', async (req, res, next) => {
 // expirations.
 const liveCostCache = new Map(); // ss_id -> { at, rows }
 
+// The quote-engine tier defaults, mapped to concrete catalog styles so the
+// cost panel can resolve garment+tier quotes with no picked product.
+// (Tees per the /compare tiers; fleece/long-sleeve are the Standard house
+// blanks. Missing combos fall through to text search.)
+const TIER_STYLE_SSIDS = {
+  'T-shirt|Standard': '16',      // Gildan 5000
+  'T-shirt|Premium': '3227',     // Next Level 6210
+  'T-shirt|Ultra': '1822',       // Comfort Colors 1717
+  'Hoodie|Standard': '395',      // Gildan 18500
+  'Sweatshirt|Standard': '372',  // Gildan 18000
+  'Long-sleeve|Standard': '135', // Gildan 2400
+  'Tank|Standard': '2766',       // Bella+Canvas 3480
+};
+
 router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) => {
   try {
     const q = String(req.query.styleQ || '').trim();
-    const color = String(req.query.color || '').trim().toLowerCase();
-    if (q.length < 2) return res.status(400).json({ error: 'styleQ required' });
+    const quoteId = req.query.quote_id ? Number(req.query.quote_id) : null;
+    let color = String(req.query.color || '').trim().toLowerCase();
 
-    const prod = await pool.query(
-      `SELECT ss_id, name, brand, style_number FROM products
-        WHERE style_number ILIKE $1 OR name ILIKE $2 OR (brand || ' ' || name) ILIKE $2
-        ORDER BY (style_number ILIKE $1) DESC, brand, name LIMIT 1`,
-      [q, `%${q}%`],
-    );
-    if (prod.rows.length === 0) return res.status(404).json({ error: `No catalog match for "${q}"` });
+    let resolved = null; // { ss_id?, searchText?, from }
+    if (!q && quoteId) {
+      const qr = await pool.query(
+        'SELECT product_id, product_name, color, inputs_json FROM quotes WHERE id = $1', [quoteId]);
+      if (qr.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+      const quote = qr.rows[0];
+      if (!color && quote.color) color = String(quote.color).trim().toLowerCase();
+      const ij = typeof quote.inputs_json === 'string' ? JSON.parse(quote.inputs_json || '{}') : (quote.inputs_json || {});
+      const firstItem = Array.isArray(ij.items) ? ij.items[0] : null;
+      if (quote.product_id) {
+        const pr = await pool.query('SELECT ss_id FROM products WHERE id = $1', [quote.product_id]);
+        if (pr.rows.length) resolved = { ss_id: pr.rows[0].ss_id, from: 'quote product' };
+      }
+      if (!resolved && firstItem?.picked_product?.ss_id) {
+        resolved = { ss_id: String(firstItem.picked_product.ss_id), from: 'picked product' };
+      }
+      if (!resolved && firstItem?.inputs?.garmentName) {
+        const key = `${firstItem.inputs.garmentName}|${firstItem.inputs.qualityTier || 'Standard'}`;
+        if (TIER_STYLE_SSIDS[key]) resolved = { ss_id: TIER_STYLE_SSIDS[key], from: `${key.replace('|', ' · ')} default` };
+      }
+      if (!resolved && quote.product_name) {
+        resolved = { searchText: quote.product_name, from: 'name search' };
+      }
+      if (!resolved) return res.status(404).json({ error: 'Could not resolve a style from this quote — enter one manually.' });
+    }
+
+    const searchText = q || resolved?.searchText || '';
+    if (!resolved?.ss_id && searchText.length < 2) return res.status(400).json({ error: 'styleQ or quote_id required' });
+
+    const prod = resolved?.ss_id
+      ? await pool.query('SELECT ss_id, name, brand, style_number FROM products WHERE ss_id = $1 LIMIT 1', [resolved.ss_id])
+      : await pool.query(
+          `SELECT ss_id, name, brand, style_number FROM products
+            WHERE style_number ILIKE $1 OR name ILIKE $2 OR (brand || ' ' || name) ILIKE $2
+            ORDER BY (style_number ILIKE $1) DESC, brand, name LIMIT 1`,
+          [searchText, `%${searchText}%`],
+        );
+    if (prod.rows.length === 0) return res.status(404).json({ error: `No catalog match for "${searchText || resolved?.ss_id}"` });
     const { ss_id, name, brand, style_number } = prod.rows[0];
+    const resolvedFrom = q ? 'manual' : (resolved?.from || 'search');
 
     let cached = liveCostCache.get(ss_id);
     if (!cached || Date.now() - cached.at > 10 * 60 * 1000) {
@@ -754,7 +800,7 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
         };
       }
     }
-    res.json({ style: { ss_id, name, brand, style_number }, matched_color: color || null, colors, sizes });
+    res.json({ style: { ss_id, name, brand, style_number }, resolved_from: resolvedFrom, matched_color: color || null, colors, sizes });
   } catch (err) { next(err); }
 });
 
@@ -881,16 +927,25 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
 // Used by the "Fix in Art Library" workflow: admin opens a customer's
 // uploaded graphic in DesignWorkspace, vectorizes / removes BG / cleans
 // it up, then saves the cleaned version back to the quote.
+// Body accepts design_url (replace the primary design) and/or
+// add_extra_urls (append to extra_design_urls) — the admin "upload user
+// graphics onto a quote" flow sends freshly-uploaded Spaces URLs here.
 router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { design_url } = req.body;
-    if (!design_url || typeof design_url !== 'string') {
-      return res.status(400).json({ error: 'design_url is required' });
+    const { design_url, add_extra_urls } = req.body;
+    const extras = Array.isArray(add_extra_urls)
+      ? add_extra_urls.filter((u) => typeof u === 'string' && /^https:\/\//.test(u)).slice(0, 20)
+      : [];
+    if ((!design_url || typeof design_url !== 'string') && extras.length === 0) {
+      return res.status(400).json({ error: 'design_url or add_extra_urls is required' });
     }
     const result = await pool.query(
-      'UPDATE quotes SET design_url = $1 WHERE id = $2 RETURNING id, design_url',
-      [design_url, id],
+      `UPDATE quotes SET
+         design_url = COALESCE($1, design_url),
+         extra_design_urls = COALESCE(extra_design_urls, '[]'::jsonb) || $2::jsonb
+       WHERE id = $3 RETURNING id, design_url, extra_design_urls`,
+      [typeof design_url === 'string' ? design_url : null, JSON.stringify(extras), id],
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     res.json(result.rows[0]);

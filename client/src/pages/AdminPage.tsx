@@ -910,6 +910,7 @@ export default function AdminPage() {
   const [costLoading, setCostLoading] = useState(false);
   const [costData, setCostData] = useState<null | {
     style: { name: string; brand: string; style_number: string };
+    resolved_from?: string;
     colors: string[];
     sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
   }>(null);
@@ -948,12 +949,17 @@ export default function AdminPage() {
     return null;
   }
 
-  async function fetchLiveCost(styleQ: string, color: string) {
-    if (styleQ.trim().length < 2) return;
+  // styleQ mode = manual override; quoteId mode = server resolves the style
+  // from the quote itself (linked product -> picked style -> tier default).
+  async function fetchLiveCost(styleQ: string, color: string, quoteId?: string | number) {
+    if (!quoteId && styleQ.trim().length < 2) return;
     setCostLoading(true);
     setCostError('');
     try {
-      const res = await fetch(`/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(styleQ.trim())}&color=${encodeURIComponent(color.trim())}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
+      const params = quoteId && !styleQ.trim()
+        ? `quote_id=${quoteId}&color=${encodeURIComponent(color.trim())}`
+        : `styleQ=${encodeURIComponent(styleQ.trim())}&color=${encodeURIComponent(color.trim())}`;
+      const res = await fetch(`/api/quotes/admin/live-cost?${params}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || `lookup failed (${res.status})`);
       setCostData(d);
@@ -1361,6 +1367,54 @@ export default function AdminPage() {
   // after the first — a four-file quote put one file in the library and gave
   // no hint the others existed. For picking individual files, the Art column's
   // thumbnail opens QuoteFilesModal.
+  // Upload graphics from the admin's computer straight onto a quote: each
+  // file goes to Spaces via /api/quotes/upload-design, then the quote's
+  // design_url (if empty) / extra_design_urls are patched to include them.
+  const [uploadingQuoteGraphic, setUploadingQuoteGraphic] = useState(false);
+  async function uploadQuoteGraphics(q: Quote, files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploadingQuoteGraphic(true);
+    try {
+      const urls: string[] = [];
+      for (const f of Array.from(files)) {
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result as string);
+          r.onerror = () => reject(new Error(`Could not read ${f.name}`));
+          r.readAsDataURL(f);
+        });
+        const resp = await fetch('/api/quotes/upload-design', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: dataUrl, filename: f.name, customerEmail: q.customer_email || 'admin-upload' }),
+        });
+        const d = await resp.json().catch(() => ({}));
+        if (!resp.ok || !d.url) throw new Error(d.error || `Upload failed for ${f.name}`);
+        urls.push(d.url);
+      }
+      const body = q.design_url
+        ? { add_extra_urls: urls }
+        : { design_url: urls[0], add_extra_urls: urls.slice(1) };
+      const patch = await fetch(`/api/quotes/admin/${q.id}/design-url`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify(body),
+      });
+      const pd = await patch.json().catch(() => ({}));
+      if (!patch.ok) throw new Error(pd.error || 'Could not attach graphics to the quote');
+      // Refresh the open drawer + list so the new art shows immediately.
+      setDetailQuote((prev) => (prev && 'id' in prev && prev.id === q.id
+        ? { ...prev, design_url: pd.design_url, extra_design_urls: pd.extra_design_urls }
+        : prev));
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      toast(`${urls.length} graphic${urls.length === 1 ? '' : 's'} added to quote #${q.id}`, 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Upload failed', 'error');
+    } finally {
+      setUploadingQuoteGraphic(false);
+    }
+  }
+
   async function sendQuoteToArtLibrary(q: Quote) {
     const urls = quoteArtwork(q);
     if (urls.length === 0) { toast('No graphic on this quote', 'error'); return; }
@@ -2167,11 +2221,9 @@ export default function AdminPage() {
     setPriceTaxExempt(false);
     setCostData(null);
     setCostError('');
-    const styleGuess = quote.product_name || '';
-    const colorGuess = quote.color || '';
-    setCostStyleQ(styleGuess);
-    setCostColor(colorGuess);
-    if (styleGuess.trim().length >= 2) void fetchLiveCost(styleGuess, colorGuess);
+    setCostStyleQ('');
+    setCostColor(quote.color || '');
+    void fetchLiveCost('', quote.color || '', quote.id);
     setPriceMessage('');
     // Seed per-size markups from line items (including item.unit_price when
     // available, so the admin starts from what the customer was shown).
@@ -2398,7 +2450,7 @@ export default function AdminPage() {
                 key={item.key}
                 onClick={() => { setActiveSection(item.key as Section); setOpenNavGroup(null); }}
                 className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  activeSection === item.key ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  activeSection === item.key ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                 }`}
               >
                 {item.label}
@@ -2411,12 +2463,12 @@ export default function AdminPage() {
               <button
                 onClick={() => setOpenNavGroup(openNavGroup === group.label ? null : group.label)}
                 className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                  groupActive ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  groupActive ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                 }`}
               >
                 {group.label}
                 {badgeCount > 0 && (
-                  <span className="ml-0.5 rounded-full bg-white px-1.5 text-[10px] font-bold text-red-600">{badgeCount}</span>
+                  <span className="ml-0.5 rounded-full bg-white px-1.5 text-[10px] font-bold text-orange-600">{badgeCount}</span>
                 )}
                 <ChevronDown className={`h-3 w-3 transition-transform ${openNavGroup === group.label ? 'rotate-180' : ''}`} />
               </button>
@@ -2444,13 +2496,13 @@ export default function AdminPage() {
                         key={key}
                         onClick={() => { setActiveSection(key as Section); setOpenNavGroup(null); }}
                         className={`flex w-full items-center gap-3 px-4 py-2 text-sm font-medium ${
-                          activeSection === key ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                          activeSection === key ? 'bg-orange-500 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                         }`}
                       >
                         <Icon className="h-4 w-4" />
                         <span className="flex-1 text-left">{label}</span>
                         {itemBadge > 0 && (
-                          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">{itemBadge}</span>
+                          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white">{itemBadge}</span>
                         )}
                       </button>
                     );
@@ -6862,6 +6914,12 @@ export default function AdminPage() {
                           Download
                         </button>
                       </div>
+                      <label className={`w-full mt-2 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1 cursor-pointer ${uploadingQuoteGraphic ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingQuoteGraphic ? 'Uploading…' : 'Upload graphics'}
+                        <input type="file" accept="image/*" multiple className="hidden"
+                          onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
+                      </label>
                       <button
                         onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full mt-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
@@ -6875,6 +6933,12 @@ export default function AdminPage() {
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
                       <p className="text-sm text-gray-500 italic mb-2">No design on this quote yet.</p>
+                      <label className={`w-full mb-2 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1 cursor-pointer ${uploadingQuoteGraphic ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingQuoteGraphic ? 'Uploading…' : 'Upload graphics'}
+                        <input type="file" accept="image/*" multiple className="hidden"
+                          onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
+                      </label>
                       <button
                         onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
@@ -7680,7 +7744,12 @@ export default function AdminPage() {
                       });
                       return (
                         <div className="space-y-1">
-                          <p className="text-[11px] text-gray-500">{costData.style.brand} {costData.style.name} ({costData.style.style_number})</p>
+                          <p className="text-[11px] text-gray-500">
+                            {costData.style.brand} {costData.style.name} ({costData.style.style_number})
+                            {costData.resolved_from && costData.resolved_from !== 'manual' && (
+                              <span className="text-blue-600"> · from {costData.resolved_from}</span>
+                            )}
+                          </p>
                           {rows}
                           {unmatched.length > 0 && <p className="text-[10px] text-gray-400">No S&amp;S size match for: {unmatched.join(', ')}</p>}
                           {priced > 0 && (
