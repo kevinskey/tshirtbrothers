@@ -40,6 +40,67 @@ interface DesignItem {
   dpi: number;
   rotation?: number; // degrees, 0/90/180/270
   history?: DesignSnapshot[]; // stack of previous states for undo
+  // Visible-art bounds as fractions of the natural image (alpha trim).
+  // Many customer PNGs carry fat transparent margins; packing the visible
+  // art instead of the file rectangle is what keeps sheets tight.
+  trim?: { x: number; y: number; w: number; h: number };
+}
+
+// Measure the opaque bounding box of an image (fractions of natural size).
+// Samples at <=512px for speed; falls back to the full rect on any failure
+// (cross-origin taint, decode error).
+async function measureAlphaTrim(imageUrl: string): Promise<{ x: number; y: number; w: number; h: number } | undefined> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = imageUrl;
+    });
+    const scale = Math.min(1, 512 / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const cnv = document.createElement('canvas');
+    cnv.width = w; cnv.height = h;
+    const ctx = cnv.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return undefined;
+    ctx.drawImage(img, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (data[(y * w + x) * 4 + 3]! > 8) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return undefined; // fully transparent — leave as-is
+    // One sampled-pixel bleed so we never clip a soft edge.
+    minX = Math.max(0, minX - 1); minY = Math.max(0, minY - 1);
+    maxX = Math.min(w - 1, maxX + 1); maxY = Math.min(h - 1, maxY + 1);
+    const frac = { x: minX / w, y: minY / h, w: (maxX - minX + 1) / w, h: (maxY - minY + 1) / h };
+    // JPEGs and full-bleed art trim to ~the whole rect — skip the noise.
+    if (frac.w > 0.98 && frac.h > 0.98) return undefined;
+    return frac;
+  } catch {
+    return undefined;
+  }
+}
+
+// Packing dimensions for a design: the visible art size in px plus the
+// offset from the file's top-left corner to the art's top-left corner.
+function packDims(d: DesignItem) {
+  const t = d.trim;
+  return {
+    w: inchesToPx(d.printWidthInches * (t?.w ?? 1)),
+    h: inchesToPx(d.printHeightInches * (t?.h ?? 1)),
+    offX: inchesToPx(d.printWidthInches * (t?.x ?? 0)),
+    offY: inchesToPx(d.printHeightInches * (t?.y ?? 0)),
+  };
 }
 
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
@@ -356,6 +417,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       };
 
       setDesigns(prev => [...prev, design]);
+      void measureAlphaTrim(imageUrl).then((trim) => {
+        if (trim) setDesigns((prev) => prev.map((x) => (x.id === id ? { ...x, trim } : x)));
+      });
 
       const img = await loadFabricImage(imageUrl);
       // Do NOT set img.width/height on Fabric Image — it crops instead of resizes.
@@ -925,15 +989,18 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
     if (!hasOverlap) return;
 
-    // Build pack items (one per fabric object so packer knows about all copies)
+    // Build pack items (one per fabric object so packer knows about all
+    // copies). Pack the VISIBLE art rect, not the file rect.
     const items: PackItem[] = [];
+    const dimsById: Record<string, ReturnType<typeof packDims>> = {};
     for (const d of designs) {
+      dimsById[d.id] = packDims(d);
       const copies = objects.filter((o) => (o as any).data?.designId === d.id);
       for (let i = 0; i < copies.length; i++) {
         items.push({
           id: d.id + '#' + i,
-          width: inchesToPx(d.printWidthInches),
-          height: inchesToPx(d.printHeightInches),
+          width: dimsById[d.id]!.w,
+          height: dimsById[d.id]!.h,
           quantity: 1,
         });
       }
@@ -952,7 +1019,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const list = byDesign[designId] ?? [];
       const obj = list[cursors[designId]!];
       if (obj) {
-        obj.set({ left: placement.x, top: placement.y });
+        const dm = dimsById[designId]!;
+        obj.set({ left: placement.x - dm.offX, top: placement.y - dm.offY });
         obj.setCoords();
       }
     }
@@ -981,23 +1049,30 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const canvas = fabricRef.current;
     if (!canvas || designs.length === 0) return;
 
-    const items: PackItem[] = designs.map(d => ({
-      id: d.id,
-      width: inchesToPx(d.printWidthInches),
-      height: inchesToPx(d.printHeightInches),
-      quantity: d.quantity,
-    }));
+    const dimsById: Record<string, ReturnType<typeof packDims>> = {};
+    const items: PackItem[] = designs.map(d => {
+      dimsById[d.id] = packDims(d);
+      return {
+        id: d.id,
+        width: dimsById[d.id]!.w,
+        height: dimsById[d.id]!.h,
+        quantity: d.quantity,
+      };
+    });
 
     const result = packDesigns(items);
 
     // Reposition all objects. Canvas grows visually via checkFit(); the
     // user's declared sheet length (sheetLengthFt) is NOT changed — if the
     // packed layout overflows that length, the banner tells them to bump it.
+    // Placements are for the visible art; the file rect hangs out by the
+    // trim offset (transparent pixels overlapping is fine for DTF).
     for (const placement of result.placements) {
       const objs = canvas.getObjects().filter(o => (o as any).data?.designId === placement.id);
       const obj = objs[placement.instanceIndex] || objs[0];
       if (obj) {
-        obj.set({ left: placement.x, top: placement.y });
+        const dm = dimsById[placement.id]!;
+        obj.set({ left: placement.x - dm.offX, top: placement.y - dm.offY });
         obj.setCoords();
       }
     }
@@ -1017,7 +1092,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     let maxY = 0;
     let count = 0;
     for (const obj of objects) {
-      const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
+      const d = designs.find((x) => x.id === (obj as any).data?.designId);
+      const t = d?.trim;
+      const fullH = obj.getScaledHeight?.() || 0;
+      // Visible bottom, not the file rect's bottom — transparent tails
+      // shouldn't buy more sheet.
+      const bottom = (obj.top || 0) + (t ? fullH * (t.y + t.h) : fullH);
       if (bottom > maxY) maxY = bottom;
       count++;
     }
