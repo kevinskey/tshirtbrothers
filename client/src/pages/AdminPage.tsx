@@ -153,7 +153,8 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   // Dashboard + Pipeline merged into one landing: the Pipeline page now
   // shows the four stat cards above the search/filter list.
   { label: 'Workflow', items: [
-    { key: 'quotes',    label: 'Dashboard',    icon: LayoutDashboard },
+    { key: 'dashboard', label: 'Dashboard',    icon: LayoutDashboard },
+    { key: 'quotes',    label: 'Quotes',       icon: ClipboardList },
     { key: 'invoices',  label: 'Invoices',     icon: Receipt },
     { key: 'customers', label: 'Customers',    icon: Users },
     { key: 'group-stores', label: 'Group Stores', icon: Store, to: '/admin/group-stores' },
@@ -532,7 +533,7 @@ export default function AdminPage() {
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   // Dashboard + Pipeline merged: 'quotes' (= Pipeline) is now the landing.
-  const [activeSection, setActiveSection] = useState<Section>('quotes');
+  const [activeSection, setActiveSection] = useState<Section>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Which desktop top-nav group dropdown is open (label string), if any.
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
@@ -688,8 +689,9 @@ export default function AdminPage() {
     const editInvoice = params.get('editInvoice');
     const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'settings'];
     if (section && validSections.includes(section as Section)) {
-      // Dashboard was merged into Pipeline; old deep links land on the same page.
-      setActiveSection(section === 'dashboard' ? 'quotes' : (section as Section));
+      // 'dashboard' is a real section again (stats overview); 'quotes' is
+      // the pipeline list — deep links go exactly where they say.
+      setActiveSection(section as Section);
     }
     if (id && /^\d+$/.test(id)) {
       setHighlightedQuoteId(id);
@@ -2492,17 +2494,14 @@ export default function AdminPage() {
             View Site
           </Link>
         </div>
-        {/* Dashboard */}
-        {/* Dashboard + Pipeline merged: stat cards on top, then the full
-            search / filter / list. Was two separate routes before. */}
-        {activeSection === 'quotes' && (
+        {/* Dashboard — stats overview only. The quote pipeline moved to its
+            own Quotes section (Kevin, 2026-09-09: "Quotes should have a
+            link and not be included in dashboard"). */}
+        {activeSection === 'dashboard' && (
           <div>
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Dashboard</h2>
-              <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
             </div>
-
-            {/* Stat cards (was a separate Dashboard page) */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
               <StatCard
                 icon={ClipboardList}
@@ -2528,6 +2527,22 @@ export default function AdminPage() {
                 label="Categories"
                 loading={statsQuery.isLoading}
               />
+            </div>
+            <button
+              onClick={() => setActiveSection('quotes')}
+              className="text-sm font-medium text-red-600 hover:text-red-700 hover:underline"
+            >
+              Open the quote pipeline →
+            </button>
+          </div>
+        )}
+
+        {/* Quotes pipeline — search / filter / list */}
+        {activeSection === 'quotes' && (
+          <div>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Quotes</h2>
+              <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
             </div>
 
             {/* Search + Sort */}
