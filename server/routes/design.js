@@ -9,6 +9,7 @@ import { writeFile, readFile, unlink, mkdtemp, rmdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
+import sharp from 'sharp';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
@@ -63,36 +64,71 @@ async function removeBackgroundReplicate(imageInput) {
 
 // ── Image Upscaling via Replicate Real-ESRGAN ($0.0017/run) ─────────────────
 
+// Real-ESRGAN OOMs on Replicate's shared GPU when input_pixels x scale^2
+// gets big (the model holds the full output tensor in VRAM). Budget the
+// INPUT before sending: at 4x anything past ~2MP risks the crash a
+// customer hit on 2026-09-09 ("CUDA out of memory ... 3.24 GiB"). The
+// print pipeline doesn't lose anything meaningful — a 2MP input at 4x is
+// already a 32MP output, far past 300 DPI for any DTF-sized graphic.
+const MAX_INPUT_PX = { 4: 2_000_000, 2: 6_000_000 };
+
+async function toInputBuffer(imageInput) {
+  if (typeof imageInput === 'string' && /^https?:\/\//.test(imageInput)) {
+    const r = await fetch(imageInput);
+    if (!r.ok) throw new Error(`Failed to fetch source image: ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
+  }
+  const b64 = String(imageInput).replace(/^data:[^;]+;base64,/, '');
+  return Buffer.from(b64, 'base64');
+}
+
 async function upscaleReplicate(imageInput, scaleFactor = 4) {
-  try {
-    console.log(`[upscale] Using Real-ESRGAN ${scaleFactor}x ($0.0017)...`);
-    const output = await replicate.run(
-      "nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa",
-      {
-        input: {
-          image: imageInput,
-          scale: scaleFactor,
-          face_enhance: false,
-        },
+  let buf = await toInputBuffer(imageInput);
+  const budget = MAX_INPUT_PX[scaleFactor] || MAX_INPUT_PX[4];
+  let meta = await sharp(buf).metadata();
+  let px = (meta.width || 0) * (meta.height || 0);
+  if (px > budget) {
+    const ratio = Math.sqrt(budget / px);
+    const w = Math.max(64, Math.round(meta.width * ratio));
+    console.log(`[upscale] Input ${meta.width}x${meta.height} over ${scaleFactor}x budget — pre-shrinking to ${w}px wide`);
+    buf = await sharp(buf).resize({ width: w }).png().toBuffer();
+  }
+
+  // Up to 3 attempts, shrinking ~35% each time the shared GPU runs out of
+  // memory (free VRAM over there varies run to run).
+  for (let attempt = 0; ; attempt++) {
+    try {
+      console.log(`[upscale] Real-ESRGAN ${scaleFactor}x attempt ${attempt + 1} ($0.0017)...`);
+      const output = await replicate.run(
+        "nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa",
+        {
+          input: {
+            image: `data:image/png;base64,${buf.toString('base64')}`,
+            scale: scaleFactor,
+            face_enhance: false,
+          },
+        }
+      );
+      if (!output) throw new Error('Replicate returned no output');
+      const resultUrl = typeof output === 'string' ? output : output.toString();
+      const res = await fetch(resultUrl);
+      if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
+      const buffer = await res.arrayBuffer();
+      return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+    } catch (err) {
+      const oom = /out of memory|CUDA|allocate/i.test(String(err?.message || err));
+      if (oom && attempt < 2) {
+        meta = await sharp(buf).metadata();
+        const w = Math.max(64, Math.round((meta.width || 512) * 0.65));
+        console.warn(`[upscale] GPU OOM — retrying at ${w}px wide`);
+        buf = await sharp(buf).resize({ width: w }).png().toBuffer();
+        continue;
       }
-    );
-
-    if (!output) {
-      console.error('[upscale] Replicate returned no output');
-      throw new Error('Replicate returned no output');
+      console.error('[upscale] Real-ESRGAN error:', err);
+      throw oom
+        ? new Error('The AI upscaler ran out of memory for this image. Try again — or upload a smaller version of the graphic.')
+        : err;
     }
-
-    const resultUrl = typeof output === 'string' ? output : output.toString();
-    console.log('[upscale] Success, fetching result...');
-
-    const res = await fetch(resultUrl);
-    if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
-  } catch (err) {
-    console.error('[upscale] Real-ESRGAN error:', err);
-    // Re-throw so the route handler can surface the real error to the client
-    throw err;
   }
 }
 
