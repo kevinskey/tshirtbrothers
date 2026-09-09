@@ -534,6 +534,8 @@ export default function AdminPage() {
   // Dashboard + Pipeline merged: 'quotes' (= Pipeline) is now the landing.
   const [activeSection, setActiveSection] = useState<Section>('quotes');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Which desktop top-nav group dropdown is open (label string), if any.
+  const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
 
   // Convert an accepted/completed quote into a draft invoice. Pre-fills the
   // invoice form from the quote and jumps to the invoice editor so the admin
@@ -2282,10 +2284,11 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile overlay */}
-      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-20 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
-      {/* Sidebar */}
-      <aside className={`fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30 transition-transform duration-200 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+      {/* Sidebar — mobile-only slide-in since 2026-09-09; desktop uses the
+          fixed top nav bar below instead (Kevin's call). */}
+      <aside className={`fixed left-0 top-0 bottom-0 w-64 bg-gray-900 text-white flex flex-col z-30 transition-transform duration-200 md:hidden ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-gray-800 flex items-center gap-3">
           <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-8 w-8 object-contain" />
           <h1 className="font-display text-xl font-bold tracking-tight">Admin</h1>
@@ -2376,10 +2379,107 @@ export default function AdminPage() {
         </div>
       </aside>
 
+      {/* Desktop top nav (md+) — horizontal header with group dropdowns,
+          replacing the old permanent sidebar. */}
+      <header className="hidden md:flex fixed top-0 left-0 right-0 z-30 h-14 items-center gap-1 bg-gray-900 px-4 text-white shadow">
+        <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-7 w-7 object-contain" />
+        <span className="font-display mr-3 text-lg font-bold tracking-tight">Admin</span>
+        {NAV_GROUPS.map((group, gi) => {
+          const badgeCount = group.items.some((i) => i.key === 'quotes')
+            ? Number(countsQuery.data?.pending_quotes || 0) + Number(countsQuery.data?.active_orders || 0)
+            : 0;
+          // The trailing label-less group is just Settings — render its
+          // items as direct buttons instead of a one-item dropdown.
+          if (!group.label) {
+            return group.items.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => { setActiveSection(item.key as Section); setOpenNavGroup(null); }}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  activeSection === item.key ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
+              >
+                {item.label}
+              </button>
+            ));
+          }
+          const groupActive = group.items.some((i) => !('to' in i && i.to) && i.key === activeSection);
+          return (
+            <div key={gi} className="relative">
+              <button
+                onClick={() => setOpenNavGroup(openNavGroup === group.label ? null : group.label)}
+                className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  groupActive ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
+              >
+                {group.label}
+                {badgeCount > 0 && (
+                  <span className="ml-0.5 rounded-full bg-white px-1.5 text-[10px] font-bold text-red-600">{badgeCount}</span>
+                )}
+                <ChevronDown className={`h-3 w-3 transition-transform ${openNavGroup === group.label ? 'rotate-180' : ''}`} />
+              </button>
+              {openNavGroup === group.label && (
+                <div className="absolute left-0 top-full z-40 mt-1 w-56 rounded-lg border border-gray-700 bg-gray-900 py-2 shadow-xl">
+                  {group.items.map((item) => {
+                    const { key, label, icon: Icon } = item;
+                    if ('to' in item && item.to) {
+                      return (
+                        <Link
+                          key={key}
+                          to={item.to}
+                          onClick={() => setOpenNavGroup(null)}
+                          className="flex w-full items-center gap-3 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span className="flex-1 text-left">{label}</span>
+                          <ArrowLeft className="h-3 w-3 rotate-180 opacity-50" />
+                        </Link>
+                      );
+                    }
+                    const itemBadge = key === 'quotes' ? badgeCount : 0;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => { setActiveSection(key as Section); setOpenNavGroup(null); }}
+                        className={`flex w-full items-center gap-3 px-4 py-2 text-sm font-medium ${
+                          activeSection === key ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="h-4 w-4" />
+                        <span className="flex-1 text-left">{label}</span>
+                        {itemBadge > 0 && (
+                          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">{itemBadge}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="ml-auto flex items-center gap-2">
+          <Link
+            to="/"
+            className="flex items-center gap-1.5 rounded-lg bg-gray-800 px-3 py-1.5 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> View Site
+          </Link>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-400 hover:bg-gray-800 hover:text-white"
+          >
+            <LogOut className="h-3.5 w-3.5" /> Sign Out
+          </button>
+        </div>
+      </header>
+      {/* Click-away closer for the top-nav dropdowns */}
+      {openNavGroup && <div className="fixed inset-0 z-20 hidden md:block" onClick={() => setOpenNavGroup(null)} />}
+
       {/* Main Content */}
-      <main className="lg:ml-64 p-4 pt-16 lg:pt-8 lg:p-8">
+      <main className="p-4 pt-16 md:pt-20 lg:p-8 lg:pt-24">
         {/* Mobile header */}
-        <div className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 bg-white border-b border-gray-200 px-4 py-3 lg:hidden">
+        <div className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 bg-white border-b border-gray-200 px-4 py-3 md:hidden">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
@@ -4077,14 +4177,15 @@ export default function AdminPage() {
 
                 {/* Invoice Table */}
                 <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                  {/* Mobile card view */}
-                  <div className="divide-y divide-gray-100 lg:hidden">
+                  {/* Mobile card view — grey canvas + white cards so each
+                      invoice reads as its own section */}
+                  <div className="space-y-3 bg-gray-100 p-3 md:hidden">
                     {invoicesQuery.isLoading ? (
                       <div className="px-4 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
                     ) : invoices.length === 0 ? (
                       <div className="px-4 py-12 text-center text-gray-400">No invoices found</div>
                     ) : invoices.map((inv: Invoice) => (
-                      <div key={inv.id} className="p-4 space-y-2">
+                      <div key={inv.id} className="rounded-xl border border-gray-200 bg-white p-4 space-y-2 shadow-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-900 text-sm">{inv.invoice_number}</span>
                           <StatusBadge status={inv.status} />
@@ -4113,8 +4214,9 @@ export default function AdminPage() {
                       </div>
                     ))}
                   </div>
-                  {/* Desktop table */}
-                    <table className="w-full text-sm">
+                  {/* Desktop table — from md up, one row per invoice so the
+                      full width is used instead of stacked cards */}
+                    <table className="hidden md:table w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 text-left text-gray-500 text-xs">
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Invoice #</th>
