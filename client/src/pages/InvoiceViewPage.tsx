@@ -169,12 +169,12 @@ export default function InvoiceViewPage() {
         {/* Items — grouped by design+color; size detail expands on tap and
             is always shown when printing. Cards on phones, table from sm. */}
         <div className="sm:hidden mb-8 border-t border-gray-200 divide-y divide-gray-100">
-          {groups.map((g) => {
+          {groups.map((g, gi) => {
             const single = g.items.length === 1;
             const it0 = g.items[0]!;
             const open = !!openGroups[g.key];
             return (
-              <div key={g.key} className="py-3">
+              <div key={g.key} className={`py-3 px-2 -mx-2 ${gi % 2 ? 'bg-gray-50' : ''}`}>
                 <button
                   type="button"
                   onClick={() => !single && toggleGroup(g.key)}
@@ -221,13 +221,14 @@ export default function InvoiceViewPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {groups.map((g) => {
+            {groups.map((g, gi) => {
               const single = g.items.length === 1;
               const it0 = g.items[0]!;
               const open = !!openGroups[g.key];
+              const stripe = gi % 2 ? 'bg-gray-50' : '';
               if (single) {
                 return (
-                  <tr key={g.key}>
+                  <tr key={g.key} className={stripe}>
                     <td className="py-3 text-gray-900">{g.description}</td>
                     <td className="py-3 text-gray-600">{g.color || '—'}</td>
                     <td className="py-3 text-gray-600">{it0.size || '—'}</td>
@@ -238,7 +239,7 @@ export default function InvoiceViewPage() {
                 );
               }
               return [
-                <tr key={g.key} onClick={() => toggleGroup(g.key)} className="cursor-pointer hover:bg-gray-50 print:hover:bg-transparent">
+                <tr key={g.key} onClick={() => toggleGroup(g.key)} className={`cursor-pointer hover:bg-gray-100 print:hover:bg-transparent ${stripe}`}>
                   <td className="py-3 text-gray-900 font-medium">
                     <span className="text-gray-400 mr-1 print:hidden">{open ? '▾' : '▸'}</span>{g.description}
                   </td>
@@ -249,7 +250,7 @@ export default function InvoiceViewPage() {
                   <td className="py-3 text-right font-medium text-gray-900">${fmt(g.total)}</td>
                 </tr>,
                 ...g.items.map((it, j) => (
-                  <tr key={`${g.key}-${j}`} className={`${open ? '' : 'hidden'} print:table-row bg-gray-50/60`}>
+                  <tr key={`${g.key}-${j}`} className={`${open ? '' : 'hidden'} print:table-row ${gi % 2 ? 'bg-gray-100/70' : 'bg-gray-50/60'}`}>
                     <td className="py-1.5 pl-6 text-xs text-gray-400" colSpan={2}>↳</td>
                     <td className="py-1.5 text-xs text-gray-600">{it.size || '—'}</td>
                     <td className="py-1.5 text-center text-xs text-gray-600">{it.quantity || 1}</td>
