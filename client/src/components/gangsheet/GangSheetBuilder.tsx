@@ -347,12 +347,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if ((obj as any).data?.isGrid) canvas.remove(obj);
     });
 
-    // Horizontal lines (1-foot intervals)
+    // Horizontal foot markers — light dashed lines every 12" so customers
+    // can see how much sheet each foot of length buys them.
     for (let ft = 1; ft <= pxToFeet(height); ft++) {
       const y = ft * PX_PER_FOOT;
       const line = new Line([0, y, SHEET_WIDTH_PX, y], {
-        stroke: GRID_COLOR_MAJOR,
-        strokeWidth: 2,
+        stroke: '#cbd5e1',
+        strokeWidth: 6,
+        strokeDashArray: [50, 35],
         selectable: false,
         evented: false,
         excludeFromExport: true,
@@ -363,7 +365,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const label = new FabricText(`${ft} ft`, {
         left: 20,
         top: y + 10,
-        fontSize: 36,
+        fontSize: 44,
+        fontWeight: 'bold',
         fill: GRID_LABEL_COLOR,
         selectable: false,
         evented: false,
