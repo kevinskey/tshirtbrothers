@@ -901,6 +901,43 @@ export default function AdminPage() {
   const [priceDesignFee, setPriceDesignFee] = useState('0');
   const [priceDiscountPct, setPriceDiscountPct] = useState('0');
   const [priceDiscountReason, setPriceDiscountReason] = useState('');
+  const [costStyleQ, setCostStyleQ] = useState('');
+  const [costColor, setCostColor] = useState('');
+  const [costLoading, setCostLoading] = useState(false);
+  const [costData, setCostData] = useState<null | {
+    style: { name: string; brand: string; style_number: string };
+    colors: string[];
+    sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
+  }>(null);
+  const [costError, setCostError] = useState('');
+
+  async function fetchLiveCost(styleQ: string, color: string) {
+    if (styleQ.trim().length < 2) return;
+    setCostLoading(true);
+    setCostError('');
+    try {
+      const res = await fetch(`/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(styleQ.trim())}&color=${encodeURIComponent(color.trim())}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `lookup failed (${res.status})`);
+      setCostData(d);
+    } catch (e: any) {
+      setCostData(null);
+      setCostError(e?.message || 'Cost lookup failed');
+    } finally {
+      setCostLoading(false);
+    }
+  }
+
+  // Map a quote size label to the S&S size row (handles 2X vs 2XL etc).
+  function costForSize(size: string): number | null {
+    if (!costData) return null;
+    const norm = (x: string) => x.toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
+    const want = norm(size);
+    for (const [k, v] of Object.entries(costData.sizes)) {
+      if (norm(k) === want) return v.cost;
+    }
+    return null;
+  }
   const [priceRushFee, setPriceRushFee] = useState('0');
   const [priceShipping, setPriceShipping] = useState('0');
   const [priceTaxExempt, setPriceTaxExempt] = useState(false);
@@ -2091,6 +2128,13 @@ export default function AdminPage() {
     setPriceDiscountPct('0');
     setPriceDiscountReason('');
     setPriceTaxExempt(false);
+    setCostData(null);
+    setCostError('');
+    const styleGuess = quote.product_name || '';
+    const colorGuess = quote.color || '';
+    setCostStyleQ(styleGuess);
+    setCostColor(colorGuess);
+    if (styleGuess.trim().length >= 2) void fetchLiveCost(styleGuess, colorGuess);
     setPriceMessage('');
     // Seed per-size markups from line items (including item.unit_price when
     // available, so the admin starts from what the customer was shown).
@@ -7382,6 +7426,63 @@ export default function AdminPage() {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Live blank cost + margin */}
+                  <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-3">
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Live Blank Cost (S&amp;S)</label>
+                    <div className="flex gap-2 mb-2">
+                      <input value={costStyleQ} onChange={(e) => setCostStyleQ(e.target.value)} placeholder="Style # or name (e.g. 18500)"
+                        className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
+                      <input value={costColor} onChange={(e) => setCostColor(e.target.value)} placeholder="Color"
+                        className="w-28 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
+                      <button type="button" onClick={() => void fetchLiveCost(costStyleQ, costColor)} disabled={costLoading}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50">
+                        {costLoading ? '…' : 'Fetch'}
+                      </button>
+                    </div>
+                    {costError && <p className="text-xs text-red-600">{costError}</p>}
+                    {costData && (() => {
+                      const sizeQtys = sizeMapForQuote(priceModalQuote);
+                      const saleExp = Object.values(costData.sizes).find((v) => v.sale_expires)?.sale_expires;
+                      const soon = saleExp && (new Date(saleExp).getTime() - Date.now()) < 4 * 86400000;
+                      let blanksTotal = 0; let marginTotal = 0; let priced = 0; let unmatched: string[] = [];
+                      const rows = Object.entries(sizeQtys).map(([size, qty]) => {
+                        const cost = costForSize(size);
+                        const sell = parseFloat(sizeMarkups[size] || '0');
+                        if (cost == null) { unmatched.push(size); return null; }
+                        blanksTotal += cost * Number(qty);
+                        marginTotal += (sell - cost) * Number(qty);
+                        priced += Number(qty);
+                        return (
+                          <div key={size} className="flex justify-between text-xs text-gray-700">
+                            <span>{size} × {qty} — cost ${cost.toFixed(2)}</span>
+                            <span className={sell - cost >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>
+                              {sell > 0 ? `margin $${(sell - cost).toFixed(2)}/pc` : '—'}
+                            </span>
+                          </div>
+                        );
+                      });
+                      return (
+                        <div className="space-y-1">
+                          <p className="text-[11px] text-gray-500">{costData.style.brand} {costData.style.name} ({costData.style.style_number})</p>
+                          {rows}
+                          {unmatched.length > 0 && <p className="text-[10px] text-gray-400">No S&amp;S size match for: {unmatched.join(', ')}</p>}
+                          {priced > 0 && (
+                            <div className="flex justify-between text-xs font-bold border-t border-blue-100 pt-1 mt-1">
+                              <span>Blanks ${blanksTotal.toFixed(2)}</span>
+                              <span className={marginTotal >= 0 ? 'text-green-700' : 'text-red-600'}>Gross margin ${marginTotal.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {saleExp && (
+                            <p className={`text-[10px] ${soon ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
+                              {soon ? '⚠ ' : ''}Sale pricing expires {saleExp}
+                            </p>
+                          )}
+                          <p className="text-[10px] text-gray-400">Margin is before print/labor. Live from S&amp;S at your account pricing.</p>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Discount */}

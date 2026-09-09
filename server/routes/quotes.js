@@ -708,6 +708,56 @@ router.post('/accept/:id', async (req, res, next) => {
 });
 
 // PATCH /:id - Update quote status (admin only)
+// ── Live blank cost (admin) ─────────────────────────────────────────────
+// Resolves a style from free text (style number or name), then pulls the
+// account's live per-size pricing from S&S. 10-minute cache per style —
+// enough to keep the pricing modal snappy without going stale on sale
+// expirations.
+const liveCostCache = new Map(); // ss_id -> { at, rows }
+
+router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const q = String(req.query.styleQ || '').trim();
+    const color = String(req.query.color || '').trim().toLowerCase();
+    if (q.length < 2) return res.status(400).json({ error: 'styleQ required' });
+
+    const prod = await pool.query(
+      `SELECT ss_id, name, brand, style_number FROM products
+        WHERE style_number ILIKE $1 OR name ILIKE $2 OR (brand || ' ' || name) ILIKE $2
+        ORDER BY (style_number ILIKE $1) DESC, brand, name LIMIT 1`,
+      [q, `%${q}%`],
+    );
+    if (prod.rows.length === 0) return res.status(404).json({ error: `No catalog match for "${q}"` });
+    const { ss_id, name, brand, style_number } = prod.rows[0];
+
+    let cached = liveCostCache.get(ss_id);
+    if (!cached || Date.now() - cached.at > 10 * 60 * 1000) {
+      const credentials = Buffer.from(`${process.env.SS_ACCOUNT_NUMBER}:${process.env.SS_API_KEY}`).toString('base64');
+      const r = await fetch(
+        `https://api.ssactivewear.com/v2/products/?styleid=${ss_id}&fields=colorName,sizeName,piecePrice,salePrice,saleExpiration,customerPrice`,
+        { headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) },
+      );
+      if (!r.ok) return res.status(502).json({ error: `S&S API error ${r.status}` });
+      cached = { at: Date.now(), rows: await r.json() };
+      liveCostCache.set(ss_id, cached);
+    }
+
+    const rows = cached.rows.filter((x) => !color || String(x.colorName || '').toLowerCase().includes(color));
+    const colors = [...new Set(cached.rows.map((x) => x.colorName))];
+    const sizes = {};
+    for (const x of rows) {
+      if (!sizes[x.sizeName]) {
+        sizes[x.sizeName] = {
+          cost: Number(x.customerPrice ?? x.salePrice ?? x.piecePrice),
+          regular: Number(x.piecePrice),
+          sale_expires: x.saleExpiration ? String(x.saleExpiration).slice(0, 10) : null,
+        };
+      }
+    }
+    res.json({ style: { ss_id, name, brand, style_number }, matched_color: color || null, colors, sizes });
+  } catch (err) { next(err); }
+});
+
 router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
