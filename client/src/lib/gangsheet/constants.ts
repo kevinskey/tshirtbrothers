@@ -16,8 +16,11 @@ export const DISPLAY_SCALE = DEFAULT_VIEWPORT_WIDTH / SHEET_WIDTH_PX; // ~0.121
 
 // Layout
 export const DESIGN_SPACING_PX = 30; // ~0.1" gap between designs
-export const EDGE_PADDING_IN = 0.25; // safe-zone padding from sheet edges
-export const EDGE_PADDING_PX = Math.round(EDGE_PADDING_IN * DPI); // 75px
+// Safe-zone padding from sheet edges. 0.1" (not 0.25") so two 10.75"
+// designs sit side by side on the 22" sheet: 0.1 + 10.75 + 0.1 + 10.75 +
+// 0.1 = 21.8" — a quarter-inch margin wrapped that pair to two rows.
+export const EDGE_PADDING_IN = 0.1;
+export const EDGE_PADDING_PX = Math.round(EDGE_PADDING_IN * DPI); // 30px
 export const SNAP_THRESHOLD_PX = 15; // snap distance in display pixels
 export const GRID_COLOR_MAJOR = '#e5e7eb'; // 1-foot lines
 export const GRID_COLOR_MINOR = '#f3f4f6'; // 1-inch lines
