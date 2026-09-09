@@ -146,6 +146,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // Sheet state
   const [sheetName, setSheetName] = useState('Untitled Sheet');
   const [designs, setDesigns] = useState<DesignItem[]>([]);
+  // Fresh designs for canvas event handlers registered once at init.
+  const designsRef = useRef<DesignItem[]>([]);
+  useEffect(() => { designsRef.current = designs; }, [designs]);
   const [pricingTier, setPricingTier] = useState<PricingTier>('standard');
   const [zoom, setZoom] = useState(1);
   const [saving, setSaving] = useState(false);
@@ -292,6 +295,36 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if ((obj as any)?.data?.designId) setSelectedDesign((obj as any).data.designId);
     });
     canvas.on('selection:cleared', () => setSelectedDesign(null));
+
+    // Keep the VISIBLE art inside the printable margin while dragging or
+    // after a resize. Transparent file edges may hang past the margin —
+    // only the opaque art is held inside.
+    const clampToSheet = (e: { target?: unknown }) => {
+      const obj = e.target as FabricImage | undefined;
+      const designId = (obj as any)?.data?.designId;
+      if (!obj || !designId) return;
+      const d = designsRef.current.find((x) => x.id === designId);
+      const t = d?.trim;
+      const w = obj.getScaledWidth?.() || 0;
+      const h = obj.getScaledHeight?.() || 0;
+      const offX = t ? t.x * w : 0;
+      const offY = t ? t.y * h : 0;
+      const visW = t ? t.w * w : w;
+      const visH = t ? t.h * h : h;
+      const sheetH = canvas.getHeight() / (canvas.getZoom() || 1);
+      const minLeft = EDGE_PADDING_PX - offX;
+      const maxLeft = SHEET_WIDTH_PX - EDGE_PADDING_PX - visW - offX;
+      const minTop = EDGE_PADDING_PX - offY;
+      const maxTop = Math.max(minTop, sheetH - EDGE_PADDING_PX - visH - offY);
+      const left = Math.min(Math.max(obj.left || 0, minLeft), Math.max(minLeft, maxLeft));
+      const top = Math.min(Math.max(obj.top || 0, minTop), maxTop);
+      if (left !== obj.left || top !== obj.top) {
+        obj.set({ left, top });
+        obj.setCoords();
+      }
+    };
+    canvas.on('object:moving', clampToSheet);
+    canvas.on('object:modified', clampToSheet);
 
     return () => {
       canvas.dispose();
