@@ -4,12 +4,11 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { sendNewsletterEmail } from '../services/email.js';
-import { resolveRecipients } from './campaigns.js';
 import {
   renderNewsletterHtml, validateNewsletter, defaultBlocks, BLOCK_TYPES, safeUrl,
 } from '../services/newsletterRender.js';
 import { templateMeta, templateBySlug } from '../services/newsletterTemplates.js';
+import { blastNewsletter } from '../services/newsletterBlast.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -167,77 +166,68 @@ router.post('/preview', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Send — test email or a real segment blast via the existing pipeline.
+// Send — test email or a real segment blast (shared engine, also used by
+// the schedule runner).
 router.post('/:id(\\d+)/send', async (req, res, next) => {
   try {
     const { filter = 'all', test_email } = req.body || {};
-    const nlRes = await pool.query('SELECT * FROM newsletters WHERE id = $1', [req.params.id]);
-    if (nlRes.rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    const nl = nlRes.rows[0];
+    const blast = await blastNewsletter({
+      newsletterId: Number(req.params.id),
+      filter,
+      testEmail: test_email || null,
+      userId: req.user?.id || null,
+    });
+    // Fire-and-forget: the worker finishes in the background.
+    blast.done.catch(() => {});
+    res.status(202).json({ campaign_id: blast.campaignId, recipient_count: blast.recipientCount, test: blast.isTest });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, details: err.details });
+    next(err);
+  }
+});
 
-    const errors = validateNewsletter({ subject: nl.subject, blocks: nl.blocks });
-    if (errors.length) return res.status(400).json({ error: 'Newsletter is not ready to send.', details: errors });
+// ── Scheduled + recurring sends ─────────────────────────────────────────
 
-    let recipients;
-    let recipientFilterRecord;
-    if (test_email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(test_email)) {
-      recipients = [{ email: String(test_email).toLowerCase(), name: null }];
-      recipientFilterRecord = { test_email, newsletter_id: nl.id };
-    } else {
-      recipients = await resolveRecipients(filter);
-      recipientFilterRecord = { filter, newsletter_id: nl.id };
-      if (recipients.length === 0) return res.status(400).json({ error: 'No recipients match this filter' });
-    }
+const VALID_FILTERS = ['all', 'recent_quoted', 'past_invoiced', 'new_30', 'prospects'];
 
-    // Campaign row = history + analytics home, exactly like classic blasts.
-    const previewHtml = renderNewsletterHtml(nl.blocks, { preheader: nl.preheader, theme: nl.theme || {} });
+router.get('/schedules', async (_req, res, next) => {
+  try {
     const { rows } = await pool.query(
-      `INSERT INTO email_campaigns (subject, body_html, example_image_urls, recipient_filter, recipient_count, status, created_by)
-       VALUES ($1, $2, '[]'::jsonb, $3::jsonb, $4, 'sending', $5) RETURNING id`,
-      [nl.subject, previewHtml, JSON.stringify(recipientFilterRecord), recipients.length, req.user?.id || null],
+      `SELECT s.id, s.newsletter_id, s.filter, s.recurrence, s.next_run_at, s.active,
+              s.last_run_at, s.last_campaign_id, n.name, n.subject
+         FROM newsletter_schedules s JOIN newsletters n ON n.id = s.newsletter_id
+        WHERE s.active ORDER BY s.next_run_at LIMIT 50`,
     );
-    const campaignId = rows[0].id;
-    const isTest = Boolean(test_email);
-    // Real blasts flip to 'sending' immediately so the admin list reflects
-    // the in-flight state instead of sitting on 'draft' for the ~minutes
-    // the throttled worker needs.
-    if (!isTest) {
-      await pool.query(`UPDATE newsletters SET status = 'sending', updated_at = NOW() WHERE id = $1`, [nl.id]);
+    res.json({ schedules: rows });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id(\\d+)/schedule', async (req, res, next) => {
+  try {
+    const { send_at, recurrence = 'once', filter = 'all' } = req.body || {};
+    const when = new Date(send_at);
+    if (isNaN(when) || when.getTime() < Date.now() - 60_000) {
+      return res.status(400).json({ error: 'Pick a date and time in the future.' });
     }
+    if (!['once', 'weekly', 'monthly'].includes(recurrence)) return res.status(400).json({ error: 'Bad recurrence' });
+    if (!VALID_FILTERS.includes(filter)) return res.status(400).json({ error: 'Bad audience filter' });
+    const nl = await pool.query('SELECT id, subject, blocks FROM newsletters WHERE id = $1', [req.params.id]);
+    if (nl.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const errors = validateNewsletter({ subject: nl.rows[0].subject, blocks: nl.rows[0].blocks });
+    if (errors.length) return res.status(400).json({ error: 'Newsletter is not ready to schedule.', details: errors });
+    const { rows } = await pool.query(
+      `INSERT INTO newsletter_schedules (newsletter_id, filter, recurrence, next_run_at, created_by)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.params.id, filter, recurrence, when.toISOString(), req.user?.id || null],
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) { next(err); }
+});
 
-    (async () => {
-      let sent = 0;
-      let failed = 0;
-      for (const r of recipients) {
-        try {
-          await sendNewsletterEmail({
-            to: r.email,
-            subject: nl.subject,
-            campaignId,
-            renderHtml: ({ unsubHtml, openPixelHtml }) =>
-              renderNewsletterHtml(nl.blocks, { preheader: nl.preheader, theme: nl.theme || {}, unsubHtml, openPixelHtml }),
-          });
-          sent++;
-        } catch (err) {
-          failed++;
-          console.error(`[newsletter ${nl.id} → campaign ${campaignId}] send to ${r.email} failed:`, err.message);
-        }
-        await new Promise((r2) => setTimeout(r2, 600));
-      }
-      await pool.query(
-        `UPDATE email_campaigns SET sent_count = $1, failed_count = $2, status = $3, sent_at = NOW() WHERE id = $4`,
-        [sent, failed, failed === recipients.length ? 'failed' : 'sent', campaignId],
-      );
-      if (!isTest) {
-        await pool.query(
-          `UPDATE newsletters SET status = $1, sent_campaign_id = $2, updated_at = NOW() WHERE id = $3`,
-          [sent > 0 ? 'sent' : 'draft', campaignId, nl.id],
-        );
-      }
-      console.log(`[newsletter ${nl.id}] campaign ${campaignId} complete: ${sent} sent, ${failed} failed`);
-    })();
-
-    res.status(202).json({ campaign_id: campaignId, recipient_count: recipients.length, test: isTest });
+router.delete('/schedules/:sid(\\d+)', async (req, res, next) => {
+  try {
+    await pool.query('UPDATE newsletter_schedules SET active = false WHERE id = $1', [req.params.sid]);
+    res.json({ ok: true });
   } catch (err) { next(err); }
 });
 

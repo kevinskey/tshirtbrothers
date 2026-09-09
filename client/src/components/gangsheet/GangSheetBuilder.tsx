@@ -1909,21 +1909,36 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                               />
                             </label>
                             <label className="flex flex-col gap-0.5">
-                              <span className="text-[10px] text-gray-500 font-medium">Quantity</span>
-                              <div className="flex items-center gap-1">
-                                <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">−</button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={d.quantity}
-                                  onChange={(e) => updateDesignQuantity(d.id, parseInt(e.target.value) || 1)}
-                                  className="flex-1 min-w-0 px-1 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
-                                />
-                                <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
-                              </div>
+                              <span className="text-[10px] text-gray-500 font-medium">Height (in)</span>
+                              <input
+                                type="number"
+                                min={0.5}
+                                max={200}
+                                step={0.25}
+                                value={d.printHeightInches.toFixed(2)}
+                                onChange={(e) => {
+                                  const h = parseFloat(e.target.value) || 0;
+                                  // Aspect stays locked — height edits drive width.
+                                  updateDesignSize(d.id, h * (d.naturalWidth / d.naturalHeight));
+                                }}
+                                className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:border-orange-500"
+                              />
                             </label>
                           </div>
-                          <p className="text-[10px] text-gray-400 mt-1">Height: {d.printHeightInches.toFixed(2)}"</p>
+                          <label className="flex flex-col gap-0.5 mt-2">
+                            <span className="text-[10px] text-gray-500 font-medium">Quantity</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">−</button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={d.quantity}
+                                onChange={(e) => updateDesignQuantity(d.id, parseInt(e.target.value) || 1)}
+                                className="flex-1 min-w-0 px-1 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
+                              />
+                              <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
+                            </div>
+                          </label>
                           <div className="flex flex-wrap gap-1 mt-2">
                             {SIZE_PRESETS.map((p) => (
                               <button

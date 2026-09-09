@@ -9,6 +9,7 @@ import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { sendAbandonedQuoteFollowUp } from './email.js';
 import { runPayoutJob } from './storePayoutJob.js';
+import { runNewsletterSchedules } from './newsletterBlast.js';
 import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
@@ -90,8 +91,13 @@ export function startScheduler() {
   });
   // Daily at 06:30 UTC — offset 30m after the payout job so the two don't
   // contend for the pool at the same instant.
+  // Newsletter schedules — every 5 minutes, claim-then-send.
+  cron.schedule('*/5 * * * *', () => {
+    runNewsletterSchedules().catch((err) => console.error('[scheduler] newsletter schedules failed:', err.message));
+  });
+
   cron.schedule('30 6 * * *', () => {
     purgeAbandonedGangSheetCheckouts();
   });
-  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC)');
+  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, newsletter schedules every 5 min)');
 }

@@ -21,6 +21,10 @@ interface NewsletterRow {
   updated_at: string; sent_count: number | null; recipient_count: number | null; sent_at: string | null;
 }
 interface Newsletter extends NewsletterRow { preheader: string; blocks: Block[]; theme?: Record<string, string>; template_slug?: string | null }
+interface ScheduleRow {
+  id: number; newsletter_id: number; filter: Filter; recurrence: string;
+  next_run_at: string; name: string; subject: string;
+}
 interface LibraryTemplate {
   slug: string; name: string; category: string; description: string;
   theme: Record<string, string>; recommended: boolean;
@@ -271,6 +275,9 @@ export default function NewslettersAdmin() {
   const [library, setLibrary] = useState<LibraryTemplate[]>([]);
   const [libCategory, setLibCategory] = useState<string>('All');
   const [libPreview, setLibPreview] = useState<{ name: string; html: string } | null>(null);
+  const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [schedAt, setSchedAt] = useState('');
+  const [schedRecur, setSchedRecur] = useState<'once' | 'weekly' | 'monthly'>('once');
 
   const flash = (kind: 'ok' | 'err', text: string) => {
     setNotice({ kind, text });
@@ -281,8 +288,24 @@ export default function NewslettersAdmin() {
     setLoading(true);
     const res = await fetch('/api/admin/newsletters', { headers: authHeaders() });
     if (res.ok) setList(await res.json());
+    const sr = await fetch('/api/admin/newsletters/schedules', { headers: authHeaders() });
+    if (sr.ok) setSchedules((await sr.json()).schedules);
     setLoading(false);
   }, []);
+
+  const scheduleSend = async () => {
+    if (!editing || !schedAt) return flash('err', 'Pick a date and time first.');
+    if (!(await save(true))) return;
+    const res = await fetch(`/api/admin/newsletters/${editing.id}/schedule`, {
+      method: 'POST', headers: jsonHeaders(),
+      body: JSON.stringify({ send_at: new Date(schedAt).toISOString(), recurrence: schedRecur, filter: sendFilter }),
+    });
+    const d = await res.json();
+    if (!res.ok) return flash('err', d.details ? d.details.join(' ') : d.error || 'Could not schedule');
+    flash('ok', `Scheduled${schedRecur !== 'once' ? ` (${schedRecur})` : ''} for ${new Date(schedAt).toLocaleString()}`);
+    setSchedAt('');
+    void loadList();
+  };
   useEffect(() => { void loadList(); }, [loadList]);
 
   // Debounced live preview from the CURRENT editor state (unsaved edits show).
@@ -486,6 +509,24 @@ export default function NewslettersAdmin() {
           </button>
         </div>
 
+        {schedules.length > 0 && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+            <h3 className="text-sm font-bold text-gray-700 mb-2">⏰ Scheduled sends</h3>
+            <div className="space-y-1.5">
+              {schedules.map((sc) => (
+                <div key={sc.id} className="flex items-center gap-3 text-sm">
+                  <span className="font-semibold text-gray-900">{sc.name}</span>
+                  <span className="text-gray-500 text-xs">→ {FILTER_LABELS[sc.filter] || sc.filter}</span>
+                  <span className="text-gray-600 text-xs">{new Date(sc.next_run_at).toLocaleString()}</span>
+                  {sc.recurrence !== 'once' && <span className="text-[10px] font-bold text-blue-700 bg-blue-100 rounded-full px-2 py-0.5">{sc.recurrence}</span>}
+                  <button
+                    onClick={async () => { if (confirm('Cancel this scheduled send?')) { await fetch(`/api/admin/newsletters/schedules/${sc.id}`, { method: 'DELETE', headers: authHeaders() }); void loadList(); } }}
+                    className="ml-auto text-xs text-gray-400 hover:text-red-600">Cancel</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {templates.length > 0 && (
           <div>
             <h3 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-1.5"><LayoutTemplate className="h-4 w-4" /> Templates</h3>
@@ -691,6 +732,24 @@ export default function NewslettersAdmin() {
                 className="inline-flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50">
                 {busyAction === 'send' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send
               </button>
+            </div>
+            <div className="border-t border-gray-100 pt-3 space-y-2">
+              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Or schedule it</p>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input type="datetime-local" value={schedAt} onChange={(ev) => setSchedAt(ev.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm" />
+                <select value={schedRecur} onChange={(ev) => setSchedRecur(ev.target.value as 'once' | 'weekly' | 'monthly')}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                  <option value="once">Send once</option>
+                  <option value="weekly">Repeat weekly</option>
+                  <option value="monthly">Repeat monthly</option>
+                </select>
+                <button onClick={() => void scheduleSend()}
+                  className="inline-flex items-center gap-1.5 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-semibold px-3 py-1.5 rounded-lg">
+                  Schedule
+                </button>
+              </div>
+              <p className="text-[11px] text-gray-400">Recurring sends re-use this newsletter's latest saved content each time — edit it between runs to freshen it.</p>
             </div>
             <p className="text-[11px] text-gray-400">Delivery, open/click tracking, and unsubscribe run through the existing Email Blasts pipeline — results appear there.</p>
           </div>
