@@ -134,7 +134,7 @@ export async function sendQuoteRequestNotification(quote) {
  * Sends the quoted price to the customer.
  */
 export async function sendQuotePriceToCustomer(quote, priceDetails) {
-  const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message } = priceDetails;
+  const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount } = priceDetails;
   const deposit = (Number(total) * 0.5).toFixed(2);
 
   const sizesDisplay = (() => {
@@ -161,6 +161,9 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
     detailRow('Printing Cost', formatCurrency(printingCost)) +
     (Number(designFee) > 0 ? detailRow('Design Fee', formatCurrency(designFee)) : '') +
     (Number(rushFee) > 0 ? detailRow('Rush Fee', formatCurrency(rushFee)) : '') +
+    (Number(discountAmount) > 0 ? detailRow(
+      `${escapeHtml(discountReason || 'Discount')} (${Number(discountPct) || 0}% off)`,
+      `<span style="color:#16a34a;font-weight:700;">&minus;${formatCurrency(discountAmount)}</span>`) : '') +
     (Number(shipping) > 0 ? detailRow('Shipping', formatCurrency(shipping)) : '') +
     (taxExempt ? detailRow('Sales Tax', 'Exempt') : (Number(tax) > 0 ? detailRow(taxLabel, formatCurrency(tax)) : '')) +
     `<tr>

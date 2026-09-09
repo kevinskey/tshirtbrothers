@@ -601,7 +601,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       });
     }
 
-    const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total } = priceBreakdown;
+    const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount } = priceBreakdown;
 
     // Generate an accept token
     const acceptToken = crypto.randomBytes(32).toString('hex');
@@ -624,7 +624,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       [
         total,
         acceptToken,
-        JSON.stringify({ basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total }),
+        JSON.stringify({ basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount }),
         message || null,
         depositAmount,
         quoteId,
@@ -643,6 +643,9 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       printingCost,
       designFee,
       rushFee,
+      discountPct,
+      discountReason,
+      discountAmount,
       shipping,
       tax,
       taxExempt,

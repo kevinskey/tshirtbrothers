@@ -899,6 +899,8 @@ export default function AdminPage() {
   const [, setPriceBase] = useState('');
   const [, setPricePrinting] = useState('');
   const [priceDesignFee, setPriceDesignFee] = useState('0');
+  const [priceDiscountPct, setPriceDiscountPct] = useState('0');
+  const [priceDiscountReason, setPriceDiscountReason] = useState('');
   const [priceRushFee, setPriceRushFee] = useState('0');
   const [priceShipping, setPriceShipping] = useState('0');
   const [priceTaxExempt, setPriceTaxExempt] = useState(false);
@@ -2054,7 +2056,15 @@ export default function AdminPage() {
     const designFee = parseFloat(priceDesignFee) || 0;
     const rushFee = parseFloat(priceRushFee) || 0;
     const shipping = parseFloat(priceShipping) || 0;
-    const preTax = garmentTotal + designFee + rushFee + shipping;
+    const discountPct = Math.min(100, Math.max(0, parseFloat(priceDiscountPct) || 0));
+    if (discountPct > 0 && !priceDiscountReason) {
+      alert('Pick a reason for the discount — it shows on the customer quote.');
+      return;
+    }
+    // Discount applies to merchandise + fees; shipping and tax come after.
+    const discountable = garmentTotal + designFee + rushFee;
+    const discountAmount = Math.round(discountable * discountPct) / 100;
+    const preTax = discountable - discountAmount + shipping;
     const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
     const total = preTax + tax;
     const payload = {
@@ -2062,6 +2072,7 @@ export default function AdminPage() {
       priceBreakdown: {
         basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total,
         shipping, sizeMarkups,
+        discountPct, discountReason: priceDiscountReason || null, discountAmount,
         tax, taxExempt: priceTaxExempt, taxRate: TAX_RATE,
       },
       message: priceMessage || undefined,
@@ -2077,6 +2088,8 @@ export default function AdminPage() {
     setPriceDesignFee('0');
     setPriceRushFee('0');
     setPriceShipping('0');
+    setPriceDiscountPct('0');
+    setPriceDiscountReason('');
     setPriceTaxExempt(false);
     setPriceMessage('');
     // Seed per-size markups from line items (including item.unit_price when
@@ -7371,6 +7384,27 @@ export default function AdminPage() {
                     </div>
                   </div>
 
+                  {/* Discount */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-900 mb-2">Discount</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Percent off</label>
+                        <div className="relative">
+                          <input type="number" step="1" min="0" max="100" value={priceDiscountPct} onChange={(e) => setPriceDiscountPct(e.target.value)} className="w-full pl-2 pr-6 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none" placeholder="0" />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                        </div>
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1">Reason (shows on the quote)</label>
+                        <select value={priceDiscountReason} onChange={(e) => setPriceDiscountReason(e.target.value)} className="w-full px-2 py-2 rounded-lg border border-gray-300 text-sm focus:border-red-500 focus:outline-none">
+                          <option value="">— select reason —</option>
+                          {['Advertised Sale', 'School Discount', 'Church Discount', 'Team Discount', 'Nonprofit Discount', 'First-Time Customer', 'Repeat Customer', 'Referral', 'Price Match', 'Bulk Order', 'Manager Discount'].map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Tax */}
                   <label className="flex items-center gap-2 text-sm text-gray-700">
                     <input
@@ -7392,7 +7426,9 @@ export default function AdminPage() {
                     const designFee = parseFloat(priceDesignFee) || 0;
                     const rushFee = parseFloat(priceRushFee) || 0;
                     const shipping = parseFloat(priceShipping) || 0;
-                    const preTax = garmentTotal + designFee + rushFee + shipping;
+                    const discountPct = Math.min(100, Math.max(0, parseFloat(priceDiscountPct) || 0));
+                    const discountAmount = Math.round((garmentTotal + designFee + rushFee) * discountPct) / 100;
+                    const preTax = garmentTotal + designFee + rushFee - discountAmount + shipping;
                     const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
                     const total = preTax + tax;
                     return (
@@ -7402,6 +7438,7 @@ export default function AdminPage() {
                         </div>
                         {designFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Artwork fee</span><span className="text-white">${designFee.toFixed(2)}</span></div>}
                         {rushFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Rush fee</span><span className="text-white">${rushFee.toFixed(2)}</span></div>}
+                        {discountAmount > 0 && <div className="flex justify-between text-sm text-green-400"><span>{priceDiscountReason || 'Discount'} ({discountPct}%)</span><span>−${discountAmount.toFixed(2)}</span></div>}
                         {shipping > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Shipping</span><span className="text-white">${shipping.toFixed(2)}</span></div>}
                         {priceTaxExempt ? (
                           <div className="flex justify-between text-sm text-gray-500"><span>Sales tax</span><span className="italic">Exempt</span></div>
