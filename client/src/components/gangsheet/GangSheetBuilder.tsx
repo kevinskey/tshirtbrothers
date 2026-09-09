@@ -733,7 +733,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // If they overflow, the canvas is grown VISUALLY so you can see the extra
   // rows, but `sheetLengthFt` (the price/save length) is NOT changed — an
   // error banner tells you to bump the length manually.
-  function checkFit() {
+  // declaredFt overrides the state value — updateSheetLength passes the
+  // brand-new length because setSheetLengthFt hasn't re-rendered yet, and
+  // reading the stale closure here used to snap the canvas straight back
+  // to the old size (2ft looked identical to 1ft).
+  function checkFit(declaredFt: number = sheetLengthFt) {
     const canvas = fabricRef.current;
     if (!canvas) {
       setFitError(null);
@@ -748,7 +752,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if (right > SHEET_WIDTH_PX + 1) overWidth = true;
       if (bottom > maxY) maxY = bottom;
     }
-    const declaredSheetPx = feetToPx(sheetLengthFt);
+    const declaredSheetPx = feetToPx(declaredFt);
     const neededPx = Math.max(declaredSheetPx, maxY + DESIGN_SPACING_PX);
     const currentBitmapHeight = canvas.getHeight();
     const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
@@ -1085,7 +1089,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     drawGrid(canvas, newHeight);
     canvas.renderAll();
     setSheetLengthFt(newFt);
-    checkFit();
+    checkFit(newFt);
   }
 
   // ─── Auto Layout ────────────────────────────────────────────────────────
