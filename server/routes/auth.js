@@ -1,41 +1,83 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
-// POST /register
-router.post('/register', async (req, res, next) => {
+// ── Bot defenses (2026-09-09 signup-spam incident) ────────────────────────
+// A drip bot was creating an account every 20-45 min with gibberish names
+// and harvested real emails. Three layers:
+//   1. per-IP rate limit on /register
+//   2. a signup token the auth PAGE fetches via JS — bots POSTing straight
+//      to the API without loading the page don't have one
+//   3. /register answers identically whether the email is new or already
+//      registered, so the endpoint can't be used to validate email lists
+//      (the client signs in right after, which works only for real owners)
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many signups from this network — try again later.' },
+});
+
+// HMAC over a timestamp; no server-side state. Valid from 3s (a human takes
+// longer than that between page load and submit; a naive bot doesn't) to 2h.
+const signupTokenSecret = () =>
+  crypto.createHash('sha256').update(`signup:${process.env.JWT_SECRET}`).digest();
+const signSignupTs = (ts) =>
+  crypto.createHmac('sha256', signupTokenSecret()).update(String(ts)).digest('hex');
+
+router.get('/signup-token', (req, res) => {
+  const ts = Date.now();
+  res.json({ token: `${ts}.${signSignupTs(ts)}` });
+});
+
+function signupTokenValid(token) {
+  if (typeof token !== 'string') return false;
+  const [tsRaw, mac] = token.split('.');
+  const ts = Number(tsRaw);
+  if (!Number.isFinite(ts) || !mac) return false;
+  const expected = signSignupTs(ts);
+  if (mac.length !== expected.length) return false;
+  if (!crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return false;
+  const age = Date.now() - ts;
+  return age >= 3_000 && age <= 2 * 60 * 60 * 1000;
+}
+
+// POST /register — always responds { ok: true } on a well-formed request,
+// whether or not the email already existed. The client immediately calls
+// /login with the same credentials, which succeeds only for a genuinely new
+// account (or the real owner typing their real password).
+router.post('/register', registerLimiter, async (req, res, next) => {
   try {
-    const { email, password, name, phone } = req.body;
+    const { email, password, name, phone, signup_token } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'Email already registered' });
+    if (!signupTokenValid(signup_token)) {
+      return res.status(400).json({ error: 'Could not verify your signup — refresh the page and try again.' });
     }
 
+    // Hash BEFORE the existence check so response timing is identical for
+    // new and already-registered emails.
     const salt = await bcrypt.genSalt(12);
     const password_hash = await bcrypt.hash(password, salt);
 
-    const result = await pool.query(
-      'INSERT INTO users (email, password_hash, name, phone) VALUES ($1, $2, $3, $4) RETURNING id, email, role, name',
-      [email, password_hash, name || null, phone || null]
-    );
-
-    const user = result.rows[0];
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, name: user.name },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({ token, user });
+    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existing.rows.length === 0) {
+      await pool.query(
+        'INSERT INTO users (email, password_hash, name, phone) VALUES ($1, $2, $3, $4)',
+        [email, password_hash, name || null, phone || null]
+      );
+    }
+    res.status(200).json({ ok: true });
   } catch (err) {
     next(err);
   }

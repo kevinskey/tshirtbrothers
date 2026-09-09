@@ -1,8 +1,8 @@
-import { useState, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
-import { login, register } from '@/lib/api';
+import { login, register, getSignupToken } from '@/lib/api';
 
 type Tab = 'login' | 'register';
 
@@ -24,6 +24,17 @@ export default function AuthPage() {
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
+
+  // Anti-bot signup token, fetched on mount — the server requires it to be
+  // a few seconds old by submit time, so it must be grabbed up front.
+  const signupTokenRef = useRef<string>('');
+  useEffect(() => {
+    let cancelled = false;
+    getSignupToken()
+      .then(({ token }) => { if (!cancelled) signupTokenRef.current = token; })
+      .catch(() => { /* retried at submit if missing */ });
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
@@ -53,11 +64,29 @@ export default function AuthPage() {
     }
     setLoading(true);
     try {
-      const { token } = await register({ name: regName, email: regEmail, password: regPassword, phone: regPhone });
+      // Fallback if the mount-time fetch failed (e.g. network blip): grab a
+      // token now and wait out the server's minimum-age window.
+      if (!signupTokenRef.current) {
+        const { token } = await getSignupToken();
+        signupTokenRef.current = token;
+        await new Promise((r) => setTimeout(r, 3500));
+      }
+      await register({
+        name: regName, email: regEmail, password: regPassword, phone: regPhone,
+        signup_token: signupTokenRef.current,
+      });
+      // /register no longer auto-issues a session (it answers the same
+      // whether the email was new or already registered — anti-enumeration).
+      // Sign in with the same credentials; fails only if the email already
+      // belongs to someone else.
+      const { token } = await login({ email: regEmail, password: regPassword });
       localStorage.setItem('tsb_token', token);
       navigate(redirectTo);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
+      const msg = err instanceof Error ? err.message : 'Registration failed';
+      setError(msg === 'Invalid credentials'
+        ? 'This email may already have an account — try signing in instead.'
+        : msg);
     } finally {
       setLoading(false);
     }

@@ -71,8 +71,18 @@ export async function login(credentials: { email: string; password: string }) {
   });
 }
 
-export async function register(data: { name: string; email: string; password: string; phone?: string }) {
-  return request<{ token: string }>('/auth/register', {
+// 2026-09-09 bot defenses: the auth page fetches a signup token on MOUNT
+// (the server requires it to be at least 3s old at submit — trivial for a
+// human, a hurdle for a bot POSTing straight at the API). /register then
+// answers { ok } whether or not the email was new, and the CALLER signs in
+// with the same credentials — which only works for a genuinely new account
+// or the email's real owner.
+export async function getSignupToken() {
+  return request<{ token: string }>('/auth/signup-token');
+}
+
+export async function register(data: { name: string; email: string; password: string; phone?: string; signup_token: string }) {
+  return request<{ ok: boolean }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(data),
   });
