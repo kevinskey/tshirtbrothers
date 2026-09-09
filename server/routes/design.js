@@ -10,6 +10,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
 import sharp from 'sharp';
+import { uploadObject } from '../services/spaces.js';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
@@ -113,8 +114,13 @@ async function upscaleReplicate(imageInput, scaleFactor = 4) {
       const resultUrl = typeof output === 'string' ? output : output.toString();
       const res = await fetch(resultUrl);
       if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`);
-      const buffer = await res.arrayBuffer();
-      return `data:image/png;base64,${Buffer.from(buffer).toString('base64')}`;
+      // A 4x-upscaled PNG can be 100MB+; base64-ing it into a JSON response
+      // OOM-killed the node process (nginx 502 'upstream prematurely
+      // closed'). Park it in Spaces and hand back a URL instead.
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const key = `designs/upscaled/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+      const url = await uploadObject({ key, body: buffer, contentType: 'image/png' });
+      return url;
     } catch (err) {
       const oom = /out of memory|CUDA|allocate/i.test(String(err?.message || err));
       if (oom && attempt < 2) {
@@ -500,7 +506,7 @@ router.post('/upscale', async (req, res, next) => {
       if (!result) {
         return res.status(500).json({ error: 'Upscaling failed — Replicate returned nothing.' });
       }
-      res.json({ imageBase64: result });
+      res.json({ imageUrl: result });
     } catch (replicateErr) {
       console.error('[upscale] route error:', replicateErr);
       return res.status(500).json({ error: `Upscaling failed: ${replicateErr.message || replicateErr}` });

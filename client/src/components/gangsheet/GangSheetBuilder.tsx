@@ -798,6 +798,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   }
 
   async function uploadDataUrlToSpaces(dataUrl: string, filename: string): Promise<string> {
+    // Already a hosted URL (e.g. the upscaler now returns Spaces URLs
+    // directly) — nothing to upload.
+    if (!dataUrl.startsWith('data:')) return dataUrl;
     try {
       const res = await fetch('/api/quotes/upload-design', {
         method: 'POST',
@@ -926,8 +929,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `upscale request failed (${res.status})`);
-      if (!data.imageBase64) throw new Error('no image returned');
-      await applyProcessedImage(designId, data.imageBase64);
+      const result = data.imageUrl || data.imageBase64;
+      if (!result) throw new Error('no image returned');
+      await applyProcessedImage(designId, result);
     } catch (err: any) {
       console.error(err);
       alert(`Upscaling failed: ${err?.message || err}`);

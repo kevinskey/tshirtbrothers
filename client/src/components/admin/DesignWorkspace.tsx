@@ -351,9 +351,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (data.imageBase64) {
-        setGeneratedImage(data.imageBase64);
-        setImageHistory(prev => [...prev, data.imageBase64]);
+      const up = data.imageUrl || data.imageBase64;
+      if (up) {
+        setGeneratedImage(up);
+        setImageHistory(prev => [...prev, up]);
       }
     } catch (err: any) {
       alert(`Background removal failed: ${err?.message || err}`);
@@ -374,9 +375,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (data.imageBase64) {
-        setGeneratedImage(data.imageBase64);
-        setImageHistory(prev => [...prev, data.imageBase64]);
+      const up = data.imageUrl || data.imageBase64;
+      if (up) {
+        setGeneratedImage(up);
+        setImageHistory(prev => [...prev, up]);
       }
     } catch (err: any) {
       alert(`Upscaling failed: ${err?.message || err}`);
@@ -396,9 +398,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-      if (data.imageBase64) {
-        setGeneratedImage(data.imageBase64);
-        setImageHistory(prev => [...prev, data.imageBase64]);
+      const up = data.imageUrl || data.imageBase64;
+      if (up) {
+        setGeneratedImage(up);
+        setImageHistory(prev => [...prev, up]);
       }
     } catch (err: any) {
       alert(`Color removal failed: ${err?.message || err}`);
