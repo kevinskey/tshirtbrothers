@@ -102,6 +102,14 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [needBy, setNeedBy] = useState('');
   const [artUrls, setArtUrls] = useState<string[]>([]);
   const [artUploading, setArtUploading] = useState(0);
+  // Print locations (front only vs front & back) — drives numLocations in
+  // pricing. Quote #164 shipped a front+back design priced as one side, so
+  // this is now an explicit question. Auto-flips to 2 when a second art
+  // file is uploaded; the customer can still tap it back to front-only.
+  const [printSides, setPrintSides] = useState<1 | 2>(1);
+  useEffect(() => {
+    if (artUrls.length >= 2) setPrintSides(2);
+  }, [artUrls.length]);
   const artInputRef = useRef<HTMLInputElement | null>(null);
 
   const [calcLines, setCalcLines] = useState<CalcLine[] | null>(null);
@@ -201,7 +209,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               garmentName: p.pricing,
               qualityTier: quality || 'Standard',
               methodName: 'DTF',
-              numLocations: 1,
+              numLocations: printSides,
               colorsPerLocation: 1,
               rush: isRush,
               rushDays,
@@ -275,7 +283,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           garmentName: p.pricing,
           qualityTier: quality || 'Standard',
           methodName: 'DTF',
-          numLocations: 1,
+          numLocations: printSides,
           colorsPerLocation: 1,
           rush: isRush,
           rushDays,
@@ -309,6 +317,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       const notes = [
         `Easy Quote wizard`, color && `Color: ${color}`,
         quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
+        `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
         needBy && `Need by: ${needBy}${isRush ? ' (RUSH)' : ''}`,
       ].filter(Boolean).join(' · ');
       const res = await fetch('/api/quote/save', {
@@ -626,6 +635,26 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             </button>
             <input ref={artInputRef} type="file" accept=".png,.jpg,.jpeg,.webp" multiple className="hidden"
               onChange={(e) => { uploadArt(e.target.files); e.target.value = ''; }} />
+            {/* Front-only vs front & back — a two-sided print doubles the
+                per-piece print cost, so it has to be asked, not guessed. */}
+            <div className="mt-4">
+              <p className="text-sm font-bold text-gray-700">{tr('Where does the print go?', '¿Dónde va el diseño?')}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {([
+                  { sides: 1 as const, label: tr('Front only', 'Solo el frente') },
+                  { sides: 2 as const, label: tr('Front & back', 'Frente y espalda') },
+                ]).map((opt) => (
+                  <button key={opt.sides} type="button" onClick={() => setPrintSides(opt.sides)}
+                    className={`rounded-2xl border-2 px-4 py-3 text-sm font-bold transition-colors ${
+                      printSides === opt.sides
+                        ? 'border-orange-500 bg-orange-50 text-orange-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-400'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             {(artUrls.length > 0 || artUploading > 0) && (
               <div className="mt-4 grid grid-cols-4 gap-2">
                 {artUrls.map((u) => (
