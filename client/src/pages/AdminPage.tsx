@@ -17,9 +17,7 @@ import {
   ChevronDown,
   Loader2,
   ClipboardList,
-  Clock,
   Layers,
-  Tags,
   Plus,
   Trash2,
   Palette,
@@ -43,7 +41,6 @@ import {
   Mail,
 } from 'lucide-react';
 import {
-  fetchDashboardStats,
   fetchQuotes,
   fetchGangSheetOrders,
   updateQuoteStatus,
@@ -132,6 +129,7 @@ import NewslettersAdmin from '@/components/admin/NewslettersAdmin';
 import ProspectsAdmin from '@/components/admin/ProspectsAdmin';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
+import OpsDashboard from '@/components/admin/OpsDashboard';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
@@ -1046,11 +1044,6 @@ export default function AdminPage() {
   }
 
   // Queries
-  const statsQuery = useQuery({
-    queryKey: ['admin', 'stats'],
-    queryFn: fetchDashboardStats,
-  });
-
   const countsQuery = useQuery({
     queryKey: ['admin', 'counts'],
     queryFn: fetchAdminCounts,
@@ -2255,7 +2248,6 @@ export default function AdminPage() {
     });
   }
 
-  const stats = statsQuery.data;
   const quotes = quotesQuery.data ?? [];
 
   // Gang sheet orders, shaped for the dashboard list and interleaved with
@@ -2550,43 +2542,19 @@ export default function AdminPage() {
             own Quotes section (Kevin, 2026-09-09: "Quotes should have a
             link and not be included in dashboard"). */}
         {activeSection === 'dashboard' && (
-          <div>
-            <div className="flex items-center justify-between mb-4 md:mb-6">
-              <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Dashboard</h2>
-            </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
-              <StatCard
-                icon={ClipboardList}
-                value={stats?.totalQuotes ?? 0}
-                label="Total Quotes"
-                loading={statsQuery.isLoading}
-              />
-              <StatCard
-                icon={Clock}
-                value={stats?.pendingQuotes ?? 0}
-                label="Pending Quotes"
-                loading={statsQuery.isLoading}
-              />
-              <StatCard
-                icon={Layers}
-                value={stats?.totalProducts ?? 0}
-                label="Products in Catalog"
-                loading={statsQuery.isLoading}
-              />
-              <StatCard
-                icon={Tags}
-                value={stats?.totalCategories ?? 0}
-                label="Categories"
-                loading={statsQuery.isLoading}
-              />
-            </div>
-            <button
-              onClick={() => setActiveSection('quotes')}
-              className="text-sm font-medium text-red-600 hover:text-red-700 hover:underline"
-            >
-              Open the quote pipeline →
-            </button>
-          </div>
+          <OpsDashboard
+            onOpenQuotes={(filter) => {
+              if (filter) setQuoteFilter(filter as QuoteFilter);
+              setActiveSection('quotes');
+            }}
+            onOpenQuoteId={(id) => { setActiveSection('quotes'); setQuoteFilter('all'); setHighlightedQuoteId(String(id)); }}
+            onOpenInvoices={() => setActiveSection('invoices')}
+            onOpenCustomers={() => setActiveSection('customers')}
+            onNewInvoice={() => { setActiveSection('invoices'); setInvoiceView('create'); }}
+            onNewCustomer={() => { setActiveSection('customers'); setShowCustomerForm(true); }}
+            onNewJob={() => setActiveSection('gangsheet')}
+            toast={toast}
+          />
         )}
 
         {/* Quotes pipeline — search / filter / list */}
@@ -8291,29 +8259,6 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
 }
 
 
-function StatCard({
-  icon: Icon,
-  value,
-  label,
-  loading,
-}: {
-  icon: typeof ClipboardList;
-  value: number;
-  label: string;
-  loading: boolean;
-}) {
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 px-3 py-2">
-      <div className="flex items-center gap-2">
-        <Icon className="w-4 h-4 text-red-500 flex-shrink-0" />
-        <p className="text-base font-display font-semibold text-gray-900 leading-tight">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin text-gray-300" /> : value}
-        </p>
-        <p className="text-xs text-gray-500 truncate">{label}</p>
-      </div>
-    </div>
-  );
-}
 
 /**
  * One gang sheet (DTF) order on the dashboard's combined list.

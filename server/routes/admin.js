@@ -1246,4 +1246,207 @@ router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /dashboard-ops — everything the operations dashboard needs in one
+// round trip (2026-09-09 command-center redesign). All aggregate queries;
+// the only row-level fetch is the bounded open-jobs list for the schedule.
+router.get('/dashboard-ops', async (req, res, next) => {
+  try {
+    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, methodsR] = await Promise.all([
+      // Money movement by period: invoice payment entries + gang sheet paid.
+      pool.query(`
+        WITH pays AS (
+          SELECT (p->>'date')::timestamptz AS at, (p->>'amount')::numeric AS amt
+            FROM invoices, jsonb_array_elements(COALESCE(payments, '[]'::jsonb)) p
+           WHERE p->>'date' IS NOT NULL
+          UNION ALL
+          SELECT paid_at, (price_cents + COALESCE(shipping_cents, 0)) / 100.0
+            FROM gang_sheet_orders WHERE paid_at IS NOT NULL
+        )
+        SELECT
+          COALESCE(SUM(amt) FILTER (WHERE at::date = CURRENT_DATE), 0)::numeric(12,2) AS today,
+          COALESCE(SUM(amt) FILTER (WHERE at::date = CURRENT_DATE - 1), 0)::numeric(12,2) AS yesterday,
+          COALESCE(SUM(amt) FILTER (WHERE at >= date_trunc('week', now())), 0)::numeric(12,2) AS this_week,
+          COALESCE(SUM(amt) FILTER (WHERE at >= date_trunc('month', now())), 0)::numeric(12,2) AS this_month,
+          COALESCE(SUM(amt) FILTER (WHERE at >= date_trunc('month', now()) - interval '1 month'
+                                      AND at <  date_trunc('month', now())), 0)::numeric(12,2) AS last_month
+        FROM pays`),
+      pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+          COUNT(*) FILTER (WHERE status = 'pending' AND created_at < now() - interval '24 hours')::int AS pending_over_24h,
+          COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS new_today,
+          COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS new_yesterday,
+          COUNT(*) FILTER (WHERE status = 'quoted')::int AS quoted,
+          COALESCE(SUM(estimated_price) FILTER (WHERE status = 'quoted'), 0)::numeric(12,2) AS quoted_value,
+          COUNT(*) FILTER (WHERE status = 'quoted' AND created_at < now() - interval '3 days')::int AS quotes_need_follow_up,
+          COUNT(*) FILTER (WHERE status = 'quoted' AND created_at < now() - interval '14 days')::int AS abandoned_quotes,
+          COUNT(*) FILTER (WHERE status IN ('accepted', 'completed'))::int AS won,
+          COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected'))::int AS decided,
+          COALESCE(SUM(estimated_price) FILTER (WHERE status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
+          COALESCE(SUM(GREATEST(estimated_price - COALESCE(deposit_amount, 0), 0))
+            FILTER (WHERE status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
+          COUNT(*) FILTER (WHERE status = 'accepted' AND mockup_sent_at IS NOT NULL
+            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval
+        FROM quotes`),
+      pool.query(`
+        SELECT
+          COALESCE(SUM(amount_due) FILTER (WHERE status IN ('sent', 'partial', 'overdue')), 0)::numeric(12,2) AS unpaid_balance,
+          COUNT(*) FILTER (WHERE status IN ('sent', 'partial', 'overdue'))::int AS awaiting_payment
+        FROM invoices`),
+      pool.query(`
+        SELECT COUNT(*)::int AS new_this_month
+          FROM users WHERE role = 'customer' AND created_at >= date_trunc('month', now())`),
+      pool.query(`
+        WITH paid AS (
+          SELECT lower(customer_email) AS e, created_at AS at
+            FROM invoices WHERE amount_paid > 0 AND customer_email IS NOT NULL AND customer_email <> ''
+          UNION ALL
+          SELECT lower(customer_email), paid_at
+            FROM gang_sheet_orders WHERE paid_at IS NOT NULL AND customer_email IS NOT NULL AND customer_email <> ''
+        ), agg AS (
+          SELECT e, COUNT(*) AS n, MAX(at) AS last_at FROM paid GROUP BY e
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE n >= 2)::int AS repeat_customers,
+          COUNT(*) FILTER (WHERE last_at < now() - interval '90 days')::int AS inactive_90,
+          COUNT(*) FILTER (WHERE last_at < now() - interval '180 days')::int AS inactive_180,
+          COUNT(*) FILTER (WHERE n = 1 AND last_at < now() - interval '60 days')::int AS not_reordered,
+          COUNT(*) FILTER (WHERE last_at >= now() - interval '13 months' AND last_at < now() - interval '11 months')::int AS annual_window
+        FROM agg`),
+      // Open quote jobs — bounded; the schedule + pipeline slice this.
+      pool.query(`
+        SELECT id, customer_name, product_name, quantity, status, date_needed,
+               mockup_sent_at, mockup_approved_at, mockup_rejected_at,
+               in_production_at, ready_at, deposit_amount, balance_paid_at,
+               inputs_json->'items'->0->'inputs'->>'methodName' AS method
+          FROM quotes
+         WHERE status = 'accepted'
+         ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
+         LIMIT 100`),
+      pool.query(`
+        SELECT id, customer_name, length_ft, tier, status, paid_at
+          FROM gang_sheet_orders
+         WHERE status IN ('paid', 'in_production', 'ready')
+         ORDER BY paid_at ASC LIMIT 50`),
+      pool.query(`
+        SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
+          FROM quotes WHERE status = 'accepted'
+         GROUP BY 1`),
+    ]);
+
+    const money = moneyR.rows[0];
+    const qa = quoteAggR.rows[0];
+    const inv = invoiceAggR.rows[0];
+    const jobs = jobsR.rows;
+    const gang = gangR.rows;
+
+    // Quote sub-state → pipeline stage (Finishing has no data source yet).
+    const stageOf = (j) => {
+      if (j.ready_at) return 'pickup';
+      if (j.in_production_at) return 'printing';
+      if (j.mockup_sent_at && !j.mockup_approved_at && !j.mockup_rejected_at) return 'awaiting_approval';
+      if (j.mockup_approved_at) return 'ready_to_produce';
+      return 'artwork';
+    };
+    const pipeline = { quotes: qa.pending, artwork: 0, awaiting_approval: 0, ready_to_produce: 0, printing: 0, finishing: 0, pickup: 0 };
+    for (const j of jobs) pipeline[stageOf(j)] += 1;
+    for (const g of gang) {
+      if (g.status === 'paid') pipeline.ready_to_produce += 1;
+      else if (g.status === 'in_production') pipeline.printing += 1;
+      else if (g.status === 'ready') pipeline.pickup += 1;
+    }
+
+    const methods = { DTF: 0, Embroidery: 0, HTV: 0, 'Screen Print': 0, Other: 0 };
+    for (const r of methodsR.rows) {
+      const key = methods[r.method] !== undefined ? r.method : 'Other';
+      methods[key] += r.n;
+    }
+    methods.DTF += gang.length;
+
+    // Due / at-risk from date_needed (quotes) + tier deadline (gang sheets).
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const in7 = new Date(today); in7.setDate(in7.getDate() + 7);
+    const TIER_DAYS = { standard: 2, rush: 1, hot_rush: 0 };
+    const dueDateOf = (row) => {
+      if (row.date_needed) { const d = new Date(row.date_needed); return isNaN(d) ? null : d; }
+      if (row.tier && row.paid_at) {
+        const d = new Date(row.paid_at); d.setDate(d.getDate() + (TIER_DAYS[row.tier] ?? 2)); return d;
+      }
+      return null;
+    };
+    let dueToday = 0, dueWeek = 0, atRisk = 0;
+    const schedule = [];
+    for (const row of [...jobs, ...gang]) {
+      const done = row.ready_at || row.status === 'ready';
+      const due = dueDateOf(row);
+      const isGang = row.tier !== undefined;
+      if (due) {
+        if (!done && due < today) atRisk += 1;
+        if (due >= today && due < new Date(today.getTime() + 86400000)) dueToday += 1;
+        if (due >= today && due <= in7) dueWeek += 1;
+      }
+      schedule.push({
+        kind: isGang ? 'gangsheet' : 'quote',
+        id: row.id,
+        customer: row.customer_name || '(no name)',
+        job: isGang ? `DTF Gang Sheet ${row.length_ft} ft` : (row.product_name || 'Custom order'),
+        qty: isGang ? 1 : (row.quantity || 0),
+        method: isGang ? 'DTF' : (row.method || 'Other'),
+        stage: isGang
+          ? (row.status === 'paid' ? 'ready_to_produce' : row.status === 'in_production' ? 'printing' : 'pickup')
+          : stageOf(row),
+        due: due ? due.toISOString().slice(0, 10) : null,
+        overdue: !!(due && !done && due < today),
+      });
+    }
+    schedule.sort((a, b) => {
+      if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
+      if (!a.due) return 1;
+      if (!b.due) return -1;
+      return a.due.localeCompare(b.due);
+    });
+
+    res.json({
+      revenue: {
+        today: Number(money.today), yesterday: Number(money.yesterday),
+        this_week: Number(money.this_week), this_month: Number(money.this_month), last_month: Number(money.last_month),
+      },
+      kpis: {
+        orders_due_today: dueToday,
+        orders_due_week: dueWeek,
+        new_quotes_today: qa.new_today,
+        new_quotes_yesterday: qa.new_yesterday,
+        unpaid_balance: Number(inv.unpaid_balance) + Number(qa.balances_outstanding),
+        jobs_at_risk: atRisk,
+      },
+      pipeline,
+      methods,
+      schedule: schedule.slice(0, 8),
+      attention: {
+        proofs_waiting: qa.awaiting_approval,
+        quotes_unanswered_24h: qa.pending_over_24h,
+        orders_overdue: atRisk,
+        awaiting_payment: inv.awaiting_payment,
+        ready_for_pickup: pipeline.pickup,
+      },
+      sales: {
+        conversion_pct: qa.decided > 0 ? Math.round((qa.won / qa.decided) * 1000) / 10 : null,
+        quotes_awaiting_response: Number(qa.quoted_value),
+        approved_but_unpaid: Number(qa.approved_unpaid),
+      },
+      customers: {
+        new_this_month: custR.rows[0].new_this_month,
+        repeat_customers: paidAggR.rows[0].repeat_customers,
+        inactive_90: paidAggR.rows[0].inactive_90,
+        abandoned_quotes: qa.abandoned_quotes,
+        not_reordered: paidAggR.rows[0].not_reordered,
+        follow_up_quotes: qa.quotes_need_follow_up,
+        annual_window: paidAggR.rows[0].annual_window,
+        inactive_180: paidAggR.rows[0].inactive_180,
+      },
+      inventory: { tracked: false },
+    });
+  } catch (err) { next(err); }
+});
+
 export default router;
