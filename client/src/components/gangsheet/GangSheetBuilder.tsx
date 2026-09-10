@@ -1774,12 +1774,61 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // ─── File Upload ────────────────────────────────────────────────────────
 
+  // Trim fully-transparent padding from an upload so the placed element's
+  // bounding box matches the visible art instead of the source file's
+  // canvas (Kevin 2026-09-10: "crop the image to the actual size of image,
+  // not a square that always has to be cropped"). Only ALPHA is trimmed —
+  // an opaque white background may be intentional for DTF, so fully-opaque
+  // images pass through untouched.
+  async function trimTransparentPadding(dataUrl: string): Promise<string> {
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error('decode failed'));
+        i.src = dataUrl;
+      });
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h || w * h > 64_000_000) return dataUrl; // too large to scan in-browser
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return dataUrl;
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const THRESH = 8; // alpha at/below this counts as empty padding
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3] > THRESH) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX < 0) return dataUrl; // fully transparent — don't touch
+      if (minX === 0 && minY === 0 && maxX === w - 1 && maxY === h - 1) return dataUrl;
+      const PAD = 2; // tiny margin so anti-aliased edges aren't shaved
+      const sx = Math.max(0, minX - PAD), sy = Math.max(0, minY - PAD);
+      const tw = Math.min(w, maxX + 1 + PAD) - sx, th = Math.min(h, maxY + 1 + PAD) - sy;
+      if (tw <= 0 || th <= 0) return dataUrl;
+      const out = document.createElement('canvas');
+      out.width = tw; out.height = th;
+      out.getContext('2d')!.drawImage(c, sx, sy, tw, th, 0, 0, tw, th);
+      return out.toDataURL('image/png');
+    } catch {
+      return dataUrl; // trimming is best-effort — never block an upload
+    }
+  }
+
   async function handleFileUpload(files: FileList | null) {
     if (!files) return;
     for (const file of Array.from(files)) {
       const reader = new FileReader();
       reader.onload = async () => {
-        const dataUrl = reader.result as string;
+        const dataUrl = await trimTransparentPadding(reader.result as string);
         // Upload to DO Spaces
         try {
           const uploadRes = await fetch('/api/quotes/upload-design', {
