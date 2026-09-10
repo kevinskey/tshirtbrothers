@@ -1251,7 +1251,7 @@ router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
 // the only row-level fetch is the bounded open-jobs list for the schedule.
 router.get('/dashboard-ops', async (req, res, next) => {
   try {
-    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, methodsR] = await Promise.all([
+    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, methodsR, blanksR, overdueR] = await Promise.all([
       // Money movement by period: invoice payment entries + gang sheet paid.
       pool.query(`
         WITH pays AS (
@@ -1315,7 +1315,8 @@ router.get('/dashboard-ops', async (req, res, next) => {
         FROM agg`),
       // Open quote jobs — bounded; the schedule + pipeline slice this.
       pool.query(`
-        SELECT id, customer_name, product_name, quantity, status, date_needed,
+        SELECT id, customer_name, customer_email, product_name, quantity, status,
+               date_needed, estimated_price, created_at,
                mockup_sent_at, mockup_approved_at, mockup_rejected_at,
                in_production_at, ready_at, deposit_amount, balance_paid_at,
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
@@ -1332,6 +1333,25 @@ router.get('/dashboard-ops', async (req, res, next) => {
         SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
           FROM quotes WHERE status = 'accepted'
          GROUP BY 1`),
+      // Active blanks POs — incoming shipments and will-call pickups.
+      pool.query(`
+        SELECT po.id, po.po_number, po.status, po.shipping_method, po.total,
+               po.expected_delivery, po.created_at, po.quote_id,
+               COALESCE(q.customer_name, i.customer_name) AS for_customer
+          FROM purchase_orders po
+          LEFT JOIN quotes q ON q.id = po.quote_id
+          LEFT JOIN invoices i ON i.id = po.invoice_id
+         WHERE po.is_test = FALSE AND po.status IN ('submitted', 'in_progress', 'shipped')
+         ORDER BY po.expected_delivery ASC NULLS LAST, po.created_at DESC
+         LIMIT 12`),
+      // Invoices past their due date with money still owed.
+      pool.query(`
+        SELECT id, invoice_number, customer_name, customer_email, amount_due, due_date
+          FROM invoices
+         WHERE amount_due > 0 AND status <> 'paid'
+           AND due_date IS NOT NULL AND due_date < CURRENT_DATE
+         ORDER BY due_date ASC
+         LIMIT 10`),
     ]);
 
     const money = moneyR.rows[0];
@@ -1389,8 +1409,11 @@ router.get('/dashboard-ops', async (req, res, next) => {
         kind: isGang ? 'gangsheet' : 'quote',
         id: row.id,
         customer: row.customer_name || '(no name)',
+        email: row.customer_email || null,
         job: isGang ? `DTF Gang Sheet ${row.length_ft} ft` : (row.product_name || 'Custom order'),
         qty: isGang ? 1 : (row.quantity || 0),
+        price: isGang ? null : (Number(row.estimated_price) || null),
+        days_open: row.created_at ? Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000) : null,
         method: isGang ? 'DTF' : (row.method || 'Other'),
         stage: isGang
           ? (row.status === 'paid' ? 'ready_to_produce' : row.status === 'in_production' ? 'printing' : 'pickup')
@@ -1421,7 +1444,25 @@ router.get('/dashboard-ops', async (req, res, next) => {
       },
       pipeline,
       methods,
-      schedule: schedule.slice(0, 8),
+      schedule: schedule.slice(0, 12),
+      blanks: blanksR.rows.map((b) => ({
+        id: b.id,
+        po_number: b.po_number,
+        status: b.status,
+        will_call: b.shipping_method === '6',
+        total: Number(b.total) || null,
+        expected: b.expected_delivery,
+        for_customer: b.for_customer || null,
+        quote_id: b.quote_id,
+      })),
+      overdue_invoices: overdueR.rows.map((r) => ({
+        id: r.id,
+        invoice_number: r.invoice_number,
+        customer_name: r.customer_name,
+        customer_email: r.customer_email,
+        amount_due: Number(r.amount_due) || 0,
+        due_date: r.due_date,
+      })),
       attention: {
         proofs_waiting: qa.awaiting_approval,
         quotes_unanswered_24h: qa.pending_over_24h,

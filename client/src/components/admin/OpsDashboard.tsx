@@ -5,6 +5,7 @@ import {
   Calendar, CalendarDays, DollarSign, ShoppingBag, FileText, CreditCard, AlertTriangle,
   Settings as Gear, ArrowRight, Palette, Hourglass, CheckCircle2, Printer, Scissors, Package,
   BarChart3, Users, AlertCircle, Clock, Truck, ChevronRight, Zap, Plus, Loader2, Target,
+  Mail as MailIcon,
 } from 'lucide-react';
 
 // Operations command-center dashboard — implements Kevin's approved
@@ -17,7 +18,9 @@ type OpsData = {
   kpis: { orders_due_today: number; orders_due_week: number; new_quotes_today: number; new_quotes_yesterday: number; unpaid_balance: number; jobs_at_risk: number };
   pipeline: Record<string, number>;
   methods: Record<string, number>;
-  schedule: Array<{ kind: 'quote' | 'gangsheet'; id: number; customer: string; job: string; qty: number; method: string; stage: string; due: string | null; overdue: boolean }>;
+  schedule: Array<{ kind: 'quote' | 'gangsheet'; id: number; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
+  blanks: Array<{ id: number; po_number: string; status: string; will_call: boolean; total: number | null; expected: string | null; for_customer: string | null; quote_id: number | null }>;
+  overdue_invoices: Array<{ id: string; invoice_number: string; customer_name: string; customer_email: string; amount_due: number; due_date: string }>;
   attention: { proofs_waiting: number; quotes_unanswered_24h: number; orders_overdue: number; awaiting_payment: number; ready_for_pickup: number };
   sales: { conversion_pct: number | null; quotes_awaiting_response: number; approved_but_unpaid: number };
   customers: { new_this_month: number; repeat_customers: number; inactive_90: number; abandoned_quotes: number; not_reordered: number; follow_up_quotes: number; annual_window: number; inactive_180: number };
@@ -43,15 +46,6 @@ const METHOD_PILLS: Record<string, string> = {
   HTV: 'bg-green-50 text-green-600',
   'Screen Print': 'bg-purple-50 text-purple-600',
   Other: 'bg-gray-100 text-gray-600',
-};
-
-const STAGE_BADGE: Record<string, { label: string; cls: string }> = {
-  artwork: { label: 'Artwork', cls: 'bg-amber-50 text-amber-600' },
-  awaiting_approval: { label: 'Approval', cls: 'bg-amber-50 text-amber-600' },
-  ready_to_produce: { label: 'Ready', cls: 'bg-green-50 text-green-600' },
-  printing: { label: 'Printing', cls: 'bg-purple-50 text-purple-600' },
-  finishing: { label: 'Finishing', cls: 'bg-violet-50 text-violet-600' },
-  pickup: { label: 'Pickup', cls: 'bg-teal-50 text-teal-600' },
 };
 
 function dueLabel(due: string | null, overdue: boolean): { text: string; cls: string } {
@@ -126,15 +120,15 @@ function StatRow({ label, value, valueCls = 'text-gray-900' }: { label: string; 
   );
 }
 
-export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob, toast }: {
+export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob }: {
   onOpenQuotes: (filter?: string) => void;
-  onOpenQuoteId: (id: number) => void;
+  onOpenQuoteId?: (id: number) => void;
   onOpenInvoices: () => void;
   onOpenCustomers: () => void;
   onNewInvoice: () => void;
   onNewCustomer: () => void;
   onNewJob: () => void;
-  toast: (msg: string, type?: 'error' | 'success') => void;
+  toast?: (msg: string, type?: 'error' | 'success') => void;
 }) {
   const navigate = useNavigate();
   const { data, isLoading, isError } = useQuery<OpsData>({
@@ -234,45 +228,121 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
       {/* Schedule + Attention */}
       <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <CardHeader icon={CalendarDays} title="Today's Production Schedule" linkText="View All Jobs" onLink={() => onOpenQuotes('accepted')} />
+          <CardHeader icon={CalendarDays} title="Open Orders" linkText="View All" onLink={() => onOpenQuotes('accepted')} />
           {d.schedule.length === 0 ? (
-            <p className="py-8 text-center text-sm text-gray-400">No open jobs — the schedule fills in as quotes are accepted.</p>
+            <p className="py-8 text-center text-sm text-gray-400">No open orders — this fills in as quotes are accepted.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
-                    <th className="py-2 pr-3 font-medium">Due</th>
                     <th className="py-2 pr-3 font-medium">Customer</th>
                     <th className="py-2 pr-3 font-medium">Job</th>
                     <th className="py-2 pr-3 text-right font-medium">Qty</th>
-                    <th className="py-2 pr-3 font-medium">Method</th>
-                    <th className="py-2 font-medium">Status</th>
+                    <th className="py-2 pr-3 text-right font-medium">Value</th>
+                    <th className="py-2 pr-3 font-medium">Open</th>
+                    <th className="py-2 pr-3 font-medium">Due</th>
+                    <th className="py-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {d.schedule.map((row) => {
                     const due = dueLabel(row.due, row.overdue);
-                    const badge = STAGE_BADGE[row.stage] ?? { label: row.stage, cls: 'bg-gray-100 text-gray-600' };
+                    const late = row.overdue || (row.days_open !== null && row.days_open > 10 && !row.due);
                     return (
                       <tr key={`${row.kind}-${row.id}`}
-                        onClick={() => (row.kind === 'quote' ? onOpenQuoteId(row.id) : navigate('/admin/dtf-orders'))}
-                        className="cursor-pointer hover:bg-gray-50">
-                        <td className={`whitespace-nowrap py-2.5 pr-3 ${due.cls}`}>{due.text}</td>
+                        onClick={() => (row.kind === 'quote' ? navigate(`/admin/order/${row.id}`) : navigate('/admin/dtf-orders'))}
+                        className={`cursor-pointer hover:bg-gray-50 ${late ? 'bg-red-50/50' : ''}`}>
                         <td className="max-w-[140px] truncate py-2.5 pr-3 font-medium text-gray-900">{row.customer}</td>
-                        <td className="max-w-[160px] truncate py-2.5 pr-3 text-gray-700">{row.job}</td>
+                        <td className="max-w-[150px] truncate py-2.5 pr-3 text-gray-700">{row.job}</td>
                         <td className="py-2.5 pr-3 text-right text-gray-700">{row.qty || '—'}</td>
-                        <td className="py-2.5 pr-3 text-gray-700">{row.method}</td>
-                        <td className="py-2.5">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${badge.cls}`}>
-                            <span className="h-1.5 w-1.5 rounded-full bg-current" /> {badge.label}
-                          </span>
+                        <td className="py-2.5 pr-3 text-right text-gray-700">{row.price ? money(row.price) : '—'}</td>
+                        <td className={`whitespace-nowrap py-2.5 pr-3 ${row.days_open !== null && row.days_open > 10 ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
+                          {row.days_open !== null ? `${row.days_open}d` : '—'}
+                        </td>
+                        <td className={`whitespace-nowrap py-2.5 pr-3 ${due.cls}`}>{due.text}</td>
+                        <td className="py-2.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          {row.email && (
+                            <button
+                              title={`Email ${row.customer}`}
+                              onClick={() => { window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(row.email!)}&composeSubject=${encodeURIComponent(`Your T-Shirt Brothers order #${row.id}`)}`; }}
+                              className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
+                            >
+                              <MailIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Blanks in motion */}
+          <div className="mt-4 border-t border-gray-100 pt-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-gray-700" />
+                <h4 className="text-sm font-bold text-gray-900">Blanks — incoming & pickups</h4>
+              </div>
+              <button onClick={() => { window.location.href = '/admin?section=purchasing'; }} className="text-xs font-semibold text-blue-600 hover:underline">
+                Purchasing →
+              </button>
+            </div>
+            {d.blanks.length === 0 ? (
+              <p className="py-2 text-center text-xs text-gray-400">No blanks on order right now.</p>
+            ) : (
+              <ul className="divide-y divide-gray-50 text-sm">
+                {d.blanks.map((b) => (
+                  <li key={b.id} className="flex items-center gap-2 py-1.5">
+                    {b.will_call
+                      ? <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">Will Call</span>
+                      : <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 capitalize">{b.status.replace('_', ' ')}</span>}
+                    <span className="flex-1 truncate text-gray-800">
+                      <span className="font-mono text-xs">{b.po_number}</span>
+                      {b.for_customer ? ` — ${b.for_customer}` : ' — restock'}
+                    </span>
+                    {b.total ? <span className="text-gray-600">{money(b.total)}</span> : null}
+                    <span className="whitespace-nowrap text-xs text-gray-500">
+                      {b.will_call ? 'pickup at McDonough' : b.expected ? `expected ${new Date(b.expected).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Overdue invoices */}
+          {d.overdue_invoices.length > 0 && (
+            <div className="mt-4 border-t border-gray-100 pt-3">
+              <div className="mb-2 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <h4 className="text-sm font-bold text-gray-900">Overdue invoices</h4>
+              </div>
+              <ul className="divide-y divide-gray-50 text-sm">
+                {d.overdue_invoices.map((inv) => (
+                  <li key={inv.id} className="flex items-center gap-2 py-1.5">
+                    <span className="flex-1 truncate text-gray-800">
+                      <span className="font-medium">{inv.customer_name}</span> · {inv.invoice_number}
+                    </span>
+                    <span className="font-semibold text-red-600">{money2(inv.amount_due)}</span>
+                    <span className="whitespace-nowrap text-xs text-red-500">
+                      due {new Date(inv.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                    {inv.customer_email && (
+                      <button
+                        title={`Email ${inv.customer_name}`}
+                        onClick={() => { window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(inv.customer_email)}&composeSubject=${encodeURIComponent(`Invoice ${inv.invoice_number} — balance due`)}`; }}
+                        className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"
+                      >
+                        <MailIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -334,15 +404,17 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <CardHeader icon={Package} title="Inventory / Purchasing" linkText="View Inventory" onLink={() => toast('Inventory tracking is not set up yet', 'error')} />
-          {/* Honest empty state — TSB doesn't track inventory/POs yet. The
-              card is ready to light up once a data source exists. */}
-          <StatRow label="Garments awaiting purchase" value="—" valueCls="text-gray-400" />
-          <StatRow label="Purchase orders open" value="—" valueCls="text-gray-400" />
-          <StatRow label="Backordered items" value="—" valueCls="text-gray-400" />
+          <CardHeader icon={Package} title="Blanks Purchasing" linkText="Open Purchasing" onLink={() => { window.location.href = '/admin?section=purchasing'; }} />
+          <StatRow label="Purchase orders open" value={d.blanks.length} />
+          <StatRow label="Will-call pickups waiting" value={d.blanks.filter((b) => b.will_call).length} valueCls={d.blanks.some((b) => b.will_call) ? 'text-teal-700' : 'text-gray-900'} />
+          <StatRow label="Shipments incoming" value={d.blanks.filter((b) => !b.will_call).length} />
+          <StatRow
+            label="Open blanks value"
+            value={money(d.blanks.reduce((s, b) => s + (b.total || 0), 0))}
+          />
           <div className="my-2 border-t border-gray-200" />
-          <p className="py-3 text-center text-xs text-gray-400">
-            Inventory and supply tracking isn't connected yet — stock alerts will appear here once it is.
+          <p className="py-2 text-center text-xs text-gray-500">
+            Live from the S&S purchasing system — order blanks from any quote, invoice, or the Blanks (S&S) page.
           </p>
         </div>
       </div>
@@ -370,7 +442,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-orange-300 bg-white px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50">
             <FileText className="h-4 w-4" /> New Job
           </button>
-          <button onClick={() => toast('Purchasing isn\'t tracked yet — coming with inventory', 'error')}
+          <button onClick={() => { window.location.href = '/admin?section=purchasing'; }}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-orange-300 bg-white px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50">
             <Package className="h-4 w-4" /> Purchase Order
           </button>

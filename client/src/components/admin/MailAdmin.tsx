@@ -86,6 +86,23 @@ export default function MailAdmin() {
 
   useEffect(() => { void loadStatus(); void loadAliases(); }, [loadStatus, loadAliases]);
 
+  // Deep link from the dashboard / order pages:
+  // /admin?section=mail&composeTo=<addr>&composeSubject=<subj> opens the
+  // composer prefilled.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const to = params.get('composeTo');
+    if (to) {
+      setCompose({
+        from: 'kevin@tshirtbrothers.com',
+        to,
+        cc: '',
+        subject: params.get('composeSubject') || '',
+        body: '',
+      });
+    }
+  }, []);
+
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => void loadMessages(), search ? 300 : 0);
