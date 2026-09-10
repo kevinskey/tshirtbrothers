@@ -47,6 +47,9 @@ interface PurchaseOrder {
   id: number;
   quote_id: number | null;
   quote_customer: string | null;
+  invoice_id: number | null;
+  invoice_number: string | null;
+  invoice_customer: string | null;
   po_number: string;
   is_test: boolean;
   status: string;
@@ -109,8 +112,9 @@ const money = (n: number | string | null | undefined) =>
 let lineKeySeq = 0;
 const nextKey = () => `line-${++lineKeySeq}`;
 
-export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
+export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPrefillConsumed }: {
   prefillQuoteId?: number | null;
+  prefillInvoiceId?: number | string | null;
   onPrefillConsumed?: () => void;
 }) {
   const [view, setView] = useState<'list' | 'builder'>('list');
@@ -124,6 +128,12 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
   const [loadingStyles, setLoadingStyles] = useState<Record<string, boolean>>({});
   const [quoteId, setQuoteId] = useState<number | null>(null);
   const [quoteCustomer, setQuoteCustomer] = useState<string>('');
+  const [invoiceId, setInvoiceId] = useState<number | string | null>(null);
+  const [invoiceNumber, setInvoiceNumber] = useState<string>('');
+  // Per-line product-link search for lines that arrived without an S&S style
+  const [linkTarget, setLinkTarget] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkHits, setLinkHits] = useState<ProductHit[]>([]);
   const [shipTo, setShipTo] = useState<ShipTo | null>(null);
   const [defaultShipTo, setDefaultShipTo] = useState<ShipTo | null>(null);
   const [shippingMethod, setShippingMethod] = useState('1');
@@ -195,6 +205,8 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
       }));
       setQuoteId(data.quote?.id ?? prefillQuoteId);
       setQuoteCustomer(data.quote?.customer_name || '');
+      setInvoiceId(null);
+      setInvoiceNumber('');
       setLines(newLines);
       setPlacedResult(null);
       setView('builder');
@@ -208,6 +220,41 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillQuoteId]);
+
+  // Prefill from an invoice. Invoice items have no product link, so the
+  // server best-effort matches descriptions to catalog styles; the rest
+  // get the inline "link product" search.
+  useEffect(() => {
+    if (!prefillInvoiceId) return;
+    void (async () => {
+      const r = await fetch(`/api/purchasing/invoice-lines/${prefillInvoiceId}`, { headers: authHeaders() });
+      if (!r.ok) return;
+      const data = await r.json();
+      const newLines: PoLine[] = (data.lines || []).map((l: { styleId: string | null; productName: string; color: string; size: string; qty: number }) => ({
+        key: nextKey(),
+        styleId: l.styleId,
+        productName: l.productName,
+        color: l.color,
+        size: l.size,
+        qty: l.qty,
+        sku: null, price: null, stock: null,
+      }));
+      setInvoiceId(data.invoice?.id ?? prefillInvoiceId);
+      setInvoiceNumber(data.invoice?.invoice_number || '');
+      setQuoteId(null);
+      setQuoteCustomer(data.invoice?.customer_name || '');
+      setLines(newLines);
+      setPlacedResult(null);
+      setView('builder');
+      onPrefillConsumed?.();
+      const styleIds = [...new Set(newLines.map((l) => l.styleId).filter(Boolean))] as string[];
+      for (const sid of styleIds) {
+        const skus = await loadStyleSkus(sid);
+        setLines((prev) => prev.map((ln) => (ln.styleId === sid ? resolveLineWith(ln, skus) : ln)));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillInvoiceId]);
 
   // Try to resolve a line's (color, size) to a SKU from the loaded style data.
   function resolveLineWith(line: PoLine, skus: SkuRow[]): PoLine {
@@ -238,6 +285,33 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
     }, 300);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [productSearch]);
+
+  // Debounced search for linking a product to an unmatched line
+  useEffect(() => {
+    if (!linkTarget || linkSearch.trim().length < 2) { setLinkHits([]); return; }
+    const t = setTimeout(async () => {
+      const r = await fetch(`/api/products?search=${encodeURIComponent(linkSearch)}&limit=6`, { headers: authHeaders() });
+      if (r.ok) {
+        const data = await r.json();
+        const items = Array.isArray(data) ? data : (data.products || []);
+        setLinkHits(items.filter((p: ProductHit) => p.ss_id));
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [linkSearch, linkTarget]);
+
+  async function linkProductToLine(lineKey: string, p: ProductHit) {
+    if (!p.ss_id) return;
+    setLinkTarget(null);
+    setLinkSearch('');
+    setLinkHits([]);
+    const skus = skuCache[p.ss_id] || await loadStyleSkus(p.ss_id);
+    setLines((prev) => prev.map((l) => {
+      if (l.key !== lineKey) return l;
+      const next = { ...l, styleId: p.ss_id, productName: `${p.brand ? `${p.brand} ` : ''}${p.name}` };
+      return resolveLineWith(next, skus);
+    }));
+  }
 
   async function addProductLine(p: ProductHit) {
     if (!p.ss_id) return;
@@ -283,6 +357,7 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
           shippingMethod,
           testOrder,
           quoteId,
+          invoiceId,
           notes: notes || undefined,
         }),
       });
@@ -304,6 +379,10 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
     setLines([]);
     setQuoteId(null);
     setQuoteCustomer('');
+    setInvoiceId(null);
+    setInvoiceNumber('');
+    setLinkTarget(null);
+    setLinkSearch('');
     setNotes('');
     setTestOrder(true);
     setPlacedResult(null);
@@ -376,6 +455,11 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
               Prefilled from Quote #{quoteId}{quoteCustomer ? ` — ${quoteCustomer}` : ''}. Quantities are the quoted counts; add spoilage extras if needed.
             </div>
           )}
+          {invoiceId && (
+            <div className="text-sm bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              Prefilled from Invoice {invoiceNumber || `#${invoiceId}`}{quoteCustomer ? ` — ${quoteCustomer}` : ''}. Invoice lines aren't linked to the catalog, so check each match; use “Link product” on any unmatched line.
+            </div>
+          )}
 
           {/* Line items */}
           <div className="bg-white border rounded-xl overflow-hidden">
@@ -407,10 +491,40 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
                       const loading = l.styleId ? loadingStyles[l.styleId] : false;
                       return (
                         <tr key={l.key} className="border-b last:border-0">
-                          <td className="px-4 py-2 max-w-[220px]">
+                          <td className="px-4 py-2 max-w-[240px]">
                             <div className="truncate" title={l.productName}>{l.productName || '—'}</div>
-                            {!l.styleId && (
-                              <div className="text-xs text-red-600">Not linked to an S&S style — remove and re-add via search</div>
+                            {!l.styleId && linkTarget !== l.key && (
+                              <button
+                                onClick={() => { setLinkTarget(l.key); setLinkSearch(''); setLinkHits([]); }}
+                                className="text-xs text-brand-600 hover:underline"
+                              >
+                                Link product…
+                              </button>
+                            )}
+                            {linkTarget === l.key && (
+                              <div className="relative mt-1">
+                                <input
+                                  autoFocus
+                                  value={linkSearch}
+                                  onChange={(e) => setLinkSearch(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === 'Escape') setLinkTarget(null); }}
+                                  placeholder="Search catalog…"
+                                  className="w-full border rounded px-2 py-1 text-xs"
+                                />
+                                {linkHits.length > 0 && (
+                                  <div className="absolute z-10 mt-1 bg-white border rounded-lg shadow-lg w-64">
+                                    {linkHits.map((p) => (
+                                      <button
+                                        key={p.id}
+                                        onClick={() => void linkProductToLine(l.key, p)}
+                                        className="block w-full text-left px-2 py-1.5 text-xs hover:bg-gray-50"
+                                      >
+                                        {p.brand ? `${p.brand} — ` : ''}{p.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td className="px-2 py-2">
@@ -623,7 +737,11 @@ export default function PurchasingAdmin({ prefillQuoteId, onPrefillConsumed }: {
                       </td>
                       <td className="px-2 py-2 whitespace-nowrap">{new Date(po.created_at).toLocaleDateString()}</td>
                       <td className="px-2 py-2">
-                        {po.quote_id ? `Quote #${po.quote_id}${po.quote_customer ? ` — ${po.quote_customer}` : ''}` : 'Restock'}
+                        {po.quote_id
+                          ? `Quote #${po.quote_id}${po.quote_customer ? ` — ${po.quote_customer}` : ''}`
+                          : po.invoice_id
+                            ? `Invoice ${po.invoice_number || `#${po.invoice_id}`}${po.invoice_customer ? ` — ${po.invoice_customer}` : ''}`
+                            : 'Restock'}
                       </td>
                       <td className="px-2 py-2">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[po.status] || 'bg-gray-100 text-gray-600'}`}>

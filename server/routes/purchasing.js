@@ -113,6 +113,71 @@ router.get('/quote-lines/:quoteId', async (req, res, next) => {
   }
 });
 
+// GET /invoice-lines/:invoiceId — an invoice's items shaped for PO prefill.
+// Invoice items carry no product_id, only free-text description (+ optional
+// color/size), so the S&S style is resolved by best-effort name match
+// against the catalog; unmatched lines come back with styleId null and the
+// builder lets the admin link a product manually.
+router.get('/invoice-lines/:invoiceId', async (req, res, next) => {
+  try {
+    const { invoiceId } = req.params;
+    const invQ = await pool.query(
+      'SELECT id, invoice_number, customer_name, items FROM invoices WHERE id = $1',
+      [invoiceId]
+    );
+    if (invQ.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    const inv = invQ.rows[0];
+    const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
+
+    const { rows: catalog } = await pool.query(
+      "SELECT ss_id, name, brand FROM products WHERE ss_id IS NOT NULL AND ss_id <> ''"
+    );
+    const matchStyle = (description) => {
+      const desc = (description || '').toLowerCase();
+      if (!desc) return null;
+      let best = null;
+      let bestLen = 0;
+      for (const p of catalog) {
+        const name = (p.name || '').toLowerCase();
+        const branded = `${(p.brand || '').toLowerCase()} ${name}`.trim();
+        // Either string containing the other counts; prefer the longest
+        // matched name so "Heavy Blend Hooded Sweatshirt" beats "T-Shirt".
+        if (
+          (name.length >= 6 && (desc.includes(name) || name.includes(desc))) ||
+          (branded.length >= 6 && (desc.includes(branded) || branded.includes(desc)))
+        ) {
+          if (name.length > bestLen) {
+            best = p;
+            bestLen = name.length;
+          }
+        }
+      }
+      return best ? { styleId: best.ss_id, matchedName: `${best.brand ? `${best.brand} ` : ''}${best.name}` } : null;
+    };
+
+    const lines = [];
+    for (const item of Array.isArray(items) ? items : []) {
+      const qty = Number(item.quantity) || 0;
+      if (qty <= 0) continue;
+      const match = matchStyle(item.description);
+      lines.push({
+        styleId: match?.styleId || null,
+        productName: match?.matchedName || item.description || '',
+        color: (item.color || '').trim(),
+        size: (item.size || '').trim(),
+        qty,
+      });
+    }
+
+    res.json({
+      invoice: { id: inv.id, invoice_number: inv.invoice_number, customer_name: inv.customer_name },
+      lines,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /orders — place the PO with S&S and record it.
 // body: { lines: [{sku, qty, note?}], shipTo, shippingMethod?, poNumber?,
 //         testOrder?, quoteId?, notes?, warehouse? }
@@ -120,7 +185,7 @@ router.post('/orders', async (req, res, next) => {
   try {
     const {
       lines, shipTo, shippingMethod = '1', poNumber, testOrder = false,
-      quoteId, notes, warehouse,
+      quoteId, invoiceId, notes, warehouse,
     } = req.body;
 
     const cleanLines = (Array.isArray(lines) ? lines : [])
@@ -189,10 +254,10 @@ router.post('/orders', async (req, res, next) => {
 
     const { rows } = await pool.query(
       `INSERT INTO purchase_orders
-         (quote_id, po_number, is_test, status, ship_to, shipping_method,
+         (quote_id, invoice_id, po_number, is_test, status, ship_to, shipping_method,
           lines, ss_orders, subtotal, shipping, tax, total, expected_delivery,
           notes, placed_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$16,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
         quoteId || null, po, !!testOrder,
@@ -202,6 +267,7 @@ router.post('/orders', async (req, res, next) => {
         totals.subtotal, totals.shipping, totals.tax, totals.total,
         expected ? expected.slice(0, 10) : null,
         notes || null, req.user?.email || null,
+        invoiceId || null,
       ]
     );
 
@@ -218,9 +284,11 @@ router.post('/orders', async (req, res, next) => {
 router.get('/orders', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT po.*, q.customer_name AS quote_customer
+      `SELECT po.*, q.customer_name AS quote_customer,
+              i.invoice_number AS invoice_number, i.customer_name AS invoice_customer
          FROM purchase_orders po
          LEFT JOIN quotes q ON q.id = po.quote_id
+         LEFT JOIN invoices i ON i.id = po.invoice_id
         ORDER BY po.created_at DESC
         LIMIT 200`
     );

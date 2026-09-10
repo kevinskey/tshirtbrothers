@@ -542,6 +542,7 @@ export default function AdminPage() {
   // Quote id handed to the Blanks (S&S) purchasing builder by the quote
   // menu's "Order blanks" action; cleared once the builder consumes it.
   const [purchasingQuoteId, setPurchasingQuoteId] = useState<number | null>(null);
+  const [purchasingInvoiceId, setPurchasingInvoiceId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Which desktop top-nav group dropdown is open (label string), if any.
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
@@ -4289,6 +4290,7 @@ export default function AdminPage() {
                             </button>
                           )}
                           {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
+                          <button onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Order blanks</button>
                           <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
                         </div>
                       </div>
@@ -4353,6 +4355,13 @@ export default function AdminPage() {
                                     <DollarSign className="w-4 h-4" />
                                   </button>
                                 )}
+                                <button
+                                  title="Order blanks (S&S)"
+                                  onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }}
+                                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                                >
+                                  <Package className="w-4 h-4" />
+                                </button>
                                 <button
                                   title="Delete"
                                   onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
@@ -6642,7 +6651,8 @@ export default function AdminPage() {
         {activeSection === 'purchasing' && (
           <PurchasingAdmin
             prefillQuoteId={purchasingQuoteId}
-            onPrefillConsumed={() => setPurchasingQuoteId(null)}
+            prefillInvoiceId={purchasingInvoiceId}
+            onPrefillConsumed={() => { setPurchasingQuoteId(null); setPurchasingInvoiceId(null); }}
           />
         )}
 
