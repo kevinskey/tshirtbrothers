@@ -185,7 +185,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // My Sheets panel (customer mode only) — list of the customer's own saved
   // sheets, fetched from the same /sheets endpoint persistSheet() writes to.
-  const [mySheets, setMySheets] = useState<{ id: number; name: string; sheet_length_ft: number; status: string; updated_at: string }[]>([]);
+  const [mySheets, setMySheets] = useState<{ id: number; name: string; sheet_length_ft: number; status: string; preview_url?: string | null; updated_at: string }[]>([]);
   const [mySheetsOpen, setMySheetsOpen] = useState(false);
   const [mySheetsLoading, setMySheetsLoading] = useState(false);
 
@@ -1636,6 +1636,20 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       }
       persistable.push(slim);
     }
+    // Small JPEG thumbnail of the sheet for the saved-sheets lists. Grid
+    // objects are excludeFromExport, so this is just the artwork on white.
+    // Best-effort: a preview failure must never block the save.
+    let previewUrl: string | null = null;
+    try {
+      const canvas = fabricRef.current;
+      if (canvas && designs.length > 0) {
+        const mult = 440 / (SHEET_WIDTH_PX * (canvas.getZoom() || 1));
+        const jpeg = canvas.toDataURL({ format: 'jpeg', quality: 0.72, multiplier: mult });
+        const hosted = await uploadDataUrlToSpaces(jpeg, `${sheetName || 'sheet'}-preview.jpg`);
+        if (!hosted.startsWith('data:')) previewUrl = hosted;
+      }
+    } catch { /* thumbnail only */ }
+
     const body = {
       name: sheetName,
       sheet_length_ft: sheetLengthFt,
@@ -1643,6 +1657,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       total_cost: totalCost,
       designs: persistable,
       status,
+      preview_url: previewUrl,
     };
 
     // A slim payload should be quick; if the network is genuinely dead,
@@ -1951,6 +1966,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
               )}
               {!mySheetsLoading && mySheets.map((s) => (
                 <div key={s.id} className="flex items-center justify-between gap-2 text-xs py-1.5 border-b border-gray-50 last:border-0">
+                  {s.preview_url && <img src={s.preview_url} alt="" className="w-8 h-8 object-cover object-top rounded border border-gray-200 flex-shrink-0" />}
                   <span className="truncate flex-1">
                     {s.name} · {s.sheet_length_ft}ft · {new Date(s.updated_at).toLocaleDateString()}
                   </span>

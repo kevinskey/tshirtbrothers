@@ -459,7 +459,7 @@ function SSPricingInfo({ productName, quantity, printAreas }: { productName: str
 function GangSheetList() {
   // total_cost is a Postgres NUMERIC, which node-postgres returns as a string.
   // Type it as `number | string` so we don't accidentally call number methods on it.
-  const [sheets, setSheets] = useState<{ id: number; name: string; sheet_length_ft: number; pricing_tier: string; total_cost: number | string; status: string; design_count: number; created_at: string; updated_at: string }[]>([]);
+  const [sheets, setSheets] = useState<{ id: number; name: string; sheet_length_ft: number; pricing_tier: string; total_cost: number | string; status: string; design_count: number; preview_url?: string | null; created_at: string; updated_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -494,9 +494,13 @@ function GangSheetList() {
     <div className="space-y-3">
       {sheets.map(s => (
         <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 hover:border-orange-300 transition">
-          <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Layers className="w-5 h-5 text-orange-600" />
-          </div>
+          {s.preview_url ? (
+            <img src={s.preview_url} alt="" className="w-14 h-14 object-cover object-top rounded-lg border border-gray-200 bg-white flex-shrink-0" />
+          ) : (
+            <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Layers className="w-5 h-5 text-orange-600" />
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-gray-900 truncate">{s.name}</p>
             <p className="text-xs text-gray-500">{s.design_count || 0} designs · {s.sheet_length_ft || 1}ft · {s.pricing_tier || 'standard'}</p>

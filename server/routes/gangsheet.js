@@ -11,7 +11,7 @@ router.get('/', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT id, name, sheet_length_ft, pricing_tier, total_cost, status,
               jsonb_array_length(COALESCE(designs, '[]'::jsonb)) as design_count,
-              exported_url, created_at, updated_at
+              exported_url, preview_url, created_at, updated_at
        FROM gang_sheets ORDER BY updated_at DESC`
     );
     res.json(rows);
@@ -42,7 +42,7 @@ router.get('/:id', async (req, res, next) => {
 // PUT /:id - Save sheet state
 router.put('/:id', async (req, res, next) => {
   try {
-    const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status } = req.body;
+    const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status, preview_url } = req.body;
     const { rows } = await pool.query(
       `UPDATE gang_sheets SET
         name = COALESCE($1, name),
@@ -52,12 +52,13 @@ router.put('/:id', async (req, res, next) => {
         layout_json = COALESCE($5, layout_json),
         designs = COALESCE($6, designs),
         status = COALESCE($7, status),
+        preview_url = COALESCE($8, preview_url),
         updated_at = NOW()
-      WHERE id = $8 RETURNING *`,
+      WHERE id = $9 RETURNING *`,
       [name, sheet_length_ft, pricing_tier, total_cost,
        layout_json ? JSON.stringify(layout_json) : null,
        designs ? JSON.stringify(designs) : null,
-       status, req.params.id]
+       status, preview_url || null, req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
     res.json(rows[0]);

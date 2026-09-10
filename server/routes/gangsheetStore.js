@@ -351,7 +351,7 @@ const SHEET_CAP = 20;
 router.get('/sheets', authenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, sheet_length_ft, status, updated_at
+      `SELECT id, name, sheet_length_ft, status, preview_url, updated_at
        FROM gang_sheets WHERE created_by = $1
        ORDER BY updated_at DESC LIMIT 20`,
       [req.user.id],
@@ -429,12 +429,13 @@ router.put('/sheets/:id', authenticate, async (req, res, next) => {
         layout_json = COALESCE($5, layout_json),
         designs = COALESCE($6, designs),
         status = COALESCE($7, status),
+        preview_url = COALESCE($8, preview_url),
         updated_at = NOW()
-      WHERE id = $8 AND created_by = $9 RETURNING *`,
+      WHERE id = $9 AND created_by = $10 RETURNING *`,
       [name, sheet_length_ft, pricing_tier, total_cost,
        layout_json ? JSON.stringify(layout_json) : null,
        designs ? JSON.stringify(designs) : null,
-       status, req.params.id, req.user.id],
+       status, preview_url || null, req.params.id, req.user.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
     res.json(rows[0]);
