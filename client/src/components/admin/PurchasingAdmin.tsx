@@ -565,7 +565,9 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           )}
 
           {/* Line items */}
-          <div className="bg-white border rounded-xl overflow-hidden">
+          {/* overflow must stay visible or the absolutely-positioned product
+              search dropdowns get clipped at the card edge */}
+          <div className="bg-white border rounded-xl overflow-visible">
             <div className="px-4 py-3 border-b font-medium text-sm">Line items</div>
             {lines.length === 0 && (
               <div className="px-4 py-6 text-sm text-gray-500">No lines yet — search a product below to add blanks.</div>
@@ -686,7 +688,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
             )}
 
             {/* Add product */}
-            <div className="px-4 py-3 border-t bg-gray-50 relative">
+            <div className="px-4 py-3 border-t bg-gray-50 rounded-b-xl relative">
               <div className="flex items-center gap-2 max-w-md">
                 <Search className="w-4 h-4 text-gray-400" />
                 <input
