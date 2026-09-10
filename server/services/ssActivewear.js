@@ -271,6 +271,29 @@ export async function placeSsOrder(payload) {
   return Array.isArray(data) ? data : [data];
 }
 
+// Saved payment methods on the S&S account (accounts without Net terms must
+// reference one of these on every POST order via paymentProfile).
+export async function fetchPaymentProfiles(email) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/paymentprofiles/?email=${encodeURIComponent(email)}`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`S&S API error ${response.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await response.json().catch(() => []);
+  return (Array.isArray(data) ? data : []).map((p) => ({
+    profileID: p.profileID,
+    profileType: p.profileType || '',
+    name: p.name || `Profile ${p.profileID}`,
+  }));
+}
+
 // Look up existing S&S orders (status + tracking) by order number(s) or PO number.
 export async function fetchSsOrders({ orderNumbers, poNumber }) {
   const credentials = getCredentials();

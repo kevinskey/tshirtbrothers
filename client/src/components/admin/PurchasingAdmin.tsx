@@ -88,6 +88,18 @@ const SHIPPING_METHODS: Array<[string, string]> = [
   ['3', 'UPS 2nd Day Air'],
   ['2', 'UPS Next Day Air'],
   ['54', 'Cheapest (USPS/UPS/FedEx)'],
+  ['6', 'Will Call / Pickup at warehouse'],
+];
+
+// Warehouses you can pin an order to (mainly for Will Call). McDonough GA
+// is the local one for the shop.
+const WAREHOUSES: Array<[string, string]> = [
+  ['GA', 'McDonough, GA (local)'],
+  ['IL', 'Bolingbrook, IL'],
+  ['KS', 'Olathe, KS'],
+  ['NJ', 'Robbinsville, NJ'],
+  ['NV', 'Sparks, NV'],
+  ['TX', 'Fort Worth, TX'],
 ];
 
 const STATUS_STYLE: Record<string, string> = {
@@ -137,8 +149,21 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [shipTo, setShipTo] = useState<ShipTo | null>(null);
   const [defaultShipTo, setDefaultShipTo] = useState<ShipTo | null>(null);
   const [shippingMethod, setShippingMethod] = useState('1');
+  const [warehouse, setWarehouse] = useState('');
   const [testOrder, setTestOrder] = useState(true);
   const [notes, setNotes] = useState('');
+  // Payment: S&S accounts without Net terms must attach a saved payment
+  // profile to every order. Email is the S&S website login the card is
+  // saved under; remembered locally once it works.
+  const [paymentEmail, setPaymentEmail] = useState(
+    () => localStorage.getItem('tsb_ss_payment_email') || 'info@tshirtbrothers.com'
+  );
+  const [paymentProfiles, setPaymentProfiles] = useState<Array<{ profileID: number; profileType: string; name: string }>>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
+    () => Number(localStorage.getItem('tsb_ss_payment_profile')) || null
+  );
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [profilesError, setProfilesError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [placedResult, setPlacedResult] = useState<{ po: PurchaseOrder; ssOrders: SsOrderSummary[] } | null>(null);
@@ -170,6 +195,47 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
         setShipTo((prev) => prev ?? d.shipTo);
       }
     })();
+  }, []);
+
+  const loadPaymentProfiles = useCallback(async (email: string) => {
+    if (!email.trim()) return;
+    setLoadingProfiles(true);
+    setProfilesError(null);
+    try {
+      const r = await fetch(`/api/purchasing/payment-profiles?email=${encodeURIComponent(email.trim())}`, { headers: authHeaders() });
+      const data = await r.json();
+      if (!r.ok) {
+        setPaymentProfiles([]);
+        setProfilesError(data.error || `Lookup failed (HTTP ${r.status})`);
+        return;
+      }
+      setPaymentProfiles(data);
+      if (data.length > 0) {
+        localStorage.setItem('tsb_ss_payment_email', email.trim());
+        setSelectedProfileId((prev) => {
+          // Keep a still-valid saved choice; otherwise prefer the Bank of
+          // America card (Doc's default), falling back to the first profile.
+          const boa = data.find((p: { name: string }) => /bank of america|boa/i.test(p.name || ''));
+          const keep = prev && data.some((p: { profileID: number }) => p.profileID === prev)
+            ? prev
+            : (boa?.profileID ?? data[0].profileID);
+          localStorage.setItem('tsb_ss_payment_profile', String(keep));
+          return keep;
+        });
+      } else {
+        setProfilesError('No saved payment methods found for this email. Add a card under Payment Options on ssactivewear.com, then reload.');
+      }
+    } catch (e) {
+      setProfilesError(e instanceof Error ? e.message : 'Lookup failed');
+    } finally {
+      setLoadingProfiles(false);
+    }
+  }, []);
+
+  // Auto-load profiles once on mount with the remembered email.
+  useEffect(() => {
+    void loadPaymentProfiles(paymentEmail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadStyleSkus = useCallback(async (styleId: string) => {
@@ -355,9 +421,13 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           })),
           shipTo,
           shippingMethod,
+          warehouse: warehouse || undefined,
           testOrder,
           quoteId,
           invoiceId,
+          paymentProfile: selectedProfileId
+            ? { email: paymentEmail.trim(), profileID: selectedProfileId }
+            : undefined,
           notes: notes || undefined,
         }),
       });
@@ -638,12 +708,65 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
 
               <div className="bg-white border rounded-xl p-4 space-y-3">
                 <div className="font-medium text-sm">Options</div>
+                <div className="text-sm space-y-2">
+                  <span className="text-gray-600">Payment (S&S saved method — required)</span>
+                  <div className="flex gap-2">
+                    <input
+                      value={paymentEmail}
+                      onChange={(e) => setPaymentEmail(e.target.value)}
+                      placeholder="S&S account email"
+                      className="flex-1 border rounded px-3 py-2 text-sm"
+                    />
+                    <button
+                      onClick={() => void loadPaymentProfiles(paymentEmail)}
+                      disabled={loadingProfiles}
+                      className="px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {loadingProfiles ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Load'}
+                    </button>
+                  </div>
+                  {paymentProfiles.length > 0 && (
+                    <select
+                      value={selectedProfileId ?? ''}
+                      onChange={(e) => {
+                        const id = Number(e.target.value) || null;
+                        setSelectedProfileId(id);
+                        if (id) localStorage.setItem('tsb_ss_payment_profile', String(id));
+                      }}
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    >
+                      {paymentProfiles.map((p) => (
+                        <option key={p.profileID} value={p.profileID}>
+                          {p.name} ({p.profileType})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {profilesError && <div className="text-xs text-red-600">{profilesError}</div>}
+                </div>
                 <label className="block text-sm">
                   <span className="text-gray-600">Shipping method</span>
-                  <select value={shippingMethod} onChange={(e) => setShippingMethod(e.target.value)} className="mt-1 w-full border rounded px-3 py-2 text-sm">
+                  <select
+                    value={shippingMethod}
+                    onChange={(e) => {
+                      setShippingMethod(e.target.value);
+                      // Will Call needs a specific warehouse; default to GA.
+                      if (e.target.value === '6' && !warehouse) setWarehouse('GA');
+                      if (e.target.value !== '6') setWarehouse('');
+                    }}
+                    className="mt-1 w-full border rounded px-3 py-2 text-sm"
+                  >
                     {SHIPPING_METHODS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
                   </select>
                 </label>
+                {shippingMethod === '6' && (
+                  <label className="block text-sm">
+                    <span className="text-gray-600">Pickup warehouse</span>
+                    <select value={warehouse} onChange={(e) => setWarehouse(e.target.value)} className="mt-1 w-full border rounded px-3 py-2 text-sm">
+                      {WAREHOUSES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                    </select>
+                  </label>
+                )}
                 <label className="block text-sm">
                   <span className="text-gray-600">Notes (internal)</span>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1 w-full border rounded px-3 py-2 text-sm" />
@@ -670,10 +793,15 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                   {unresolved.length} line{unresolved.length === 1 ? '' : 's'} unmatched — pick a color and size, or remove. Unmatched lines are not sent.
                 </div>
               )}
+              {!selectedProfileId && (
+                <div className="text-red-600 mt-1">
+                  Select a payment method above — this S&S account requires one on every order.
+                </div>
+              )}
             </div>
             <button
               onClick={() => void placeOrder()}
-              disabled={placing || readyLines.length === 0}
+              disabled={placing || readyLines.length === 0 || !selectedProfileId}
               className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${testOrder ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}`}
             >
               {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}

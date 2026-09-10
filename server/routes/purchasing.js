@@ -6,6 +6,7 @@ import {
   fetchStyleInventory,
   placeSsOrder,
   fetchSsOrders,
+  fetchPaymentProfiles,
 } from '../services/ssActivewear.js';
 
 const router = Router();
@@ -25,6 +26,18 @@ const SHOP_ADDRESS = {
 
 router.get('/defaults', (req, res) => {
   res.json({ shipTo: SHOP_ADDRESS });
+});
+
+// GET /payment-profiles?email= — saved cards/bank accounts on the S&S
+// account. Accounts without Net terms must attach one to every order.
+router.get('/payment-profiles', async (req, res, next) => {
+  try {
+    const email = (req.query.email || '').toString().trim();
+    if (!email) return res.status(400).json({ error: 'email is required' });
+    res.json(await fetchPaymentProfiles(email));
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /skus/:styleId — every orderable SKU for a style with live price and
@@ -185,7 +198,7 @@ router.post('/orders', async (req, res, next) => {
   try {
     const {
       lines, shipTo, shippingMethod = '1', poNumber, testOrder = false,
-      quoteId, invoiceId, notes, warehouse,
+      quoteId, invoiceId, notes, warehouse, paymentProfile,
     } = req.body;
 
     const cleanLines = (Array.isArray(lines) ? lines : [])
@@ -214,6 +227,9 @@ router.post('/orders', async (req, res, next) => {
       shippingMethod: String(shippingMethod || '1'),
       poNumber: po,
       testOrder: !!testOrder,
+      ...(paymentProfile?.profileID && paymentProfile?.email
+        ? { paymentProfile: { email: paymentProfile.email, profileID: Number(paymentProfile.profileID) } }
+        : {}),
       autoselectWarehouse: !warehouse,
       rejectLineErrors: true,
       lines: cleanLines.map((l) => ({
