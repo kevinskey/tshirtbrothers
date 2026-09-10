@@ -181,7 +181,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
       </div>
 
       {/* KPI cards */}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 min-[900px]:grid-cols-6">
         <KpiCard icon={DollarSign} iconCls="bg-green-50 text-green-600" label="Revenue Today"
           value={money(d.revenue.today)} delta={<Delta now={d.revenue.today} prev={d.revenue.yesterday} />} />
         <KpiCard icon={ShoppingBag} iconCls="bg-blue-50 text-blue-600" label="Orders Due Today" value={String(d.kpis.orders_due_today)} />
