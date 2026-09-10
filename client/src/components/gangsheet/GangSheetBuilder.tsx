@@ -1912,8 +1912,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       )}
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-3 flex-shrink-0 z-10">
-        <button onClick={() => navigate(mode === 'customer' ? '/dtf' : '/admin')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
-          <ArrowLeft className="w-4 h-4" /> <span className="hidden md:inline">{mode === 'customer' ? 'Back to shop' : 'Admin'}</span>
+        <button onClick={() => navigate(mode === 'customer' ? '/dtf' : '/admin?section=gangsheet')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 text-sm">
+          <ArrowLeft className="w-4 h-4" /> <span className="hidden md:inline">{mode === 'customer' ? 'Back to shop' : 'Gang Sheets'}</span>
         </button>
         <div className="hidden md:block w-px h-6 bg-gray-200" />
 
