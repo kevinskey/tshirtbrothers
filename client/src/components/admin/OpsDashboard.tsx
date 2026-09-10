@@ -87,13 +87,13 @@ function KpiCard({ icon: Icon, iconCls, label, value, delta, urgent = false }: {
 }) {
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${urgent ? 'border-red-200 bg-red-50/60' : 'border-gray-200 bg-white'}`}>
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2.5">
         <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg ${iconCls}`}>
           <Icon className="h-4.5 w-4.5" style={{ width: 18, height: 18 }} />
         </div>
         <div className="min-w-0">
           <p className="truncate text-xs text-gray-500">{label}</p>
-          <p className="text-2xl font-bold leading-tight text-gray-900">{value}</p>
+          <p className="text-xl font-bold leading-tight text-gray-900 xl:text-2xl">{value}</p>
           {delta ? <div className="mt-0.5">{delta}</div> : null}
         </div>
       </div>
@@ -181,7 +181,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
       </div>
 
       {/* KPI cards */}
-      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiCard icon={DollarSign} iconCls="bg-green-50 text-green-600" label="Revenue Today"
           value={money(d.revenue.today)} delta={<Delta now={d.revenue.today} prev={d.revenue.yesterday} />} />
         <KpiCard icon={ShoppingBag} iconCls="bg-blue-50 text-blue-600" label="Orders Due Today" value={String(d.kpis.orders_due_today)} />
@@ -202,7 +202,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
               <button
                 key={s.key}
                 onClick={() => onOpenQuotes(s.filter)}
-                className={`flex min-w-[120px] flex-1 items-center gap-2 px-4 py-3 text-left transition hover:brightness-95 ${s.bg}`}
+                className={`flex min-w-0 flex-1 items-center gap-1.5 px-3 py-3 pl-5 text-left transition hover:brightness-95 ${s.bg}`}
                 style={{
                   clipPath: i === 0
                     ? 'polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%)'
@@ -211,9 +211,9 @@ export default function OpsDashboard({ onOpenQuotes, onOpenQuoteId, onOpenInvoic
                       : 'polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%)',
                 }}
               >
-                <Icon className={`h-5 w-5 flex-shrink-0 ${s.iconColor}`} />
+                <Icon className={`h-4 w-4 flex-shrink-0 ${s.iconColor}`} />
                 <span>
-                  <span className="block whitespace-nowrap text-xs font-medium text-gray-700">{s.label}</span>
+                  <span className="block text-[11px] font-medium leading-tight text-gray-700">{s.label}</span>
                   <span className="block text-lg font-bold leading-tight text-gray-900">{d.pipeline[s.key] ?? 0}</span>
                 </span>
               </button>
