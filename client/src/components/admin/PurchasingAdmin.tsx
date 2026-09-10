@@ -133,6 +133,28 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<string | null>(null);
+
+  async function importHistory() {
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const r = await fetch('/api/purchasing/import-history', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ months: 12 }),
+      });
+      const data = await r.json();
+      if (!r.ok) { setImportResult(data.error || `Import failed (HTTP ${r.status})`); return; }
+      setImportResult(`Imported ${data.imported} order${data.imported === 1 ? '' : 's'} from the last ${data.months} months (${data.scanned} found at S&S).`);
+      await loadOrders();
+    } catch (e) {
+      setImportResult(e instanceof Error ? e.message : 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  }
 
   // Builder state
   const [lines, setLines] = useState<PoLine[]>([]);
@@ -502,12 +524,23 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           </p>
         </div>
         {view === 'list' ? (
-          <button
-            onClick={() => { resetBuilder(); setView('builder'); }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
-          >
-            <Plus className="w-4 h-4" /> New purchase order
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => void importHistory()}
+              disabled={importing}
+              title="Pull your past S&S orders (website, phone, API) into this list"
+              className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+            >
+              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Import S&S history
+            </button>
+            <button
+              onClick={() => { resetBuilder(); setView('builder'); }}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
+            >
+              <Plus className="w-4 h-4" /> New purchase order
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => setView('list')}
@@ -831,6 +864,9 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
         </div>
       )}
 
+      {view === 'list' && importResult && (
+        <div className="text-sm bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">{importResult}</div>
+      )}
       {view === 'list' && (
         <div className="bg-white border rounded-xl overflow-hidden">
           {loadingOrders ? (
