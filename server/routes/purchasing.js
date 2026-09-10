@@ -7,6 +7,7 @@ import {
   placeSsOrder,
   fetchSsOrders,
   fetchPaymentProfiles,
+  fetchSsOrderHistory,
 } from '../services/ssActivewear.js';
 
 const router = Router();
@@ -292,6 +293,99 @@ router.post('/orders', async (req, res, next) => {
     if (err.ssResponse !== undefined) {
       return res.status(422).json({ error: err.message, ssResponse: err.ssResponse });
     }
+    next(err);
+  }
+});
+
+// POST /import-history — pull past S&S orders (placed on their website,
+// by phone, or via the API) into purchase_orders. Walks backward in
+// 90-day invoice-date windows, deduping on S&S order number. body:
+// {months?: number} (default 12, max 36).
+router.post('/import-history', async (req, res, next) => {
+  try {
+    const months = Math.min(36, Math.max(1, parseInt(req.body?.months, 10) || 12));
+
+    // Every S&S order number we already have, from any PO's ss_orders array.
+    const { rows: existing } = await pool.query(
+      `SELECT DISTINCT jsonb_array_elements(ss_orders)->>'orderNumber' AS num FROM purchase_orders`
+    );
+    const known = new Set(existing.map((r) => r.num).filter(Boolean));
+
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    const now = new Date();
+    let imported = 0;
+    let scanned = 0;
+
+    for (let back = 0; back < months; back += 3) {
+      const end = new Date(now);
+      end.setMonth(end.getMonth() - back);
+      const start = new Date(now);
+      start.setMonth(start.getMonth() - Math.min(back + 3, months));
+      const orders = await fetchSsOrderHistory(fmt(start), fmt(end));
+      scanned += orders.length;
+
+      for (const o of orders) {
+        if (!o.orderNumber || known.has(String(o.orderNumber))) continue;
+        known.add(String(o.orderNumber));
+
+        const statusRaw = (o.orderStatus || '').toLowerCase();
+        const status = statusRaw.includes('cancel') ? 'cancelled' : 'received';
+        const lines = (o.lines || []).map((l) => ({
+          sku: l.sku,
+          qty: l.qtyOrdered ?? l.qtyShipped ?? 0,
+          productName: [l.brandName, l.styleName, l.title].filter(Boolean).join(' '),
+          color: l.colorName || '',
+          size: l.sizeName || '',
+          price: Number(l.price) || null,
+        }));
+        const summary = [{
+          orderNumber: o.orderNumber,
+          guid: o.guid,
+          warehouseAbbr: o.warehouseAbbr,
+          orderStatus: o.orderStatus,
+          expectedDeliveryDate: o.expectedDeliveryDate,
+          invoiceNumber: o.invoiceNumber || null,
+          subtotal: Number(o.subtotal) || 0,
+          shipping: Number(o.shipping) || 0,
+          tax: Number(o.tax) || 0,
+          total: Number(o.total) || 0,
+        }];
+        const tracking = [{
+          orderNumber: o.orderNumber,
+          carrier: o.shippingCarrier || null,
+          method: o.shippingMethod || null,
+          trackingNumbers: (o.boxes || []).map((b) => b.trackingNumber).filter(Boolean)
+            .filter((v, i, a) => a.indexOf(v) === i),
+          invoiceNumber: o.invoiceNumber || null,
+        }];
+
+        await pool.query(
+          `INSERT INTO purchase_orders
+             (po_number, is_test, status, ship_to, shipping_method, lines,
+              ss_orders, tracking, subtotal, shipping, tax, total,
+              expected_delivery, notes, placed_by, created_at)
+           VALUES ($1,FALSE,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'s&s history import',$14)`,
+          [
+            o.poNumber?.trim() || `SS-${o.orderNumber}`,
+            status,
+            JSON.stringify(o.shippingAddress || {}),
+            '1',
+            JSON.stringify(lines),
+            JSON.stringify(summary),
+            JSON.stringify(tracking),
+            Number(o.subtotal) || 0, Number(o.shipping) || 0,
+            Number(o.tax) || 0, Number(o.total) || 0,
+            o.expectedDeliveryDate ? String(o.expectedDeliveryDate).slice(0, 10) : null,
+            `Imported from S&S history (${o.orderType || 'order'}, invoice ${o.invoiceNumber || 'n/a'})`,
+            o.orderDate || new Date(),
+          ]
+        );
+        imported++;
+      }
+    }
+
+    res.json({ imported, scanned, months });
+  } catch (err) {
     next(err);
   }
 });

@@ -271,6 +271,24 @@ export async function placeSsOrder(payload) {
   return Array.isArray(data) ? data : [data];
 }
 
+// Invoiced order history for a date window (yyyy-MM-dd), lines included.
+// Returns [] when the window has no invoices.
+export async function fetchSsOrderHistory(startDate, endDate) {
+  const credentials = getCredentials();
+  const url = `https://api.ssactivewear.com/v2/orders/?invoicestartdate=${startDate}&invoiceenddate=${endDate}&lines=true`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(45000),
+  });
+  if (response.status === 404) return [];
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`S&S API error ${response.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await response.json().catch(() => []);
+  return Array.isArray(data) ? data : (data ? [data] : []);
+}
+
 // Saved payment methods on the S&S account (accounts without Net terms must
 // reference one of these on every POST order via paymentProfile).
 export async function fetchPaymentProfiles(email) {
