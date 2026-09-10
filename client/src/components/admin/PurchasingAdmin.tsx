@@ -156,7 +156,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   // profile to every order. Email is the S&S website login the card is
   // saved under; remembered locally once it works.
   const [paymentEmail, setPaymentEmail] = useState(
-    () => localStorage.getItem('tsb_ss_payment_email') || 'info@tshirtbrothers.com'
+    () => localStorage.getItem('tsb_ss_payment_email') || 'kevin@tshirtbrothers.com'
   );
   const [paymentProfiles, setPaymentProfiles] = useState<Array<{ profileID: number; profileType: string; name: string }>>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(
