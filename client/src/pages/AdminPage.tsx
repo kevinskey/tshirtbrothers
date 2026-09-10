@@ -132,10 +132,11 @@ import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
+import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -173,6 +174,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'vendor-send', label: 'File Sender', icon: Send, to: '/admin/vendor-send' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
+    { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
   ]},
   { label: 'Marketing', items: [
     { key: 'prospects', label: 'Sales Prospects', icon: Target },
@@ -537,6 +539,9 @@ export default function AdminPage() {
   const queryClient = useQueryClient();
   // Dashboard + Pipeline merged: 'quotes' (= Pipeline) is now the landing.
   const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  // Quote id handed to the Blanks (S&S) purchasing builder by the quote
+  // menu's "Order blanks" action; cleared once the builder consumes it.
+  const [purchasingQuoteId, setPurchasingQuoteId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Which desktop top-nav group dropdown is open (label string), if any.
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
@@ -690,7 +695,7 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'settings'];
     if (section && validSections.includes(section as Section)) {
       // 'dashboard' is a real section again (stats overview); 'quotes' is
       // the pipeline list — deep links go exactly where they say.
@@ -2906,6 +2911,17 @@ export default function AdminPage() {
                                   Convert to Invoice
                                 </button>
                               )}
+                              <button
+                                onClick={() => {
+                                  setOpenActionMenu(null);
+                                  setPurchasingQuoteId(Number(q.id));
+                                  setActiveSection('purchasing');
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                              >
+                                <Package className="w-3.5 h-3.5" />
+                                Order blanks (S&S)
+                              </button>
                               {['completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
@@ -6623,6 +6639,12 @@ export default function AdminPage() {
         {activeSection === 'newsletters' && <NewslettersAdmin />}
 
         {activeSection === 'prospects' && <ProspectsAdmin />}
+        {activeSection === 'purchasing' && (
+          <PurchasingAdmin
+            prefillQuoteId={purchasingQuoteId}
+            onPrefillConsumed={() => setPurchasingQuoteId(null)}
+          />
+        )}
 
         {activeSection === 'hero-slides' && <HeroSlidesAdmin />}
 
