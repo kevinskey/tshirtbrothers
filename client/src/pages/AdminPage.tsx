@@ -130,6 +130,7 @@ import ProspectsAdmin from '@/components/admin/ProspectsAdmin';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
+import type { ExtraMockup } from '@/lib/api';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
@@ -716,7 +717,7 @@ export default function AdminPage() {
             due_date: inv.due_date || '',
             mockup_id: inv.mockup_id ?? null,
             mockup_preview_url: inv.mockup_preview_url ?? null,
-            mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
+            mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
           });
           setInvoiceView('create');
           // Strip the editInvoice param so a refresh doesn't redo the load
@@ -806,11 +807,12 @@ export default function AdminPage() {
     mockup_id: number | null;
     mockup_preview_url: string | null;
     mockup_preview_url_back: string | null;
+    extra_mockups: ExtraMockup[];
   }>({
     customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
-    mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
+    mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
   });
   // When the admin clicks "Create Mockup" on the invoice screen, this flag
   // tells handleSaveMockup to write the resulting mockup id + preview URL
@@ -836,7 +838,7 @@ export default function AdminPage() {
       tax: '0', shipping: '0', discount: '0',
       notes: q.notes || '',
       due_date: '',
-      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
+      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
     setActiveSection('invoices');
     setInvoiceView('create');
@@ -863,6 +865,9 @@ export default function AdminPage() {
   const [adminNotesDraft, setAdminNotesDraft] = useState('');
   const [adminNotesSaving, setAdminNotesSaving] = useState(false);
   const [mockupPickerOpen, setMockupPickerOpen] = useState(false);
+  // What the picker attaches to: the open quote's primary mockup, the open
+  // quote's extra mockups, or the invoice editor's extra mockups.
+  const [mockupPickerFor, setMockupPickerFor] = useState<'quote-primary' | 'quote-extra' | 'invoice'>('quote-primary');
   const [mockupPickerSearch, setMockupPickerSearch] = useState('');
   const [mockupAttaching, setMockupAttaching] = useState(false);
   const mockupPickerQuery = useQuery({
@@ -1577,7 +1582,7 @@ export default function AdminPage() {
       customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
       tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
-      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null,
+      mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
     setPreviewInvoice(null);
     setInvoiceProductSearch('');
@@ -1695,7 +1700,7 @@ export default function AdminPage() {
       due_date: inv.due_date || '',
       mockup_id: inv.mockup_id ?? null,
       mockup_preview_url: inv.mockup_preview_url ?? null,
-      mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
+      mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
     });
     setInvoiceView('create');
   }
@@ -1718,6 +1723,7 @@ export default function AdminPage() {
       due_date: invoiceForm.due_date || undefined,
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
+      extra_mockups: invoiceForm.extra_mockups,
     };
     if (editingInvoiceId) {
       updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
@@ -1744,6 +1750,7 @@ export default function AdminPage() {
       due_date: invoiceForm.due_date || undefined,
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
+      extra_mockups: invoiceForm.extra_mockups,
     };
     setPreviewInvoice(data);
     setInvoiceView('preview');
@@ -4251,7 +4258,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []) }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -4600,6 +4607,28 @@ export default function AdminPage() {
                         {openingStudio ? 'Opening…' : '+ Design Mockup in Studio'}
                       </button>
                     )}
+                    {invoiceForm.extra_mockups.length > 0 && (
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {invoiceForm.extra_mockups.map((m, i) => (
+                          <div key={`${m.front}-${i}`} className="relative rounded-lg border border-gray-200 bg-gray-50 p-1">
+                            <img src={m.front} alt={`Mockup ${i + 2}`} className="h-24 w-full rounded bg-white object-contain" />
+                            <button
+                              type="button"
+                              aria-label="Remove mockup"
+                              onClick={() => setInvoiceForm((p) => ({ ...p, extra_mockups: p.extra_mockups.filter((_, j) => j !== i) }))}
+                              className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white"
+                            >✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { setMockupPickerFor('invoice'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                      className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      + Add another mockup from Studio
+                    </button>
                   </div>
 
                   {/* Line Items */}
@@ -6886,12 +6915,51 @@ export default function AdminPage() {
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
                       <button
-                        onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                        onClick={() => { setMockupPickerFor('quote-primary'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full mt-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
                       >
                         <GalleryHorizontal className="w-3.5 h-3.5" />
                         {q.mockup_image_url ? 'Change mockup' : 'Pick mockup from Studio'}
                       </button>
+                      {q.mockup_image_url && (
+                        <button
+                          onClick={() => { setMockupPickerFor('quote-extra'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                          className="w-full mt-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Add another mockup
+                        </button>
+                      )}
+                      {Array.isArray((q as Quote).extra_mockups) && ((q as Quote).extra_mockups?.length ?? 0) > 0 && (
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          {((q as Quote).extra_mockups ?? []).map((m, i) => (
+                            <div key={`${m.front}-${i}`} className="relative rounded-lg border border-gray-200 bg-gray-50 p-1">
+                              <a href={m.front} target="_blank" rel="noreferrer">
+                                <img src={m.front} alt={`Mockup ${i + 2}`} className="h-20 w-full rounded bg-white object-contain" />
+                              </a>
+                              <button
+                                aria-label="Remove mockup"
+                                onClick={async () => {
+                                  try {
+                                    const r = await fetch(`/api/quotes/admin/${q.id}/extra-mockup`, {
+                                      method: 'DELETE',
+                                      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                      body: JSON.stringify({ front: m.front }),
+                                    });
+                                    const upd = await r.json();
+                                    if (!r.ok) throw new Error(upd.error || 'Remove failed');
+                                    setDetailQuote(upd as Quote);
+                                    queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                                  } catch (err) {
+                                    toast((err as Error).message || 'Remove failed', 'error');
+                                  }
+                                }}
+                                className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white"
+                              >✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   {!(q.mockup_image_url || q.design_url) && (
@@ -6905,7 +6973,7 @@ export default function AdminPage() {
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
                       <button
-                        onClick={() => { setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                        onClick={() => { setMockupPickerFor('quote-primary'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
                       >
                         <GalleryHorizontal className="w-3.5 h-3.5" />
@@ -7228,7 +7296,7 @@ export default function AdminPage() {
 
         {/* Mockup Picker Modal — attach an existing Mockup Studio mockup to
             the open quote. Closes the drawer when nothing's open. */}
-        {mockupPickerOpen && detailQuote && (() => {
+        {mockupPickerOpen && (mockupPickerFor === 'invoice' || detailQuote) && (() => {
           const filter = mockupPickerSearch.trim().toLowerCase();
           const all = mockupPickerQuery.data || [];
           const withPreview = all.filter((m) => !!m.preview_image_url);
@@ -7243,7 +7311,7 @@ export default function AdminPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setMockupPickerOpen(false)}>
               <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-                  <h3 className="font-display font-semibold text-gray-900">Attach a mockup to Quote #{detailQuote.id}</h3>
+                  <h3 className="font-display font-semibold text-gray-900">{mockupPickerFor === 'invoice' ? 'Add a mockup to this invoice' : mockupPickerFor === 'quote-extra' ? `Add another mockup to Quote #${detailQuote?.id}` : `Attach a mockup to Quote #${detailQuote?.id}`}</h3>
                   <button onClick={() => setMockupPickerOpen(false)} className="text-gray-400 hover:text-gray-600">
                     <X className="w-5 h-5" />
                   </button>
@@ -7274,10 +7342,19 @@ export default function AdminPage() {
                           type="button"
                           disabled={mockupAttaching}
                           onClick={async () => {
+                            if (mockupPickerFor === 'invoice') {
+                              if (!m.preview_image_url) return;
+                              const entry = { mockup_id: m.id, front: m.preview_image_url, back: (m as { preview_image_url_back?: string | null }).preview_image_url_back ?? null };
+                              setInvoiceForm((p) => (!p.mockup_id && !p.mockup_preview_url
+                                ? { ...p, mockup_id: m.id, mockup_preview_url: entry.front, mockup_preview_url_back: entry.back }
+                                : { ...p, extra_mockups: [...p.extra_mockups, entry] }));
+                              setMockupPickerOpen(false);
+                              return;
+                            }
                             if (!detailQuote) return;
                             setMockupAttaching(true);
                             try {
-                              const updated = await attachMockupToQuote(detailQuote.id, { mockup_id: m.id });
+                              const updated = await attachMockupToQuote(detailQuote.id, { mockup_id: m.id, add_extra: mockupPickerFor === 'quote-extra' });
                               setDetailQuote(updated as Quote);
                               queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
                               queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });

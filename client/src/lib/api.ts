@@ -125,6 +125,7 @@ export interface Quote {
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
   mockup_image_url_back?: string | null;
+  extra_mockups?: ExtraMockup[];
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
   color?: string;
@@ -357,7 +358,7 @@ export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
 
 export async function attachMockupToQuote(
   quoteId: string | number,
-  payload: { mockup_image_url?: string; mockup_image_url_back?: string | null; mockup_id?: number },
+  payload: { mockup_image_url?: string; mockup_image_url_back?: string | null; mockup_id?: number; add_extra?: boolean },
 ) {
   return authRequest<Quote>(`/quotes/admin/${quoteId}/mockup`, {
     method: 'PATCH',
@@ -918,6 +919,7 @@ export interface Invoice {
   status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
   quote_id: string | null;
   mockup_id: number | null;
+  extra_mockups?: ExtraMockup[];
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
   payments: { amount: number; method: string; date: string }[];
@@ -925,6 +927,8 @@ export interface Invoice {
   created_at: string;
   updated_at: string;
 }
+
+export type ExtraMockup = { mockup_id: number | null; front: string; back: string | null };
 
 export interface CreateInvoiceData {
   customer_name: string;
@@ -942,6 +946,7 @@ export interface CreateInvoiceData {
   quote_id?: string;
   deposit_percent?: number;
   mockup_id?: number | null;
+  extra_mockups?: ExtraMockup[];
 }
 
 export async function fetchInvoices(status?: string): Promise<Invoice[]> {

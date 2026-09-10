@@ -1046,10 +1046,18 @@ router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next
     }
     if (!urlFront) return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
 
-    const result = await pool.query(
-      'UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2 WHERE id = $3 RETURNING *',
-      [urlFront, urlBack, id],
-    );
+    // add_extra: true appends to the extra_mockups array instead of
+    // replacing the primary mockup — quotes can carry several mockups.
+    const result = req.body?.add_extra
+      ? await pool.query(
+          `UPDATE quotes SET extra_mockups = COALESCE(extra_mockups, '[]'::jsonb) || $1::jsonb
+           WHERE id = $2 RETURNING *`,
+          [JSON.stringify([{ mockup_id: mockup_id || null, front: urlFront, back: urlBack }]), id],
+        )
+      : await pool.query(
+          'UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2 WHERE id = $3 RETURNING *',
+          [urlFront, urlBack, id],
+        );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
 
     if (mockup_id) {
@@ -1060,6 +1068,23 @@ router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next
   } catch (err) {
     next(err);
   }
+});
+
+// DELETE /admin/:id/extra-mockup — remove one entry from extra_mockups by
+// its front-image URL (the stable identifier the UI has in hand).
+router.delete('/admin/:id/extra-mockup', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { front } = req.body || {};
+    if (typeof front !== 'string' || !front) return res.status(400).json({ error: 'front is required' });
+    const { rows } = await pool.query('SELECT extra_mockups FROM quotes WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Quote not found' });
+    const kept = (Array.isArray(rows[0].extra_mockups) ? rows[0].extra_mockups : []).filter((m) => m?.front !== front);
+    const result = await pool.query(
+      'UPDATE quotes SET extra_mockups = $1::jsonb WHERE id = $2 RETURNING *',
+      [JSON.stringify(kept), req.params.id],
+    );
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
 });
 
 // DELETE /admin/:id/artwork — strip the customer-uploaded artwork from a

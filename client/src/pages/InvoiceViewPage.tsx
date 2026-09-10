@@ -24,6 +24,7 @@ interface PublicInvoice {
   mockup_id: number | null;
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
+  extra_mockups?: Array<{ mockup_id: number | null; front: string; back: string | null }> | null;
 }
 
 function fmt(v: unknown): string {
@@ -146,10 +147,10 @@ export default function InvoiceViewPage() {
         </div>
 
         {/* Mockup preview — front and/or back depending on what's attached */}
-        {(inv.mockup_preview_url || inv.mockup_preview_url_back) && (
+        {(inv.mockup_preview_url || inv.mockup_preview_url_back || (inv.extra_mockups && inv.extra_mockups.length > 0)) && (
           <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
             <div className="px-4 py-2 text-xs uppercase text-gray-500 font-semibold border-b border-gray-200">Approved Mockup</div>
-            <div className={`p-3 bg-white grid gap-3 ${inv.mockup_preview_url && inv.mockup_preview_url_back ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`p-3 bg-white grid gap-3 ${(inv.mockup_preview_url && inv.mockup_preview_url_back) || (inv.extra_mockups && inv.extra_mockups.length > 0) ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
               {inv.mockup_preview_url && (
                 <div className="flex flex-col items-center">
                   <img src={inv.mockup_preview_url} alt="Mockup front" className="max-h-96 w-auto object-contain" />
@@ -160,8 +161,18 @@ export default function InvoiceViewPage() {
                 <div className="flex flex-col items-center">
                   <img src={inv.mockup_preview_url_back} alt="Mockup back" className="max-h-96 w-auto object-contain" />
                   <span className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">Back</span>
+                  {(inv.extra_mockups ?? []).map((m, i) => (
+                <div key={`${m.front}-${i}`} className="flex flex-col items-center">
+                  <img src={m.front} alt={`Mockup ${i + 2}`} className="max-h-96 w-auto object-contain" />
                 </div>
+              ))}
+            </div>
               )}
+              {(inv.extra_mockups ?? []).map((m, i) => (
+                <div key={`${m.front}-${i}`} className="flex flex-col items-center">
+                  <img src={m.front} alt={`Mockup ${i + 2}`} className="max-h-96 w-auto object-contain" />
+                </div>
+              ))}
             </div>
           </div>
         )}

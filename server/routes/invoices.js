@@ -111,7 +111,7 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
       </tr>
     </table>
 
-    ${invoice.mockup_preview_url || invoice.mockup_preview_url_back ? `
+    ${invoice.mockup_preview_url || invoice.mockup_preview_url_back || (Array.isArray(invoice.extra_mockups) && invoice.extra_mockups.length > 0) ? `
     <!-- Mockup preview -->
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
       <tr><td style="padding:14px 16px 4px;font-size:13px;color:#6b7280;font-weight:600;">Approved Mockup</td></tr>
@@ -126,6 +126,12 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
             <img src="${invoice.mockup_preview_url_back}" alt="Mockup back" style="max-width:100%;height:auto;border-radius:6px;" />
           </td>` : ''}
         </tr></table>
+        ${Array.isArray(invoice.extra_mockups) && invoice.extra_mockups.length > 0 ? `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          ${invoice.extra_mockups.map((m) => `<td style="text-align:center;padding:4px;width:${Math.floor(100 / invoice.extra_mockups.length)}%;">
+            <img src="${m.front}" alt="Mockup" style="max-width:100%;height:auto;border-radius:6px;" />
+          </td>`).join('')}
+        </tr></table>` : ''}
       </td></tr>
     </table>
     ` : ''}
@@ -428,13 +434,26 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// Sanitize the extra_mockups jsonb payload: https-only urls, capped list.
+function cleanExtraMockups(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((m) => m && typeof m.front === 'string' && /^https:\/\//.test(m.front))
+    .slice(0, 12)
+    .map((m) => ({
+      mockup_id: Number.isInteger(m.mockup_id) ? m.mockup_id : null,
+      front: m.front,
+      back: typeof m.back === 'string' && /^https:\/\//.test(m.back) ? m.back : null,
+    }));
+}
+
 // POST / - Create invoice
 router.post('/', async (req, res, next) => {
   try {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, quote_id,
-      deposit_percent, mockup_id,
+      deposit_percent, mockup_id, extra_mockups,
     } = req.body;
 
     if (!customer_name || !customer_email) {
@@ -449,8 +468,8 @@ router.post('/', async (req, res, next) => {
       `INSERT INTO invoices
         (invoice_number, customer_name, customer_email, customer_phone, customer_address,
          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-         notes, due_date, quote_id, status, deposit_percent, mockup_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17)
+         notes, due_date, quote_id, status, deposit_percent, mockup_id, extra_mockups)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17,$18::jsonb)
        RETURNING *`,
       [
         invoice_number, customer_name, customer_email, customer_phone || null,
@@ -458,6 +477,7 @@ router.post('/', async (req, res, next) => {
         JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, Number(total) || 0,
         amount_due, notes || null, due_date || null, quote_id || null, depositPct,
         mockup_id ? Number(mockup_id) : null,
+        JSON.stringify(cleanExtraMockups(extra_mockups)),
       ]
     );
 
@@ -474,7 +494,7 @@ router.put('/:id', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, status,
-      deposit_percent, mockup_id,
+      deposit_percent, mockup_id, extra_mockups,
     } = req.body;
 
     const existing = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
@@ -503,6 +523,7 @@ router.put('/:id', async (req, res, next) => {
         status = COALESCE($15, status),
         deposit_percent = COALESCE($16, deposit_percent),
         mockup_id = COALESCE($17, mockup_id),
+        extra_mockups = COALESCE($18::jsonb, extra_mockups),
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -516,6 +537,7 @@ router.put('/:id', async (req, res, next) => {
         newAmountDue, notes, due_date, status || null,
         deposit_percent !== undefined ? Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0)) : null,
         mockup_id !== undefined ? (mockup_id ? Number(mockup_id) : null) : null,
+        extra_mockups !== undefined ? JSON.stringify(cleanExtraMockups(extra_mockups)) : null,
       ]
     );
 
