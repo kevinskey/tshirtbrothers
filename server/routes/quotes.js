@@ -760,8 +760,17 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
         resolved = { ss_id: String(firstItem.picked_product.ss_id), from: 'picked product' };
       }
       if (!resolved && firstItem?.inputs?.garmentName) {
-        const key = `${firstItem.inputs.garmentName}|${firstItem.inputs.qualityTier || 'Standard'}`;
-        if (TIER_STYLE_SSIDS[key]) resolved = { ss_id: TIER_STYLE_SSIDS[key], from: `${key.replace('|', ' · ')} default` };
+        const gName = firstItem.inputs.garmentName;
+        const gTier = firstItem.inputs.qualityTier || 'Standard';
+        // Admin-configured default (Instant Quote Pricing → Garments) wins;
+        // the hardcoded map is only the fallback for unconfigured rows.
+        const cfg = await pool.query(
+          'SELECT default_ss_id FROM instant_quote_garments WHERE name = $1 AND quality_tier = $2 LIMIT 1',
+          [gName, gTier],
+        );
+        const key = `${gName}|${gTier}`;
+        const ssId = cfg.rows[0]?.default_ss_id || TIER_STYLE_SSIDS[key];
+        if (ssId) resolved = { ss_id: String(ssId), from: `${gName} · ${gTier} default` };
       }
       if (!resolved && quote.product_name) {
         resolved = { searchText: quote.product_name, from: 'name search' };

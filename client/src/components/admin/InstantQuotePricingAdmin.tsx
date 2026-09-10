@@ -13,6 +13,7 @@ interface Garment {
   image_url: string | null;
   active: boolean;
   sort_order: number;
+  default_ss_id?: string | null;
 }
 interface PrintMethod {
   id?: number;
@@ -50,6 +51,62 @@ interface Pricing {
 const ENDPOINT = '/api/admin/instant-quote-pricing';
 const getToken = () => localStorage.getItem('tsb_token') || '';
 const authHeaders = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` });
+
+// Search-and-pick a catalog product; stores its ss_id. Drives the live
+// blank-cost default for this garment x tier in the quote pricing modal.
+function ProductPick({ value, onChange }: { value: string | null | undefined; onChange: (ssId: string | null) => void }) {
+  const [q, setQ] = useState('');
+  const [label, setLabel] = useState<string>('');
+  const [results, setResults] = useState<{ ss_id: string; brand: string; name: string; style_number?: string }[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let dead = false;
+    if (!value) { setLabel(''); return; }
+    fetch(`/api/products/by-ssid/${value}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p) => { if (!dead && p) setLabel(`${p.brand || ''} ${p.style_number || ''}`.trim() || p.name); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [value]);
+
+  useEffect(() => {
+    if (q.trim().length < 2) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      const r = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=6`);
+      if (r.ok) {
+        const d = await r.json();
+        setResults((d.products || []).map((p: any) => ({ ss_id: p.ss_id, brand: p.brand, name: p.name, style_number: p.style_number })));
+        setOpen(true);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  return (
+    <div className="relative">
+      <input
+        value={q || label}
+        onChange={(e) => { setQ(e.target.value); setLabel(''); if (!e.target.value) onChange(null); }}
+        onFocus={() => results.length && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Search product…"
+        className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs"
+      />
+      {open && results.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {results.map((r) => (
+            <button key={r.ss_id} type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(r.ss_id); setQ(''); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-orange-50">
+              {r.brand} {r.style_number ? `${r.style_number} — ` : ''}{r.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function InstantQuotePricingAdmin() {
   const [data, setData] = useState<Pricing | null>(null);
@@ -233,12 +290,13 @@ export default function InstantQuotePricingAdmin() {
           } />
         }
       >
-        <Grid cols="minmax(140px,1fr) 140px 120px 70px 70px 36px" headers={['Name', 'Quality tier', 'Base cost', 'Sort', 'Active', '']}>
+        <Grid cols="minmax(120px,1fr) 120px 100px minmax(150px,1fr) 60px 60px 36px" headers={['Name', 'Quality tier', 'Base cost', 'Default product', 'Sort', 'Active', '']}>
           {data.garments.map((g, i) => (
-            <RowGrid key={g.id ?? `new-g-${i}`} cols="minmax(140px,1fr) 140px 120px 70px 70px 36px">
+            <RowGrid key={g.id ?? `new-g-${i}`} cols="minmax(120px,1fr) 120px 100px minmax(150px,1fr) 60px 60px 36px">
               <InputText value={g.name} onChange={(v) => updateAt(data, setField, 'garments', i, { name: v })} />
               <Select value={g.quality_tier} options={['Standard', 'Premium', 'Ultra']} onChange={(v) => updateAt(data, setField, 'garments', i, { quality_tier: v })} />
               <InputNumber value={g.base_cost} step="0.01" onChange={(v) => updateAt(data, setField, 'garments', i, { base_cost: v })} />
+              <ProductPick value={g.default_ss_id} onChange={(ssId) => updateAt(data, setField, 'garments', i, { default_ss_id: ssId })} />
               <InputNumber value={g.sort_order} step="1" onChange={(v) => updateAt(data, setField, 'garments', i, { sort_order: Number(v) })} />
               <Toggle value={g.active} onChange={(v) => updateAt(data, setField, 'garments', i, { active: v })} />
               <DeleteRow onClick={() => setField('garments', data.garments.filter((_, idx) => idx !== i))} />

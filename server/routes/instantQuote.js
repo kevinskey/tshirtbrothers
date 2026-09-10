@@ -751,20 +751,21 @@ adminRouter.patch('/', async (req, res, next) => {
         if (g.id) {
           await client.query(
             `UPDATE instant_quote_garments
-                SET name=$1, quality_tier=$2, base_cost=$3, image_url=$4, active=$5, sort_order=$6
-              WHERE id=$7`,
-            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0, g.id]
+                SET name=$1, quality_tier=$2, base_cost=$3, image_url=$4, active=$5, sort_order=$6, default_ss_id=$7
+              WHERE id=$8`,
+            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0, g.default_ss_id || null, g.id]
           );
           keepIds.push(g.id);
         } else {
           const r = await client.query(
-            `INSERT INTO instant_quote_garments (name, quality_tier, base_cost, image_url, active, sort_order)
-             VALUES ($1,$2,$3,$4,$5,$6)
+            `INSERT INTO instant_quote_garments (name, quality_tier, base_cost, image_url, active, sort_order, default_ss_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
              ON CONFLICT (name, quality_tier) DO UPDATE
                SET base_cost=EXCLUDED.base_cost, image_url=EXCLUDED.image_url,
-                   active=EXCLUDED.active, sort_order=EXCLUDED.sort_order
+                   active=EXCLUDED.active, sort_order=EXCLUDED.sort_order,
+                   default_ss_id=EXCLUDED.default_ss_id
              RETURNING id`,
-            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0]
+            [g.name, g.quality_tier, g.base_cost, g.image_url || null, g.active !== false, g.sort_order || 0, g.default_ss_id || null]
           );
           keepIds.push(r.rows[0].id);
         }
