@@ -258,6 +258,22 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   // Library data
   const [libraryDesigns, setLibraryDesigns] = useState<{ id: number; name: string; image_url: string; category?: string }[]>([]);
+  const [artLibrary, setArtLibrary] = useState<{ id: number; name: string; image_url: string }[]>([]);
+  const [artLibraryQ, setArtLibraryQ] = useState('');
+  useEffect(() => {
+    if (mode !== 'admin') return;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/design/art-library?limit=30${artLibraryQ.trim() ? `&q=${encodeURIComponent(artLibraryQ.trim())}` : ''}`);
+        if (r.ok) {
+          const d = await r.json();
+          setArtLibrary(d.designs || d || []);
+        }
+      } catch { /* optional */ }
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artLibraryQ, mode]);
   const [quoteDesigns, setQuoteDesigns] = useState<{ id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[]>([]);
   // Production focus: default to art from quotes whose deposit was paid.
   const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
@@ -2298,6 +2314,30 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* TSB Art Library */}
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Art Library</p>
+                    <input
+                      value={artLibraryQ}
+                      onChange={(e) => setArtLibraryQ(e.target.value)}
+                      placeholder="Search TSB art…"
+                      className="w-full mb-2 rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:border-orange-500"
+                    />
+                    {artLibrary.length === 0 ? (
+                      <p className="text-xs text-gray-400 text-center py-4">No art found</p>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2">
+                        {artLibrary.map((a) => (
+                          <button key={a.id} onClick={async () => { await addDesignToCanvas(a.image_url, a.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="aspect-square bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                            title={a.name}>
+                            <img src={a.image_url} alt={a.name} className="w-full h-full object-contain" />
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
