@@ -182,6 +182,118 @@ export async function fetchStyle(styleId) {
   return raw ? transformStyle(raw) : null;
 }
 
+// ── Purchasing (blank ordering) ─────────────────────────────────────────
+// Per-SKU rows for a style: sku + color + size + live wholesale price.
+// This is the resolver the PO builder uses to map a quote line
+// (style, colorName, sizeName) onto an orderable S&S SKU.
+export async function fetchStyleSkus(styleId) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/products/?styleid=${encodeURIComponent(styleId)}&fields=sku,skuID_Master,gtin,colorName,sizeName,customerPrice,salePrice,caseQty`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`S&S API error ${response.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await response.json().catch(() => []);
+  return (Array.isArray(data) ? data : []).map((p) => ({
+    sku: p.sku,
+    skuId: p.skuID_Master ?? null,
+    gtin: p.gtin ?? null,
+    colorName: (p.colorName || '').trim(),
+    sizeName: (p.sizeName || '').trim(),
+    price: Number(p.salePrice) > 0 && Number(p.salePrice) < Number(p.customerPrice)
+      ? Number(p.salePrice)
+      : (Number(p.customerPrice) || null),
+    caseQty: Number(p.caseQty) || null,
+  }));
+}
+
+// Per-warehouse stock for every SKU of a style: { [sku]: { total, warehouses: {IL: n, ...} } }
+export async function fetchStyleInventory(styleId) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/inventory/?styleid=${encodeURIComponent(styleId)}`,
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    }
+  );
+  if (!response.ok) {
+    console.error(`[fetchStyleInventory] style ${styleId}: HTTP ${response.status}`);
+    return {};
+  }
+  const data = await response.json().catch(() => []);
+  const out = {};
+  for (const item of Array.isArray(data) ? data : []) {
+    if (!item.sku) continue;
+    const warehouses = {};
+    let total = 0;
+    for (const w of item.warehouses || []) {
+      const qty = Number(w.qty) || 0;
+      warehouses[w.warehouseAbbr] = qty;
+      total += qty;
+    }
+    out[item.sku] = { total, warehouses };
+  }
+  return out;
+}
+
+// Place an order. `payload` mirrors S&S's POST /v2/orders/ body; we always
+// send JSON and autoselect the warehouse unless the caller pinned one.
+// Returns the array of order objects S&S creates (one per shipping
+// warehouse). testOrder:true validates + auto-cancels — nothing is charged.
+export async function placeSsOrder(payload) {
+  const credentials = getCredentials();
+  const response = await fetch('https://api.ssactivewear.com/v2/orders/', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(45000),
+  });
+  const text = await response.text().catch(() => '');
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* non-JSON error body */ }
+  if (!response.ok) {
+    const detail = data?.errors?.map?.((e) => e.message).join('; ') || text.slice(0, 300);
+    const err = new Error(`S&S order error ${response.status}: ${detail}`);
+    err.ssResponse = data ?? text.slice(0, 500);
+    throw err;
+  }
+  return Array.isArray(data) ? data : [data];
+}
+
+// Look up existing S&S orders (status + tracking) by order number(s) or PO number.
+export async function fetchSsOrders({ orderNumbers, poNumber }) {
+  const credentials = getCredentials();
+  let url;
+  if (orderNumbers?.length) {
+    url = `https://api.ssactivewear.com/v2/orders/${orderNumbers.map(encodeURIComponent).join(',')}?lines=true`;
+  } else if (poNumber) {
+    url = `https://api.ssactivewear.com/v2/orders/?PONumber=${encodeURIComponent(poNumber)}&lines=true`;
+  } else {
+    throw new Error('orderNumbers or poNumber required');
+  }
+  const response = await fetch(url, {
+    headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`S&S API error ${response.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await response.json().catch(() => []);
+  return Array.isArray(data) ? data : [data];
+}
+
 const SS_IMAGE_BASE = 'https://www.ssactivewear.com/';
 
 function toFullImageUrl(path) {

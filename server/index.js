@@ -41,6 +41,7 @@ import { adminRouter as prospectsAdminRouter } from './routes/prospects.js';
 import reviewsRouter from './routes/reviews.js';
 import addressRouter from './routes/address.js';
 import newsletterRouter from './routes/newsletter.js';
+import purchasingRouter from './routes/purchasing.js';
 import sitemapRouter from './routes/sitemap.js';
 import { startScheduler } from './services/scheduler.js';
 
@@ -93,6 +94,7 @@ app.use('/api/local-businesses', localBusinessesRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/address', addressRouter);
 app.use('/api/newsletter', newsletterRouter);
+app.use('/api/purchasing', purchasingRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/client-errors', clientErrorsRouter);
 app.use('/api/admin/custom-fonts', customFontsAdminRouter);
