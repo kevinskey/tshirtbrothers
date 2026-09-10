@@ -4574,30 +4574,47 @@ export default function AdminPage() {
                         </button>
                       )}
                     </div>
-                    {invoiceForm.mockup_preview_url || invoiceForm.mockup_preview_url_back ? (
+                    {invoiceForm.mockup_preview_url || invoiceForm.mockup_preview_url_back || invoiceForm.extra_mockups.length > 0 ? (
                       <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                        <div className="grid grid-cols-2 gap-3">
+                        {/* All mockups render as EQUAL cards on one wrapping
+                            row — primary (front/back) first, then extras.
+                            Kevin 2026-09-09: same size, same line. */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                           {invoiceForm.mockup_preview_url && (
                             <div className="flex flex-col items-center">
-                              <img src={invoiceForm.mockup_preview_url} alt="Mockup front" className="w-full h-48 object-contain bg-white rounded border border-gray-200" />
-                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Front</span>
+                              <img src={invoiceForm.mockup_preview_url} alt="Mockup front" className="w-full h-40 object-contain bg-white rounded border border-gray-200" />
+                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">{invoiceForm.mockup_preview_url_back ? 'Front' : 'Mockup 1'}</span>
                             </div>
                           )}
                           {invoiceForm.mockup_preview_url_back && (
                             <div className="flex flex-col items-center">
-                              <img src={invoiceForm.mockup_preview_url_back} alt="Mockup back" className="w-full h-48 object-contain bg-white rounded border border-gray-200" />
+                              <img src={invoiceForm.mockup_preview_url_back} alt="Mockup back" className="w-full h-40 object-contain bg-white rounded border border-gray-200" />
                               <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Back</span>
                             </div>
                           )}
+                          {invoiceForm.extra_mockups.map((m, i) => (
+                            <div key={`${m.front}-${i}`} className="relative flex flex-col items-center">
+                              <img src={m.front} alt={`Mockup ${i + 2}`} className="w-full h-40 object-contain bg-white rounded border border-gray-200" />
+                              <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Mockup {i + 2}</span>
+                              <button
+                                type="button"
+                                aria-label="Remove mockup"
+                                onClick={() => setInvoiceForm((p) => ({ ...p, extra_mockups: p.extra_mockups.filter((_, j) => j !== i) }))}
+                                className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white"
+                              >✕</button>
+                            </div>
+                          ))}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleOpenStudioForInvoice()}
-                          disabled={openingStudio}
-                          className="mt-3 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
-                        >
-                          {openingStudio ? 'Opening…' : 'Edit / Re-render in Design Studio'}
-                        </button>
+                        {(invoiceForm.mockup_preview_url || invoiceForm.mockup_preview_url_back) && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenStudioForInvoice()}
+                            disabled={openingStudio}
+                            className="mt-3 text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+                          >
+                            {openingStudio ? 'Opening…' : 'Edit / Re-render in Design Studio'}
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <button
@@ -4609,21 +4626,6 @@ export default function AdminPage() {
                       >
                         {openingStudio ? 'Opening…' : '+ Design Mockup in Studio'}
                       </button>
-                    )}
-                    {invoiceForm.extra_mockups.length > 0 && (
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        {invoiceForm.extra_mockups.map((m, i) => (
-                          <div key={`${m.front}-${i}`} className="relative rounded-lg border border-gray-200 bg-gray-50 p-1">
-                            <img src={m.front} alt={`Mockup ${i + 2}`} className="h-24 w-full rounded bg-white object-contain" />
-                            <button
-                              type="button"
-                              aria-label="Remove mockup"
-                              onClick={() => setInvoiceForm((p) => ({ ...p, extra_mockups: p.extra_mockups.filter((_, j) => j !== i) }))}
-                              className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white"
-                            >✕</button>
-                          </div>
-                        ))}
-                      </div>
                     )}
                     <div className="mt-2 flex flex-wrap gap-3">
                       <button
