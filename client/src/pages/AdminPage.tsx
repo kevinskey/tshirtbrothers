@@ -1685,6 +1685,29 @@ export default function AdminPage() {
     }
   }
 
+  // Open the invoice editor pre-loaded with a row's data. Used by the Edit
+  // button and by clicking anywhere on a list row.
+  function openInvoiceEditor(inv: Invoice) {
+    setEditingInvoiceId(inv.id);
+    setEditingInvoiceFull(inv);
+    setInvoiceForm({
+      customer_name: inv.customer_name || '',
+      customer_email: inv.customer_email || '',
+      customer_phone: inv.customer_phone || '',
+      customer_address: '',
+      items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
+      tax: String(inv.tax || 0),
+      shipping: String(inv.shipping || 0),
+      discount: String(inv.discount || 0),
+      notes: inv.notes || '',
+      due_date: inv.due_date || '',
+      mockup_id: inv.mockup_id ?? null,
+      mockup_preview_url: inv.mockup_preview_url ?? null,
+      mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
+    });
+    setInvoiceView('create');
+  }
+
   function handleSaveInvoiceDraft() {
     const subtotal = calcInvoiceSubtotal();
     const total = calcInvoiceTotal();
@@ -4271,7 +4294,7 @@ export default function AdminPage() {
                         ) : invoices.length === 0 ? (
                           <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400">No invoices found</td></tr>
                         ) : invoices.map((inv: Invoice) => (
-                          <tr key={inv.id} className="hover:bg-gray-50">
+                          <tr key={inv.id} onClick={() => openInvoiceEditor(inv)} className="hover:bg-gray-50 cursor-pointer">
                             <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
                             <td className="px-3 py-2 text-gray-900"><div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div></td>
@@ -4280,30 +4303,11 @@ export default function AdminPage() {
                             <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">${Number(inv.amount_paid).toFixed(2)}</td>
                             <td className="px-3 py-2 text-right font-medium text-red-600 whitespace-nowrap">${Number(inv.amount_due).toFixed(2)}</td>
                             <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
-                            <td className="px-3 py-2 whitespace-nowrap">
+                            <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center gap-1">
                                 <button
                                   title="Edit"
-                                  onClick={() => {
-                                    setEditingInvoiceId(inv.id);
-                                    setEditingInvoiceFull(inv);
-                                    setInvoiceForm({
-                                      customer_name: inv.customer_name || '',
-                                      customer_email: inv.customer_email || '',
-                                      customer_phone: inv.customer_phone || '',
-                                      customer_address: '',
-                                      items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
-                                      tax: String(inv.tax || 0),
-                                      shipping: String(inv.shipping || 0),
-                                      discount: String(inv.discount || 0),
-                                      notes: inv.notes || '',
-                                      due_date: inv.due_date || '',
-                                      mockup_id: inv.mockup_id ?? null,
-                                      mockup_preview_url: inv.mockup_preview_url ?? null,
-                                      mockup_preview_url_back: inv.mockup_preview_url_back ?? null,
-                                    });
-                                    setInvoiceView('create');
-                                  }}
+                                  onClick={() => openInvoiceEditor(inv)}
                                   className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
                                 >
                                   <Eye className="w-4 h-4" />
