@@ -250,11 +250,11 @@ export default function MailAdmin() {
               <Inbox className="w-6 h-6 mx-auto mb-2 text-gray-300" />
               No messages{aliasFilter ? ` for ${aliasFilter}` : ''} yet.
             </div>
-          ) : messages.map((m) => (
+          ) : messages.map((m, idx) => (
             <button
               key={m.id}
               onClick={() => void openMessage(m.id)}
-              className={`block w-full text-left px-4 py-3 hover:bg-gray-50 ${openMsg?.id === m.id ? 'bg-orange-50' : ''}`}
+              className={`block w-full text-left px-4 py-3 hover:bg-gray-200 ${openMsg?.id === m.id ? 'bg-orange-50' : idx % 2 === 1 ? 'bg-gray-100' : 'bg-white'}`}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-sm truncate ${!m.seen && !m.outgoing ? "font-bold text-gray-900" : "text-gray-800"}`}>
