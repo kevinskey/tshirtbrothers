@@ -42,6 +42,8 @@ import reviewsRouter from './routes/reviews.js';
 import addressRouter from './routes/address.js';
 import newsletterRouter from './routes/newsletter.js';
 import purchasingRouter from './routes/purchasing.js';
+import mailRouter from './routes/mail.js';
+import { startMailSync } from './services/mailbox.js';
 import sitemapRouter from './routes/sitemap.js';
 import { startScheduler } from './services/scheduler.js';
 
@@ -95,6 +97,7 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/address', addressRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/purchasing', purchasingRouter);
+app.use('/api/mail', mailRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/client-errors', clientErrorsRouter);
 app.use('/api/admin/custom-fonts', customFontsAdminRouter);
@@ -126,9 +129,11 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`T-Shirt Brothers API running on port ${PORT}`);
-  runBootMigrations().catch((err) => {
-    console.error('[migrations] fatal:', err);
-  });
+  runBootMigrations()
+    .then(() => startMailSync())
+    .catch((err) => {
+      console.error('[migrations] fatal:', err);
+    });
   startScheduler();
 });
 

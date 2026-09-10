@@ -133,10 +133,11 @@ import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
+import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'mail' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -156,6 +157,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'dashboard', label: 'Dashboard',    icon: LayoutDashboard },
     { key: 'quotes',    label: 'Quotes',       icon: ClipboardList },
     { key: 'invoices',  label: 'Invoices',     icon: Receipt },
+    { key: 'mail',      label: 'Mail',         icon: Mail },
     { key: 'customers', label: 'Customers',    icon: Users },
     { key: 'group-stores', label: 'Group Stores', icon: Store, to: '/admin/group-stores' },
   ]},
@@ -696,7 +698,7 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'mail', 'settings'];
     if (section && validSections.includes(section as Section)) {
       // 'dashboard' is a real section again (stats overview); 'quotes' is
       // the pipeline list — deep links go exactly where they say.
@@ -6648,6 +6650,7 @@ export default function AdminPage() {
         {activeSection === 'newsletters' && <NewslettersAdmin />}
 
         {activeSection === 'prospects' && <ProspectsAdmin />}
+        {activeSection === 'mail' && <MailAdmin />}
         {activeSection === 'purchasing' && (
           <PurchasingAdmin
             prefillQuoteId={purchasingQuoteId}
