@@ -504,7 +504,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
         {view === 'list' ? (
           <button
             onClick={() => { resetBuilder(); setView('builder'); }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
           >
             <Plus className="w-4 h-4" /> New purchase order
           </button>
@@ -566,7 +566,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                             {!l.styleId && linkTarget !== l.key && (
                               <button
                                 onClick={() => { setLinkTarget(l.key); setLinkSearch(''); setLinkHits([]); }}
-                                className="text-xs text-brand-600 hover:underline"
+                                className="text-xs text-orange-600 hover:underline"
                               >
                                 Link product…
                               </button>
@@ -687,7 +687,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                 <div className="flex items-center justify-between">
                   <div className="font-medium text-sm flex items-center gap-2"><Truck className="w-4 h-4" /> Ship to</div>
                   {defaultShipTo && (
-                    <button onClick={() => setShipTo(defaultShipTo)} className="text-xs text-brand-600 hover:underline">
+                    <button onClick={() => setShipTo(defaultShipTo)} className="text-xs text-orange-600 hover:underline">
                       Use shop address
                     </button>
                   )}
@@ -892,7 +892,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                               onClick={() => void refreshPo(po.id)}
                               disabled={refreshingId === po.id}
                               title="Refresh status from S&S"
-                              className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline mr-3"
+                              className="inline-flex items-center gap-1 text-xs text-orange-600 hover:underline mr-3"
                             >
                               {refreshingId === po.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                               Refresh

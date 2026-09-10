@@ -176,10 +176,10 @@ export default function MailAdmin() {
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Mail className="w-5 h-5" /> Mail
             {totalUnread > 0 && (
-              <span className="text-xs bg-brand-600 text-white rounded-full px-2 py-0.5">{totalUnread}</span>
+              <span className="text-xs bg-orange-500 text-white rounded-full px-2 py-0.5">{totalUnread}</span>
             )}
           </h2>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-600">
             Every *@tshirtbrothers.com address, one inbox.
             {status?.lastSync && ` Last checked ${new Date(status.lastSync).toLocaleTimeString()}.`}
             {status?.lastError && <span className="text-red-600"> Sync error: {status.lastError}</span>}
@@ -196,7 +196,7 @@ export default function MailAdmin() {
           </button>
           <button
             onClick={() => { setCompose({ from: 'kevin@tshirtbrothers.com', to: '', cc: '', subject: '', body: '' }); setSendError(null); }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
           >
             <PenSquare className="w-4 h-4" /> Compose
           </button>
@@ -210,7 +210,7 @@ export default function MailAdmin() {
             <button
               key={f}
               onClick={() => setFolder(f)}
-              className={`px-3 py-1.5 text-sm capitalize ${folder === f ? 'bg-gray-900 text-white' : 'bg-white hover:bg-gray-50'}`}
+              className={`px-3 py-1.5 text-sm capitalize ${folder === f ? 'bg-gray-900 text-white' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-100'}`}
             >
               {f}
             </button>
@@ -218,7 +218,7 @@ export default function MailAdmin() {
         </div>
         <button
           onClick={() => setAliasFilter('')}
-          className={`px-2.5 py-1 rounded-full text-xs border ${!aliasFilter ? 'bg-brand-600 text-white border-brand-600' : 'bg-white hover:bg-gray-50'}`}
+          className={`px-2.5 py-1 rounded-full text-xs border ${!aliasFilter ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-100'}`}
         >
           All addresses
         </button>
@@ -226,7 +226,7 @@ export default function MailAdmin() {
           <button
             key={a.alias}
             onClick={() => setAliasFilter(aliasFilter === a.alias ? '' : a.alias)}
-            className={`px-2.5 py-1 rounded-full text-xs border ${aliasFilter === a.alias ? 'bg-brand-600 text-white border-brand-600' : 'bg-white hover:bg-gray-50'}`}
+            className={`px-2.5 py-1 rounded-full text-xs border ${aliasFilter === a.alias ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-400 text-gray-800 hover:bg-gray-100'}`}
           >
             {a.alias.replace('@tshirtbrothers.com', '@')}
             {Number(a.unread) > 0 && <span className="ml-1 font-semibold">({a.unread})</span>}
@@ -242,7 +242,7 @@ export default function MailAdmin() {
 
       {/* List + reader */}
       <div className="grid md:grid-cols-[minmax(280px,380px)_1fr] gap-4 items-start">
-        <div className="bg-white border rounded-xl overflow-hidden divide-y max-h-[70vh] overflow-y-auto">
+        <div className="bg-white border border-gray-300 rounded-xl overflow-hidden divide-y divide-gray-200 max-h-[70vh] overflow-y-auto">
           {loading ? (
             <div className="p-8 text-center text-gray-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></div>
           ) : messages.length === 0 ? (
@@ -254,21 +254,21 @@ export default function MailAdmin() {
             <button
               key={m.id}
               onClick={() => void openMessage(m.id)}
-              className={`block w-full text-left px-4 py-3 hover:bg-gray-50 ${openMsg?.id === m.id ? 'bg-brand-50' : ''}`}
+              className={`block w-full text-left px-4 py-3 hover:bg-gray-50 ${openMsg?.id === m.id ? 'bg-orange-50' : ''}`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className={`text-sm truncate ${!m.seen && !m.outgoing ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
+                <span className={`text-sm truncate ${!m.seen && !m.outgoing ? "font-bold text-gray-900" : "text-gray-800"}`}>
                   {m.outgoing ? `To: ${m.to_addrs?.[0] || ''}` : (m.from_name || m.from_addr || 'Unknown')}
                 </span>
-                <span className="text-xs text-gray-400 whitespace-nowrap">{fmtDate(m.msg_date)}</span>
+                <span className="text-xs text-gray-500 whitespace-nowrap">{fmtDate(m.msg_date)}</span>
               </div>
               <div className={`text-sm truncate ${!m.seen && !m.outgoing ? 'font-semibold' : ''}`}>{m.subject || '(no subject)'}</div>
-              <div className="text-xs text-gray-500 truncate flex items-center gap-1">
+              <div className="text-xs text-gray-600 truncate flex items-center gap-1">
                 {(m.attachments?.length ?? 0) > 0 && <Paperclip className="w-3 h-3 shrink-0" />}
                 {m.snippet}
               </div>
               {m.alias && !m.outgoing && (
-                <span className="inline-block mt-1 text-[10px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
+                <span className="inline-block mt-1 text-[10px] bg-gray-200 text-gray-700 rounded px-1.5 py-0.5">
                   {m.alias.replace('@tshirtbrothers.com', '@')}
                 </span>
               )}
@@ -276,7 +276,7 @@ export default function MailAdmin() {
           ))}
         </div>
 
-        <div className="bg-white border rounded-xl min-h-[300px] max-h-[70vh] overflow-y-auto">
+        <div className="bg-white border border-gray-300 rounded-xl min-h-[300px] max-h-[70vh] overflow-y-auto">
           {!openMsg ? (
             <div className="p-12 text-center text-sm text-gray-400">Select a message to read it.</div>
           ) : (
@@ -284,11 +284,11 @@ export default function MailAdmin() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="font-semibold text-lg">{openMsg.subject || '(no subject)'}</h3>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-700">
                     {openMsg.from_name ? `${openMsg.from_name} <${openMsg.from_addr}>` : openMsg.from_addr}
                     {' → '}{(openMsg.to_addrs || []).join(', ')}
                   </div>
-                  <div className="text-xs text-gray-400">
+                  <div className="text-xs text-gray-500">
                     {openMsg.msg_date ? new Date(openMsg.msg_date).toLocaleString() : ''}
                   </div>
                 </div>
@@ -313,7 +313,7 @@ export default function MailAdmin() {
                       href={a.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-gray-50 text-brand-700"
+                      className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-gray-50 text-orange-700"
                     >
                       <Paperclip className="w-3.5 h-3.5" />
                       {a.filename}
@@ -393,7 +393,7 @@ export default function MailAdmin() {
               <button
                 onClick={() => void doSend()}
                 disabled={sending || !compose.to.trim() || !compose.body.trim()}
-                className="inline-flex items-center gap-2 px-5 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 disabled:opacity-50"
+                className="inline-flex items-center gap-2 px-5 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50"
               >
                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 Send
