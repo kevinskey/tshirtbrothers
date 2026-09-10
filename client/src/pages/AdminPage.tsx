@@ -913,39 +913,31 @@ export default function AdminPage() {
     sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
   }>(null);
   const [costError, setCostError] = useState('');
-  const [invCostStyleQ, setInvCostStyleQ] = useState('');
-  const [invCostColor, setInvCostColor] = useState('');
+  // Per-line live blank costs, auto-detected from each item's description
+  // (style numbers like "Gildan 18500") — refreshes as items change.
+  const [invLineCosts, setInvLineCosts] = useState<Array<{
+    style: { ss_id: string; brand: string; style_number: string } | null;
+    cost: number | null; sale_expires?: string | null;
+  }>>([]);
   const [invCostLoading, setInvCostLoading] = useState(false);
-  const [invCostError, setInvCostError] = useState('');
-  const [invCostData, setInvCostData] = useState<null | {
-    style: { name: string; brand: string; style_number: string };
-    sizes: Record<string, { cost: number; regular: number; sale_expires: string | null }>;
-  }>(null);
-
-  async function fetchInvLiveCost() {
-    if (invCostStyleQ.trim().length < 2) return;
-    setInvCostLoading(true);
-    setInvCostError('');
-    try {
-      const res = await fetch(`/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(invCostStyleQ.trim())}&color=${encodeURIComponent(invCostColor.trim())}`, { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || `lookup failed (${res.status})`);
-      setInvCostData(d);
-    } catch (e: any) {
-      setInvCostData(null);
-      setInvCostError(e?.message || 'Cost lookup failed');
-    } finally {
+  useEffect(() => {
+    const items = invoiceForm.items;
+    if (invoiceView !== 'create' || items.length === 0) { setInvLineCosts([]); return; }
+    const t = setTimeout(async () => {
+      setInvCostLoading(true);
+      try {
+        const res = await fetch('/api/quotes/admin/live-cost/lines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+          body: JSON.stringify({ lines: items.map((it) => ({ description: it.description, size: it.size, color: it.color })) }),
+        });
+        if (res.ok) setInvLineCosts((await res.json()).lines);
+      } catch { /* best effort */ }
       setInvCostLoading(false);
-    }
-  }
-  function invCostForSize(size: string): number | null {
-    if (!invCostData) return null;
-    const norm = (x: string) => x.toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
-    for (const [k, v] of Object.entries(invCostData.sizes)) {
-      if (norm(k) === norm(size || '')) return v.cost;
-    }
-    return null;
-  }
+    }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceView, JSON.stringify(invoiceForm.items.map((it) => [it.description, it.size, it.color]))]);
 
   // styleQ mode = manual override; quoteId mode = server resolves the style
   // from the quote itself (linked product -> picked style -> tier default).
@@ -4675,45 +4667,46 @@ export default function AdminPage() {
                         </tbody>
                       </table>
                     </div>
-                    {/* Live blank cost + margin (same S&S feed as the quote modal) */}
+                    {/* Live blank cost + margin — auto-detected per line from descriptions */}
                     <div className="mt-3 bg-blue-50/60 border border-blue-100 rounded-lg p-3">
-                      <p className="text-sm font-semibold text-gray-900 mb-2">Live Blank Cost (S&amp;S)</p>
-                      <div className="flex gap-2 mb-2">
-                        <input value={invCostStyleQ} onChange={(e) => setInvCostStyleQ(e.target.value)} placeholder="Style # or name (e.g. 18500)"
-                          className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
-                        <input value={invCostColor} onChange={(e) => setInvCostColor(e.target.value)} placeholder="Color"
-                          className="w-28 px-2 py-1.5 rounded-lg border border-gray-300 text-xs" />
-                        <button type="button" onClick={() => void fetchInvLiveCost()} disabled={invCostLoading}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold disabled:opacity-50">
-                          {invCostLoading ? '…' : 'Fetch'}
-                        </button>
-                      </div>
-                      {invCostError && <p className="text-xs text-red-600">{invCostError}</p>}
-                      {invCostData && (() => {
-                        let blanks = 0; let margin = 0; let matched = 0; let unmatched = 0;
-                        for (const it of invoiceForm.items) {
-                          const c = invCostForSize(it.size || '');
-                          if (c == null) { if (it.size) unmatched++; continue; }
+                      <p className="text-sm font-semibold text-gray-900 mb-1">
+                        Live Blank Cost (S&amp;S) {invCostLoading && <Loader2 className="inline w-3.5 h-3.5 animate-spin text-blue-500" />}
+                      </p>
+                      {(() => {
+                        const byStyle: Record<string, { label: string; qty: number; blanks: number; margin: number }> = {};
+                        let matched = 0; let unmatched = 0; let blanks = 0; let margin = 0; let saleExp: string | null = null;
+                        invoiceForm.items.forEach((it, i) => {
+                          const lc = invLineCosts[i];
+                          if (!lc?.style || lc.cost == null) { if (it.description) unmatched++; return; }
                           matched += it.quantity;
-                          blanks += c * it.quantity;
-                          margin += (it.unit_price - c) * it.quantity;
+                          blanks += lc.cost * it.quantity;
+                          margin += (it.unit_price - lc.cost) * it.quantity;
+                          if (lc.sale_expires) saleExp = lc.sale_expires;
+                          const k = lc.style.ss_id;
+                          if (!byStyle[k]) byStyle[k] = { label: `${lc.style.brand} ${lc.style.style_number}`, qty: 0, blanks: 0, margin: 0 };
+                          byStyle[k].qty += it.quantity;
+                          byStyle[k].blanks += lc.cost * it.quantity;
+                          byStyle[k].margin += (it.unit_price - lc.cost) * it.quantity;
+                        });
+                        if (matched === 0) {
+                          return <p className="text-[11px] text-gray-400">Include the style number in item descriptions (e.g. "Gildan 18500") and live costs appear here automatically.</p>;
                         }
-                        const saleExp = Object.values(invCostData.sizes).find((v) => v.sale_expires)?.sale_expires;
                         const soon = saleExp && (new Date(saleExp).getTime() - Date.now()) < 4 * 86400000;
                         return (
                           <div className="space-y-1">
-                            <p className="text-[11px] text-gray-500">{invCostData.style.brand} {invCostData.style.name} ({invCostData.style.style_number})</p>
-                            {matched > 0 ? (
-                              <div className="flex justify-between text-xs font-bold">
-                                <span>{matched} pcs matched · blanks ${blanks.toFixed(2)}</span>
-                                <span className={margin >= 0 ? 'text-green-700' : 'text-red-600'}>gross margin ${margin.toFixed(2)}</span>
+                            {Object.values(byStyle).map((st) => (
+                              <div key={st.label} className="flex justify-between text-xs text-gray-700">
+                                <span>{st.label} × {st.qty} — blanks ${st.blanks.toFixed(2)}</span>
+                                <span className={st.margin >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>margin ${st.margin.toFixed(2)}</span>
                               </div>
-                            ) : (
-                              <p className="text-[11px] text-gray-400">No line items matched by size — fill the Size column to compute margin.</p>
-                            )}
-                            {unmatched > 0 && <p className="text-[10px] text-gray-400">{unmatched} line(s) had sizes with no S&amp;S match.</p>}
+                            ))}
+                            <div className="flex justify-between text-xs font-bold border-t border-blue-100 pt-1">
+                              <span>{matched} pcs · blanks ${blanks.toFixed(2)}</span>
+                              <span className={margin >= 0 ? 'text-green-700' : 'text-red-600'}>gross margin ${margin.toFixed(2)}</span>
+                            </div>
+                            {unmatched > 0 && <p className="text-[10px] text-gray-400">{unmatched} line(s) without a recognizable style number.</p>}
                             {saleExp && <p className={`text-[10px] ${soon ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>{soon ? '⚠ ' : ''}Sale pricing expires {saleExp}</p>}
-                            <p className="text-[10px] text-gray-400">Margin is before print/labor, computed per line from Size × Qty × (Price − cost).</p>
+                            <p className="text-[10px] text-gray-400">Live S&amp;S account pricing, matched per line by style + size + color. Margin is before print/labor.</p>
                           </div>
                         );
                       })()}

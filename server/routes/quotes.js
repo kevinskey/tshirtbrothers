@@ -715,6 +715,68 @@ router.post('/accept/:id', async (req, res, next) => {
 // expirations.
 const liveCostCache = new Map(); // ss_id -> { at, rows }
 
+async function fetchLiveCostRows(ssId) {
+  let cached = liveCostCache.get(ssId);
+  if (!cached || Date.now() - cached.at > 10 * 60 * 1000) {
+    const credentials = Buffer.from(`${process.env.SS_ACCOUNT_NUMBER}:${process.env.SS_API_KEY}`).toString('base64');
+    const r = await fetch(
+      `https://api.ssactivewear.com/v2/products/?styleid=${ssId}&fields=colorName,sizeName,piecePrice,salePrice,saleExpiration,customerPrice`,
+      { headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) },
+    );
+    if (!r.ok) return null;
+    cached = { at: Date.now(), rows: await r.json() };
+    liveCostCache.set(ssId, cached);
+  }
+  return cached;
+}
+
+const normSize = (x) => String(x || '').toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
+
+// Batch: resolve a live blank cost for each invoice line by reading the
+// style number straight out of its description ("... Gildan 18500 ...").
+// Lines whose description names no known style come back with style: null.
+router.post('/admin/live-cost/lines', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const lines = Array.isArray(req.body?.lines) ? req.body.lines.slice(0, 200) : [];
+    // Candidate style tokens per line (e.g. 18500, G500, NL9302, 1717).
+    const tokenRe = /\b([A-Z]{0,3}\d{3,6}[A-Z]{0,2})\b/gi;
+    const allTokens = new Set();
+    const lineTokens = lines.map((l) => {
+      const t = [...String(l.description || '').matchAll(tokenRe)].map((m) => m[1].toUpperCase());
+      t.forEach((x) => allTokens.add(x));
+      return t;
+    });
+    const styleByToken = new Map();
+    if (allTokens.size) {
+      const { rows } = await pool.query(
+        `SELECT ss_id, name, brand, style_number FROM products WHERE UPPER(style_number) = ANY($1)`,
+        [[...allTokens]],
+      );
+      for (const r of rows) styleByToken.set(String(r.style_number).toUpperCase(), r);
+    }
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      const style = lineTokens[i].map((t) => styleByToken.get(t)).find(Boolean) || null;
+      if (!style) { out.push({ style: null, cost: null }); continue; }
+      const cached = await fetchLiveCostRows(style.ss_id);
+      let cost = null;
+      let saleExpires = null;
+      if (cached) {
+        const want = normSize(lines[i].size);
+        const color = String(lines[i].color || '').toLowerCase();
+        const rows = cached.rows.filter((x) => !color || String(x.colorName || '').toLowerCase().includes(color));
+        const hit = (rows.length ? rows : cached.rows).find((x) => normSize(x.sizeName) === want);
+        if (hit) {
+          cost = Number(hit.customerPrice ?? hit.salePrice ?? hit.piecePrice);
+          saleExpires = hit.saleExpiration ? String(hit.saleExpiration).slice(0, 10) : null;
+        }
+      }
+      out.push({ style: { ss_id: style.ss_id, brand: style.brand, style_number: style.style_number }, cost, sale_expires: saleExpires });
+    }
+    res.json({ lines: out });
+  } catch (err) { next(err); }
+});
+
 // The quote-engine tier defaults, mapped to concrete catalog styles so the
 // cost panel can resolve garment+tier quotes with no picked product.
 // (Tees per the /compare tiers; fleece/long-sleeve are the Standard house
@@ -793,17 +855,8 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
     const { ss_id, name, brand, style_number } = prod.rows[0];
     const resolvedFrom = q ? 'manual' : (resolved?.from || 'search');
 
-    let cached = liveCostCache.get(ss_id);
-    if (!cached || Date.now() - cached.at > 10 * 60 * 1000) {
-      const credentials = Buffer.from(`${process.env.SS_ACCOUNT_NUMBER}:${process.env.SS_API_KEY}`).toString('base64');
-      const r = await fetch(
-        `https://api.ssactivewear.com/v2/products/?styleid=${ss_id}&fields=colorName,sizeName,piecePrice,salePrice,saleExpiration,customerPrice`,
-        { headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) },
-      );
-      if (!r.ok) return res.status(502).json({ error: `S&S API error ${r.status}` });
-      cached = { at: Date.now(), rows: await r.json() };
-      liveCostCache.set(ss_id, cached);
-    }
+    const cached = await fetchLiveCostRows(ss_id);
+    if (!cached) return res.status(502).json({ error: 'S&S API error' });
 
     const rows = cached.rows.filter((x) => !color || String(x.colorName || '').toLowerCase().includes(color));
     const colors = [...new Set(cached.rows.map((x) => x.colorName))];
