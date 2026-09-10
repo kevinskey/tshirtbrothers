@@ -2925,6 +2925,13 @@ export default function AdminPage() {
                                 <Package className="w-3.5 h-3.5" />
                                 Order blanks (S&S)
                               </button>
+                              <button
+                                onClick={() => { setOpenActionMenu(null); navigate(`/admin/order/${q.id}`); }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Full Detail
+                              </button>
                               {['completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
