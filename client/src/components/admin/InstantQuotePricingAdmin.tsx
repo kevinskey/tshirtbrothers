@@ -37,7 +37,7 @@ interface Settings {
   rush_threshold_days: number;
   standard_turnaround: number;
   rush_turnaround: number;
-  size_upcharges?: Record<string, number | string>;
+  size_upcharges?: Record<string, number | string> | Record<string, Record<string, number | string>>;
 }
 
 const UPCHARGE_SIZES = ['2XL', '3XL', '4XL', '5XL', '6XL'];
@@ -252,29 +252,60 @@ export default function InstantQuotePricingAdmin() {
         </div>
 
         <div className="mt-6">
-          <h4 className="text-sm font-semibold text-gray-800">Size upcharges</h4>
+          <h4 className="text-sm font-semibold text-gray-800">Size upcharges — per garment category</h4>
           <p className="text-xs text-gray-500 mt-0.5 mb-3">
-            Added per shirt for each size. S–XL are free; leave a row at 0 to disable that size's upcharge.
+            Added per piece by size. "Default" covers any garment without its own row —
+            fleece costs jump far more at 2XL+ than tees, so hoodies/sweatshirts get their own numbers.
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {UPCHARGE_SIZES.map((sz) => (
-              <NumberField
-                key={sz}
-                label={sz}
-                value={data.settings.size_upcharges?.[sz] ?? 0}
-                step="0.50"
-                onChange={(v) =>
-                  setField('settings', {
-                    ...data.settings,
-                    size_upcharges: {
-                      ...(data.settings.size_upcharges || {}),
-                      [sz]: v === '' ? 0 : Number(v),
-                    },
-                  })
-                }
-              />
-            ))}
-          </div>
+          {(() => {
+            // Normalize legacy flat shape ({'2XL':2}) into {default:{...}}.
+            const raw = (data.settings.size_upcharges || {}) as Record<string, unknown>;
+            const nested: Record<string, Record<string, number | string>> =
+              Object.values(raw).some((v) => v && typeof v === 'object')
+                ? (raw as Record<string, Record<string, number | string>>)
+                : { default: raw as Record<string, number | string> };
+            const cats = ['default', ...Array.from(new Set(data.garments.map((g) => g.name).filter(Boolean)))
+              .filter((n) => n !== 'default')];
+            const setCell = (cat: string, sz: string, v: string) =>
+              setField('settings', {
+                ...data.settings,
+                size_upcharges: {
+                  ...nested,
+                  [cat]: { ...(nested[cat] || {}), [sz]: v === '' ? 0 : Number(v) },
+                },
+              });
+            return (
+              <div className="overflow-x-auto">
+                <table className="text-xs">
+                  <thead>
+                    <tr>
+                      <th className="text-left pr-3 pb-1 text-gray-500 font-medium">Category</th>
+                      {UPCHARGE_SIZES.map((sz) => <th key={sz} className="px-2 pb-1 text-gray-500 font-medium">{sz}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cats.map((cat) => (
+                      <tr key={cat}>
+                        <td className="pr-3 py-1 font-semibold text-gray-700 whitespace-nowrap">{cat === 'default' ? 'Default (all others)' : cat}</td>
+                        {UPCHARGE_SIZES.map((sz) => (
+                          <td key={sz} className="px-1 py-1">
+                            <input
+                              type="number" step="0.50"
+                              value={nested[cat]?.[sz] ?? (cat === 'default' ? 0 : '')}
+                              placeholder={cat === 'default' ? '0' : String(nested.default?.[sz] ?? 0)}
+                              onChange={(e) => setCell(cat, sz, e.target.value)}
+                              className="w-16 border border-gray-200 rounded px-1.5 py-1 text-xs"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[10px] text-gray-400 mt-1.5">Blank category cells fall back to the Default row.</p>
+              </div>
+            );
+          })()}
         </div>
       </Card>
 

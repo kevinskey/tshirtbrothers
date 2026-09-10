@@ -137,13 +137,19 @@ export function computeQuote(inputs, tables) {
   const discountPct = Number(tier.discount_pct);
   const rushPct = Number(settings.rush_surcharge_pct);
   const markup = Number(settings.markup_multiplier);
-  // Per-size upcharge table (e.g. {"2XL": 2, "3XL": 4, ...}). Sizes not
-  // listed default to $0. Stored on settings to keep the admin edit UI
-  // in one place.
-  const sizeUpchargeTable = (settings.size_upcharges && typeof settings.size_upcharges === 'object')
+  // Per-size upcharge table. Two shapes are supported:
+  //   legacy flat:   {"2XL": 2, "3XL": 4}                 — applies to every garment
+  //   per-category:  {"default": {...}, "Hoodie": {...}}  — garment name wins,
+  //                  'default' covers the rest. Fleece costs jump far more at
+  //                  2XL+ than tees do, hence per-category.
+  const rawUpcharges = (settings.size_upcharges && typeof settings.size_upcharges === 'object')
     ? settings.size_upcharges
     : {};
-  const upchargeFor = (sz) => Number(sizeUpchargeTable[sz] || 0);
+  const isNested = Object.values(rawUpcharges).some((v) => v && typeof v === 'object');
+  const garmentUpcharges = isNested ? (rawUpcharges[garmentName] || {}) : rawUpcharges;
+  const defaultUpcharges = isNested ? (rawUpcharges.default || {}) : {};
+  // Per-size fallback: a category row only overrides the sizes it sets.
+  const upchargeFor = (sz) => Number((garmentUpcharges[sz] ?? defaultUpcharges[sz]) || 0);
 
   // base = Σ over sizes of (garment_cost + upcharge_size + per_piece_print × num_locations) × qty_s
   // Same shape as the old formula when there's no upcharge, but accommodates
