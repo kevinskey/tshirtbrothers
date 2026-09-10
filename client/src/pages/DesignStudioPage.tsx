@@ -729,6 +729,44 @@ export default function DesignStudioPage() {
     return !!localStorage.getItem('tsb_token');
   });
 
+  // Art Library + customer quote graphics as placeable sources in the
+  // Upload panel (library is public TSB art; customer graphics admin-only).
+  const [artLibQ, setArtLibQ] = useState('');
+  const [artLib, setArtLib] = useState<{ id: number; name: string; image_url: string }[]>([]);
+  const [custGfx, setCustGfx] = useState<{ key: string; name: string; url: string }[]>([]);
+  const [custGfxQ, setCustGfxQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/design/art-library?limit=30${artLibQ.trim() ? `&q=${encodeURIComponent(artLibQ.trim())}` : ''}`);
+        if (r.ok) {
+          const d = await r.json();
+          setArtLib(d.designs || d || []);
+        }
+      } catch { /* optional */ }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [artLibQ]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    (async () => {
+      try {
+        const r = await fetch('/api/quotes', { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } });
+        if (!r.ok) return;
+        const data = await r.json();
+        const quotes = Array.isArray(data) ? data : data.quotes || [];
+        const out: { key: string; name: string; url: string }[] = [];
+        for (const q of quotes) {
+          const files = [...new Set([q.design_url, ...(Array.isArray(q.extra_design_urls) ? q.extra_design_urls : []), ...(Array.isArray(q.source_upload_urls) ? q.source_upload_urls : [])]
+            .filter((u: unknown): u is string => typeof u === 'string' && u.length > 0))];
+          files.forEach((url, i) => out.push({ key: `${q.id}:${i}`, name: `${q.customer_name || 'Quote #' + q.id}${files.length > 1 ? ` (${i + 1})` : ''}`, url }));
+        }
+        setCustGfx(out.slice(0, 120));
+      } catch { /* optional */ }
+    })();
+  }, [isAdmin]);
+
+
 
   async function handleSaveToLibrary() {
     if (!librarySaveName.trim() || librarySaving) return;
@@ -2867,6 +2905,64 @@ export default function DesignStudioPage() {
             ))}
           </div>
           <p className="text-[10px] text-gray-400 mt-1">Click an image to place it on the canvas</p>
+        </div>
+      )}
+
+      {/* TSB Art Library */}
+      <div>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Art Library</p>
+        <input
+          value={artLibQ}
+          onChange={e => setArtLibQ(e.target.value)}
+          placeholder="Search TSB art…"
+          className="w-full mb-2 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+        />
+        {artLib.length === 0 ? (
+          <p className="text-[10px] text-gray-400">No art found.</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+            {artLib.map(a => (
+              <button
+                key={a.id}
+                type="button"
+                title={a.name}
+                onClick={() => { setPendingUpload(a.image_url); setActiveTool(null); }}
+                className="aspect-square rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:border-red-400 transition"
+              >
+                <img src={a.image_url} alt={a.name} className="w-full h-full object-contain p-1" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Customer graphics from quotes — staff only */}
+      {isAdmin && custGfx.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Customer Graphics</p>
+          <input
+            value={custGfxQ}
+            onChange={e => setCustGfxQ(e.target.value)}
+            placeholder="Filter by customer…"
+            className="w-full mb-2 rounded-lg border border-gray-200 px-2 py-1.5 text-xs"
+          />
+          <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+            {custGfx
+              .filter(g => !custGfxQ.trim() || g.name.toLowerCase().includes(custGfxQ.trim().toLowerCase()))
+              .slice(0, 30)
+              .map(g => (
+                <button
+                  key={g.key}
+                  type="button"
+                  title={g.name}
+                  onClick={() => { setPendingUpload(g.url); setActiveTool(null); }}
+                  className="rounded-lg border border-gray-200 bg-gray-50 overflow-hidden hover:border-red-400 transition"
+                >
+                  <img src={g.url} alt={g.name} className="w-full aspect-square object-contain p-1" />
+                  <span className="block text-[9px] text-gray-500 truncate px-1 pb-0.5">{g.name}</span>
+                </button>
+              ))}
+          </div>
         </div>
       )}
     </div>
