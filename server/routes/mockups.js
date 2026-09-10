@@ -173,7 +173,15 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
     // even before the admin returns to the invoice editor.
     if (invoice_id) {
       try {
-        await pool.query('UPDATE invoices SET mockup_id = $1, updated_at = NOW() WHERE id = $2', [row.id, invoice_id]);
+        if (req.body?.as_extra) {
+          // Append to extra_mockups; the primary mockup stays untouched.
+          await pool.query(
+            `UPDATE invoices SET extra_mockups = COALESCE(extra_mockups, '[]'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+            [JSON.stringify([{ mockup_id: row.id, front: row.preview_image_url, back: row.preview_image_url_back || null }]), invoice_id],
+          );
+        } else {
+          await pool.query('UPDATE invoices SET mockup_id = $1, updated_at = NOW() WHERE id = $2', [row.id, invoice_id]);
+        }
       } catch (e) {
         // Don't fail the mockup save if the invoice link fails — the admin
         // can still attach manually from the invoice editor.

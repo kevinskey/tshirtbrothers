@@ -497,6 +497,9 @@ export default function DesignStudioPage() {
   // composites, attaches them to a mockup row tied to the invoice, then
   // navigates back to the admin invoice editor.
   const attachToInvoiceId = searchParams.get('attachToInvoice') || '';
+  // '&extraMockup=1' => this new mockup should be APPENDED to the invoice's
+  // extra_mockups instead of replacing its primary mockup.
+  const attachAsExtraMockup = searchParams.get('extraMockup') === '1';
   // When set, the studio is acting as the editor for an existing mockup row.
   // Hydrates product / canvas dims / elements from the mockup on mount and
   // saves back via PATCH instead of POST.
@@ -1022,6 +1025,7 @@ export default function DesignStudioPage() {
         body: JSON.stringify({
           name: designName && designName !== 'Untitled design' ? designName : `Invoice ${attachToInvoiceId} Mockup`,
           invoice_id: Number(attachToInvoiceId),
+          as_extra: attachAsExtraMockup,
           product_id: null,
           product_ss_id: selectedProduct?.ss_id || null,
           product_name: selectedProduct?.name || null,

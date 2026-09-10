@@ -1641,7 +1641,7 @@ export default function AdminPage() {
   // been saved yet, save it as a draft first so we have an id for the
   // studio to write back to. The studio handles render + composite + mockup
   // creation, then navigates back to /admin?section=invoices&editInvoice=<id>.
-  async function handleOpenStudioForInvoice() {
+  async function handleOpenStudioForInvoice(asExtra = false) {
     if (openingStudio) return;
     if (!invoiceForm.customer_name || !invoiceForm.customer_email) {
       alert('Add a customer name and email before designing a mockup.');
@@ -1673,8 +1673,11 @@ export default function AdminPage() {
       // If the invoice already has a mockup attached, edit it in place
       // instead of spawning a fresh row. Studio detects editMockup and
       // PATCHes the existing record.
-      const editParam = invoiceForm.mockup_id ? `&editMockup=${invoiceForm.mockup_id}` : '';
-      navigate(`/design?attachToInvoice=${encodeURIComponent(invoiceId)}${editParam}`);
+      // asExtra: always create a FRESH mockup and have the server append it
+      // to extra_mockups instead of replacing the primary.
+      const editParam = !asExtra && invoiceForm.mockup_id ? `&editMockup=${invoiceForm.mockup_id}` : '';
+      const extraParam = asExtra ? '&extraMockup=1' : '';
+      navigate(`/design?attachToInvoice=${encodeURIComponent(invoiceId)}${editParam}${extraParam}`);
     } catch (e) {
       alert(`Failed to open studio: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
@@ -4622,13 +4625,23 @@ export default function AdminPage() {
                         ))}
                       </div>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => { setMockupPickerFor('invoice'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
-                      className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-700"
-                    >
-                      + Add another mockup from Studio
-                    </button>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenStudioForInvoice(true)}
+                        disabled={openingStudio}
+                        className="text-xs font-medium text-emerald-700 hover:text-emerald-800 disabled:opacity-50"
+                      >
+                        {openingStudio ? 'Opening…' : '+ Design another mockup in Studio'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setMockupPickerFor('invoice'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        + Attach an existing mockup
+                      </button>
+                    </div>
                   </div>
 
                   {/* Line Items */}
