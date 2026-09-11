@@ -8676,11 +8676,15 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
 }
 
 function GangSheetRow({ order }: { order: GangSheetOrder }) {
+  const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
   const when = order.paid_at || order.created_at;
   const size = order.length_ft ? `${order.length_ft} ft` : 'Gang sheet';
   const rush = order.tier === 'hot_rush' || order.tier === 'rush';
+  // Row-click opens the gang sheet in the DTF queue, mirroring how quote and
+  // invoice rows open their detail views.
   return (
-    <tr className="hover:bg-gray-50">
+    <tr onClick={() => navigate('/admin/dtf-orders')} className="hover:bg-gray-50 cursor-pointer">
       {/* No thumbnail: the print file lives in a private Spaces bucket and
           needs a signed URL, which the DTF orders page mints on demand. A
           broken <img> here would read as "no artwork attached" — worse than
@@ -8737,10 +8741,37 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
             badge here is purely the workflow state. */}
         <StatusBadge status={order.status} />
       </td>
-      <td className="px-3 py-2 whitespace-nowrap">
-        <Link to="/admin/dtf-orders" className="text-red-600 hover:text-red-700 text-sm">
-          Open
-        </Link>
+      <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900"
+        >
+          Actions <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-2 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              <button
+                onClick={() => { setMenuOpen(false); navigate('/admin/dtf-orders'); }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+              >
+                <Eye className="w-3.5 h-3.5" /> Open order
+              </button>
+              {order.customer_email && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(order.customer_email!)}&composeSubject=${encodeURIComponent(`Your DTF gang sheet order #${order.id}`)}`;
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                >
+                  <Mail className="w-3.5 h-3.5" /> Email customer
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </td>
     </tr>
   );

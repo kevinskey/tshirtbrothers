@@ -467,6 +467,7 @@ function SettingsCard() {
 /* ────────────────────────────────────────────────────────────────────── */
 
 function DtfOrdersQueue() {
+  const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<'open' | 'all'>('open');
   const queryClient = useQueryClient();
 
@@ -576,7 +577,32 @@ function DtfOrdersQueue() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
+    <div className="min-h-screen bg-gray-50">
+      {/* Slim admin nav so this standalone page doesn't strand you outside
+          the admin shell — mirrors the main admin top bar's key stops. */}
+      <nav className="bg-gray-900 text-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-1 px-4 py-2.5 sm:px-6">
+          <button onClick={() => navigate('/admin')} className="mr-3 flex items-center gap-2 font-bold hover:text-orange-400">
+            ← Admin
+          </button>
+          {[
+            ['Pipeline', '/admin?section=quotes'],
+            ['Invoices', '/admin?section=invoices'],
+            ['Mail', '/admin?section=mail'],
+            ['Blanks (S&S)', '/admin?section=purchasing'],
+          ].map(([label, href]) => (
+            <button
+              key={label}
+              onClick={() => { window.location.href = href as string; }}
+              className="rounded-lg px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-800 hover:text-white"
+            >
+              {label}
+            </button>
+          ))}
+          <span className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-semibold text-white">Gang Sheets</span>
+        </div>
+      </nav>
+      <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-6xl">
         <SettingsCard />
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -835,6 +861,7 @@ function DtfOrdersQueue() {
               : ''
         }
       />
+      </div>
     </div>
   );
 }
