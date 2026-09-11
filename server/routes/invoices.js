@@ -680,6 +680,10 @@ router.post('/:id/send', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = rows[0];
+    if (!invoice.customer_email) {
+      return res.status(400).json({ error: 'No email address on this invoice' });
+    }
+
     const owed = computeAmountOwed(invoice);
     const { paymentType } = owed;
 
@@ -700,16 +704,43 @@ router.post('/:id/send', async (req, res, next) => {
       ? `Balance due — Invoice ${invoice.invoice_number} from TShirt Brothers`
       : `Invoice ${invoice.invoice_number} from TShirt Brothers`;
 
-    const resend = getResend();
     const html = buildInvoiceEmailHtml(invoice, paymentUrl);
 
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: [invoice.customer_email],
-      subject,
-      html,
-    });
+    // Resend REPORTS send failures in the response rather than throwing them,
+    // so a bare `await` reads a rejected send as a successful one and the
+    // surrounding try/catch never fires. This route used to mark the invoice
+    // 'sent' and answer 200 on that path, so an unverified sending domain, a
+    // bad recipient, or a rate limit looked exactly like a delivered email
+    // while the customer got nothing.
+    //
+    // Config problems DO throw (getResend() with no RESEND_API_KEY), so both
+    // shapes are collected here and reported the same way.
+    let sendError = null;
+    try {
+      ({ error: sendError } = await getResend().emails.send({
+        from: FROM_EMAIL,
+        to: [invoice.customer_email],
+        subject,
+        html,
+      }));
+    } catch (err) {
+      sendError = err;
+    }
 
+    if (sendError) {
+      console.error(
+        `[Invoice] Resend rejected invoice ${invoice.invoice_number} to ${invoice.customer_email}:`,
+        sendError,
+      );
+      // Said here rather than thrown, because the generic error middleware
+      // replaces err.message with "Internal server error" in production and
+      // the reason is the whole point.
+      return res.status(502).json({
+        error: `Could not email this invoice: ${sendError.message || 'the mail provider rejected it.'}`,
+      });
+    }
+
+    // Only now is the invoice genuinely sent.
     // Don't downgrade a paid invoice back to 'sent'; just bump sent_at.
     const updated = await pool.query(
       isReceipt
