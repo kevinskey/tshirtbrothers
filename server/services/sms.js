@@ -178,10 +178,14 @@ export async function smsInvoiceReceiptToCustomer(invoice) {
 }
 
 // Admin sends an invoice link via SMS on demand (open balance)
+// Throws rather than no-ops when Twilio is unconfigured or the send fails.
+// An admin texting an invoice is telling a customer "it's on its way" — a
+// silent drop here means they believe a bill went out that never did, so the
+// caller must be able to tell the difference.
 export async function smsInvoiceLinkToCustomer(invoice, viewUrl) {
   const phone = invoice.customer_phone;
   if (!phone) return null;
   const amount = Number(invoice.amount_due ?? invoice.total ?? 0).toFixed(2);
   const body = `TShirt Brothers: Invoice ${invoice.invoice_number} for $${amount}. View: ${viewUrl}`;
-  return await sendSMS(phone, body);
+  return await sendSMSOrThrow(phone, body);
 }
