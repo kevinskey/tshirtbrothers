@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Printer, Loader2, XCircle, CheckCircle2 } from 'lucide-react';
+import { Printer, Loader2, XCircle, CheckCircle2, CreditCard } from 'lucide-react';
 
 interface PublicInvoice {
   id: number;
@@ -17,6 +17,12 @@ interface PublicInvoice {
   total: number | string;
   amount_paid: number | string;
   amount_due: number | string;
+  // What this invoice is asking for right now — the deposit while one is
+  // outstanding, otherwise the remaining balance. Computed server-side so the
+  // button and the Stripe session can never disagree.
+  amount_due_now?: number;
+  payment_type?: 'deposit' | 'balance' | 'full';
+  deposit_percent?: number | string | null;
   status: string;
   due_date: string | null;
   notes: string | null;
@@ -37,6 +43,8 @@ export default function InvoiceViewPage() {
   const [inv, setInv] = useState<PublicInvoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   const toggleGroup = (k: string) => setOpenGroups((p) => ({ ...p, [k]: !p[k] }));
 
   useEffect(() => {
@@ -49,6 +57,26 @@ export default function InvoiceViewPage() {
       .then(setInv)
       .catch((e) => setError(e?.message || 'Failed to load invoice'));
   }, [id]);
+
+  // Ask the server for a fresh Checkout session every time. Nothing about the
+  // payment link is stored or reused, so this works whether the customer got
+  // here from a week-old email, a bookmark, or by backing out of Stripe once.
+  const startPayment = async () => {
+    if (!id) return;
+    setPaying(true);
+    setPayError(null);
+    try {
+      const res = await fetch(`/api/invoices/public/${id}/create-checkout`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.checkoutUrl) {
+        throw new Error(data.error || 'Could not start checkout. Please try again.');
+      }
+      window.location.href = data.checkoutUrl;
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : 'Could not start checkout.');
+      setPaying(false);
+    }
+  };
 
   if (error) {
     return (
@@ -309,6 +337,36 @@ export default function InvoiceViewPage() {
             </div>
           </div>
         </div>
+
+        {/* Pay Now — the invoice's own payment affordance. Before this existed
+            the only way to pay was the link in the emailed copy, which died
+            with its Stripe session 24h after the invoice was sent. */}
+        {!isPaid && (
+          <div className="mt-6 print:hidden">
+            <button
+              onClick={startPayment}
+              disabled={paying}
+              className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed text-white px-6 py-4 rounded-lg font-bold text-base transition-colors"
+            >
+              <CreditCard className="w-5 h-5" />
+              {paying
+                ? 'Opening secure checkout…'
+                : `Pay $${fmt(inv.amount_due_now ?? inv.amount_due)} Now`}
+            </button>
+            {inv.payment_type === 'deposit' && (
+              <p className="text-center text-xs text-gray-500 mt-2">
+                This is the {Number(inv.deposit_percent)}% deposit. The balance of $
+                {fmt(Number(inv.total) - Number(inv.amount_due_now ?? 0))} is due later.
+              </p>
+            )}
+            {payError && (
+              <p className="text-center text-sm text-red-600 mt-2">{payError}</p>
+            )}
+            <p className="text-center text-xs text-gray-400 mt-2">
+              Secure payment processed by Stripe.
+            </p>
+          </div>
+        )}
 
         {inv.notes && (
           <div className="text-xs text-gray-500 border-t border-gray-100 pt-4">

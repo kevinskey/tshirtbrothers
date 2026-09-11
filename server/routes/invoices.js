@@ -50,6 +50,76 @@ async function generateInvoiceNumber() {
   return `${prefix}${String(seq).padStart(3, '0')}`;
 }
 
+// What a customer owes RIGHT NOW on an invoice: the deposit if one is
+// configured and nothing has been collected yet, otherwise whatever is left
+// of the total. Shared by the send-email path, the public invoice payload and
+// the on-demand checkout endpoint so those three can never quote different
+// numbers at the customer.
+export function computeAmountOwed(invoice) {
+  const total = Number(invoice.total);
+  const paid = Number(invoice.amount_paid || 0);
+  const depositPercent = Number(invoice.deposit_percent || 0);
+
+  if (depositPercent > 0 && paid === 0) {
+    return {
+      amount: +(total * (depositPercent / 100)).toFixed(2),
+      paymentType: 'deposit',
+      depositPercent,
+    };
+  }
+  return {
+    amount: +(total - paid).toFixed(2),
+    paymentType: paid > 0 ? 'balance' : 'full',
+    depositPercent,
+  };
+}
+
+// Mint a Stripe Checkout session for an invoice.
+//
+// Called at click time, never at send time. A Checkout session URL dies 24h
+// after it is created, so emailing the raw session URL meant every invoice
+// became unpayable the next day — the customer clicked "Pay Now" and got
+// Stripe's expired-session page with nothing to do about it. The email now
+// links to the invoice page and the button there calls this, so the link in
+// the customer's inbox keeps working for as long as the invoice is open.
+async function createInvoiceCheckoutSession(invoice, owed) {
+  const stripe = getStripe();
+  const productName =
+    owed.paymentType === 'deposit'
+      ? `Deposit (${owed.depositPercent}%) - Invoice ${invoice.invoice_number}`
+      : owed.paymentType === 'balance'
+      ? `Balance - Invoice ${invoice.invoice_number}`
+      : `Invoice ${invoice.invoice_number}`;
+
+  return stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: productName,
+            description: `Payment for invoice ${invoice.invoice_number} - ${invoice.customer_name}`,
+          },
+          unit_amount: Math.round(owed.amount * 100),
+        },
+        quantity: 1,
+      },
+    ],
+    mode: 'payment',
+    success_url: `${DOMAIN}/payment/success?invoice=${invoice.id}&session_id={CHECKOUT_SESSION_ID}`,
+    // Back to the invoice, which carries its own Pay button — so backing out
+    // of Stripe is no longer a dead end the customer can't recover from.
+    cancel_url: `${DOMAIN}/invoice/view/${invoice.id}`,
+    customer_email: invoice.customer_email,
+    metadata: {
+      invoice_id: String(invoice.id),
+      invoice_number: invoice.invoice_number,
+      payment_type: owed.paymentType,
+    },
+  });
+}
+
 // Build invoice email HTML
 function buildInvoiceEmailHtml(invoice, paymentUrl) {
   const items = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
@@ -226,6 +296,7 @@ router.get('/public/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     const i = rows[0];
+    const owed = computeAmountOwed(i);
     res.json({
       id: i.id,
       invoice_number: i.invoice_number,
@@ -245,11 +316,38 @@ router.get('/public/:id', async (req, res, next) => {
       due_date: i.due_date,
       notes: i.notes,
       created_at: i.created_at,
+      deposit_percent: i.deposit_percent,
+      // Server-computed so the Pay button can never quote a different figure
+      // from the one the Stripe session is created for.
+      amount_due_now: owed.amount,
+      payment_type: owed.paymentType,
       mockup_id: i.mockup_id,
       mockup_preview_url: i.mockup_preview_url,
       mockup_preview_url_back: i.mockup_preview_url_back,
     });
   } catch (err) { next(err); }
+});
+
+// POST /public/:id/create-checkout - Mint a fresh Stripe Checkout session for
+// an invoice and hand back its URL. Public for the same reason GET /public/:id
+// is: the customer paying has no account. Creating a session leaks nothing —
+// the worst an id-guesser achieves is paying someone else's bill.
+router.post('/public/:id/create-checkout', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+
+    const invoice = rows[0];
+    const owed = computeAmountOwed(invoice);
+    if (owed.amount <= 0) {
+      return res.status(400).json({ error: 'This invoice is already paid in full.' });
+    }
+
+    const session = await createInvoiceCheckoutSession(invoice, owed);
+    res.json({ checkoutUrl: session.url, amount: owed.amount, paymentType: owed.paymentType });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Public: PDF of the invoice. Accessed from the customer success page's
@@ -547,10 +645,12 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
-// POST /:id/send - Send invoice email with Stripe payment link
-// If the invoice has deposit_percent > 0 and no deposit has been paid yet,
-// this charges only the deposit portion. Otherwise it charges the remaining
-// amount_due. Use /:id/send-balance once the deposit is in.
+// POST /:id/send - Email the invoice with a Pay Now link.
+// The link points at the invoice page, which mints the Stripe session on
+// click (see createInvoiceCheckoutSession for why it is not minted here).
+// What gets charged — deposit vs. balance vs. full — is decided at that
+// point by computeAmountOwed, so re-sending an invoice after a partial
+// payment naturally asks for the remainder.
 router.post('/:id/send', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -564,60 +664,17 @@ router.post('/:id/send', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = rows[0];
-    const total = Number(invoice.total);
-    const paid = Number(invoice.amount_paid || 0);
-    const depositPercent = Number(invoice.deposit_percent || 0);
+    const owed = computeAmountOwed(invoice);
+    const { paymentType } = owed;
 
-    // Decide what to charge: the deposit (if configured and not yet collected),
-    // or whatever remains on the invoice.
-    let chargeAmount;
-    let paymentType = 'full';
-    if (depositPercent > 0 && paid === 0) {
-      chargeAmount = +(total * (depositPercent / 100)).toFixed(2);
-      paymentType = 'deposit';
-    } else {
-      chargeAmount = +(total - paid).toFixed(2);
-      paymentType = paid > 0 ? 'balance' : 'full';
-    }
+    // If nothing is owed, send a receipt (no Pay Now button).
+    const isReceipt = owed.amount <= 0;
 
-    // If nothing is owed, send a receipt (no Stripe session, no Pay Now button).
-    const isReceipt = chargeAmount <= 0;
-    let paymentUrl = null;
-
-    if (!isReceipt) {
-      const stripe = getStripe();
-      const productName = paymentType === 'deposit'
-        ? `Deposit (${depositPercent}%) - Invoice ${invoice.invoice_number}`
-        : paymentType === 'balance'
-        ? `Balance - Invoice ${invoice.invoice_number}`
-        : `Invoice ${invoice.invoice_number}`;
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: productName,
-                description: `Payment for invoice ${invoice.invoice_number} - ${invoice.customer_name}`,
-              },
-              unit_amount: Math.round(chargeAmount * 100),
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'payment',
-        success_url: `${DOMAIN}/payment/success?invoice=${id}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${DOMAIN}/invoice/view/${id}`,
-        customer_email: invoice.customer_email,
-        metadata: {
-          invoice_id: String(id),
-          invoice_number: invoice.invoice_number,
-          payment_type: paymentType,
-        },
-      });
-      paymentUrl = session.url;
-    }
+    // Link to the invoice page, NOT a Stripe session URL. Sessions expire 24h
+    // after creation, so a session minted here was dead by the time most
+    // customers got round to paying. The invoice page mints a fresh one on
+    // click, so this link stays good for the life of the invoice.
+    const paymentUrl = isReceipt ? null : `${DOMAIN}/invoice/view/${id}`;
 
     const subject = isReceipt
       ? `Receipt for Invoice ${invoice.invoice_number} from TShirt Brothers`
