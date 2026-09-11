@@ -11,6 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeAmountOwed } from './invoices.js';
+import { smsInvoiceLinkToCustomer } from '../services/sms.js';
 
 const invoice = (over = {}) => ({
   id: 1,
@@ -69,4 +70,28 @@ test('null deposit_percent is treated as no deposit, not NaN', () => {
   const owed = computeAmountOwed(invoice({ deposit_percent: null }));
   assert.equal(owed.amount, 400);
   assert.equal(owed.paymentType, 'full');
+});
+
+// Texting an invoice (lives in services/sms.js, but it is the invoice route's
+// behaviour). These run with no TWILIO_* env set, which is exactly the
+// misconfigured case the route has to be able to report.
+
+test('texting an invoice with no phone on it is a no-op, not an error', async () => {
+  const sid = await smsInvoiceLinkToCustomer(
+    invoice({ customer_phone: null }),
+    'https://tshirtbrothers.com/invoice/view/1',
+  );
+  assert.equal(sid, null);
+});
+
+test('texting throws when Twilio is unconfigured instead of reporting success', async () => {
+  await assert.rejects(
+    () =>
+      smsInvoiceLinkToCustomer(
+        invoice({ customer_phone: '+15551234567' }),
+        'https://tshirtbrothers.com/invoice/view/1',
+      ),
+    /Twilio not configured/,
+    'a silent drop here would tell an admin a bill went out that never did',
+  );
 });

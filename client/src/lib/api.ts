@@ -978,6 +978,14 @@ export async function sendInvoice(id: string): Promise<Invoice> {
   });
 }
 
+// Text the customer a link to the invoice page. Needs customer_phone on the
+// invoice; the server 400s without one. Returns Twilio's message sid.
+export async function sendInvoiceSms(id: string): Promise<{ sent: boolean; sid: string }> {
+  return authRequest<{ sent: boolean; sid: string }>(`/invoices/${id}/send-sms`, {
+    method: 'POST',
+  });
+}
+
 export async function recordPayment(id: string, data: { amount: number; method: string }): Promise<Invoice> {
   return authRequest<Invoice>(`/invoices/${id}/record-payment`, {
     method: 'POST',

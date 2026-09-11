@@ -474,18 +474,34 @@ router.get('/:id/pdf', async (req, res, next) => {
 
 router.use(authenticate, adminOnly);
 
-// POST /:id/send-sms - send the invoice link via Twilio
+// POST /:id/send-sms - text the customer a link to the invoice.
+// The link is the invoice page, which carries its own Pay button, so a texted
+// invoice is payable for as long as it is open (unlike a Stripe session URL).
 router.post('/:id/send-sms', async (req, res, next) => {
+  let inv;
   try {
     const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
-    const inv = rows[0];
-    if (!inv.customer_phone) return res.status(400).json({ error: 'No phone number on this invoice' });
+    inv = rows[0];
+  } catch (err) {
+    return next(err);
+  }
+
+  if (!inv.customer_phone) return res.status(400).json({ error: 'No phone number on this invoice' });
+
+  try {
     const { smsInvoiceLinkToCustomer } = await import('../services/sms.js');
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
     const sid = await smsInvoiceLinkToCustomer(inv, `${domain}/invoice/view/${inv.id}`);
-    res.json({ sent: true, sid: sid || null });
-  } catch (err) { next(err); }
+    res.json({ sent: true, sid });
+  } catch (err) {
+    // Reported here rather than handed to the generic error middleware, which
+    // replaces err.message with "Internal server error" in production. This
+    // route used to answer { sent: true } even when Twilio was unconfigured
+    // and nothing went out; an admin needs to see why a text failed.
+    console.error('[Invoice SMS] failed for invoice ' + inv.id + ':', err);
+    res.status(502).json({ error: `Could not text this invoice: ${err.message}` });
+  }
 });
 
 // GET / - List all invoices, optional ?status= filter

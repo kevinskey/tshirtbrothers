@@ -39,6 +39,7 @@ import {
   Store,
   Target,
   Mail,
+  MessageSquare,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -79,6 +80,7 @@ import {
   createInvoice,
   updateInvoice,
   sendInvoice,
+  sendInvoiceSms,
   deleteInvoice,
   recordPayment,
   type BlogPost,
@@ -1547,6 +1549,17 @@ export default function AdminPage() {
       alert('Invoice sent!');
     },
     onError: (err) => alert(`Failed to send: ${err instanceof Error ? err.message : 'Unknown error'}`),
+  });
+
+  // Texting doesn't change the invoice's status the way emailing it does —
+  // it's a nudge to an invoice the customer already has, so there is nothing
+  // to invalidate.
+  // `variables` is the id currently in flight, so each row can show its own
+  // pending state instead of every Text button reading "Texting…" at once.
+  const textInvoiceMutation = useMutation({
+    mutationFn: (id: string) => sendInvoiceSms(id),
+    onSuccess: () => alert('Invoice texted!'),
+    onError: (err) => alert(`Failed to text: ${err instanceof Error ? err.message : 'Unknown error'}`),
   });
 
   const deleteInvoiceMutation = useMutation({
@@ -4298,6 +4311,11 @@ export default function AdminPage() {
                               {Number(inv.amount_paid) > 0 ? 'Send Balance' : 'Resend'}
                             </button>
                           )}
+                          {inv.customer_phone && inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
+                            <button onClick={() => textInvoiceMutation.mutate(inv.id)} disabled={textInvoiceMutation.isPending} className="text-xs font-medium text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg">
+                              {textInvoiceMutation.isPending && textInvoiceMutation.variables === inv.id ? 'Texting…' : 'Text'}
+                            </button>
+                          )}
                           {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
                           <button onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Order blanks</button>
                           <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
@@ -4353,6 +4371,16 @@ export default function AdminPage() {
                                     className="p-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                                   >
                                     <Send className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {inv.customer_phone && inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
+                                  <button
+                                    title={`Text the invoice link to ${inv.customer_phone}`}
+                                    onClick={() => textInvoiceMutation.mutate(inv.id)}
+                                    disabled={textInvoiceMutation.isPending}
+                                    className="p-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 rounded transition-colors"
+                                  >
+                                    <MessageSquare className="w-4 h-4" />
                                   </button>
                                 )}
                                 {inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
@@ -5015,6 +5043,19 @@ export default function AdminPage() {
                             >
                               <Send className="w-3 h-3 inline mr-1" />
                               {paid > 0 ? 'Send Balance' : 'Resend Invoice'}
+                            </button>
+                          )}
+                          {due > 0 && editingInvoice.customer_phone && (
+                            <button
+                              type="button"
+                              onClick={() => textInvoiceMutation.mutate(editingInvoice.id)}
+                              disabled={textInvoiceMutation.isPending}
+                              className="text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 hover:bg-purple-100 px-3 py-1.5 rounded-lg"
+                            >
+                              <MessageSquare className="w-3 h-3 inline mr-1" />
+                              {textInvoiceMutation.isPending && textInvoiceMutation.variables === editingInvoice.id
+                                ? 'Texting…'
+                                : 'Text Invoice'}
                             </button>
                           )}
                         </div>
