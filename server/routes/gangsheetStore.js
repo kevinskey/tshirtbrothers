@@ -291,14 +291,21 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     }
     const shippingCents = delivery === 'ship' ? s.shipping_flat_cents : 0;
 
+    // Layout stashed at compose time (builder sheets); null for uploads.
+    let layoutJson = null;
+    try {
+      const lay = await pool.query('SELECT layout FROM gang_sheet_layouts WHERE file_key = $1', [file_key]);
+      layoutJson = lay.rows[0]?.layout ? JSON.stringify(lay.rows[0].layout) : null;
+    } catch { /* table may not exist yet on first boot — non-fatal */ }
+
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
         (customer_name, customer_email, length_ft, tier, price_cents, shipping_cents,
-         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
       [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, fileWidthPx, fileHeightPx, note || null, attested === true],
+       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson],
     );
     const orderId = ins.rows[0].id;
 
@@ -668,6 +675,21 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     if (!dims) return res.status(500).json({ error: 'Could not compose your sheet — try again' });
     const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
     await uploadObject({ key, body: composedBuf, contentType: 'image/png', acl: 'private' });
+    // Stash the placement layout by file_key so /checkout can copy it onto
+    // the order — that's what lets the admin queue show graphic counts and
+    // sizes. Best-effort: a failure here must not break composing.
+    try {
+      await pool.query(
+        `INSERT INTO gang_sheet_layouts (file_key, layout)
+         VALUES ($1, $2) ON CONFLICT (file_key) DO NOTHING`,
+        [key, JSON.stringify(cleaned.map((p) => ({
+          image_url: p.imageUrl, left: p.left, top: p.top,
+          width: p.width, height: p.height, rotation: p.rotation,
+        })))]
+      );
+    } catch (layoutErr) {
+      console.error('[dtf-store] compose: layout stash failed:', layoutErr.message);
+    }
     res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: composedBuf.length });
   } catch (err) { next(err); }
 });

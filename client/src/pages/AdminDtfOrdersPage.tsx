@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsheet/SendToVendorDialog';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -12,8 +12,11 @@ import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsh
 type TierKey = 'standard' | 'rush' | 'hot_rush';
 type ShipAddress = { line1?: string; city?: string; state?: string; zip?: string };
 
+type LayoutPlacement = { image_url: string; left: number; top: number; width: number; height: number; rotation: number };
+
 type OrderRow = {
   id: number;
+  layout: LayoutPlacement[] | null;
   customer_name: string | null;
   customer_email: string | null;
   length_ft: number;
@@ -37,6 +40,21 @@ type OrderRow = {
 // visible in the queue before the sheet goes to print.
 function fileHeightFt(px: number | null): number | null {
   return px == null ? null : Math.ceil(px / 3600);
+}
+
+// Group a sheet's placements into "N × W×H in" rows per source graphic
+// (300 px = 1 inch on the compose canvas).
+function layoutSummary(layout: LayoutPlacement[]) {
+  const groups = new Map<string, { image_url: string; wIn: string; hIn: string; count: number }>();
+  for (const p of layout) {
+    const wIn = (p.width / 300).toFixed(1);
+    const hIn = (p.height / 300).toFixed(1);
+    const key = `${p.image_url}|${wIn}x${hIn}`;
+    const g = groups.get(key);
+    if (g) g.count += 1;
+    else groups.set(key, { image_url: p.image_url, wIn, hIn, count: 1 });
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
 }
 
 const TIER_LABEL: Record<TierKey, string> = { standard: 'Standard', rush: 'Rush', hot_rush: 'Hot Rush' };
@@ -492,6 +510,32 @@ function DtfOrdersQueue() {
   // Which order the Send-to-Vendor dialog is open for (null = closed) —
   // or, for the pick-a-local-file path, which File is queued to send.
   const [vendorOrder, setVendorOrder] = useState<OrderRow | null>(null);
+  // Sheet viewer: order being inspected + a blob URL for its private PNG.
+  const [viewOrder, setViewOrder] = useState<OrderRow | null>(null);
+  const [viewUrl, setViewUrl] = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+
+  async function openSheetView(order: OrderRow) {
+    setViewOrder(order);
+    setViewUrl(null);
+    setViewLoading(true);
+    try {
+      const r = await fetch(`/api/gangsheet-store/admin/orders/${order.id}/file`, { headers: authHeaders() });
+      if (!r.ok) throw new Error('Could not load the sheet file');
+      const blob = await r.blob();
+      setViewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not load the sheet');
+    } finally {
+      setViewLoading(false);
+    }
+  }
+
+  function closeSheetView() {
+    if (viewUrl) URL.revokeObjectURL(viewUrl);
+    setViewUrl(null);
+    setViewOrder(null);
+  }
   const [vendorFiles, setVendorFiles] = useState<File[]>([]);
 
   async function sendFilesToVendor(payload: VendorSendPayload) {
@@ -662,6 +706,14 @@ function DtfOrdersQueue() {
                         <div className="flex flex-col gap-1.5">
                           <button
                             type="button"
+                            onClick={() => void openSheetView(order)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> View sheet
+                            {order.layout ? ` (${order.layout.length})` : ''}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => downloadOrderFile(order.id)}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                           >
@@ -710,6 +762,64 @@ function DtfOrdersQueue() {
           </div>
         )}
       </div>
+
+      {/* Sheet viewer: what's on the sheet (counts + sizes) and the PNG itself */}
+      {viewOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closeSheetView}>
+          <div
+            className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div>
+                <h3 className="font-bold text-gray-900">
+                  Order #{viewOrder.id} — 22in × {viewOrder.length_ft} ft sheet
+                </h3>
+                <p className="text-xs text-gray-500">
+                  {viewOrder.customer_name || viewOrder.customer_email || ''}
+                  {viewOrder.layout ? ` · ${viewOrder.layout.length} graphic${viewOrder.layout.length === 1 ? '' : 's'} placed` : ''}
+                </p>
+              </div>
+              <button onClick={closeSheetView} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[280px_1fr]">
+              <div>
+                <h4 className="mb-2 text-sm font-bold text-gray-900">Graphics on this sheet</h4>
+                {viewOrder.layout && viewOrder.layout.length > 0 ? (
+                  <ul className="space-y-2">
+                    {layoutSummary(viewOrder.layout).map((g, i) => (
+                      <li key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 p-2">
+                        <img src={g.image_url} alt="" className="h-12 w-12 flex-shrink-0 rounded bg-gray-50 object-contain" />
+                        <div className="text-sm">
+                          <div className="font-semibold text-gray-900">{g.count} × {g.wIn}&quot; × {g.hIn}&quot;</div>
+                          <div className="text-xs text-gray-500">{g.count === 1 ? '1 copy' : `${g.count} copies`}</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                    No layout data — this sheet was uploaded ready-made (or ordered before layout tracking), so counts and sizes aren't recorded. Use the preview to inspect it.
+                  </p>
+                )}
+              </div>
+              <div className="min-h-[300px] rounded-lg border border-gray-200 bg-[repeating-conic-gradient(#f3f4f6_0%_25%,white_0%_50%)] bg-[length:20px_20px] p-2">
+                {viewLoading ? (
+                  <div className="flex h-full items-center justify-center text-gray-400">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : viewUrl ? (
+                  <img src={viewUrl} alt={`Order ${viewOrder.id} sheet`} className="mx-auto max-h-[70vh] w-auto max-w-full" />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-sm text-gray-400">Preview unavailable</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SendToVendorDialog
         open={vendorOrder !== null || vendorFiles.length > 0}
