@@ -25,7 +25,7 @@ router.get('/aliases', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT alias, COUNT(*) AS total, COUNT(*) FILTER (WHERE NOT seen AND NOT outgoing) AS unread
          FROM mail_messages
-        WHERE alias IS NOT NULL
+        WHERE alias IS NOT NULL AND NOT deleted
         GROUP BY alias
         ORDER BY MAX(msg_date) DESC`
     );
@@ -43,7 +43,7 @@ router.get('/', async (req, res, next) => {
     const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
 
-    const conditions = [];
+    const conditions = ['NOT deleted'];
     const params = [];
     let i = 1;
     if (folder === 'inbox') conditions.push('NOT outgoing');
@@ -94,6 +94,22 @@ router.put('/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Message not found' });
     res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /:id — soft-delete: hides the message from the TSB inbox. The
+// copy in the Purelymail mailbox is untouched, and the row is kept so the
+// IMAP sync high-water mark can't slip backward and re-import it.
+router.delete('/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE mail_messages SET deleted = TRUE, seen = TRUE WHERE id = $1',
+      [req.params.id]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Message not found' });
+    res.json({ deleted: true });
   } catch (err) {
     next(err);
   }
