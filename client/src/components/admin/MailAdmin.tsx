@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Reply, Send, X,
+  Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Reply, Send, Trash2, X,
 } from 'lucide-react';
 
 // Unified mailbox for *@tshirtbrothers.com — reads the Purelymail catch-all
@@ -126,6 +126,15 @@ export default function MailAdmin() {
     setOpenMsg(full);
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, seen: true } : m)));
     void loadAliases();
+  }
+
+  async function deleteMessage(id: number) {
+    const r = await fetch(`/api/mail/${id}`, { method: 'DELETE', headers: authHeaders() });
+    if (r.ok) {
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      if (openMsg?.id === id) setOpenMsg(null);
+      void loadAliases();
+    }
   }
 
   function startReply(msg: MailFull) {
@@ -268,11 +277,18 @@ export default function MailAdmin() {
               No messages{aliasFilter ? ` for ${aliasFilter}` : ''} yet.
             </div>
           ) : messages.map((m, idx) => (
-            <button
+            <div
               key={m.id}
               onClick={() => void openMessage(m.id)}
-              className={`block w-full text-left px-4 py-3 hover:bg-gray-200 ${openMsg?.id === m.id ? 'bg-orange-50' : idx % 2 === 1 ? 'bg-gray-100' : 'bg-white'}`}
+              className={`group relative block w-full cursor-pointer text-left px-4 py-3 hover:bg-gray-200 ${openMsg?.id === m.id ? 'bg-orange-50' : idx % 2 === 1 ? 'bg-gray-100' : 'bg-white'}`}
             >
+              <button
+                title="Delete"
+                onClick={(e) => { e.stopPropagation(); void deleteMessage(m.id); }}
+                className="absolute bottom-2 right-2 rounded p-1 text-gray-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-sm truncate ${!m.seen && !m.outgoing ? "font-bold text-gray-900" : "text-gray-800"}`}>
                   {m.outgoing ? `To: ${m.to_addrs?.[0] || ''}` : (m.from_name || m.from_addr || 'Unknown')}
@@ -289,7 +305,7 @@ export default function MailAdmin() {
                   {m.alias.replace('@tshirtbrothers.com', '@')}
                 </span>
               )}
-            </button>
+            </div>
           ))}
         </div>
 
@@ -315,6 +331,13 @@ export default function MailAdmin() {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-sm hover:bg-gray-50"
                   >
                     <Reply className="w-4 h-4" /> Reply
+                  </button>
+                  <button
+                    title="Delete message"
+                    onClick={() => void deleteMessage(openMsg.id)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-red-200 rounded-lg text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
                   </button>
                   <button onClick={() => setOpenMsg(null)} className="p-1.5 text-gray-400 hover:text-gray-700">
                     <X className="w-4 h-4" />
