@@ -1787,13 +1787,22 @@ export default function AdminPage() {
   async function handleSendPreviewedInvoice() {
     if (!previewInvoice) return;
     try {
-      const created = await createInvoiceMutation.mutateAsync(previewInvoice);
+      // Editing an existing invoice must UPDATE it, never mint a duplicate
+      // with the next number — that's the Danny Hudson double-invoice bug.
+      // updateInvoice is called directly (not via updateInvoiceMutation) so
+      // its onSuccess alert/view-reset doesn't fire mid-send.
+      const created = editingInvoiceId
+        ? await updateInvoice(editingInvoiceId, previewInvoice)
+        : await createInvoiceMutation.mutateAsync(previewInvoice);
       if (created?.id) {
         await sendInvoiceMutation.mutateAsync(String(created.id));
       }
       setPreviewInvoice(null);
+      setEditingInvoiceId(null);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
     } catch (err) {
-      // errors are handled by the mutation's onError
+      if (editingInvoiceId) alert(`Failed to update/send: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // create-path errors are already alerted by the mutation's onError
     }
   }
 
@@ -1805,7 +1814,11 @@ export default function AdminPage() {
     const method = window.prompt('How was this paid? (cash, check, zelle, cashapp, card)', 'cash');
     if (method === null) return;
     try {
-      const created = await createInvoiceMutation.mutateAsync(previewInvoice);
+      // Same duplicate guard as handleSendPreviewedInvoice: update in place
+      // when editing an existing invoice.
+      const created = editingInvoiceId
+        ? await updateInvoice(editingInvoiceId, previewInvoice)
+        : await createInvoiceMutation.mutateAsync(previewInvoice);
       if (created?.id) {
         await recordPaymentMutation.mutateAsync({
           id: String(created.id),
@@ -1815,8 +1828,11 @@ export default function AdminPage() {
         await sendInvoiceMutation.mutateAsync(String(created.id));
       }
       setPreviewInvoice(null);
+      setEditingInvoiceId(null);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
     } catch (err) {
-      // errors are handled by the mutation's onError
+      if (editingInvoiceId) alert(`Failed to update/send: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // create-path errors are already alerted by the mutation's onError
     }
   }
 
