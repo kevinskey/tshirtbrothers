@@ -23,6 +23,64 @@ import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 
+// ── Auto-triage that stays current ─────────────────────────────────────────
+// Re-classify a quote from its CURRENT rows (quote + line items) so the AI
+// triage card never describes a version of the order that no longer exists.
+// Debounced per quote: bulk item rebuilds (delete-all + N inserts) trigger
+// one classification, not N. Fire-and-forget; failures only log.
+const retriageTimers = new Map();
+
+async function retriageQuote(quoteId) {
+  try {
+    const { rows } = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
+    const quote = rows[0];
+    if (!quote) return;
+    const { rows: items } = await pool.query(
+      'SELECT product_name, color, quantity, unit_price FROM quote_items WHERE quote_id = $1 ORDER BY position',
+      [quoteId]
+    );
+    const itemLines = items.map((it) =>
+      `${it.quantity}x ${it.product_name || 'item'}${it.color ? ` (${it.color})` : ''}${it.unit_price ? ` @ $${it.unit_price}` : ''}`
+    ).join('; ');
+    const quoteText =
+      `Status: ${quote.status}. Customer: ${quote.customer_name}. ` +
+      `Total qty: ${quote.quantity}. Estimated total: ${quote.estimated_price ? `$${quote.estimated_price}` : 'not priced yet'}. ` +
+      `Items: ${itemLines || quote.product_name || 'not specified'}. ` +
+      `Notes: ${quote.notes || 'none'}. Date needed: ${quote.date_needed || 'not specified'}. ` +
+      `Shipping: ${quote.shipping_method || 'pickup'}.`;
+
+    const { default: OpenAI } = await import('openai');
+    const client = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY });
+    const result = await client.chat.completions.create({
+      model: 'deepseek-chat',
+      temperature: 0.2,
+      max_tokens: 400,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: 'Classify this quote request for a custom apparel shop. Output JSON: {"urgency":"low"|"medium"|"high"|"rush","complexity":"simple"|"moderate"|"complex","estimated_hours":number,"summary":"one sentence"}. RUSH=under 7 days. HIGH=under 14 days or 100+ qty. COMPLEX=custom design, multi-location, special fabric. If already priced and accepted, urgency reflects the deadline only.' },
+        { role: 'user', content: quoteText },
+      ],
+    });
+    const triage = result.choices?.[0]?.message?.content;
+    if (triage) {
+      await pool.query('UPDATE quotes SET triage = $1 WHERE id = $2', [triage, quoteId]);
+      console.log('[Triage] Quote #' + quoteId + ' re-classified:', triage.slice(0, 80));
+    }
+  } catch (err) {
+    console.error('[Triage] failed for quote #' + quoteId + ':', err.message);
+  }
+}
+
+function scheduleRetriage(quoteId, delayMs = 20_000) {
+  if (!process.env.DEEPSEEK_API_KEY) return;
+  const key = String(quoteId);
+  clearTimeout(retriageTimers.get(key));
+  retriageTimers.set(key, setTimeout(() => {
+    retriageTimers.delete(key);
+    void retriageQuote(quoteId);
+  }, delayMs));
+}
+
 // POST /upload-design - Upload a design file for a quote (no auth required)
 router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, next) => {
   try {
@@ -231,31 +289,9 @@ router.post('/', async (req, res, next) => {
     sendQuoteRequestNotification(quote).catch(() => {});
     smsNewQuoteToAdmin(quote).catch(() => {});
 
-    // Fire-and-forget: auto-triage the quote with AI
-    (async () => {
-      try {
-        const quoteText = `Product: ${quote.product_name || 'not specified'}. Quantity: ${quote.quantity}. Customer: ${quote.customer_name}. Notes: ${quote.notes || 'none'}. Date needed: ${quote.date_needed || 'not specified'}. Shipping: ${quote.shipping_method || 'pickup'}.`;
-        const { default: OpenAI } = await import('openai');
-        const client = new OpenAI({ baseURL: 'https://api.deepseek.com', apiKey: process.env.DEEPSEEK_API_KEY });
-        const result = await client.chat.completions.create({
-          model: 'deepseek-chat',
-          temperature: 0.2,
-          max_tokens: 400,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: 'Classify this quote request. Output JSON: {"urgency":"low"|"medium"|"high"|"rush","complexity":"simple"|"moderate"|"complex","estimated_hours":number,"summary":"one sentence"}. RUSH=under 7 days. HIGH=under 14 days or 100+ qty. COMPLEX=custom design, multi-location, special fabric.' },
-            { role: 'user', content: quoteText },
-          ],
-        });
-        const triage = result.choices?.[0]?.message?.content;
-        if (triage) {
-          await pool.query('UPDATE quotes SET triage = $1 WHERE id = $2', [triage, quote.id]);
-          console.log('[Triage] Quote #' + quote.id + ' classified:', triage.slice(0, 80));
-        }
-      } catch (err) {
-        console.error('[Triage] failed for quote #' + quote.id + ':', err.message);
-      }
-    })();
+    // Fire-and-forget: auto-triage the quote with AI (debounced helper —
+    // the same one item edits use, so triage stays current after changes).
+    scheduleRetriage(quote.id, 2000);
 
     res.status(201).json(quote);
   } catch (err) {
@@ -452,6 +488,7 @@ router.post('/:id/items', authenticate, adminOnly, async (req, res, next) => {
     );
 
     await rebuildQuoteTotals(id);
+    scheduleRetriage(id);
     res.status(201).json(inserted.rows[0]);
   } catch (err) {
     next(err);
@@ -504,6 +541,7 @@ router.patch('/:id/items/:itemId', authenticate, adminOnly, async (req, res, nex
 
     await rebuildQuoteTotals(id);
     const fresh = await pool.query('SELECT * FROM quote_items WHERE id = $1', [itemId]);
+    scheduleRetriage(id);
     res.json(fresh.rows[0]);
   } catch (err) {
     next(err);
@@ -520,6 +558,7 @@ router.delete('/:id/items/:itemId', authenticate, adminOnly, async (req, res, ne
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Item not found' });
     await rebuildQuoteTotals(id);
+    scheduleRetriage(id);
     res.json({ deleted: true });
   } catch (err) {
     next(err);
@@ -559,6 +598,7 @@ router.put('/:id/items', authenticate, adminOnly, async (req, res, next) => {
     }
     await rebuildQuoteTotals(id, client);
     await client.query('COMMIT');
+    scheduleRetriage(id);
 
     const fresh = await pool.query(
       `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
@@ -928,6 +968,7 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     }
 
     const quote = result.rows[0];
+    scheduleRetriage(id);
 
     // Fire-and-forget: send status update email to customer.
     //
