@@ -1396,9 +1396,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const totalHeight = Math.max(PX_PER_FOOT, maxY + spacingPx);
       const SEGMENT_PX = 5 * PX_PER_FOOT;
 
+      // Filenames read in print units: 22x60inches, not 6600x18000px.
+      const inches = (px: number) => Math.round(px / 300);
       if (totalHeight <= SEGMENT_PX) {
         const { dataUrl, heightPx } = await generateFullResExport();
-        await downloadDataUrl(dataUrl, `${base}-${SHEET_WIDTH_PX}x${Math.round(heightPx)}px-300dpi.png`);
+        await downloadDataUrl(dataUrl, `${base}-part1of1-${inches(SHEET_WIDTH_PX)}x${inches(heightPx)}inches-300dpi.png`);
         return;
       }
 
@@ -1428,7 +1430,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         const { dataUrl } = await generateFullResExport(seg);
         await downloadDataUrl(
           dataUrl,
-          `${base}-part${i + 1}of${segments.length}-${SHEET_WIDTH_PX}x${Math.round(seg.height)}px-300dpi.png`
+          `${base}-part${i + 1}of${segments.length}-${inches(SHEET_WIDTH_PX)}x${inches(seg.height)}inches-300dpi.png`
         );
         // Small pause so the browser registers each download separately.
         await new Promise((r) => setTimeout(r, 400));
