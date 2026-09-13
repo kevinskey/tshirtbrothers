@@ -1289,7 +1289,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // exhausting canvas memory on a weak device) still restores the on-screen
   // zoom/grid instead of leaving the builder stuck at full-res with the
   // grid hidden.
-  async function generateFullResExport(): Promise<{ dataUrl: string; heightPx: number }> {
+  async function generateFullResExport(crop?: { top: number; height: number }): Promise<{ dataUrl: string; heightPx: number }> {
     const canvas = fabricRef.current;
     if (!canvas) throw new Error('Canvas not ready');
 
@@ -1305,12 +1305,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
       if (bottom > maxY) maxY = bottom;
     }
-    const exportHeight = Math.max(PX_PER_FOOT, maxY + spacingPx);
+    const exportHeight = crop ? crop.height : Math.max(PX_PER_FOOT, maxY + spacingPx);
 
     // Conservative canvas-area budget (I3): a canvas bigger than this risks
     // exhausting memory or silently producing a corrupt/blank PNG on weaker
     // devices/browsers. Fail fast with a message the callers below map to
     // friendly copy, instead of letting toDataURL() hang or crash the tab.
+    // Segmented exports (crop) are budgeted per segment, which is what lets
+    // long sheets export at all.
     if (SHEET_WIDTH_PX * exportHeight > 250_000_000) {
       throw new Error('TOO_LARGE');
     }
@@ -1334,7 +1336,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         format: 'png',
         multiplier: 1,
         left: 0,
-        top: 0,
+        top: crop?.top ?? 0,
         width: SHEET_WIDTH_PX,
         height: exportHeight,
       });
@@ -1360,22 +1362,78 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
   }
 
+  // Download helper shared by the single and segmented export paths.
+  async function downloadDataUrl(dataUrl: string, filename: string) {
+    // Chrome caps data: URLs in <a href> at ~2MB — a full-res 300dpi sheet
+    // PNG blows past that and the "downloaded" file arrives corrupt/blank.
+    // Convert to a Blob and download via an object URL, which has no cap.
+    const blob = await (await fetch(dataUrl)).blob();
+    const objUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+  }
+
   async function handleExport() {
     setExporting(true);
     try {
-      const { dataUrl, heightPx } = await generateFullResExport();
-      // Chrome caps data: URLs in <a href> at ~2MB — a full-res 300dpi sheet
-      // PNG blows past that and the "downloaded" file arrives corrupt/blank.
-      // Convert to a Blob and download via an object URL, which has no cap.
-      const blob = await (await fetch(dataUrl)).blob();
-      const objUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objUrl;
-      link.download = `gangsheet-${sheetName.replace(/\s+/g, '-')}-${SHEET_WIDTH_PX}x${Math.round(heightPx)}px-300dpi.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+      const base = `gangsheet-${sheetName.replace(/\s+/g, '-')}`;
+      const canvas = fabricRef.current;
+      if (!canvas) throw new Error('Canvas not ready');
+      const objects = canvas.getObjects().filter(o => !(o as any).data?.isGrid);
+      let maxY = 0;
+      const spans: Array<{ top: number; bottom: number }> = [];
+      for (const obj of objects) {
+        const top = obj.top || 0;
+        const bottom = top + (obj.getScaledHeight?.() || 0);
+        spans.push({ top, bottom });
+        if (bottom > maxY) maxY = bottom;
+      }
+      const totalHeight = Math.max(PX_PER_FOOT, maxY + spacingPx);
+      const SEGMENT_PX = 5 * PX_PER_FOOT;
+
+      if (totalHeight <= SEGMENT_PX) {
+        const { dataUrl, heightPx } = await generateFullResExport();
+        await downloadDataUrl(dataUrl, `${base}-${SHEET_WIDTH_PX}x${Math.round(heightPx)}px-300dpi.png`);
+        return;
+      }
+
+      // Sheets over 5 ft export as ≤5 ft segments (press/handling limit).
+      // Each cut is nudged UP to the nearest clear horizontal band so no
+      // design is ever sliced; a hard cut only happens if a single design
+      // is itself taller than 5 ft.
+      const segments: Array<{ top: number; height: number }> = [];
+      let start = 0;
+      while (start < totalHeight - 1) {
+        let cut = Math.min(start + SEGMENT_PX, totalHeight);
+        if (cut < totalHeight) {
+          let guard = 0;
+          while (guard++ < 500) {
+            const crossing = spans.filter((s) => s.top < cut && s.bottom > cut);
+            if (crossing.length === 0) break;
+            cut = Math.min(...crossing.map((s) => s.top)) - 2;
+          }
+          if (cut <= start) cut = Math.min(start + SEGMENT_PX, totalHeight); // oversized design: hard cut
+        }
+        segments.push({ top: start, height: cut - start });
+        start = cut;
+      }
+
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i]!;
+        const { dataUrl } = await generateFullResExport(seg);
+        await downloadDataUrl(
+          dataUrl,
+          `${base}-part${i + 1}of${segments.length}-${SHEET_WIDTH_PX}x${Math.round(seg.height)}px-300dpi.png`
+        );
+        // Small pause so the browser registers each download separately.
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      alert(`Sheet is ${(totalHeight / PX_PER_FOOT).toFixed(1)} ft — exported as ${segments.length} segments of up to 5 ft each. Your browser may ask permission for multiple downloads.`);
     } catch (err: any) {
       console.error('Export failed:', err);
       alert(err?.message === 'TOO_LARGE'
