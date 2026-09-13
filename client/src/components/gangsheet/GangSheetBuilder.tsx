@@ -10,7 +10,7 @@ import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog
 import { logActivityOnce } from '@/lib/activity';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
-  DESIGN_SPACING_PX, EDGE_PADDING_PX, PRICING, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
+  EDGE_PADDING_PX, PRICING, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
   SIZE_PRESETS,
   pxToInches, pxToFeet, inchesToPx, feetToPx,
   type PricingTier
@@ -152,6 +152,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   useEffect(() => { designsRef.current = designs; }, [designs]);
   const [pricingTier, setPricingTier] = useState<PricingTier>('standard');
   const [zoom, setZoom] = useState(1);
+  // Gap between designs for auto-place/arrange. 0.1" was the hardcoded
+  // default; Kevin wants room to widen it (cut lines, weeding room).
+  const [spacingIn, setSpacingIn] = useState(0.1);
+  const spacingPx = Math.round(spacingIn * 300);
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -511,13 +515,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
             if ((o.top || 0) > lastRowTop) lastRowTop = (o.top || 0);
           }
         }
-        const candidateLeft = rightmostOnLastRow + DESIGN_SPACING_PX;
+        const candidateLeft = rightmostOnLastRow + spacingPx;
         if (candidateLeft + targetW <= SHEET_WIDTH_PX - EDGE_PADDING_PX) {
           startLeft = candidateLeft;
           startTop = lastRowTop;
         } else {
           startLeft = EDGE_PADDING_PX;
-          startTop = maxBottom + DESIGN_SPACING_PX;
+          startTop = maxBottom + spacingPx;
         }
       }
 
@@ -554,18 +558,18 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if (copies > 0) {
         const copyW = targetW;
         const copyH = targetH;
-        let cursorX = startLeft + copyW + DESIGN_SPACING_PX;
+        let cursorX = startLeft + copyW + spacingPx;
         let cursorY = startTop;
         for (let i = 0; i < copies; i++) {
           if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
             cursorX = EDGE_PADDING_PX;
-            cursorY += copyH + DESIGN_SPACING_PX;
+            cursorY += copyH + spacingPx;
           }
           // eslint-disable-next-line no-await-in-loop
           const copy = await loadFabricImage(imageUrl);
           copy.set({ left: cursorX, top: cursorY, scaleX: scale, scaleY: scale, data: { designId: id, natW } as any });
           canvas.add(copy);
-          cursorX += copyW + DESIGN_SPACING_PX;
+          cursorX += copyW + spacingPx;
         }
       }
 
@@ -724,11 +728,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
     // Start one slot to the right of the last existing copy; if that'd overflow
     // the sheet width, wrap to the next row.
-    let cursorX = (anchor.left || EDGE_PADDING_PX) + copyW + DESIGN_SPACING_PX;
+    let cursorX = (anchor.left || EDGE_PADDING_PX) + copyW + spacingPx;
     let cursorY = (anchor.top || EDGE_PADDING_PX);
     if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
       cursorX = EDGE_PADDING_PX;
-      cursorY += copyH + DESIGN_SPACING_PX;
+      cursorY += copyH + spacingPx;
     }
     for (let i = 0; i < need; i++) {
       // eslint-disable-next-line no-await-in-loop
@@ -741,10 +745,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         data: { designId } as any,
       });
       canvas.add(img);
-      cursorX += copyW + DESIGN_SPACING_PX;
+      cursorX += copyW + spacingPx;
       if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
         cursorX = EDGE_PADDING_PX;
-        cursorY += copyH + DESIGN_SPACING_PX;
+        cursorY += copyH + spacingPx;
       }
     }
     canvas.renderAll();
@@ -777,7 +781,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if (bottom > maxY) maxY = bottom;
     }
     const declaredSheetPx = feetToPx(declaredFt);
-    const neededPx = Math.max(declaredSheetPx, maxY + DESIGN_SPACING_PX);
+    const neededPx = Math.max(declaredSheetPx, maxY + spacingPx);
     const currentBitmapHeight = canvas.getHeight();
     const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
     // Grow canvas visually if needed so all copies are visible.
@@ -795,7 +799,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
     if (maxY > declaredSheetPx + 1) {
       // Auto-bump the declared sheet length so pricing matches what fits.
-      const neededFt = Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX));
+      const neededFt = Math.ceil(pxToFeet(maxY + spacingPx));
       if (neededFt > BUILDER_MAX_FT) {
         setSheetLengthFt(BUILDER_MAX_FT);
         setFitError(`Designs need ${neededFt} ft but the max sheet length is ${BUILDER_MAX_FT} ft. Split into two sheets, or reduce size/quantity.`);
@@ -806,7 +810,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // Opposite direction: declared length longer than the content needs.
     // Never auto-shrink (the customer may want spare film) — suggest it.
     const contentFt = objects.length > 0
-      ? Math.max(1, Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX)))
+      ? Math.max(1, Math.ceil(pxToFeet(maxY + spacingPx)))
       : 1;
     setTrimSuggestFt(sheetLengthFt > contentFt ? contentFt : null);
     setFitError(null);
@@ -1078,7 +1082,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         });
       }
     }
-    const result = packDesigns(items);
+    const result = packDesigns(items, undefined, spacingPx);
 
     // Map placements back to fabric objects
     const byDesign: Record<string, any[]> = {};
@@ -1137,7 +1141,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const dm = baseDims[d.id]!;
       const swap = swapIds.has(d.id);
       return { id: d.id, width: swap ? dm.h : dm.w, height: swap ? dm.w : dm.h, quantity: d.quantity };
-    }));
+    }), undefined, spacingPx);
     const swapCandidates = new Set(designs.filter(wantsSwap).map((d) => d.id));
     let rotated = new Set<string>();
     if (swapCandidates.size > 0) {
@@ -1191,7 +1195,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       };
     });
 
-    const result = packDesigns(items);
+    const result = packDesigns(items, undefined, spacingPx);
 
     // Reposition all objects. Canvas grows visually via checkFit(); the
     // user's declared sheet length (sheetLengthFt) is NOT changed — if the
@@ -1233,7 +1237,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       count++;
     }
 
-    const ft = Math.max(1, Math.ceil(pxToFeet(maxY + DESIGN_SPACING_PX)));
+    const ft = Math.max(1, Math.ceil(pxToFeet(maxY + spacingPx)));
     setSheetLengthFt(ft);
     setDesignCount(count);
   }
@@ -1301,7 +1305,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
       if (bottom > maxY) maxY = bottom;
     }
-    const exportHeight = Math.max(PX_PER_FOOT, maxY + DESIGN_SPACING_PX);
+    const exportHeight = Math.max(PX_PER_FOOT, maxY + spacingPx);
 
     // Conservative canvas-area budget (I3): a canvas bigger than this risks
     // exhausting memory or silently producing a corrupt/blank PNG on weaker
@@ -1935,10 +1939,23 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           <button onClick={fitToWidth} className="p-1 hover:bg-gray-200 rounded" title="Fit to width"><Maximize className="w-3 h-3" /></button>
         </div>
 
-        {/* Auto layout */}
+        {/* Auto layout + spacing between designs */}
         <button onClick={autoLayout} className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg hover:bg-blue-100">
           <Layout className="w-3 h-3" /> Auto Layout
         </button>
+        <label className="hidden sm:flex items-center gap-1.5 text-xs text-gray-600" title="Gap between designs when auto-placing/arranging — re-run Auto Layout after changing">
+          Gap
+          <select
+            value={spacingIn}
+            onChange={(e) => setSpacingIn(Number(e.target.value))}
+            className="border border-gray-300 rounded-lg px-1.5 py-1 text-xs bg-white"
+          >
+            <option value={0.1}>0.1&quot;</option>
+            <option value={0.25}>0.25&quot;</option>
+            <option value={0.5}>0.5&quot;</option>
+            <option value={0.75}>0.75&quot;</option>
+          </select>
+        </label>
 
         {/* Info badges */}
         <div className="hidden md:flex items-center gap-3 text-xs text-gray-500">
