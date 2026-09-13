@@ -428,6 +428,38 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const unresolved = lines.filter((l) => !l.sku);
   const estSubtotal = readyLines.reduce((sum, l) => sum + (l.price || 0) * l.qty, 0);
 
+  // Order summary rollups — the bottom-line total alone doesn't show where
+  // the money is going. Garment label = text after the last em-dash in the
+  // line name, minus any "(2XL/3XL upcharge)" suffix, so split-tier lines
+  // roll back up into their garment.
+  const garmentLabel = (name: string) => {
+    const tail = name.includes('—') ? name.split('—').pop()!.trim() : name.trim();
+    return tail.replace(/\s*\(\d?X?L? ?upcharge\)\s*$/i, '').replace(/\s*\((2XL|3XL) upcharge\)\s*$/i, '').trim() || 'Item';
+  };
+  const summaryByGarment = (() => {
+    const m = new Map<string, { pieces: number; cost: number }>();
+    for (const l of readyLines) {
+      const key = `${garmentLabel(l.productName)} — ${l.color}`;
+      const g = m.get(key) || { pieces: 0, cost: 0 };
+      g.pieces += l.qty;
+      g.cost += (l.price || 0) * l.qty;
+      m.set(key, g);
+    }
+    return [...m.entries()].sort((a, b) => b[1].cost - a[1].cost);
+  })();
+  const summaryByTier = (() => {
+    const tiers: Record<string, { pieces: number; cost: number }> = {
+      'S–XL': { pieces: 0, cost: 0 }, '2XL': { pieces: 0, cost: 0 }, '3XL+': { pieces: 0, cost: 0 },
+    };
+    for (const l of readyLines) {
+      const s = l.size.toUpperCase();
+      const key = s === '2XL' ? '2XL' : /^[3-9]XL/.test(s) ? '3XL+' : 'S–XL';
+      tiers[key].pieces += l.qty;
+      tiers[key].cost += (l.price || 0) * l.qty;
+    }
+    return Object.entries(tiers).filter(([, v]) => v.pieces > 0);
+  })();
+
   async function placeOrder() {
     if (readyLines.length === 0 || !shipTo) return;
     setPlacing(true);
@@ -813,6 +845,53 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                     ? 'Test order — S&S validates then auto-cancels; nothing is charged'
                     : 'LIVE ORDER — this will be charged to the S&S account'}
                 </label>
+              </div>
+            </div>
+          )}
+
+          {/* Order summary — where the money goes, not just the bottom line */}
+          {readyLines.length > 0 && (
+            <div className="bg-white border rounded-xl p-4">
+              <div className="font-medium text-sm mb-3">Order summary</div>
+              <div className="grid md:grid-cols-2 gap-6">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">By garment & color</div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {summaryByGarment.map(([label, v]) => (
+                        <tr key={label} className="border-b border-gray-100 last:border-0">
+                          <td className="py-1 pr-2 text-gray-800">{label}</td>
+                          <td className="py-1 pr-2 text-right text-gray-600 whitespace-nowrap">{v.pieces} pcs</td>
+                          <td className="py-1 text-right font-medium whitespace-nowrap">{money(v.cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1.5">By size tier</div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {summaryByTier.map(([tier, v]) => (
+                        <tr key={tier} className="border-b border-gray-100 last:border-0">
+                          <td className="py-1 pr-2 text-gray-800">{tier}</td>
+                          <td className="py-1 pr-2 text-right text-gray-600 whitespace-nowrap">{v.pieces} pcs</td>
+                          <td className="py-1 text-right font-medium whitespace-nowrap">{money(v.cost)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td className="pt-2 pr-2 font-semibold text-gray-900">Total blanks</td>
+                        <td className="pt-2 pr-2 text-right font-semibold text-gray-900 whitespace-nowrap">{readyLines.reduce((s, l) => s + l.qty, 0)} pcs</td>
+                        <td className="pt-2 text-right font-bold text-gray-900 whitespace-nowrap">{money(estSubtotal)}</td>
+                      </tr>
+                      <tr>
+                        <td colSpan={3} className="pt-1 text-xs text-gray-500">
+                          Avg {money(estSubtotal / Math.max(1, readyLines.reduce((s, l) => s + l.qty, 0)))} per piece · {readyLines.length} SKU line{readyLines.length === 1 ? '' : 's'} · shipping & tax added by S&S
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
