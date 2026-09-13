@@ -454,8 +454,10 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     for (const l of readyLines) {
       const s = l.size.toUpperCase();
       const key = s === '2XL' ? '2XL' : /^[3-9]XL/.test(s) ? '3XL+' : 'S–XL';
-      tiers[key].pieces += l.qty;
-      tiers[key].cost += (l.price || 0) * l.qty;
+      const tier = tiers[key];
+      if (!tier) continue;
+      tier.pieces += l.qty;
+      tier.cost += (l.price || 0) * l.qty;
     }
     return Object.entries(tiers).filter(([, v]) => v.pieces > 0);
   })();
