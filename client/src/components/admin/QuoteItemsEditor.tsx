@@ -50,6 +50,9 @@ type DraftItem = {
   unit_price: string;     // kept as strings while editing so inputs stay snappy
   line_total: string;
   notes: string;
+  // Quantity for lines with NO per-size counts (digitizing/setup fees,
+  // rush charges, flat services). Ignored whenever any size has a count.
+  flat_quantity: string;
 };
 
 const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
@@ -73,11 +76,17 @@ function quoteItemToDraft(it: QuoteItem): DraftItem {
     unit_price: it.unit_price != null ? String(it.unit_price) : '',
     line_total: it.line_total != null ? String(it.line_total) : '',
     notes: it.notes ?? '',
+    flat_quantity:
+      sizes.reduce((n, s2) => n + (Number(s2.quantity) || 0), 0) === 0 && Number(it.quantity) > 0
+        ? String(it.quantity)
+        : '',
   };
 }
 
 function draftQuantity(d: DraftItem): number {
-  return d.sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
+  const fromSizes = d.sizes.reduce((n, s) => n + (Number(s.quantity) || 0), 0);
+  if (fromSizes > 0) return fromSizes;
+  return Math.max(0, Math.round(Number(d.flat_quantity) || 0));
 }
 
 function draftLineTotal(d: DraftItem): number {
@@ -133,6 +142,7 @@ export default function QuoteItemsEditor({
     setDrafts((prev) => [...prev, {
       product_id: null, product_name: '', color: '',
       sizes: [], print_areas: [], unit_price: '', line_total: '', notes: '',
+      flat_quantity: '',
     }]);
   }
 
@@ -312,6 +322,19 @@ export default function QuoteItemsEditor({
                   );
                 })}
               </div>
+              {d.sizes.reduce((n, s2) => n + (Number(s2.quantity) || 0), 0) === 0 && (
+                <label className="flex items-center gap-2 mt-2 text-[11px] text-gray-600">
+                  Qty (no sizes — fees &amp; flat items):
+                  <input
+                    type="number"
+                    min={0}
+                    value={d.flat_quantity}
+                    onChange={(e) => updateDraft(i, { flat_quantity: e.target.value })}
+                    className="w-16 border border-gray-200 rounded px-1.5 py-0.5 text-sm"
+                    style={{ fontSize: '16px' }}
+                  />
+                </label>
+              )}
               <p className="text-[11px] text-gray-500 mt-1">
                 Qty: <span className="font-semibold text-gray-700">{draftQuantity(d)}</span>
                 {d.unit_price && (
