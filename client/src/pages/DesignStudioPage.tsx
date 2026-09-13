@@ -2689,7 +2689,12 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const leftToolbar = (
-    <aside className="fixed left-0 top-16 bottom-16 z-40 hidden w-20 flex-col justify-center border-r border-gray-200 bg-white md:flex">
+    // overflow-y-auto + safe centering: justify-center clipped the FIRST
+    // rail item (the Sides switcher) on short screens with no way to
+    // scroll to it. my-auto on the wrapper centers when there's room and
+    // top-aligns + scrolls when there isn't.
+    <aside className="fixed left-0 top-16 bottom-16 z-40 hidden w-20 flex-col overflow-y-auto border-r border-gray-200 bg-white md:flex">
+      <div className="my-auto flex w-full flex-col">
       {/* Sides — first item on the rail. Icon is a mini thumbnail of the
           current view of the customer's product so they immediately see
           which side they're designing. Hidden until a product is chosen. */}
@@ -2734,6 +2739,7 @@ export default function DesignStudioPage() {
           </button>
         );
       })}
+      </div>
     </aside>
   );
 
