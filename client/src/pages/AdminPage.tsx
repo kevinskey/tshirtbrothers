@@ -8643,7 +8643,9 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
 function paidState(q: Quote): { label: string; className: string } {
   const deposit = Number(q.deposit_amount ?? 0);
   if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
-  if (deposit > 0) return { label: `Deposit $${deposit.toFixed(2)}`, className: 'text-amber-700' };
+  // Just the payment state — the deposit dollar figure read as an amount
+  // still owed, so it's reduced to a plain "Deposit paid".
+  if (deposit > 0) return { label: 'Deposit paid', className: 'text-amber-700' };
   return { label: 'Unpaid', className: 'text-gray-400' };
 }
 
