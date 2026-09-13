@@ -121,7 +121,8 @@ import {
  *  Actions menu would end up offering to price something already paid for. */
 type DashboardRow =
   | { kind: 'quote'; at: number; quote: Quote }
-  | { kind: 'gangsheet'; at: number; order: GangSheetOrder };
+  | { kind: 'gangsheet'; at: number; order: GangSheetOrder }
+  | { kind: 'invoice'; at: number; invoice: Invoice };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
@@ -1080,6 +1081,17 @@ export default function AdminPage() {
     // "Dashboard" in the UI is section 'quotes' internally (the sidebar label
     // and the section id disagree). Gating on 'dashboard' alone meant the
     // query never ran on the page it was written for.
+    enabled: activeSection === 'dashboard' || activeSection === 'quotes',
+    staleTime: 10000,
+    refetchOnWindowFocus: true,
+  });
+
+  // In-progress invoices ride in the pipeline list too (Kevin 2026-09-12):
+  // the Invoices section stays separate for bookkeeping, but work-to-be-done
+  // has to be visible on one screen.
+  const pipelineInvoicesQuery = useQuery({
+    queryKey: ['admin', 'pipeline-invoices'],
+    queryFn: () => fetchInvoices(),
     enabled: activeSection === 'dashboard' || activeSection === 'quotes',
     staleTime: 10000,
     refetchOnWindowFocus: true,
@@ -2349,6 +2361,24 @@ export default function AdminPage() {
       });
   }, [gangSheetOrdersQuery.data, quoteFilter, quoteSearch]);
 
+  // Invoices with money still owed are open work — they join the pipeline
+  // list. Paid invoices stay only in the Invoices section. Search applies
+  // here for the same reason it does for gang sheets; the status tabs are
+  // quote-specific, so invoices show on 'all' only.
+  const invoicePipelineRows = useMemo(() => {
+    const all = pipelineInvoicesQuery.data ?? [];
+    if (quoteFilter !== 'all') return [];
+    const term = quoteSearch.trim().toLowerCase();
+    return all
+      .filter((inv: Invoice) => inv.status !== 'paid' && inv.status !== 'cancelled')
+      .filter((inv: Invoice) => {
+        if (!term) return true;
+        return (inv.customer_name ?? '').toLowerCase().includes(term)
+          || (inv.customer_email ?? '').toLowerCase().includes(term)
+          || (inv.invoice_number ?? '').toLowerCase().includes(term);
+      });
+  }, [pipelineInvoicesQuery.data, quoteFilter, quoteSearch]);
+
   // One list, newest first. Gang sheets sort by when the money arrived and
   // fall back to created_at for the rare row with no paid_at.
   const dashboardRows = useMemo(() => {
@@ -2363,9 +2393,14 @@ export default function AdminPage() {
         at: new Date(g.paid_at || g.created_at).getTime(),
         order: g,
       })),
+      ...invoicePipelineRows.map((inv: Invoice) => ({
+        kind: 'invoice' as const,
+        at: new Date(inv.created_at).getTime(),
+        invoice: inv,
+      })),
     ];
     return rows.sort((a, b) => b.at - a.at);
-  }, [quotes, gangSheetRows]);
+  }, [quotes, gangSheetRows, invoicePipelineRows]);
 
   // When deep-linked to a specific quote (?id=X), scroll the row into view
   // and clear the highlight after a few seconds so it doesn't stick forever.
@@ -2684,6 +2719,15 @@ export default function AdminPage() {
                 if (row.kind === 'gangsheet') {
                   return <GangSheetCard key={`gs-${row.order.id}`} order={row.order} />;
                 }
+                if (row.kind === 'invoice') {
+                  return (
+                    <InvoicePipelineCard
+                      key={`inv-${row.invoice.id}`}
+                      inv={row.invoice}
+                      onOpen={(inv) => { setActiveSection('invoices'); openInvoiceEditor(inv); }}
+                    />
+                  );
+                }
                 const q = row.quote;
                 const needed = q.date_needed ? new Date(q.date_needed) : null;
                 const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
@@ -2854,6 +2898,12 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-gray-100">
                     {dashboardRows.map((row) => row.kind === 'gangsheet' ? (
                       <GangSheetRow key={`gs-${row.order.id}`} order={row.order} />
+                    ) : row.kind === 'invoice' ? (
+                      <InvoicePipelineRow
+                        key={`inv-${row.invoice.id}`}
+                        inv={row.invoice}
+                        onOpen={(inv) => { setActiveSection('invoices'); openInvoiceEditor(inv); }}
+                      />
                     ) : (() => { const q = row.quote; return (
                       <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
@@ -8731,6 +8781,101 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
         )}
       </div>
     </Link>
+  );
+}
+
+// An in-progress invoice riding in the pipeline list. Row click opens it in
+// the invoice editor (via onOpen); Actions mirrors the other row kinds.
+function InvoicePipelineRow({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invoice) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const qty = (inv.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+  const firstDesc = (inv.items || [])[0]?.description || '';
+  return (
+    <tr onClick={() => onOpen(inv)} className="hover:bg-gray-50 cursor-pointer">
+      <td className="px-3 py-2">
+        {inv.mockup_preview_url ? (
+          <img src={inv.mockup_preview_url} alt="" className="w-10 h-10 rounded object-cover border border-gray-200 bg-white" />
+        ) : (
+          <div className="w-10 h-10 rounded bg-blue-50 border border-blue-200 shrink-0 grid place-items-center text-[9px] text-blue-500 font-semibold">INV</div>
+        )}
+      </td>
+      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
+      <td className="px-3 py-2 text-gray-900">
+        <div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div>
+        {inv.customer_phone && (
+          <a href={`tel:${inv.customer_phone}`} onClick={(e) => e.stopPropagation()} className="text-[11px] text-gray-500 hover:text-red-600">
+            {inv.customer_phone}
+          </a>
+        )}
+      </td>
+      <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
+      <td className="px-3 py-2 text-gray-600">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Invoice</span>
+          <span className="font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</span>
+        </div>
+        {firstDesc && <div className="text-[11px] text-gray-500 truncate max-w-[180px]">{firstDesc}</div>}
+      </td>
+      <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{qty || '—'}</td>
+      <td className="px-3 py-2 text-right whitespace-nowrap">
+        <div className="text-gray-900">${Number(inv.total).toFixed(2)}</div>
+        <div className={`text-[11px] ${Number(inv.amount_paid) > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+          {Number(inv.amount_due) <= 0 ? 'Paid in full' : Number(inv.amount_paid) > 0 ? `Due $${Number(inv.amount_due).toFixed(2)}` : 'Unpaid'}
+        </div>
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
+      <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => setMenuOpen((v) => !v)} className="inline-flex items-center gap-1 text-sm text-gray-700 hover:text-gray-900">
+          Actions <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-2 top-8 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+              <button
+                onClick={() => { setMenuOpen(false); onOpen(inv); }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+              >
+                <Eye className="w-3.5 h-3.5" /> Open invoice
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(inv.customer_email)}&composeSubject=${encodeURIComponent(`Invoice ${inv.invoice_number}`)}`;
+                }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+              >
+                <Mail className="w-3.5 h-3.5" /> Email customer
+              </button>
+            </div>
+          </>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function InvoicePipelineCard({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invoice) => void }) {
+  return (
+    <div onClick={() => onOpen(inv)} className="block bg-white rounded-xl border border-gray-200 p-4 space-y-2 active:bg-gray-50 cursor-pointer">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-gray-900 truncate">{inv.customer_name}</div>
+          <div className="text-xs text-gray-500 truncate">{inv.customer_email}</div>
+        </div>
+        <StatusBadge status={inv.status} />
+      </div>
+      <div className="text-sm text-gray-700 flex items-center gap-1.5">
+        <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase">Invoice</span>
+        {inv.invoice_number}
+      </div>
+      <div className="text-sm">
+        <span className="font-semibold text-gray-900">${Number(inv.total).toFixed(2)}</span>
+        <span className={`ml-2 text-xs ${Number(inv.amount_paid) > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+          {Number(inv.amount_due) <= 0 ? 'Paid in full' : Number(inv.amount_paid) > 0 ? `Due $${Number(inv.amount_due).toFixed(2)}` : 'Unpaid'}
+        </span>
+      </div>
+    </div>
   );
 }
 
