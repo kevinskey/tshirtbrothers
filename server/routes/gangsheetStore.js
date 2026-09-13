@@ -851,6 +851,93 @@ async function presignFileKey(fileKey) {
   );
 }
 
+// Vendors with a max page length. T-Shirts To Go prints 60" pages, so any
+// sheet longer than that is split into <=60" parts before sending (Kevin
+// 2026-09-12). Matched by email; extend the regex if another vendor
+// declares a limit.
+const PAGE_LIMITED_VENDOR_RE = /tstg|t-?shirts?\s*to\s*go/i;
+const VENDOR_PAGE_PX = 60 * 300; // 60 inches at 300 DPI
+
+// Split a stored sheet PNG into <=60" pages. Uses the sheet's placement
+// layout (when we have it) to nudge each cut up to a clear band between
+// designs — a hard cut only happens when a single design exceeds 60" or
+// the layout is unknown (customer-uploaded ready-made sheets). Returns
+// null when no split is needed; otherwise [{key, widthPx, heightPx}].
+async function splitSheetForVendor(fileKey, layout) {
+  const dims = fileKey.match(FILE_KEY_RE);
+  if (!dims) return null;
+  const widthPx = Number(dims[1]);
+  const heightPx = Number(dims[2]);
+  if (heightPx <= VENDOR_PAGE_PX) return null;
+
+  const obj = await getSpacesClient().send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: fileKey }));
+  const buf = Buffer.from(await obj.Body.transformToByteArray());
+  const spans = Array.isArray(layout)
+    ? layout
+        .filter((p) => Number.isFinite(p?.top) && Number.isFinite(p?.height))
+        .map((p) => ({ top: p.top, bottom: p.top + p.height }))
+    : [];
+
+  const segments = [];
+  let start = 0;
+  while (start < heightPx - 1) {
+    let cut = Math.min(start + VENDOR_PAGE_PX, heightPx);
+    if (cut < heightPx && spans.length) {
+      let guard = 0;
+      while (guard++ < 500) {
+        const crossing = spans.filter((s) => s.top < cut && s.bottom > cut);
+        if (crossing.length === 0) break;
+        cut = Math.min(...crossing.map((s) => s.top)) - 2;
+      }
+      if (cut <= start) cut = Math.min(start + VENDOR_PAGE_PX, heightPx);
+    }
+    segments.push({ top: Math.round(start), height: Math.round(cut - start) });
+    start = cut;
+  }
+
+  const parts = [];
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+    const partBuf = await sharp(buf, { limitInputPixels: Math.ceil(widthPx * heightPx * 1.1) })
+      .extract({ left: 0, top: s.top, width: widthPx, height: s.height })
+      .png()
+      .toBuffer();
+    const partKey = `${fileKey.replace(/\.png$/i, '')}-part${i + 1}of${segments.length}-${widthPx}x${s.height}.png`;
+    await uploadObject({ key: partKey, body: partBuf, contentType: 'image/png', acl: 'private' });
+    parts.push({ key: partKey, widthPx, heightPx: s.height });
+  }
+  return parts;
+}
+
+// When a page-limited vendor gets a long sheet, send the parts email
+// instead of the single-file one. Returns the files array actually sent
+// (for the history log), or null if the normal single-file path should run.
+async function maybeSendSplitToVendor({ vendorName, vendorEmail, reference, fileKey, layout, note }) {
+  if (!PAGE_LIMITED_VENDOR_RE.test(`${vendorEmail} ${vendorName || ''}`)) return null;
+  const parts = await splitSheetForVendor(fileKey, layout);
+  if (!parts || parts.length < 2) return null;
+  const files = [];
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    files.push({
+      name: `${reference.replace(/\s+/g, '-')}-part${i + 1}of${parts.length}-${Math.round(p.widthPx / 300)}x${Math.round(p.heightPx / 300)}inches-300dpi.png`,
+      downloadUrl: await presignFileKey(p.key),
+      widthPx: p.widthPx,
+      heightPx: p.heightPx,
+      format: 'PNG, transparent background',
+      key: p.key,
+    });
+  }
+  await sendGangSheetVendorFiles({
+    vendorName,
+    vendorEmail,
+    files,
+    linkExpiresDays: VENDOR_LINK_DAYS,
+    note: `${reference} — sheet split into ${parts.length} pages of 60in or less per your page limit.${note ? ` ${note}` : ''}`,
+  });
+  return files.map((f) => ({ name: f.name, key: f.key, widthPx: f.widthPx, heightPx: f.heightPx }));
+}
+
 // Best-effort history row for the admin File Sender page — a logging
 // failure must never fail a send that already emailed the vendor.
 async function logVendorSend({ vendorName, vendorEmail, source, reference, note, files }) {
@@ -886,17 +973,28 @@ router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, 
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (!order.file_key) return res.status(400).json({ error: 'Order has no production file' });
     const dims = order.file_key.match(FILE_KEY_RE);
-    const downloadUrl = await presignFileKey(order.file_key);
-    await sendGangSheetToVendor({
+    // Page-limited vendors (TSTG: 60" pages) get the sheet split into parts.
+    const splitFiles = await maybeSendSplitToVendor({
       vendorName: parsed.vendorName,
       vendorEmail: parsed.vendorEmail,
       reference: `TSB Order #${order.id}`,
-      widthPx: dims ? Number(dims[1]) : null,
-      heightPx: dims ? Number(dims[2]) : null,
-      downloadUrl,
-      linkExpiresDays: VENDOR_LINK_DAYS,
+      fileKey: order.file_key,
+      layout: order.layout,
       note: parsed.note,
     });
+    if (!splitFiles) {
+      const downloadUrl = await presignFileKey(order.file_key);
+      await sendGangSheetToVendor({
+        vendorName: parsed.vendorName,
+        vendorEmail: parsed.vendorEmail,
+        reference: `TSB Order #${order.id}`,
+        widthPx: dims ? Number(dims[1]) : null,
+        heightPx: dims ? Number(dims[2]) : null,
+        downloadUrl,
+        linkExpiresDays: VENDOR_LINK_DAYS,
+        note: parsed.note,
+      });
+    }
     const { rows: updated } = await pool.query(
       `UPDATE gang_sheet_orders SET vendor_name = $1, vendor_email = $2, vendor_sent_at = now()
        WHERE id = $3 RETURNING *`,
@@ -908,7 +1006,7 @@ router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, 
       source: 'order',
       reference: `Order #${order.id}`,
       note: parsed.note,
-      files: [{ name: `order-${order.id}.png`, key: order.file_key, widthPx: dims ? Number(dims[1]) : null, heightPx: dims ? Number(dims[2]) : null }],
+      files: splitFiles || [{ name: `order-${order.id}.png`, key: order.file_key, widthPx: dims ? Number(dims[1]) : null, heightPx: dims ? Number(dims[2]) : null }],
     });
     res.json(updated[0]);
   } catch (err) { next(err); }
@@ -942,19 +1040,36 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
       ? cleanDesigns.reduce((sum, d) => sum + d.quantity, 0)
       : null;
     const reference = String(sheet_name || '').trim().slice(0, 120) || `Gang sheet${sheet_id ? ` #${sheet_id}` : ''}`;
-    const downloadUrl = await presignFileKey(file_key);
-    await sendGangSheetToVendor({
+    // Builder sheets stash their placement layout at compose time — use it
+    // so page-limited vendors get clean between-row cuts.
+    let layout = null;
+    try {
+      const lay = await pool.query('SELECT layout FROM gang_sheet_layouts WHERE file_key = $1', [file_key]);
+      layout = lay.rows[0]?.layout ?? null;
+    } catch { /* table missing on old DBs — hard cuts still work */ }
+    const splitFiles = await maybeSendSplitToVendor({
       vendorName: parsed.vendorName,
       vendorEmail: parsed.vendorEmail,
       reference,
-      widthPx: Number(dims[1]),
-      heightPx: Number(dims[2]),
-      totalPrints,
-      designs: cleanDesigns,
-      downloadUrl,
-      linkExpiresDays: VENDOR_LINK_DAYS,
+      fileKey: file_key,
+      layout,
       note: parsed.note,
     });
+    if (!splitFiles) {
+      const downloadUrl = await presignFileKey(file_key);
+      await sendGangSheetToVendor({
+        vendorName: parsed.vendorName,
+        vendorEmail: parsed.vendorEmail,
+        reference,
+        widthPx: Number(dims[1]),
+        heightPx: Number(dims[2]),
+        totalPrints,
+        designs: cleanDesigns,
+        downloadUrl,
+        linkExpiresDays: VENDOR_LINK_DAYS,
+        note: parsed.note,
+      });
+    }
     let sentAt = new Date().toISOString();
     if (sheet_id) {
       const { rows } = await pool.query(
@@ -970,7 +1085,7 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
       source: 'builder',
       reference,
       note: parsed.note,
-      files: [{ name: `${reference}.png`, key: file_key, widthPx: Number(dims[1]), heightPx: Number(dims[2]) }],
+      files: splitFiles || [{ name: `${reference}.png`, key: file_key, widthPx: Number(dims[1]), heightPx: Number(dims[2]) }],
     });
     res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, vendor_sent_at: sentAt });
   } catch (err) { next(err); }
