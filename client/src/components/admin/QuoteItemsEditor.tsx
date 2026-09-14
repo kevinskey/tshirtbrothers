@@ -118,6 +118,20 @@ export default function QuoteItemsEditor({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [recalcingIdx, setRecalcingIdx] = useState<number | null>(null);
+  const draftsRef = useRef<DraftItem[]>([]);
+  useEffect(() => { draftsRef.current = drafts; });
+  const autoPriceTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Auto-price: once a line has size quantities and the admin hasn't typed
+  // a unit price, run the same calculation the Recalculate button does.
+  // Typed prices are never overwritten.
+  function scheduleAutoPrice(i: number) {
+    if (autoPriceTimer.current) clearTimeout(autoPriceTimer.current);
+    autoPriceTimer.current = setTimeout(() => {
+      const d = draftsRef.current[i];
+      if (d && !d.unit_price.trim() && draftQuantity(d) > 0) void recalcLine(i);
+    }, 800);
+  }
   const recalcDefaults = useMemo(() => readRecalcDefaults(quote), [quote]);
   const [rushOverride, setRushOverride] = useState<boolean>(recalcDefaults.rush);
 
@@ -161,10 +175,11 @@ export default function QuoteItemsEditor({
         : d.sizes.filter((s) => s.size !== size);
       return { ...d, sizes: next };
     }));
+    scheduleAutoPrice(i);
   }
 
   async function recalcLine(i: number) {
-    const d = drafts[i];
+    const d = draftsRef.current[i] ?? drafts[i];
     if (!d) return;
     const sizes = d.sizes.filter((s) => s.quantity > 0);
     if (sizes.length === 0) {
