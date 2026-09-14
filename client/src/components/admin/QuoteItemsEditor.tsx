@@ -122,6 +122,27 @@ export default function QuoteItemsEditor({
   useEffect(() => { draftsRef.current = drafts; });
   const autoPriceTimer = useRef<ReturnType<typeof setTimeout>>();
 
+  // Catalog colorways for each linked product, so the Color field offers
+  // the product's REAL color names (exact S&S spellings — that's what lets
+  // the blanks builder auto-match later) instead of a blind text box.
+  const [colorOptions, setColorOptions] = useState<Record<number, string[]>>({});
+  useEffect(() => {
+    const ids = [...new Set(drafts.map((d) => d.product_id).filter((x): x is number => !!x))];
+    for (const id of ids) {
+      if (colorOptions[id] !== undefined) continue;
+      setColorOptions((prev) => ({ ...prev, [id]: [] }));
+      fetch(`/api/products/${id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((prod) => {
+          const names = Array.isArray(prod?.colors)
+            ? (prod.colors as Array<{ name?: string }>).map((c) => c?.name).filter((n): n is string => !!n)
+            : [];
+          setColorOptions((prev) => ({ ...prev, [id]: names }));
+        })
+        .catch(() => {});
+    }
+  }, [drafts, colorOptions]);
+
   // Auto-price: once a line has size quantities and the admin hasn't typed
   // a unit price, run the same calculation the Recalculate button does.
   // Typed prices are never overwritten.
@@ -299,9 +320,16 @@ export default function QuoteItemsEditor({
                   type="text"
                   value={d.color}
                   onChange={(e) => updateDraft(i, { color: e.target.value })}
+                  list={d.product_id ? `qie-colors-${d.product_id}` : undefined}
+                  placeholder={d.product_id && (colorOptions[d.product_id]?.length ?? 0) > 0 ? 'Pick or type a color…' : undefined}
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white"
                   style={{ fontSize: '16px' }}
                 />
+                {d.product_id && (colorOptions[d.product_id]?.length ?? 0) > 0 && (
+                  <datalist id={`qie-colors-${d.product_id}`}>
+                    {colorOptions[d.product_id]!.map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Unit price</label>
