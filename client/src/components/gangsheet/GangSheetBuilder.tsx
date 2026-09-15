@@ -159,6 +159,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const [justSaved, setJustSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
+  // File-menu (Illustrator-style) + email/text share dialog — admin mode.
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [shareKind, setShareKind] = useState<null | 'email' | 'sms'>(null);
+  const [shareTo, setShareTo] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
   useEffect(() => {
     if (mode === 'customer') logActivityOnce('gang_sheet_builder_open');
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1453,7 +1459,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // then /admin/vendor-send presigns the file and emails the vendor the full
   // spec sheet. Throws with a user-facing message — SendToVendorDialog
   // displays it.
-  async function handleVendorSend({ vendor_name, vendor_email, note }: VendorSendPayload) {
+  // Shared first half of every server-side send (vendor, email, text):
+  // guard, save, build placements from the live canvas, and have the server
+  // compose the full-res 300 DPI PNG. Returns the composed file's key.
+  async function composeSheetFile(): Promise<{ file_key: string; width_px: number; height_px: number; sheet_id: number | null }> {
     if (designs.length === 0) throw new Error('Add at least one design first');
     const canvas = fabricRef.current;
     if (!canvas) throw new Error('Canvas not ready — try again');
@@ -1462,10 +1471,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const unfinished = designs.find((d) => d.imageUrl.startsWith('data:'));
     if (unfinished) throw new Error(`"${unfinished.name}" didn't finish uploading — delete it and re-add it, then try again.`);
     // Best-effort save so the layout survives if compose/send fails partway.
+    // A brand-new sheet gets its row created here — the returned id matters
+    // because this render's dbId state is stale until the next render.
+    let savedId: number | null = dbId;
     try {
-      await persistSheet('exported', { stampUrl: false });
+      savedId = (await persistSheet('exported', { stampUrl: false })) ?? dbId;
     } catch (err) {
-      console.error('Sheet save before vendor send failed (non-fatal):', err);
+      console.error('Sheet save before send failed (non-fatal):', err);
     }
     const designById = new Map(designs.map((d) => [d.id, d]));
     const placements = canvas.getObjects()
@@ -1493,6 +1505,54 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     });
     const composeData = await composeRes.json().catch(() => ({}));
     if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose the sheet — try again');
+    return { ...composeData, sheet_id: savedId };
+  }
+
+  // File > Email Sheet… / Text Sheet… — compose the full-res file server-side,
+  // then have the server presign a 7-day link and deliver it.
+  async function handleShareSend() {
+    if (!shareKind || !shareTo.trim()) return;
+    setShareBusy(true);
+    setShareMsg(null);
+    try {
+      const composeData = await composeSheetFile();
+      const id = composeData.sheet_id;
+      if (!id) throw new Error('Could not save the sheet — try again');
+      const res = await fetch(`${apiBase}/${id}/send`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          file_key: composeData.file_key,
+          [shareKind === 'email' ? 'email' : 'phone']: shareTo.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Send failed — try again');
+      setShareMsg('ok');
+      window.setTimeout(() => { setShareKind(null); setShareMsg(null); setShareTo(''); }, 1500);
+    } catch (err: any) {
+      setShareMsg(err?.message || 'Send failed — try again');
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  // File > Save a Copy — duplicate the saved row and open the copy.
+  async function handleDuplicateSheet() {
+    try {
+      const id = (await persistSheet('draft', { stampUrl: false })) ?? dbId;
+      if (!id) throw new Error('Save failed');
+      const res = await fetch(`${apiBase}/${id}/duplicate`, { method: 'POST', headers: authHeaders() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Copy failed');
+      navigate(`/admin/gangsheet/${data.id}`);
+    } catch (err: any) {
+      alert(err?.message || 'Copy failed');
+    }
+  }
+
+  async function handleVendorSend({ vendor_name, vendor_email, note }: VendorSendPayload) {
+    const composeData = await composeSheetFile();
 
     const sendRes = await fetch('/api/gangsheet-store/admin/vendor-send', {
       method: 'POST',
@@ -1678,7 +1738,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // error message on failure (e.g. the customer 20-sheet cap) instead of
   // swallowing it, so callers can surface something more useful than
   // "Save failed".
-  async function persistSheet(status: 'draft' | 'exported', { stampUrl = true }: { stampUrl?: boolean } = {}): Promise<void> {
+  async function persistSheet(status: 'draft' | 'exported', { stampUrl = true }: { stampUrl?: boolean } = {}): Promise<number | null> {
     // Persist a SLIM design list. The in-memory DesignItem carries `history`
     // (undo snapshots) and can carry a base64 data-URL imageUrl when the
     // add-time upload fell back — serializing those made the save payload
@@ -1730,6 +1790,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const res = await fetch(`${apiBase}/${dbId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body), ...saveTimeout() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
+      if (mode === 'customer') refreshMySheets();
+      return dbId;
     } else {
       const res = await fetch(apiBase, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: sheetName }), ...saveTimeout() });
       const data = await res.json().catch(() => ({}));
@@ -1748,8 +1810,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       if (mode === 'customer' && stampUrl) {
         navigate(`/dtf/builder/${data.id}`, { replace: true });
       }
+      if (mode === 'customer') refreshMySheets();
+      return data.id ?? null;
     }
-    if (mode === 'customer') refreshMySheets();
   }
 
   async function handleSave() {
@@ -1980,6 +2043,48 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         </button>
         <div className="hidden md:block w-px h-6 bg-gray-200" />
 
+        {/* Illustrator-style File menu (admin) — open/save/copy/export/share */}
+        {mode === 'admin' && (
+          <div className="relative hidden md:block">
+            <button
+              onClick={() => setFileMenuOpen((o) => !o)}
+              className={`text-sm font-medium px-2.5 py-1 rounded ${fileMenuOpen ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-100'}`}
+            >
+              File
+            </button>
+            {fileMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setFileMenuOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-40 py-1.5 text-sm">
+                  {([
+                    { label: 'New Sheet', action: () => navigate('/admin/gangsheet') },
+                    { label: 'Open… (Sheets Folder)', action: () => navigate('/admin?section=gangsheet') },
+                    { divider: true },
+                    { label: 'Save', action: () => void handleSave() },
+                    { label: 'Save a Copy', action: () => void handleDuplicateSheet() },
+                    { divider: true },
+                    { label: 'Export PNG · 300 DPI', action: () => void handleExport() },
+                    { label: 'Email Sheet…', action: () => setShareKind('email') },
+                    { label: 'Text Sheet…', action: () => setShareKind('sms') },
+                  ] as Array<{ label?: string; action?: () => void; divider?: boolean }>).map((item, i) =>
+                    item.divider ? (
+                      <div key={i} className="my-1 border-t border-gray-100" />
+                    ) : (
+                      <button
+                        key={i}
+                        onClick={() => { setFileMenuOpen(false); item.action?.(); }}
+                        className="w-full text-left px-4 py-1.5 text-gray-700 hover:bg-orange-50 hover:text-orange-700"
+                      >
+                        {item.label}
+                      </button>
+                    )
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Sheet name */}
         <input
           type="text" value={sheetName}
@@ -2064,6 +2169,48 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         onSend={handleVendorSend}
         subject={`${sheetName || 'Untitled Sheet'} — 22in × ${sheetLengthFt}ft`}
       />
+
+      {/* File > Email/Text Sheet dialog — sends a 7-day presigned link to the
+          full-res 300 DPI PNG (composed server-side, same file the vendor
+          send uses). */}
+      {shareKind && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (!shareBusy) { setShareKind(null); setShareMsg(null); } }}>
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-gray-900 mb-1">{shareKind === 'email' ? 'Email this sheet' : 'Text this sheet'}</h3>
+            <p className="text-xs text-gray-500 mb-3">Sends a download link to the full-resolution 300 DPI PNG. The link works for 7 days.</p>
+            <input
+              autoFocus
+              type={shareKind === 'email' ? 'email' : 'tel'}
+              placeholder={shareKind === 'email' ? 'name@example.com' : '(555) 123-4567'}
+              value={shareTo}
+              onChange={(e) => setShareTo(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleShareSend(); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-orange-500"
+            />
+            {shareMsg && (
+              <p className={`text-xs mb-3 ${shareMsg === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
+                {shareMsg === 'ok' ? 'Sent ✓' : shareMsg}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setShareKind(null); setShareMsg(null); }}
+                disabled={shareBusy}
+                className="px-3 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleShareSend()}
+                disabled={shareBusy || !shareTo.trim()}
+                className="px-4 py-1.5 text-xs font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-50"
+              >
+                {shareBusy ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {mode === 'customer' && (
         <div className="hidden sm:block bg-orange-50 border-b border-orange-100 text-orange-800 text-xs px-4 py-1.5 flex-shrink-0">

@@ -40,6 +40,7 @@ import {
   Target,
   Mail,
   MessageSquare,
+  Copy,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -485,6 +486,43 @@ function GangSheetList() {
     setSheets(prev => prev.filter(s => s.id !== id));
   };
 
+  const authHdrs = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` });
+
+  const handleCopy = async (id: number) => {
+    const res = await fetch(`/api/admin/gangsheets/${id}/duplicate`, { method: 'POST', headers: authHdrs() });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) setSheets(prev => [{ ...data, design_count: prev.find(s => s.id === id)?.design_count || 0 }, ...prev]);
+  };
+
+  // Email/Text a sheet's print file straight from the folder. Works once the
+  // sheet has a composed file on Spaces (any past checkout/vendor/File-menu
+  // send); otherwise the server explains to send from the builder once.
+  const [shareTarget, setShareTarget] = useState<{ id: number; name: string; kind: 'email' | 'sms' } | null>(null);
+  const [shareTo, setShareTo] = useState('');
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  const handleShareSend = async () => {
+    if (!shareTarget || !shareTo.trim() || shareBusy) return;
+    setShareBusy(true);
+    setShareMsg(null);
+    try {
+      const res = await fetch(`/api/admin/gangsheets/${shareTarget.id}/send`, {
+        method: 'POST',
+        headers: authHdrs(),
+        body: JSON.stringify({ [shareTarget.kind === 'email' ? 'email' : 'phone']: shareTo.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Send failed — try again');
+      setShareMsg('ok');
+      setTimeout(() => { setShareTarget(null); setShareMsg(null); setShareTo(''); }, 1500);
+    } catch (err: any) {
+      setShareMsg(err?.message || 'Send failed — try again');
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>;
 
   if (sheets.length === 0) {
@@ -519,15 +557,58 @@ function GangSheetList() {
             </span>
           </div>
           <div className="flex gap-1 flex-shrink-0">
-            <Link to={`/admin/gangsheet/${s.id}`} className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg">
+            <Link to={`/admin/gangsheet/${s.id}`} title="Open" className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg">
               <Edit3 className="w-4 h-4" />
             </Link>
-            <button onClick={() => handleDelete(s.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+            <button onClick={() => handleCopy(s.id)} title="Make a copy" className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg">
+              <Copy className="w-4 h-4" />
+            </button>
+            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'email' }); setShareTo(''); setShareMsg(null); }} title="Email print file" className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg">
+              <Mail className="w-4 h-4" />
+            </button>
+            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'sms' }); setShareTo(''); setShareMsg(null); }} title="Text print file" className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <button onClick={() => handleDelete(s.id)} title="Delete" className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
       ))}
+
+      {shareTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (!shareBusy) { setShareTarget(null); setShareMsg(null); } }}>
+          <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-bold text-gray-900 mb-1">
+              {shareTarget.kind === 'email' ? 'Email' : 'Text'} “{shareTarget.name}”
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">Sends a download link to the 300 DPI print PNG. The link works for 7 days.</p>
+            <input
+              autoFocus
+              type={shareTarget.kind === 'email' ? 'email' : 'tel'}
+              placeholder={shareTarget.kind === 'email' ? 'name@example.com' : '(555) 123-4567'}
+              value={shareTo}
+              onChange={(e) => setShareTo(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleShareSend(); }}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:border-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+            {shareMsg && (
+              <p className={`text-xs mb-3 ${shareMsg === 'ok' ? 'text-green-700' : 'text-red-600'}`}>
+                {shareMsg === 'ok' ? 'Sent ✓' : shareMsg}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => { setShareTarget(null); setShareMsg(null); }} disabled={shareBusy} className="px-3 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={() => void handleShareSend()} disabled={shareBusy || !shareTo.trim()} className="px-4 py-1.5 text-xs font-semibold text-white bg-orange-500 rounded-lg hover:bg-orange-600 disabled:opacity-50">
+                {shareBusy ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
