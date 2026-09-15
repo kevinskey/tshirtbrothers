@@ -6,7 +6,7 @@ export const SHEET_WIDTH_INCHES = 22;
 export const SHEET_WIDTH_PX = SHEET_WIDTH_INCHES * DPI; // 6,600
 export const INCHES_PER_FOOT = 12;
 export const PX_PER_FOOT = INCHES_PER_FOOT * DPI; // 3,600
-export const MAX_SHEET_LENGTH_FT = 20;
+export const MAX_SHEET_LENGTH_FT = 10;
 export const MAX_SHEET_HEIGHT_PX = MAX_SHEET_LENGTH_FT * PX_PER_FOOT; // 72,000
 export const MIN_SHEET_LENGTH_FT = 1;
 

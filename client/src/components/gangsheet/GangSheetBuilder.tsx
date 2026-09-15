@@ -2356,7 +2356,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                 <div className="bg-gray-50 rounded-xl p-3 space-y-2">
                   <p className="text-xs font-semibold text-gray-500 uppercase">Sheet Size</p>
                   <label className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-gray-600">Length (ft)</span>
+                    <span className="text-xs text-gray-600">
+                      Length (ft)
+                      <span className="ml-1.5 text-[10px] font-semibold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">{configLimits.minFt}–{BUILDER_MAX_FT} ft</span>
+                    </span>
                     <div className="flex items-center gap-1">
                       <button onClick={() => updateSheetLength(sheetLengthFt - 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">−</button>
                       <input
@@ -2370,7 +2373,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
                     </div>
                   </label>
-                  <p className="text-[10px] text-gray-400">Width fixed at 22". Set the length manually — if your graphics don't fit you'll get a warning.</p>
+                  <p className="text-[10px] text-gray-400">Width fixed at 22" · length {configLimits.minFt}–{BUILDER_MAX_FT} ft. Set the length manually — if your graphics don't fit you'll get a warning.</p>
                 </div>
 
                 {/* Design list */}
