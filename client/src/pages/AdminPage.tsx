@@ -114,6 +114,8 @@ import {
   fetchAdminCounts,
   fetchQuote,
   attachMockupToQuote,
+  fetchQuoteArchiveAnalytics,
+  fetchNonBuyingCustomers,
 } from '@/lib/api';
 
 /** A row in the dashboard's combined list: a quote, or a gang sheet order.
@@ -142,7 +144,7 @@ import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
 type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'mail' | 'settings';
-type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
+type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected' | 'archived';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
 // Sidebar nav, grouped. Categories, Orders, and Promotions are deliberately
@@ -1149,6 +1151,22 @@ export default function AdminPage() {
     enabled: activeSection === 'dashboard' || activeSection === 'quotes',
     staleTime: 10000, // 10 seconds for admin
     refetchOnWindowFocus: true,
+  });
+
+  // Non-responsive archive rollup + non-buying customer list — only loaded
+  // while the Archived tab is open.
+  const archiveTabOpen = (activeSection === 'dashboard' || activeSection === 'quotes') && quoteFilter === 'archived';
+  const archiveAnalyticsQuery = useQuery({
+    queryKey: ['admin', 'archive-analytics'],
+    queryFn: fetchQuoteArchiveAnalytics,
+    enabled: archiveTabOpen,
+    staleTime: 60000,
+  });
+  const nonBuyingQuery = useQuery({
+    queryKey: ['admin', 'non-buying'],
+    queryFn: fetchNonBuyingCustomers,
+    enabled: archiveTabOpen,
+    staleTime: 60000,
   });
 
   // Gang sheet (DTF) orders — dashboard only. They are a separate table with
@@ -2775,7 +2793,7 @@ export default function AdminPage() {
             <div className="flex gap-1 mb-4 md:mb-6 bg-gray-100 rounded-lg p-1 w-full md:w-fit overflow-x-auto">
               {/* The ladder, in travel order, so the tab strip doubles as a
                   map of where a job goes next. */}
-              {(['all', 'pending', 'quoted', 'accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'] as QuoteFilter[]).map((f) => (
+              {(['all', 'pending', 'quoted', 'accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed', 'archived'] as QuoteFilter[]).map((f) => (
                 <button
                   key={f}
                   onClick={() => setQuoteFilter(f)}
@@ -2789,6 +2807,85 @@ export default function AdminPage() {
                 </button>
               ))}
             </div>
+
+            {/* Non-responsive archive: marketing/geo rollup + non-buying
+                customer list. Quotes land here automatically 14 days after
+                the customer goes quiet (scheduler job). */}
+            {quoteFilter === 'archived' && (
+              <div className="mb-6 space-y-4">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                  Quotes expire after <strong>14 days</strong> without a response — unaccepted and unpaid quotes move here automatically, and the customer is recorded below as a non-buying customer for marketing follow-up.
+                </div>
+                {archiveAnalyticsQuery.data && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Archived quotes', value: archiveAnalyticsQuery.data.totals.archived_quotes },
+                      { label: 'Non-buying customers', value: archiveAnalyticsQuery.data.non_buying_customers },
+                      { label: 'Unique emails', value: archiveAnalyticsQuery.data.totals.unique_customers },
+                      { label: 'Lost quote value', value: `$${Number(archiveAnalyticsQuery.data.totals.lost_quote_value || 0).toLocaleString()}` },
+                    ].map((t) => (
+                      <div key={t.label} className="bg-white rounded-xl border border-gray-200 p-4">
+                        <p className="text-2xl font-bold text-gray-900">{t.value}</p>
+                        <p className="text-xs text-gray-500 mt-1">{t.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {archiveAnalyticsQuery.data && (archiveAnalyticsQuery.data.by_state.length > 0 || archiveAnalyticsQuery.data.by_city.length > 0) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {archiveAnalyticsQuery.data.by_state.length > 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">By state</p>
+                        {archiveAnalyticsQuery.data.by_state.map((r) => (
+                          <div key={r.state} className="flex justify-between text-sm py-0.5"><span>{r.state}</span><span className="font-semibold">{r.count}</span></div>
+                        ))}
+                      </div>
+                    )}
+                    {archiveAnalyticsQuery.data.by_city.length > 0 && (
+                      <div className="bg-white rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-2">By city</p>
+                        {archiveAnalyticsQuery.data.by_city.map((r, i) => (
+                          <div key={i} className="flex justify-between text-sm py-0.5"><span>{r.city}{r.state ? `, ${r.state}` : ''}</span><span className="font-semibold">{r.count}</span></div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {(nonBuyingQuery.data?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                    <p className="text-xs font-semibold text-gray-500 uppercase px-4 pt-4 pb-2">Non-buying customers ({nonBuyingQuery.data!.length})</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-xs text-gray-400 border-b border-gray-100">
+                            <th className="px-4 py-2 font-medium">Name</th>
+                            <th className="px-4 py-2 font-medium">Email</th>
+                            <th className="px-4 py-2 font-medium">Phone</th>
+                            <th className="px-4 py-2 font-medium">Location</th>
+                            <th className="px-4 py-2 font-medium text-right">Quotes</th>
+                            <th className="px-4 py-2 font-medium text-right">Quoted value</th>
+                            <th className="px-4 py-2 font-medium">Last quote</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {nonBuyingQuery.data!.map((c) => (
+                            <tr key={c.id} className="border-b border-gray-50 last:border-0">
+                              <td className="px-4 py-2 font-medium text-gray-900">{c.name || '—'}</td>
+                              <td className="px-4 py-2 text-gray-600">{c.email}</td>
+                              <td className="px-4 py-2 text-gray-600">{c.phone || '—'}</td>
+                              <td className="px-4 py-2 text-gray-600">{[c.city, c.state].filter(Boolean).join(', ') || '—'}</td>
+                              <td className="px-4 py-2 text-right">{c.quote_count}</td>
+                              <td className="px-4 py-2 text-right">${Number(c.total_quoted_value || 0).toLocaleString()}</td>
+                              <td className="px-4 py-2 text-gray-500">{c.last_quote_at ? new Date(c.last_quote_at).toLocaleDateString() : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Mobile card view */}
             <div className="lg:hidden space-y-3">
