@@ -364,7 +364,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const r = await fetch(`/api/products?search=${encodeURIComponent(productSearch)}&limit=24`, { headers: authHeaders() });
+        const r = await fetch(`/api/products?search=${encodeURIComponent(productSearch)}&limit=500`, { headers: authHeaders() });
         if (r.ok) {
           const data = await r.json();
           const items = Array.isArray(data) ? data : (data.products || []);

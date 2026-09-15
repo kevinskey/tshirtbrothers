@@ -61,7 +61,7 @@ router.get('/', async (req, res, next) => {
     } = req.query;
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 24));
+    const limitNum = Math.min(500, Math.max(1, parseInt(limit, 10) || 24));
 
     // Check if DB has products
     const countCheck = await pool.query('SELECT COUNT(*) FROM products');
