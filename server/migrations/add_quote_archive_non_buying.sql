@@ -35,3 +35,8 @@ CREATE TABLE IF NOT EXISTS non_buying_customers (
 -- to the app (see the 2026-09-15 newsletter_subscribers incident).
 GRANT SELECT, INSERT, UPDATE, DELETE ON non_buying_customers TO tsbadmin;
 GRANT USAGE, SELECT ON SEQUENCE non_buying_customers_id_seq TO tsbadmin;
+
+-- 2026-09-15 (later same day): invoices are archivable from the pipeline too.
+ALTER TABLE invoices
+  ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS archive_reason TEXT;
