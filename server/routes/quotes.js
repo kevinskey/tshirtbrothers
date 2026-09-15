@@ -331,9 +331,17 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     const conditions = [];
     const params = [];
 
-    if (status) {
-      params.push(status);
-      conditions.push(`status = $${params.length}`);
+    // The archive is its own view: status=archived shows only archived
+    // quotes; every other view hides them so expired quotes leave the
+    // pipeline entirely.
+    if (status === 'archived') {
+      conditions.push('archived_at IS NOT NULL');
+    } else {
+      conditions.push('archived_at IS NULL');
+      if (status) {
+        params.push(status);
+        conditions.push(`status = $${params.length}`);
+      }
     }
 
     if (search) {
@@ -725,6 +733,13 @@ router.post('/accept/:id', async (req, res, next) => {
 
     if (quote.accept_token !== token) {
       return res.status(403).json({ error: 'Invalid token' });
+    }
+
+    // Quotes expire two weeks after the customer goes quiet — the scheduler
+    // moves them to the non-responsive archive, after which the old accept
+    // link must not lock in stale pricing.
+    if (quote.archived_at) {
+      return res.status(410).json({ error: 'This quote has expired (quotes are valid for 14 days). Please request a new quote — we\'d love to work with you.' });
     }
 
     if (quote.status === 'accepted') {
@@ -1338,6 +1353,83 @@ router.delete('/:id', authenticate, adminOnly, async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ─── Non-responsive archive ────────────────────────────────────────────────
+// Quotes expire 14 days after the customer goes quiet (see the scheduler's
+// archiveNonResponsiveQuotes). These endpoints manage the archive and expose
+// the non-buying-customer data it collects for marketing / geo analysis.
+
+// Manually archive a quote as non-responsive without waiting for expiry.
+router.post('/admin/:id/archive', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE quotes SET archived_at = NOW(), archive_reason = $2
+        WHERE id = $1 AND archived_at IS NULL RETURNING *`,
+      [req.params.id, String(req.body?.reason || 'non-responsive').slice(0, 60)],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found or already archived' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// Pull a quote back out of the archive (customer resurfaced).
+router.post('/admin/:id/unarchive', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE quotes SET archived_at = NULL, archive_reason = NULL WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// The non-buying customer list the archive job builds.
+router.get('/admin/non-buying', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM non_buying_customers ORDER BY last_quote_at DESC NULLS LAST LIMIT 500`,
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// Site-analysis rollup: archive totals, monthly trend, and geo breakdown
+// (state/city from each quote's shipping address when one was given).
+router.get('/admin/archive-analytics', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const [totals, monthly, byState, byCity] = await Promise.all([
+      pool.query(`
+        SELECT COUNT(*)::int AS archived_quotes,
+               COALESCE(SUM(COALESCE(calculated_price, estimated_price, 0)), 0)::numeric(12,2) AS lost_quote_value,
+               COUNT(DISTINCT LOWER(customer_email))::int AS unique_customers
+          FROM quotes WHERE archived_at IS NOT NULL
+      `),
+      pool.query(`
+        SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month, COUNT(*)::int AS count
+          FROM quotes WHERE archived_at IS NOT NULL
+         GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+      `),
+      pool.query(`
+        SELECT shipping_address->>'state' AS state, COUNT(*)::int AS count
+          FROM quotes WHERE archived_at IS NOT NULL AND shipping_address->>'state' IS NOT NULL
+         GROUP BY 1 ORDER BY 2 DESC LIMIT 25
+      `),
+      pool.query(`
+        SELECT shipping_address->>'city' AS city, shipping_address->>'state' AS state, COUNT(*)::int AS count
+          FROM quotes WHERE archived_at IS NOT NULL AND shipping_address->>'city' IS NOT NULL
+         GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 25
+      `),
+    ]);
+    res.json({
+      totals: totals.rows[0],
+      monthly: monthly.rows,
+      by_state: byState.rows,
+      by_city: byCity.rows,
+      non_buying_customers: (await pool.query('SELECT COUNT(*)::int AS n FROM non_buying_customers')).rows[0].n,
+    });
+  } catch (err) { next(err); }
 });
 
 export default router;

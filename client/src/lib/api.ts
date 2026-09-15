@@ -203,6 +203,31 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
   };
 }
 
+// Non-responsive quote archive analytics (marketing / geo studies). Shapes
+// mirror /api/quotes/admin/archive-analytics and /non-buying.
+export type QuoteArchiveAnalytics = {
+  totals: { archived_quotes: number; lost_quote_value: string; unique_customers: number };
+  monthly: Array<{ month: string; count: number }>;
+  by_state: Array<{ state: string; count: number }>;
+  by_city: Array<{ city: string; state: string | null; count: number }>;
+  non_buying_customers: number;
+};
+export type NonBuyingCustomer = {
+  id: number; email: string; name: string | null; phone: string | null;
+  city: string | null; state: string | null; zip: string | null;
+  quote_count: number; total_quoted_value: string;
+  first_quote_at: string | null; last_quote_at: string | null;
+};
+export async function fetchQuoteArchiveAnalytics() {
+  return authRequest<QuoteArchiveAnalytics>('/quotes/admin/archive-analytics');
+}
+export async function fetchNonBuyingCustomers() {
+  return authRequest<NonBuyingCustomer[]>('/quotes/admin/non-buying');
+}
+export async function unarchiveQuote(id: number) {
+  return authRequest<Quote>(`/quotes/admin/${id}/unarchive`, { method: 'POST' });
+}
+
 export async function fetchQuotes(status?: string, search?: string, sort?: string) {
   const params = new URLSearchParams();
   if (status && status !== 'all') params.set('status', status);
