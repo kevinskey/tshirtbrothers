@@ -3081,6 +3081,11 @@ export default function AdminPage() {
                         key={`inv-${row.invoice.id}`}
                         inv={row.invoice}
                         onOpen={(inv) => { setActiveSection('invoices'); openInvoiceEditor(inv); }}
+                        onArchived={() => {
+                          toast('Invoice archived');
+                          queryClient.invalidateQueries({ queryKey: ['admin', 'pipeline-invoices'] });
+                          queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+                        }}
                       />
                     ) : (() => { const q = row.quote; return (
                       <tr key={q.id} id={`quote-${q.id}`} onClick={() => setDetailQuote(q)} className={`hover:bg-gray-50 cursor-pointer ${highlightedQuoteId === String(q.id) ? 'bg-orange-50' : ''}`}>
@@ -8987,7 +8992,7 @@ function GangSheetCard({ order }: { order: GangSheetOrder }) {
 
 // An in-progress invoice riding in the pipeline list. Row click opens it in
 // the invoice editor (via onOpen); Actions mirrors the other row kinds.
-function InvoicePipelineRow({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invoice) => void }) {
+function InvoicePipelineRow({ inv, onOpen, onArchived }: { inv: Invoice; onOpen: (inv: Invoice) => void; onArchived?: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const qty = (inv.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0);
   const firstDesc = (inv.items || [])[0]?.description || '';
@@ -9047,6 +9052,19 @@ function InvoicePipelineRow({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invoi
                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
               >
                 <Mail className="w-3.5 h-3.5" /> Email customer
+              </button>
+              <button
+                onClick={async () => {
+                  setMenuOpen(false);
+                  const res = await fetch(`/api/invoices/${inv.id}/archive`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+                  });
+                  if (res.ok) onArchived?.();
+                }}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-amber-700 font-medium"
+              >
+                <FolderOpen className="w-3.5 h-3.5" /> Archive
               </button>
             </div>
           </>

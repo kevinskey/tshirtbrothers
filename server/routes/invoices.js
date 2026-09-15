@@ -511,9 +511,14 @@ router.get('/', async (req, res, next) => {
     let whereClause = '';
     const params = [];
 
-    if (status && status !== 'all') {
+    // Archived invoices leave the normal views (status=archived shows them).
+    if (status === 'archived') {
+      whereClause = 'WHERE i.archived_at IS NOT NULL';
+    } else if (status && status !== 'all') {
       params.push(status);
-      whereClause = `WHERE status = $${params.length}`;
+      whereClause = `WHERE i.archived_at IS NULL AND i.status = $${params.length}`;
+    } else {
+      whereClause = 'WHERE i.archived_at IS NULL';
     }
 
     const { rows } = await pool.query(
@@ -817,6 +822,30 @@ router.delete('/:id', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// Archive/restore an invoice — archived invoices leave the pipeline and
+// invoice lists (mirrors the quote archive added the same day).
+router.post('/:id/archive', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET archived_at = NOW(), archive_reason = $2 WHERE id = $1 AND archived_at IS NULL RETURNING id`,
+      [req.params.id, String(req.body?.reason || 'archived').slice(0, 60)],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found or already archived' });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+router.post('/:id/unarchive', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE invoices SET archived_at = NULL, archive_reason = NULL WHERE id = $1 RETURNING id`,
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 export default router;
