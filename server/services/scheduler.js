@@ -92,9 +92,12 @@ async function archiveNonResponsiveQuotes() {
     const { rows } = await pool.query(`
       UPDATE quotes SET archived_at = NOW(), archive_reason = 'non-responsive'
        WHERE archived_at IS NULL
+         -- Any money on the quote means the customer responded — never
+         -- archive it as non-responsive, whatever its status says.
+         AND COALESCE(deposit_amount, 0) = 0 AND balance_paid_at IS NULL
          AND (
            (status IN ('pending', 'quoted') AND created_at < NOW() - make_interval(days => $1))
-           OR (status = 'accepted' AND COALESCE(deposit_amount, 0) = 0 AND balance_paid_at IS NULL
+           OR (status = 'accepted'
                AND COALESCE(accepted_at, created_at) < NOW() - make_interval(days => $1))
          )
        RETURNING id, customer_name, customer_email, customer_phone,
