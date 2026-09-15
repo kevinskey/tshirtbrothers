@@ -20,6 +20,7 @@ interface PoLine {
   key: string;
   styleId: string | null;
   productName: string;
+  imageUrl?: string | null;
   color: string;
   size: string;
   qty: number;
@@ -68,6 +69,8 @@ interface ProductHit {
   ss_id: string | null;
   name: string;
   brand: string | null;
+  category?: string | null;
+  image_url?: string | null;
 }
 
 interface ShipTo {
@@ -361,7 +364,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     searchTimer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const r = await fetch(`/api/products?search=${encodeURIComponent(productSearch)}&limit=8`, { headers: authHeaders() });
+        const r = await fetch(`/api/products?search=${encodeURIComponent(productSearch)}&limit=24`, { headers: authHeaders() });
         if (r.ok) {
           const data = await r.json();
           const items = Array.isArray(data) ? data : (data.products || []);
@@ -410,6 +413,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
       key: nextKey(),
       styleId: p.ss_id,
       productName: `${p.brand ? `${p.brand} ` : ''}${p.name}`,
+      imageUrl: p.image_url || null,
       color: '', size: '', qty: 12,
       sku: null, price: null, stock: null,
     }]);
@@ -631,7 +635,12 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                       return (
                         <tr key={l.key} className="border-b last:border-0">
                           <td className="px-4 py-2 max-w-[240px]">
-                            <div className="truncate" title={l.productName}>{l.productName || '—'}</div>
+                            <div className="flex items-center gap-2">
+                              {l.imageUrl && (
+                                <img src={l.imageUrl} alt="" loading="lazy" className="w-9 h-9 object-contain rounded border border-gray-100 bg-white flex-shrink-0" />
+                              )}
+                              <div className="truncate" title={l.productName}>{l.productName || '—'}</div>
+                            </div>
                             {!l.styleId && linkTarget !== l.key && (
                               <button
                                 onClick={() => { setLinkTarget(l.key); setLinkSearch(''); setLinkHits([]); }}
@@ -721,8 +730,9 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
               </div>
             )}
 
-            {/* Add product */}
-            <div className="px-4 py-3 border-t bg-gray-50 rounded-b-xl relative">
+            {/* Add product — search renders as an S&S-style product grid
+                (image, brand, style, category) instead of a text dropdown. */}
+            <div className="px-4 py-3 border-t bg-gray-50 rounded-b-xl">
               <div className="flex items-center gap-2 max-w-md">
                 <Search className="w-4 h-4 text-gray-400" />
                 <input
@@ -732,18 +742,36 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                   className="flex-1 border rounded-lg px-3 py-2 text-sm"
                 />
                 {searching && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
+                {productSearch && !searching && (
+                  <button onClick={() => { setProductSearch(''); setProductHits([]); }} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               {productHits.length > 0 && (
-                <div className="absolute z-10 mt-1 bg-white border rounded-lg shadow-lg max-w-md w-full">
-                  {productHits.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => void addProductLine(p)}
-                      className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                    >
-                      {p.brand ? `${p.brand} — ` : ''}{p.name}
-                    </button>
-                  ))}
+                <div className="mt-3">
+                  <p className="text-[11px] text-gray-400 mb-2">{productHits.length} style{productHits.length === 1 ? '' : 's'} — click one to add it to the order</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {productHits.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => void addProductLine(p)}
+                        className="bg-white border border-gray-200 rounded-xl p-2 text-left hover:border-orange-400 hover:shadow-md transition group"
+                        title={`${p.brand ? `${p.brand} ` : ''}${p.name}`}
+                      >
+                        <div className="aspect-square rounded-lg overflow-hidden flex items-center justify-center mb-2 bg-white">
+                          {p.image_url ? (
+                            <img src={p.image_url} alt="" loading="lazy" className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
+                          ) : (
+                            <Package className="w-8 h-8 text-gray-200" />
+                          )}
+                        </div>
+                        {p.brand && <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide truncate">{p.brand}</p>}
+                        <p className="text-xs font-medium text-gray-900 leading-snug line-clamp-2">{p.name}</p>
+                        {p.category && <p className="text-[10px] text-gray-400 mt-0.5 truncate">{p.category}</p>}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
