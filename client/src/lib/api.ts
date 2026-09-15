@@ -230,6 +230,10 @@ export async function unarchiveQuote(id: number) {
 
 export async function fetchQuotes(status?: string, search?: string, sort?: string) {
   const params = new URLSearchParams();
+  // The pipeline's "Deposit Paid" tab (filter value 'accepted') means "money
+  // received", not the literal status — the server's deposit_paid filter
+  // matches every stage where a deposit has actually been collected.
+  if (status === 'accepted') status = 'deposit_paid';
   if (status && status !== 'all') params.set('status', status);
   if (search) params.set('search', search);
   if (sort) params.set('sort', sort);

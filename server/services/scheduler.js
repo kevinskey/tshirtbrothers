@@ -92,14 +92,13 @@ async function archiveNonResponsiveQuotes() {
     const { rows } = await pool.query(`
       UPDATE quotes SET archived_at = NOW(), archive_reason = 'non-responsive'
        WHERE archived_at IS NULL
-         -- Any money on the quote means the customer responded — never
-         -- archive it as non-responsive, whatever its status says.
-         AND COALESCE(deposit_amount, 0) = 0 AND balance_paid_at IS NULL
-         AND (
-           (status IN ('pending', 'quoted') AND created_at < NOW() - make_interval(days => $1))
-           OR (status = 'accepted'
-               AND COALESCE(accepted_at, created_at) < NOW() - make_interval(days => $1))
-         )
+         -- Actual payment evidence keeps a quote out of the archive. NOTE:
+         -- deposit_amount is NOT evidence — send-price stamps every quoted
+         -- quote with the 50% ask; real payment sets accepted_at / moves
+         -- the status past 'quoted'.
+         AND accepted_at IS NULL AND balance_paid_at IS NULL
+         AND status IN ('pending', 'quoted')
+         AND created_at < NOW() - make_interval(days => $1)
        RETURNING id, customer_name, customer_email, customer_phone,
                  estimated_price, calculated_price, shipping_address, created_at
     `, [QUOTE_EXPIRY_DAYS]);
@@ -114,7 +113,7 @@ async function archiveNonResponsiveQuotes() {
       const { rows: bought } = await pool.query(
         `SELECT 1 FROM quotes
           WHERE LOWER(customer_email) = $1
-            AND (COALESCE(deposit_amount, 0) > 0 OR balance_paid_at IS NOT NULL OR status = 'completed')
+            AND (accepted_at IS NOT NULL OR balance_paid_at IS NOT NULL OR status IN ('accepted', 'completed'))
           LIMIT 1`,
         [email],
       );
@@ -146,7 +145,7 @@ async function archiveNonResponsiveQuotes() {
        WHERE EXISTS (
          SELECT 1 FROM quotes q
           WHERE LOWER(q.customer_email) = nbc.email
-            AND (COALESCE(q.deposit_amount, 0) > 0 OR q.balance_paid_at IS NOT NULL OR q.status = 'completed')
+            AND (q.accepted_at IS NOT NULL OR q.balance_paid_at IS NOT NULL OR q.status IN ('accepted', 'completed'))
        )
     `);
   } catch (err) {

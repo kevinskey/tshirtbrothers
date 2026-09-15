@@ -336,6 +336,15 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     // pipeline entirely.
     if (status === 'archived') {
       conditions.push('archived_at IS NOT NULL');
+    } else if (status === 'deposit_paid') {
+      // The "Deposit Paid" tab: every quote where money has actually been
+      // received, whatever stage it's in now. deposit_amount alone is NOT
+      // evidence — send-price stamps it with the 50% ask on every quoted
+      // quote; the payment webhook is what sets accepted_at / 'accepted'.
+      conditions.push(`archived_at IS NULL AND (
+        accepted_at IS NOT NULL OR balance_paid_at IS NOT NULL
+        OR status IN ('accepted', 'in_production', 'ready', 'completed')
+      )`);
     } else {
       conditions.push('archived_at IS NULL');
       if (status) {
