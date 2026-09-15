@@ -11,7 +11,6 @@ import { logActivityOnce } from '@/lib/activity';
 import {
   SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
   EDGE_PADDING_PX, PRICING, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
-  SIZE_PRESETS,
   pxToInches, pxToFeet, inchesToPx, feetToPx,
   type PricingTier
 } from '@/lib/gangsheet/constants';
@@ -2292,29 +2291,6 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                               <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
                             </div>
                           </label>
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {SIZE_PRESETS.map((p) => (
-                              <button
-                                key={p.label}
-                                onClick={() => updateDesignSize(d.id, p.width)}
-                                className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700 transition"
-                                title={`${p.width}" × ~${p.height}"`}
-                              >
-                                {p.label}
-                              </button>
-                            ))}
-                          </div>
-                          {/* Same art at another size: spawns an independent
-                              entry (own width + quantity) from the same file,
-                              so one sheet can mix e.g. full-fronts and
-                              left-chest hits of the same design. */}
-                          <button
-                            onClick={() => void addDesignToCanvas(d.imageUrl, d.name, Math.max(2, d.printWidthInches / 2), 1)}
-                            className="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] px-2 py-1.5 rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 font-semibold"
-                            title="Add this design again at a different size"
-                          >
-                            ⧉ Add another size of this design
-                          </button>
                           <div className="flex gap-2 mt-2">
                             {/* Enhance tools open to customers (Kevin,
                                 2026-09-07) so art gets print-ready before it
