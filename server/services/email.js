@@ -1263,6 +1263,32 @@ export async function sendGangSheetReadyToCustomer({ order }) {
   });
 }
 
+// Presigned-link handoff for a single gang sheet print file — used by the
+// admin builder's File > Email Sheet action and the sheets-folder Email
+// button. Lighter than the vendor email: no production spec table, just
+// the file and its link.
+export async function sendGangSheetLinkEmail({ to, sheetName, url, linkExpiresDays = 7 }) {
+  const name = String(sheetName || 'Gang sheet').slice(0, 120);
+  const body = `
+    <p>Here is the print-ready gang sheet <strong>${escapeHtml(name)}</strong> from T-Shirt Brothers.</p>
+    ${detailsTable(
+      detailRow('Resolution', '300 DPI') +
+      detailRow('Format', 'PNG, transparent background')
+    )}
+    ${primaryButton('Download print file', url)}
+    <p style="font-size:13px;color:#6b7280;margin-top:12px;">Direct link: <a href="${url}" style="color:${BRAND_ORANGE};word-break:break-all;">${url}</a></p>
+    <p style="font-size:13px;color:#b91c1c;margin-top:8px;">This download link expires in ${linkExpiresDays} days.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [to],
+    replyTo: ADMIN_EMAIL,
+    bcc: [ADMIN_EMAIL],
+    subject: `Gang sheet — ${name}`,
+    html: baseLayout('Gang Sheet', body),
+  });
+}
+
 // Outsource a gang sheet to a print vendor (KolorMatrix, TSTG, ...). The
 // email is the production handoff, so it carries the full document spec —
 // DPI, pixel + physical dimensions, print count, per-design breakdown —
