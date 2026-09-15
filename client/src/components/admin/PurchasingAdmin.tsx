@@ -193,6 +193,65 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [placedResult, setPlacedResult] = useState<{ po: PurchaseOrder; ssOrders: SsOrderSummary[] } | null>(null);
 
+  // Draft orders — save the in-progress builder to come back to later.
+  interface OrderDraft { id: number; name: string; payload: { lines: PoLine[]; shipTo: ShipTo | null; shippingMethod: string; warehouse: string; notes: string }; created_at: string; updated_at: string }
+  const [drafts, setDrafts] = useState<OrderDraft[]>([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [loadedDraftId, setLoadedDraftId] = useState<number | null>(null);
+
+  const loadDrafts = useCallback(async () => {
+    const r = await fetch('/api/purchasing/drafts', { headers: authHeaders() });
+    if (r.ok) setDrafts(await r.json());
+  }, []);
+  useEffect(() => { void loadDrafts(); }, [loadDrafts]);
+
+  async function saveDraft() {
+    if (lines.length === 0 || savingDraft) return;
+    setSavingDraft(true);
+    try {
+      const payload = { lines, shipTo, shippingMethod, warehouse, notes };
+      const extra = lines.length > 1 ? ` +${lines.length - 1} more` : '';
+      const name = `${garmentLabel(lines[0]!.productName) || 'Blanks'}${extra} — ${new Date().toLocaleDateString()}`;
+      if (loadedDraftId) {
+        const r = await fetch(`/api/purchasing/drafts/${loadedDraftId}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ payload }) });
+        if (!r.ok) throw new Error('Save failed');
+      } else {
+        const r = await fetch('/api/purchasing/drafts', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name, payload }) });
+        if (!r.ok) throw new Error('Save failed');
+        const d = await r.json();
+        setLoadedDraftId(d.id);
+      }
+      await loadDrafts();
+    } catch (e: any) {
+      alert(e?.message || 'Could not save draft');
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  async function openDraft(d: OrderDraft) {
+    const p = d.payload || ({} as OrderDraft['payload']);
+    setLines(p.lines || []);
+    if (p.shipTo) setShipTo(p.shipTo);
+    if (p.shippingMethod) setShippingMethod(p.shippingMethod);
+    setWarehouse(p.warehouse || '');
+    setNotes(p.notes || '');
+    setLoadedDraftId(d.id);
+    // Re-resolve each line against fresh SKU data (prices/stock move).
+    const styleIds = [...new Set((p.lines || []).map((l) => l.styleId).filter(Boolean))] as string[];
+    for (const sid of styleIds) {
+      const skus = skuCache[sid] || await loadStyleSkus(sid);
+      if (skus) setLines((prev) => prev.map((l) => (l.styleId === sid ? resolveLineWith(l, skus) : l)));
+    }
+  }
+
+  async function deleteDraft(id: number) {
+    if (!confirm('Delete this draft?')) return;
+    await fetch(`/api/purchasing/drafts/${id}`, { method: 'DELETE', headers: authHeaders() });
+    if (loadedDraftId === id) setLoadedDraftId(null);
+    await loadDrafts();
+  }
+
   // Product search (standalone lines)
   const [productSearch, setProductSearch] = useState('');
   const [productHits, setProductHits] = useState<ProductHit[]>([]);
@@ -606,7 +665,26 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           {/* overflow must stay visible or the absolutely-positioned product
               search dropdowns get clipped at the card edge */}
           <div className="bg-white border rounded-xl overflow-visible">
-            <div className="px-4 py-3 border-b font-medium text-sm">Line items</div>
+            <div className="px-4 py-3 border-b font-medium text-sm flex items-center justify-between">
+              <span>Line items{loadedDraftId ? <span className="ml-2 text-[11px] font-normal text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">editing draft #{loadedDraftId}</span> : null}</span>
+              {drafts.length > 0 && (
+                <span className="text-xs font-normal text-gray-400">{drafts.length} saved draft{drafts.length === 1 ? '' : 's'} below</span>
+              )}
+            </div>
+            {drafts.length > 0 && (
+              <div className="px-4 py-2 border-b bg-amber-50/50 flex flex-wrap gap-2">
+                {drafts.map((d) => (
+                  <span key={d.id} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${loadedDraftId === d.id ? 'border-amber-400 bg-amber-100 text-amber-800' : 'border-gray-200 bg-white text-gray-600'}`}>
+                    <button onClick={() => void openDraft(d)} className="hover:text-orange-600 font-medium" title={`Saved ${new Date(d.updated_at).toLocaleString()}`}>
+                      {d.name}
+                    </button>
+                    <button onClick={() => void deleteDraft(d.id)} className="text-gray-300 hover:text-red-500" title="Delete draft">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             {lines.length === 0 && (
               <div className="px-4 py-6 text-sm text-gray-500">No lines yet — search a product below to add blanks.</div>
             )}
@@ -943,6 +1021,14 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                 </div>
               )}
             </div>
+            <button
+              onClick={() => void saveDraft()}
+              disabled={savingDraft || lines.length === 0}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {savingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {loadedDraftId ? 'Update draft' : 'Save as draft'}
+            </button>
             <button
               onClick={() => void placeOrder()}
               disabled={placing || readyLines.length === 0 || !selectedProfileId}

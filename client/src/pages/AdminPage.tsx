@@ -3189,6 +3189,27 @@ export default function AdminPage() {
                                 <Eye className="w-3.5 h-3.5" />
                                 Full Detail
                               </button>
+                              <button
+                                onClick={async () => {
+                                  setOpenActionMenu(null);
+                                  const archived = Boolean((q as any).archived_at);
+                                  const res = await fetch(`/api/quotes/admin/${q.id}/${archived ? 'unarchive' : 'archive'}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+                                  });
+                                  if (res.ok) {
+                                    toast(archived ? 'Quote restored to the pipeline' : 'Quote moved to the archive');
+                                    queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                                    queryClient.invalidateQueries({ queryKey: ['admin', 'archive-analytics'] });
+                                  } else {
+                                    toast('Could not update the quote', 'error');
+                                  }
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-amber-700 font-medium"
+                              >
+                                <FolderOpen className="w-3.5 h-3.5" />
+                                {(q as any).archived_at ? 'Restore from archive' : 'Archive'}
+                              </button>
                               {['completed', 'rejected']
                                 .filter((s) => s !== q.status)
                                 .map((s) => (
