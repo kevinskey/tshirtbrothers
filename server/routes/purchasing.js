@@ -488,4 +488,53 @@ router.put('/orders/:id', async (req, res, next) => {
   }
 });
 
+// ─── Draft orders ──────────────────────────────────────────────────────────
+// Save an in-progress blanks order (builder state verbatim) to finish later.
+
+router.get('/drafts', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, name, payload, created_at, updated_at FROM purchasing_drafts ORDER BY updated_at DESC LIMIT 100',
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+router.post('/drafts', async (req, res, next) => {
+  try {
+    const { name, payload } = req.body || {};
+    if (!payload || typeof payload !== 'object') return res.status(400).json({ error: 'Missing draft payload' });
+    const { rows } = await pool.query(
+      `INSERT INTO purchasing_drafts (name, payload, created_by) VALUES ($1, $2, $3)
+       RETURNING id, name, payload, created_at, updated_at`,
+      [String(name || 'Draft order').slice(0, 120), JSON.stringify(payload), req.user?.id || null],
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.put('/drafts/:id', async (req, res, next) => {
+  try {
+    const { name, payload } = req.body || {};
+    const { rows } = await pool.query(
+      `UPDATE purchasing_drafts SET
+         name = COALESCE($1, name),
+         payload = COALESCE($2, payload),
+         updated_at = NOW()
+       WHERE id = $3 RETURNING id, name, payload, created_at, updated_at`,
+      [name ? String(name).slice(0, 120) : null, payload ? JSON.stringify(payload) : null, req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Draft not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+router.delete('/drafts/:id', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('DELETE FROM purchasing_drafts WHERE id = $1 RETURNING id', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Draft not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
+});
+
 export default router;
