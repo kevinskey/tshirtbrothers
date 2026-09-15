@@ -1194,20 +1194,36 @@ router.get('/customers/:id/assets', async (req, res, next) => {
 // Body: { name, imageBase64, filename?, file_type?, notes? }
 router.post('/customers/:id/assets', express.json({ limit: '25mb' }), async (req, res, next) => {
   try {
-    const { name, imageBase64, filename, file_type, notes } = req.body;
-    if (!name || !imageBase64) {
-      return res.status(400).json({ error: 'name and imageBase64 are required' });
+    const { name, imageBase64, image_url, filename, file_type, notes } = req.body;
+    if (!name || (!imageBase64 && !image_url)) {
+      return res.status(400).json({ error: 'name and imageBase64 (or image_url) are required' });
     }
 
     // Make sure customer exists
     const u = await pool.query("SELECT id FROM users WHERE id = $1 AND role = 'customer'", [req.params.id]);
     if (u.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
 
-    // Upload to Spaces under a per-customer prefix
-    const base64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
-    const buf = Buffer.from(base64, 'base64');
-    const detected = /^data:([^;]+);/.exec(imageBase64);
-    const contentType = (detected && detected[1]) || file_type || 'image/png';
+    // Source bytes: inline base64, or a file already on OUR Spaces (mail
+    // attachments land there) — the host restriction is the SSRF guard.
+    let buf, contentType;
+    if (imageBase64) {
+      const base64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+      buf = Buffer.from(base64, 'base64');
+      const detected = /^data:([^;]+);/.exec(imageBase64);
+      contentType = (detected && detected[1]) || file_type || 'image/png';
+    } else {
+      let parsed;
+      try { parsed = new URL(String(image_url)); } catch { return res.status(400).json({ error: 'Invalid image_url' }); }
+      const okHost = /(^|\.)((cdn\.)?digitaloceanspaces\.com)$/.test(parsed.hostname) && parsed.hostname.startsWith(`${process.env.SPACES_BUCKET || 'tshirtbrothers'}.`);
+      if (parsed.protocol !== 'https:' || !okHost) {
+        return res.status(400).json({ error: 'image_url must point at our Spaces bucket' });
+      }
+      const fetched = await fetch(parsed.href);
+      if (!fetched.ok) return res.status(400).json({ error: `Could not fetch source file (HTTP ${fetched.status})` });
+      buf = Buffer.from(await fetched.arrayBuffer());
+      if (buf.length > 25 * 1024 * 1024) return res.status(400).json({ error: 'Source file is over 25 MB' });
+      contentType = fetched.headers.get('content-type') || file_type || 'image/png';
+    }
     const safeName = (filename || 'asset').replace(/[^a-zA-Z0-9.\-]/g, '-');
     const rand = crypto.randomBytes(4).toString('hex');
     const key = `customer-assets/${req.params.id}/${Date.now()}-${rand}-${safeName}`;

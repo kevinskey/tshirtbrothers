@@ -61,6 +61,105 @@ export default function MailAdmin() {
   const [sendError, setSendError] = useState<string | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
+  // Save an attachment (customer artwork arriving by email) into a customer
+  // quote, a customer account's assets, or the shared Art Library.
+  const [saveMenuIdx, setSaveMenuIdx] = useState<number | null>(null);
+  const [saveTarget, setSaveTarget] = useState<null | { att: { filename: string; url: string }; mode: 'quote' | 'customer' }>(null);
+  const [saveSearch, setSaveSearch] = useState('');
+  const [saveHits, setSaveHits] = useState<Array<{ id: number; label: string; sub: string }>>([]);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
+  const saveSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const notice = (msg: string) => {
+    setSaveNotice(msg);
+    window.setTimeout(() => setSaveNotice(null), 3500);
+  };
+
+  useEffect(() => {
+    if (!saveTarget) { setSaveHits([]); return; }
+    if (saveSearchTimer.current) clearTimeout(saveSearchTimer.current);
+    saveSearchTimer.current = setTimeout(async () => {
+      const q = saveSearch.trim();
+      if (q.length < 2) { setSaveHits([]); return; }
+      if (saveTarget.mode === 'quote') {
+        const r = await fetch(`/api/quotes?search=${encodeURIComponent(q)}`, { headers: authHeaders() });
+        if (r.ok) {
+          const rows = await r.json();
+          setSaveHits((Array.isArray(rows) ? rows : []).slice(0, 8).map((row: any) => ({
+            id: row.id,
+            label: `#${row.id} — ${row.customer_name || row.customer_email || 'quote'}`,
+            sub: `${row.product_name || ''} · ${row.status}`,
+          })));
+        }
+      } else {
+        const r = await fetch(`/api/admin/customers?search=${encodeURIComponent(q)}`, { headers: authHeaders() });
+        if (r.ok) {
+          const rows = await r.json();
+          setSaveHits((Array.isArray(rows) ? rows : []).slice(0, 8).map((row: any) => ({
+            id: row.id,
+            label: row.name || row.email,
+            sub: row.email,
+          })));
+        }
+      }
+    }, 300);
+    return () => { if (saveSearchTimer.current) clearTimeout(saveSearchTimer.current); };
+  }, [saveSearch, saveTarget]);
+
+  async function saveAttToLibrary(att: { filename: string; url: string }) {
+    setSaveMenuIdx(null);
+    const from = openMsg?.from_name || openMsg?.from_addr || 'email';
+    const r = await fetch('/api/admin/designs-library', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        name: `${att.filename} — ${from}`,
+        image_url: att.url,
+        thumbnail_url: att.url,
+        category: 'general',
+        tags: ['from-email'],
+      }),
+    });
+    notice(r.ok ? `Saved "${att.filename}" to the Art Library ✓` : 'Could not save to the Art Library');
+  }
+
+  async function saveAttToTarget(hit: { id: number; label: string }) {
+    if (!saveTarget || saveBusy) return;
+    setSaveBusy(true);
+    try {
+      const { att, mode } = saveTarget;
+      let r: Response;
+      if (mode === 'quote') {
+        r = await fetch(`/api/quotes/admin/${hit.id}/design-url`, {
+          method: 'PATCH',
+          headers: authHeaders(),
+          body: JSON.stringify({ add_extra_urls: [att.url] }),
+        });
+      } else {
+        r = await fetch(`/api/admin/customers/${hit.id}/assets`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({
+            name: att.filename,
+            image_url: att.url,
+            filename: att.filename,
+            notes: `From email${openMsg?.subject ? `: ${openMsg.subject}` : ''} (${openMsg?.from_addr || ''})`,
+          }),
+        });
+      }
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Save failed');
+      notice(`Saved "${att.filename}" to ${mode === 'quote' ? 'quote' : 'customer'} ${hit.label} ✓`);
+      setSaveTarget(null);
+      setSaveSearch('');
+    } catch (e: any) {
+      notice(e?.message || 'Save failed');
+    } finally {
+      setSaveBusy(false);
+    }
+  }
+
   const loadStatus = useCallback(async () => {
     const r = await fetch('/api/mail/status', { headers: authHeaders() });
     if (r.ok) setStatus(await r.json());
@@ -345,21 +444,101 @@ export default function MailAdmin() {
                 </div>
               </div>
 
+              {saveNotice && (
+                <div className="text-xs bg-green-50 border border-green-200 text-green-800 rounded-lg px-3 py-2">{saveNotice}</div>
+              )}
               {(openMsg.attachments?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {openMsg.attachments.map((a, idx) => (
-                    <a
-                      key={idx}
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 text-xs border rounded-lg px-2.5 py-1.5 hover:bg-gray-50 text-orange-700"
-                    >
-                      <Paperclip className="w-3.5 h-3.5" />
-                      {a.filename}
-                      <span className="text-gray-400">({Math.round((a.size || 0) / 1024)} KB)</span>
-                    </a>
+                    <span key={idx} className="relative inline-flex items-center text-xs border rounded-lg overflow-visible">
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 hover:bg-gray-50 text-orange-700"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        {a.filename}
+                        <span className="text-gray-400">({Math.round((a.size || 0) / 1024)} KB)</span>
+                      </a>
+                      <button
+                        onClick={() => setSaveMenuIdx(saveMenuIdx === idx ? null : idx)}
+                        className="px-2 py-1.5 border-l text-gray-500 hover:bg-gray-50 hover:text-gray-800 font-medium"
+                        title="Save this file to a quote, customer, or the Art Library"
+                      >
+                        Save ▾
+                      </button>
+                      {saveMenuIdx === idx && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setSaveMenuIdx(null)} />
+                          <div className="absolute left-0 top-full mt-1 z-20 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                            <button
+                              onClick={() => void saveAttToLibrary(a)}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 text-gray-700"
+                            >
+                              Save to Art Library
+                            </button>
+                            <button
+                              onClick={() => { setSaveMenuIdx(null); setSaveTarget({ att: a, mode: 'quote' }); setSaveSearch(openMsg.from_addr || ''); }}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 text-gray-700"
+                            >
+                              Save to a quote…
+                            </button>
+                            <button
+                              onClick={() => { setSaveMenuIdx(null); setSaveTarget({ att: a, mode: 'customer' }); setSaveSearch(openMsg.from_addr || ''); }}
+                              className="w-full text-left px-3 py-1.5 text-xs hover:bg-orange-50 text-gray-700"
+                            >
+                              Save to a customer…
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </span>
                   ))}
+                </div>
+              )}
+
+              {saveTarget && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (!saveBusy) { setSaveTarget(null); setSaveSearch(''); } }}>
+                  <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+                    <h3 className="text-sm font-bold text-gray-900 mb-1">
+                      Save “{saveTarget.att.filename}” to a {saveTarget.mode === 'quote' ? 'quote' : 'customer'}
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-3">
+                      {saveTarget.mode === 'quote'
+                        ? 'The file is added to the quote’s artwork.'
+                        : 'The file is copied into the customer’s saved graphics.'}
+                    </p>
+                    <input
+                      autoFocus
+                      value={saveSearch}
+                      onChange={(e) => setSaveSearch(e.target.value)}
+                      placeholder={saveTarget.mode === 'quote' ? 'Search quotes by customer, email, product…' : 'Search customers by name or email…'}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:border-orange-500"
+                      style={{ fontSize: '16px' }}
+                    />
+                    <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
+                      {saveHits.map((h) => (
+                        <button
+                          key={h.id}
+                          disabled={saveBusy}
+                          onClick={() => void saveAttToTarget(h)}
+                          className="w-full text-left px-2 py-2 text-sm hover:bg-orange-50 rounded disabled:opacity-50"
+                        >
+                          <span className="font-medium text-gray-900">{h.label}</span>
+                          <span className="block text-xs text-gray-500">{h.sub}</span>
+                        </button>
+                      ))}
+                      {saveSearch.trim().length >= 2 && saveHits.length === 0 && (
+                        <p className="text-xs text-gray-400 py-3 text-center">No matches.</p>
+                      )}
+                    </div>
+                    <div className="flex justify-end mt-3">
+                      <button onClick={() => { setSaveTarget(null); setSaveSearch(''); }} disabled={saveBusy} className="px-3 py-1.5 text-xs font-medium text-gray-600 rounded-lg hover:bg-gray-100 disabled:opacity-50">
+                        {saveBusy ? 'Saving…' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
