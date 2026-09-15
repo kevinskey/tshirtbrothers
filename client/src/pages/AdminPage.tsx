@@ -3822,7 +3822,9 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-gray-100">
                     {customers.map((c: Customer) => (
                       <tr key={c.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-900 font-medium"><div className="max-w-[160px] truncate" title={c.name}>{c.name}</div></td>
+                        <td className="px-3 py-2 text-gray-900 font-medium">
+                          <Link to={`/admin/customers/${c.id}`} className="block max-w-[160px] truncate hover:text-orange-600 hover:underline" title={c.name}>{c.name}</Link>
+                        </td>
                         <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={c.email}>{c.email}</div></td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{c.phone || '--'}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
@@ -3848,13 +3850,13 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <div className="flex items-center gap-1">
-                            <button
-                              title="View"
-                              onClick={() => setSelectedCustomerId(c.id)}
+                            <Link
+                              title="Open customer page"
+                              to={`/admin/customers/${c.id}`}
                               className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                             >
                               <Eye className="w-4 h-4" />
-                            </button>
+                            </Link>
                             <button
                               title="Edit"
                               onClick={() => {

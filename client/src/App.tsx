@@ -32,6 +32,7 @@ import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import GangSheetPage from '@/pages/GangSheetPage';
+import CustomerPage from '@/pages/CustomerPage';
 import DtfStorePage from '@/pages/DtfStorePage';
 import DtfBuilderPage from '@/pages/DtfBuilderPage';
 import DtfSuccessPage from '@/pages/DtfSuccessPage';
@@ -142,6 +143,7 @@ function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/gangsheet" element={<GangSheetPage />} />
           <Route path="/admin/gangsheet/:id" element={<GangSheetPage />} />
+          <Route path="/admin/customers/:id" element={<CustomerPage />} />
           <Route path="/gangsheet" element={<Navigate to="/admin/gangsheet" replace />} />
           <Route path="/gangsheets" element={<Navigate to="/admin/gangsheet" replace />} />
           <Route path="/gangsheet/:id" element={<GangSheetIdRedirect />} />

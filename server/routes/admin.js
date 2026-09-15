@@ -554,11 +554,30 @@ router.get('/customers/:id', async (req, res, next) => {
     );
     const totals = totalsRow.rows[0] || { lifetime_paid: 0, outstanding_balance: 0, paid_invoice_count: 0 };
 
+    // DTF gang sheet purchases link by email like invoices do.
+    const gangSheetsResult = await pool.query(
+      `SELECT id, length_ft, tier, price_cents, shipping_cents, delivery, status, paid_at, created_at
+       FROM gang_sheet_orders
+       WHERE LOWER(customer_email) = LOWER($1) AND status NOT IN ('pending_payment', 'canceled')
+       ORDER BY created_at DESC`,
+      [customer.email]
+    );
+
+    // Running admin notes log (customer page).
+    const notesResult = await pool.query(
+      `SELECT n.id, n.body, n.created_at, u.name AS author
+       FROM customer_notes n LEFT JOIN users u ON u.id = n.created_by
+       WHERE n.customer_id = $1 ORDER BY n.created_at DESC`,
+      [id]
+    );
+
     res.json({
       ...customer,
       designs: designsResult.rows,
       quotes: quotesResult.rows,
       invoices: invoicesResult.rows,
+      gang_sheet_orders: gangSheetsResult.rows,
+      notes: notesResult.rows,
       totals: {
         lifetime_paid: Number(totals.lifetime_paid),
         outstanding_balance: Number(totals.outstanding_balance),
@@ -568,6 +587,29 @@ router.get('/customers/:id', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// POST /customers/:id/notes — append to the customer's notes log.
+router.post('/customers/:id/notes', async (req, res, next) => {
+  try {
+    const body = String(req.body?.body || '').trim();
+    if (!body) return res.status(400).json({ error: 'Note is empty' });
+    const { rows } = await pool.query(
+      `INSERT INTO customer_notes (customer_id, body, created_by)
+       VALUES ($1, $2, $3) RETURNING id, body, created_at`,
+      [req.params.id, body.slice(0, 5000), req.user?.id || null]
+    );
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// DELETE /customers/notes/:noteId
+router.delete('/customers/notes/:noteId', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('DELETE FROM customer_notes WHERE id = $1 RETURNING id', [req.params.noteId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Note not found' });
+    res.json({ deleted: true });
+  } catch (err) { next(err); }
 });
 
 // GET /customer-designs — list real customer artwork only:
