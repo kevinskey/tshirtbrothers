@@ -770,7 +770,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // brand-new length because setSheetLengthFt hasn't re-rendered yet, and
   // reading the stale closure here used to snap the canvas straight back
   // to the old size (2ft looked identical to 1ft).
-  function checkFit(declaredFt: number = sheetLengthFt) {
+  function checkFit(declaredFt: number = sheetLengthFt, opts: { manual?: boolean } = {}) {
     const canvas = fabricRef.current;
     if (!canvas) {
       setFitError(null);
@@ -811,6 +811,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         return false;
       }
       setSheetLengthFt(neededFt);
+      // A manual shrink attempt that got bumped back would otherwise look
+      // like a dead button — say why the sheet can't get shorter.
+      if (opts.manual && neededFt > declaredFt) {
+        setTrimSuggestFt(null);
+        setFitError(`Designs on this sheet fill ${neededFt} ft — delete designs or reduce size/quantity to shorten it.`);
+        return true;
+      }
     }
     // Opposite direction: declared length longer than the content needs.
     // Never auto-shrink (the customer may want spare film) — suggest it.
@@ -1122,7 +1129,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     drawGrid(canvas, newHeight);
     canvas.renderAll();
     setSheetLengthFt(newFt);
-    checkFit(newFt);
+    checkFit(newFt, { manual: true });
   }
 
   // ─── Auto Layout ────────────────────────────────────────────────────────
