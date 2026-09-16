@@ -406,7 +406,7 @@ router.put('/sheets/:id', authenticate, async (req, res, next) => {
     // M4: a non-integer id can never match a row — reject before it reaches
     // the query instead of letting Postgres throw on the int cast.
     if (!Number.isInteger(Number(req.params.id))) return res.status(404).json({ error: 'Sheet not found' });
-    const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status } = req.body || {};
+    const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status, preview_url } = req.body || {};
     if (sheet_length_ft !== undefined && sheet_length_ft !== null) {
       const n = Number(sheet_length_ft);
       if (!Number.isFinite(n) || n < 1 || n > 20) {
