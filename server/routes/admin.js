@@ -1372,14 +1372,17 @@ router.get('/dashboard-ops', async (req, res, next) => {
           COUNT(*) FILTER (WHERE last_at >= now() - interval '13 months' AND last_at < now() - interval '11 months')::int AS annual_window
         FROM agg`),
       // Open quote jobs — bounded; the schedule + pipeline slice this.
+      // Every post-deposit working status counts: this predicate predates the
+      // wired status ladder, and 'accepted'-only made jobs vanish from the
+      // pipeline the moment they advanced.
       pool.query(`
         SELECT id, customer_name, customer_email, product_name, quantity, status,
-               date_needed, estimated_price, created_at,
+               date_needed, estimated_price, created_at, order_stages,
                mockup_sent_at, mockup_approved_at, mockup_rejected_at,
                in_production_at, ready_at, deposit_amount, balance_paid_at,
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
           FROM quotes
-         WHERE status = 'accepted'
+         WHERE status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
@@ -1389,7 +1392,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
          ORDER BY paid_at ASC LIMIT 50`),
       pool.query(`
         SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
-          FROM quotes WHERE status = 'accepted'
+          FROM quotes WHERE status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
          GROUP BY 1`),
       // Active blanks POs — incoming shipments and will-call pickups.
       pool.query(`
@@ -1418,10 +1421,14 @@ router.get('/dashboard-ops', async (req, res, next) => {
     const jobs = jobsR.rows;
     const gang = gangR.rows;
 
-    // Quote sub-state → pipeline stage (Finishing has no data source yet).
+    // Quote sub-state → pipeline stage. Finishing = the shop-floor 'pressed'
+    // checkpoint (Order Detail stage circles) is ticked but the job hasn't
+    // been marked ready yet.
     const stageOf = (j) => {
       if (j.ready_at) return 'pickup';
-      if (j.in_production_at) return 'printing';
+      if (j.in_production_at) {
+        return j.order_stages && j.order_stages.pressed ? 'finishing' : 'printing';
+      }
       if (j.mockup_sent_at && !j.mockup_approved_at && !j.mockup_rejected_at) return 'awaiting_approval';
       if (j.mockup_approved_at) return 'ready_to_produce';
       return 'artwork';

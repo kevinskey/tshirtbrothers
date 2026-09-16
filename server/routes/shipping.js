@@ -90,14 +90,14 @@ router.post('/buy', authenticate, adminOnly, async (req, res, next) => {
       rate: purchased.selected_rate?.rate,
     };
 
-    // Save tracking info to quote if quoteId provided
+    // Record tracking on the quote. Status is untouched — the caller follows
+    // up with POST /api/quotes/admin/:id/fulfill, which completes the order
+    // and emails the customer their tracking link. (This used to force
+    // status back to 'approved' and graffiti the notes field.)
     if (quoteId) {
       await pool.query(
-        `UPDATE quotes SET
-          notes = COALESCE(notes, '') || $1,
-          status = CASE WHEN status != 'completed' THEN 'approved' ELSE status END
-        WHERE id = $2`,
-        [`\nTracking: ${result.trackingNumber} (${result.carrier} ${result.service})`, quoteId]
+        `UPDATE quotes SET tracking_number = $1, tracking_carrier = $2 WHERE id = $3`,
+        [result.trackingNumber, result.carrier || null, quoteId]
       );
     }
 

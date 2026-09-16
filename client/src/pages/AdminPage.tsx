@@ -139,6 +139,7 @@ import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
+import ShipLabelModal from '@/components/admin/ShipLabelModal';
 import JdsAdmin from '@/components/admin/JdsAdmin';
 import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
@@ -638,6 +639,8 @@ export default function AdminPage() {
   // menu's "Order blanks" action; cleared once the builder consumes it.
   const [purchasingQuoteId, setPurchasingQuoteId] = useState<number | null>(null);
   const [purchasingInvoiceId, setPurchasingInvoiceId] = useState<string | null>(null);
+  // Ready order the Buy Label & Ship modal is open for.
+  const [shipLabelQuote, setShipLabelQuote] = useState<any | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // Which desktop top-nav group dropdown is open (label string), if any.
   const [openNavGroup, setOpenNavGroup] = useState<string | null>(null);
@@ -7813,6 +7816,22 @@ export default function AdminPage() {
                         </button>
                       </div>
                     )}
+                    {q.status === 'ready' && (
+                      <button
+                        onClick={() => setShipLabelQuote(q)}
+                        className="w-full py-3 bg-violet-600 text-white font-semibold rounded-lg hover:bg-violet-700"
+                      >
+                        Buy Label & Ship (EasyPost)
+                      </button>
+                    )}
+                    {q.status === 'pending' && (
+                      <button
+                        onClick={() => { statusMutation.mutate({ id: q.id, status: 'reviewed' }); }}
+                        className="w-full py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200"
+                      >
+                        Mark Reviewed (seen it, pricing next)
+                      </button>
+                    )}
                     {POST_DEPOSIT_STATUSES.includes(q.status || '') && balance > 0 && (
                       <button
                         onClick={() => {
@@ -7839,6 +7858,20 @@ export default function AdminPage() {
             </div>
           );
         })()}
+
+        {/* Buy Label & Ship — EasyPost rate shopping + purchase for a ready
+            order; on success the order is fulfilled and the drawer closes. */}
+        {shipLabelQuote && (
+          <ShipLabelModal
+            quote={shipLabelQuote}
+            onClose={() => setShipLabelQuote(null)}
+            onShipped={() => {
+              setShipLabelQuote(null);
+              setDetailQuote(null);
+              queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+            }}
+          />
+        )}
 
         {/* Mockup Picker Modal — attach an existing Mockup Studio mockup to
             the open quote. Closes the drawer when nothing's open. */}
