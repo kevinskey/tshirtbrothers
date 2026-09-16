@@ -400,6 +400,7 @@ interface ProductColor {
   hex: string;
   image?: string;
   backImage?: string;
+  sideImage?: string;
 }
 
 interface Product {
@@ -1771,7 +1772,9 @@ export default function DesignStudioPage() {
   const colorsLoading = !!selectedProduct?.ss_id && colorsData === undefined;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
-  const displayImage = currentView === 'back' ? backImage : frontImage;
+  // S&S's flat side shot backs the sleeve view when available.
+  const sideImage = productColors[selectedColorIdx]?.sideImage || frontImage;
+  const displayImage = currentView === 'back' ? backImage : currentView === 'sleeve' ? sideImage : frontImage;
 
   // When loading the default product (no ?product= override) and the user
   // hasn't picked a color yet, snap to "Black" once the colorways resolve.
@@ -2711,7 +2714,7 @@ export default function DesignStudioPage() {
           {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
           <div className="h-16 w-16 mx-auto rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
-              src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
+              src={currentView === 'back' ? (backImage ?? frontImage) : currentView === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
               alt={currentView}
               className="h-full w-full object-contain"
             />
@@ -2760,7 +2763,7 @@ export default function DesignStudioPage() {
           {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-orange-500" />}
           <div className="h-5 w-5 shrink-0 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
-              src={currentView === 'back' ? (backImage ?? frontImage) : frontImage}
+              src={currentView === 'back' ? (backImage ?? frontImage) : currentView === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
               alt={currentView}
               className="h-full w-full object-contain"
             />
@@ -4250,13 +4253,13 @@ export default function DesignStudioPage() {
               <div className="h-8 w-8 md:h-10 md:w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
                 {frontImage && (
                   <img
-                    src={view === 'back' ? (backImage ?? frontImage) : frontImage}
+                    src={view === 'back' ? (backImage ?? frontImage) : view === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
                     alt={view}
                     className="h-full w-full object-contain"
                   />
                 )}
               </div>
-              <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Slv' : view === 'back' ? 'Back' : 'Front'}</span>
+              <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Side' : view === 'back' ? 'Back' : 'Front'}</span>
             </button>
           ))}
         </div>
