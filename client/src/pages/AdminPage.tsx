@@ -6628,6 +6628,8 @@ export default function AdminPage() {
                               images={[
                                 { src: m.preview_image_url, label: 'Front' },
                                 ...((m as any).preview_image_url_back ? [{ src: (m as any).preview_image_url_back as string, label: 'Back' }] : []),
+                                ...((m as any).preview_image_url_sleeve ? [{ src: (m as any).preview_image_url_sleeve as string, label: 'R Sleeve' }] : []),
+                                ...((m as any).preview_image_url_sleeve_left ? [{ src: (m as any).preview_image_url_sleeve_left as string, label: 'L Sleeve' }] : []),
                               ]}
                             />
                           ) : (
