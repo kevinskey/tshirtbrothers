@@ -1181,8 +1181,12 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
 
     const quote = result.rows[0];
 
-    if (quote.status !== 'accepted') {
-      return res.status(400).json({ error: 'Quote must be accepted first' });
+    // A balance can be requested any time after the deposit — the job may
+    // already be awaiting mockup approval, in production, or ready. Only
+    // pre-deposit and terminal states are refused.
+    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+    if (!BALANCE_OK.includes(quote.status)) {
+      return res.status(400).json({ error: 'Quote must be accepted (deposit paid) first' });
     }
 
     const total = parseFloat(quote.estimated_price || 0);
