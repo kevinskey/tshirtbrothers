@@ -90,7 +90,7 @@ interface DesignElement {
   wordSpacing?: number; // em units
   borderRadius?: number; // 0-50 percent
   opacity?: number; // 0-1
-  filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  filter?: ImageFilterName;
   // 'multiply' blends the element into the product photo so fabric
   // texture — folds, seams, hoodie drawcords — shows through the print.
   blend?: 'normal' | 'multiply';
@@ -105,6 +105,47 @@ interface DesignElement {
 }
 
 type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone' | 'circle' | 'circle-bottom';
+
+type ImageFilterName = 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw' | 'vintage' | 'warm' | 'cool' | 'distressed' | 'distressed2';
+
+// The two distressed entries reference SVG filters (feTurbulence alpha
+// erosion) defined in <ImageFilterDefs>, which must stay mounted on the page.
+const IMAGE_FILTERS: { name: ImageFilterName; label: string; css?: string }[] = [
+  { name: 'none', label: 'None' },
+  { name: 'grayscale', label: 'Gray', css: 'grayscale(100%)' },
+  { name: 'bw', label: 'B&W', css: 'grayscale(100%) contrast(1000%)' },
+  { name: 'sepia', label: 'Sepia', css: 'sepia(100%)' },
+  { name: 'invert', label: 'Invert', css: 'invert(100%)' },
+  { name: 'vintage', label: 'Vintage', css: 'sepia(45%) contrast(0.9) brightness(1.05) saturate(1.2)' },
+  { name: 'warm', label: 'Warm', css: 'sepia(25%) saturate(1.35) hue-rotate(-10deg)' },
+  { name: 'cool', label: 'Cool', css: 'saturate(1.1) hue-rotate(12deg) brightness(1.03) sepia(10%)' },
+  { name: 'distressed', label: 'Distressed', css: 'url(#tsb-filter-distressed)' },
+  { name: 'distressed2', label: 'Heavy Distress', css: 'url(#tsb-filter-distressed2)' },
+];
+
+const imageFilterCss = (f: ImageFilterName | undefined): string | undefined =>
+  IMAGE_FILTERS.find(x => x.name === (f ?? 'none'))?.css;
+
+// Invisible SVG defs backing the distressed filters: fractal noise thresholded
+// into an alpha mask, composited "in" so speckles erode out of the artwork.
+function ImageFilterDefs() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="tsb-filter-distressed" x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="4" seed="7" result="noise" />
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  4 0 0 0 -1.1" result="mask" />
+          <feComposite in="SourceGraphic" in2="mask" operator="in" />
+        </filter>
+        <filter id="tsb-filter-distressed2" x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="5" seed="3" result="noise" />
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  6 0 0 0 -2.4" result="mask" />
+          <feComposite in="SourceGraphic" in2="mask" operator="in" />
+        </filter>
+      </defs>
+    </svg>
+  );
+}
 
 const TEXT_SHAPES: { name: TextShapeName; label: string }[] = [
   { name: 'normal', label: 'NORMAL' },
@@ -3711,7 +3752,7 @@ export default function DesignStudioPage() {
       {/* Filter */}
       <div className="relative">
         <button type="button" onClick={() => setImgPop(imgPop === 'fl' ? null : 'fl')} className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${imgPop === 'fl' ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>🎨<span>Filter</span></button>
-        {imgPop === 'fl' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-2 flex gap-1 z-50">{(['none','grayscale','bw','sepia','invert'] as const).map(f => <button key={f} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f === 'none' ? 'None' : f === 'grayscale' ? 'Gray' : f === 'bw' ? 'B&W' : f === 'sepia' ? 'Sepia' : 'Invert'}</button>)}</div>}
+        {imgPop === 'fl' && <div className="fixed right-16 md:right-20 top-1/2 -translate-y-1/2 bg-white border rounded-lg shadow-xl p-2 flex flex-wrap gap-1 w-56 z-50">{IMAGE_FILTERS.map(f => <button key={f.name} type="button" onClick={() => { updateElement(selectedEl.id, { filter: f.name }); setImgPop(null); }} className={`px-2 py-1.5 rounded text-[10px] font-medium whitespace-nowrap ${(selectedEl.filter ?? 'none') === f.name ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>{f.label}</button>)}</div>}
       </div>
 
       {/* Layer */}
@@ -4115,11 +4156,7 @@ export default function DesignStudioPage() {
                     style={{
                       borderRadius: el.borderRadius ? `${el.borderRadius}%` : undefined,
                       opacity: el.opacity != null ? el.opacity : undefined,
-                      filter: el.filter === 'grayscale' ? 'grayscale(100%)'
-                        : el.filter === 'invert' ? 'invert(100%)'
-                        : el.filter === 'sepia' ? 'sepia(100%)'
-                        : el.filter === 'bw' ? 'grayscale(100%) contrast(1000%)'
-                        : undefined,
+                      filter: imageFilterCss(el.filter),
                     }}
                   />
                 ) : el.textShape && el.textShape !== 'normal' ? (
@@ -4874,6 +4911,7 @@ export default function DesignStudioPage() {
         description="Free online t-shirt designer. Upload art, add text, generate AI designs, drop shapes — see your mockup live and get an instant quote."
         path="/design"
       />
+      <ImageFilterDefs />
       {headerBar}
       {leftToolbar}
       {bottomToolbar}
