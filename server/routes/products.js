@@ -419,7 +419,7 @@ router.get('/colors/:styleId', async (req, res, next) => {
 
     const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
     const response = await fetch(
-      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,hex1,colorFrontImage,colorBackImage,sizeName`,
+      `https://api.ssactivewear.com/v2/products/?styleid=${styleId}&fields=colorName,hex1,colorFrontImage,colorBackImage,colorSideImage,sizeName`,
       {
         headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
         signal: AbortSignal.timeout(15000),
@@ -443,6 +443,7 @@ router.get('/colors/:styleId', async (req, res, next) => {
           hex: resolveHex(name, p.hex1),
           image: p.colorFrontImage ? `https://www.ssactivewear.com/${p.colorFrontImage}` : null,
           backImage: p.colorBackImage ? `https://www.ssactivewear.com/${p.colorBackImage}` : null,
+          sideImage: p.colorSideImage ? `https://www.ssactivewear.com/${p.colorSideImage}` : null,
         });
       }
     }
