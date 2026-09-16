@@ -18,6 +18,14 @@ export type ViewSide = 'front' | 'back' | 'sleeve' | 'sleeve_left';
 
 export type UserRole = 'admin' | 'customer';
 
+// Image filter names shared with the page's filter popover. The first five
+// are the legacy set; the rest were added 2026-09 (vintage/warm/cool map to
+// Fabric ColorMatrix filters; the distressed pair are alpha-erosion effects
+// baked page-side and not yet renderable in Fabric).
+export type ImageFilterName =
+  | 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw'
+  | 'vintage' | 'warm' | 'cool' | 'distressed' | 'distressed2';
+
 // Legacy element shape — DesignStudioPage's saved-design schema v1.
 // Preserved verbatim to keep the hydrator (PR #4) accurate.
 export interface DesignElement {
@@ -41,7 +49,7 @@ export interface DesignElement {
   wordSpacing?: number;
   borderRadius?: number;
   opacity?: number;
-  filter?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  filter?: ImageFilterName;
 
   // ─── Phase 2 PR #14: text effects ──────────────────────────────────────
   // These supersede the boolean `outline` for anyone in Fabric mode. Legacy
