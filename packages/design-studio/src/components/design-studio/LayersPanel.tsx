@@ -34,14 +34,14 @@ interface DesignElement {
   id: string;
   type: 'image' | 'text' | 'shape';
   shapeType?: string;
-  side?: 'front' | 'back' | 'sleeve';
+  side?: 'front' | 'back' | 'sleeve' | 'sleeve_left';
   content: string;
   fontFamily?: string;
 }
 
 interface LayersPanelProps {
   elements: DesignElement[];
-  currentView: 'front' | 'back' | 'sleeve';
+  currentView: 'front' | 'back' | 'sleeve' | 'sleeve_left';
   selectedElementId: string | null;
   onSelect: (id: string) => void;
   onBringForward: (id: string) => void;
