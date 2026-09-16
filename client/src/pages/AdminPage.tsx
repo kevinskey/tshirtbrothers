@@ -6623,7 +6623,13 @@ export default function AdminPage() {
                       <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
                         <div className="relative bg-gray-50 aspect-square flex items-center justify-center border-b border-gray-100">
                           {m.preview_image_url ? (
-                            <img src={m.preview_image_url} alt={m.name || 'Mockup'} className="w-full h-full object-contain" />
+                            <MockupSideScroller
+                              alt={m.name || 'Mockup'}
+                              images={[
+                                { src: m.preview_image_url, label: 'Front' },
+                                ...((m as any).preview_image_url_back ? [{ src: (m as any).preview_image_url_back as string, label: 'Back' }] : []),
+                              ]}
+                            />
                           ) : (
                             <>
                               {m.product_image_url && (
@@ -8896,6 +8902,47 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
  * grid showed neither, so an accepted quote and a fully paid one looked the
  * same.
  */
+/** Mockup-card preview scroller: pages through every rendered side (front,
+ *  back, …) with arrows + dots. Single image renders exactly as before. */
+function MockupSideScroller({ images, alt }: { images: Array<{ src: string; label: string }>; alt: string }) {
+  const [idx, setIdx] = useState(0);
+  const cur = images[Math.min(idx, images.length - 1)]!;
+  return (
+    <div className="relative w-full h-full group">
+      <img src={cur.src} alt={`${alt} — ${cur.label}`} className="w-full h-full object-contain" />
+      {images.length > 1 && (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIdx((idx - 1 + images.length) % images.length); }}
+            className="absolute left-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 border border-gray-200 shadow text-gray-600 hover:text-gray-900 items-center justify-center hidden group-hover:flex"
+            aria-label="Previous side"
+          >
+            ‹
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIdx((idx + 1) % images.length); }}
+            className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/90 border border-gray-200 shadow text-gray-600 hover:text-gray-900 items-center justify-center hidden group-hover:flex"
+            aria-label="Next side"
+          >
+            ›
+          </button>
+          <span className="absolute top-2 right-2 text-[10px] font-semibold bg-black/50 text-white px-1.5 py-0.5 rounded">{cur.label}</span>
+          <div className="absolute bottom-2 inset-x-0 flex justify-center gap-1.5">
+            {images.map((im, i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); setIdx(i); }}
+                aria-label={im.label}
+                className={`w-2 h-2 rounded-full ${i === idx ? 'bg-orange-500' : 'bg-gray-300 hover:bg-gray-400'}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function paidState(q: Quote): { label: string; className: string } {
   if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
   // deposit_amount alone is NOT payment evidence — send-price stamps it with
