@@ -26,10 +26,20 @@ export function PaymentCheckout() {
   const [redirecting, setRedirecting] = useState(false);
 
   // Pre-decided types skip the choice screen and go straight to Stripe.
-  const skipChoice = type === 'balance' || type === 'deposit' || type === 'full';
+  // Balance is no longer a straight redirect: it asks pickup-vs-ship first,
+  // so "how do I get my order?" is answered structurally instead of by the
+  // customer replying to an email.
+  const skipChoice = type === 'deposit' || type === 'full';
+  const isBalance = type === 'balance';
+  const [fulfillMethod, setFulfillMethod] = useState<'pickup' | 'ship' | null>(null);
+  const [addr, setAddr] = useState({ name: '', address: '', address2: '', city: '', state: '', zip: '' });
+  const addrComplete = addr.address.trim() && addr.city.trim() && addr.state.trim() && addr.zip.trim();
 
   // Start checkout for a given payment type by hitting the matching API.
-  const beginCheckout = (paymentType: 'deposit' | 'full' | 'balance') => {
+  const beginCheckout = (
+    paymentType: 'deposit' | 'full' | 'balance',
+    fulfillment?: { method: 'pickup' | 'ship'; address?: typeof addr },
+  ) => {
     if (!quoteId) return;
     setRedirecting(true);
     setError(null);
@@ -40,7 +50,7 @@ export function PaymentCheckout() {
     fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quoteId, token }),
+      body: JSON.stringify({ quoteId, token, fulfillment }),
     })
       .then((res) => res.json())
       .then((data) => {
@@ -63,9 +73,10 @@ export function PaymentCheckout() {
       return;
     }
     if (skipChoice) {
-      beginCheckout((type as 'balance' | 'deposit' | 'full'));
+      beginCheckout((type as 'deposit' | 'full'));
       return;
     }
+    if (isBalance) return; // balance renders the pickup/ship step, no fetch needed
     // Load a lightweight quote summary so we can show the two amounts.
     fetch(`/api/quotes/${quoteId}/public?token=${encodeURIComponent(token || '')}`)
       .then((res) => res.json())
@@ -106,6 +117,58 @@ export function PaymentCheckout() {
             <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
             <h1 className="text-xl font-display font-bold text-gray-900 mb-2">Redirecting to Payment…</h1>
             <p className="text-gray-500">Please wait while we set up your secure payment.</p>
+          </div>
+        ) : isBalance ? (
+          <div className="w-full max-w-xl">
+            <div className="text-center mb-8">
+              <h1 className="text-2xl md:text-3xl font-display font-bold text-gray-900 mb-2">
+                How do you want your order?
+              </h1>
+              <p className="text-gray-500">Pick one, then pay your remaining balance.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <button
+                onClick={() => setFulfillMethod('pickup')}
+                className={`text-left bg-white border-2 rounded-2xl p-5 transition shadow-sm ${fulfillMethod === 'pickup' ? 'border-blue-600 ring-2 ring-blue-100' : 'border-gray-200 hover:border-blue-400'}`}
+              >
+                <div className="text-2xl font-bold text-gray-900">Local pickup</div>
+                <div className="text-sm text-gray-500 mt-2">
+                  Free · 6010 Renaissance Pkwy, Fairburn GA. Open 8am–8pm, closed Sundays.
+                </div>
+              </button>
+              <button
+                onClick={() => setFulfillMethod('ship')}
+                className={`text-left bg-white border-2 rounded-2xl p-5 transition shadow-sm ${fulfillMethod === 'ship' ? 'border-blue-600 ring-2 ring-blue-100' : 'border-gray-200 hover:border-blue-400'}`}
+              >
+                <div className="text-2xl font-bold text-gray-900">Ship it to me</div>
+                <div className="text-sm text-gray-500 mt-2">
+                  We'll mail your order and email you the tracking number.
+                </div>
+              </button>
+            </div>
+            {fulfillMethod === 'ship' && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-4 space-y-3">
+                <p className="text-sm font-semibold text-gray-700">Where should we send it?</p>
+                <input value={addr.name} onChange={(e) => setAddr({ ...addr, name: e.target.value })} placeholder="Full name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <input value={addr.address} onChange={(e) => setAddr({ ...addr, address: e.target.value })} placeholder="Street address" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <input value={addr.address2} onChange={(e) => setAddr({ ...addr, address2: e.target.value })} placeholder="Apt / suite (optional)" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={addr.city} onChange={(e) => setAddr({ ...addr, city: e.target.value })} placeholder="City" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  <input value={addr.state} onChange={(e) => setAddr({ ...addr, state: e.target.value })} placeholder="State" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  <input value={addr.zip} onChange={(e) => setAddr({ ...addr, zip: e.target.value })} placeholder="ZIP" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+            )}
+            <button
+              disabled={!fulfillMethod || (fulfillMethod === 'ship' && !addrComplete)}
+              onClick={() => fulfillMethod && beginCheckout('balance', { method: fulfillMethod, address: fulfillMethod === 'ship' ? addr : undefined })}
+              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold rounded-xl"
+            >
+              Continue to Payment
+            </button>
+            <p className="text-center text-xs text-gray-400 mt-4">
+              Secure payment by Stripe. Cards, Apple Pay, and Google Pay accepted.
+            </p>
           </div>
         ) : !quote ? (
           <div className="text-center">

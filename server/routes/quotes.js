@@ -13,6 +13,7 @@ import {
   sendArtworkRequestToCustomer,
   sendArtworkReceivedToAdmin,
   sendQuoteDeclinedToAdmin,
+  sendOrderShippedToCustomer,
   quoteLang,
 } from '../services/email.js';
 import {
@@ -1333,6 +1334,61 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
     await sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue });
 
     res.json({ success: true, balanceDue });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/:id/fulfill — the order left the building. Body:
+//   { method: 'pickup' }                                — handed over in person
+//   { method: 'ship', tracking_number?, carrier? }      — went in the mail
+// Stamps picked_up_at / shipped_at, completes the quote, and notifies the
+// customer (tracking email for ship; the standard completed email + SMS for
+// pickup). Fires the one-shot review request, same dedupe as PATCH /:id.
+router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { method, tracking_number, carrier } = req.body || {};
+    if (!['pickup', 'ship'].includes(method)) {
+      return res.status(400).json({ error: "method must be 'pickup' or 'ship'" });
+    }
+    const stamp = method === 'pickup' ? 'picked_up_at' : 'shipped_at';
+    const { rows } = await pool.query(
+      `UPDATE quotes
+          SET status = 'completed',
+              fulfillment_method = $2,
+              ${stamp} = NOW(),
+              tracking_number = COALESCE($3, tracking_number),
+              tracking_carrier = COALESCE($4, tracking_carrier)
+        WHERE id = $1 RETURNING *`,
+      [id, method, tracking_number || null, carrier || null],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = rows[0];
+    const lang = quoteLang(quote);
+
+    if (method === 'ship') {
+      sendOrderShippedToCustomer(quote, { carrier, trackingNumber: tracking_number }, lang).catch(() => {});
+    } else {
+      sendQuoteStatusUpdate(quote, 'completed').catch(() => {});
+      smsStatusUpdateToCustomer(quote, 'completed').catch(() => {});
+    }
+
+    if (!quote.review_request_sent_at) {
+      (async () => {
+        try {
+          await Promise.all([
+            sendReviewRequestEmail(quote).catch(() => {}),
+            smsReviewRequest(quote).catch(() => {}),
+          ]);
+          await pool.query('UPDATE quotes SET review_request_sent_at = NOW() WHERE id = $1', [quote.id]);
+        } catch (err) {
+          console.error('[fulfill] review request failed:', err.message);
+        }
+      })();
+    }
+
+    res.json(quote);
   } catch (err) {
     next(err);
   }
