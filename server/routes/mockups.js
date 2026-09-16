@@ -29,6 +29,32 @@ async function regeneratePreviewForMockup(row) {
   }
 }
 
+// Sending a mockup is what puts a quote in the customer's court, so the
+// quote must move with it: accepted -> awaiting_approval (+ mockup_sent_at,
+// re-stamped on re-sends so dashboard aging reflects the latest send). A
+// quote that already advanced past the mockup stage is left alone — a
+// courtesy re-send mid-production must not drag it backwards. The SMS nudge
+// mirrors PATCH /api/quotes/:id: awaiting_approval is SMS-only because the
+// approval email itself just went out.
+async function advanceQuoteOnMockupSend(quoteId) {
+  if (!quoteId) return;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE quotes
+          SET status = 'awaiting_approval', mockup_sent_at = NOW()
+        WHERE id = $1 AND status IN ('accepted', 'awaiting_approval')
+        RETURNING *`,
+      [quoteId],
+    );
+    if (rows[0] && rows[0].status === 'awaiting_approval') {
+      const { smsStatusUpdateToCustomer } = await import('../services/sms.js');
+      smsStatusUpdateToCustomer(rows[0], 'awaiting_approval').catch(() => {});
+    }
+  } catch (err) {
+    console.error(`[mockups] advance quote ${quoteId} on send failed:`, err.message);
+  }
+}
+
 // POST /admin/mockups/compose - one-shot composite without persisting a row.
 // Used by Design Studio's "Save Mockup to Invoice" flow: the client renders
 // the design canvas to a transparent PNG, uploads it, then calls this with
@@ -305,6 +331,8 @@ router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res,
       // Non-fatal: the admin can copy the link manually.
     }
 
+    await advanceQuoteOnMockupSend(updated.rows[0].quote_id);
+
     res.json({ ...updated.rows[0], approve_url: approveUrl });
   } catch (err) { next(err); }
 });
@@ -359,6 +387,8 @@ router.post('/admin/mockups/:id/share', authenticate, adminOnly, async (req, res
       console.error(`[mockup share] ${method} failed:`, err.message);
       return res.status(502).json({ error: `Failed to send ${method}: ${err.message}` });
     }
+
+    await advanceQuoteOnMockupSend(updated.rows[0].quote_id);
 
     res.json({ ...updated.rows[0], approve_url: approveUrl, sent_to: recipient, method });
   } catch (err) { next(err); }

@@ -108,7 +108,7 @@ export interface Quote {
   productName: string;
   product_name?: string;
   quantity: number;
-  status: 'pending' | 'reviewed' | 'quoted' | 'approved' | 'accepted' | 'completed' | 'rejected';
+  status: 'pending' | 'reviewed' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected';
   estimated_price?: number | null;
   /** The quote's accept/pay token — returned only by /me/quotes (the
    *  customer's own orders), so the Account page can build the same

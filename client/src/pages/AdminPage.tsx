@@ -223,6 +223,11 @@ const STATUS_COLORS: Record<string, string> = {
   published: 'bg-green-100 text-green-800',
 };
 
+// Every state a quote can hold once the deposit is in — post-deposit admin
+// actions (balance request, updated-quote email, mark complete) apply to
+// all of them, not just 'accepted'.
+const POST_DEPOSIT_STATUSES = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+
 type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
 type InvoiceView = 'list' | 'create' | 'preview';
 
@@ -4368,6 +4373,22 @@ export default function AdminPage() {
                           Request Balance
                         </button>
                       )}
+                      {o.status === 'approved' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: o.id, status: 'in_production' }); }}
+                          className="text-xs font-medium text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg"
+                        >
+                          Start Production
+                        </button>
+                      )}
+                      {o.status === 'in_production' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: o.id, status: 'ready' }); }}
+                          className="text-xs font-medium text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg"
+                        >
+                          Mark Ready
+                        </button>
+                      )}
                       {o.status !== 'completed' && (
                         <button
                           onClick={(e) => { e.stopPropagation(); statusMutation.mutate({ id: o.id, status: 'completed' }); }}
@@ -4472,6 +4493,22 @@ export default function AdminPage() {
                                   className="w-full text-left px-4 py-2 text-sm hover:bg-green-50 text-green-700 font-medium"
                                 >
                                   Request Balance Payment
+                                </button>
+                              )}
+                              {o.status === 'approved' && (
+                                <button
+                                  onClick={() => { setOpenActionMenu(null); statusMutation.mutate({ id: o.id, status: 'in_production' }); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-amber-50 text-amber-700 font-medium"
+                                >
+                                  Start Production
+                                </button>
+                              )}
+                              {o.status === 'in_production' && (
+                                <button
+                                  onClick={() => { setOpenActionMenu(null); statusMutation.mutate({ id: o.id, status: 'ready' }); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-emerald-50 text-emerald-700 font-medium"
+                                >
+                                  Mark Ready
                                 </button>
                               )}
                               {['completed']
@@ -7629,7 +7666,7 @@ export default function AdminPage() {
                         {q.status === 'quoted' ? 'Re-Quote Price' : 'Send Price Quote'}
                       </button>
                     )}
-                    {q.status === 'accepted' && (
+                    {POST_DEPOSIT_STATUSES.includes(q.status || '') && (
                       <button
                         onClick={async () => {
                           const note = window.prompt(
@@ -7649,7 +7686,27 @@ export default function AdminPage() {
                         Email Updated Quote (no payment ask)
                       </button>
                     )}
-                    {q.status === 'accepted' && balance > 0 && (
+                    {/* The ladder: approved -> in_production -> ready -> completed.
+                        One primary next-step button per state so the pipeline
+                        stamps (in_production_at / ready_at) actually get set —
+                        'ready' also auto-emails the balance-due request. */}
+                    {q.status === 'approved' && (
+                      <button
+                        onClick={() => { statusMutation.mutate({ id: q.id, status: 'in_production' }); setDetailQuote(null); }}
+                        className="w-full py-3 bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700"
+                      >
+                        Start Production
+                      </button>
+                    )}
+                    {q.status === 'in_production' && (
+                      <button
+                        onClick={() => { statusMutation.mutate({ id: q.id, status: 'ready' }); setDetailQuote(null); }}
+                        className="w-full py-3 bg-emerald-600 text-white font-semibold rounded-lg hover:bg-emerald-700"
+                      >
+                        Mark Ready{balance > 0 ? ' — emails balance request' : ''}
+                      </button>
+                    )}
+                    {POST_DEPOSIT_STATUSES.includes(q.status || '') && balance > 0 && (
                       <button
                         onClick={() => {
                           sendBalanceRequest(String(q.id))
@@ -7661,7 +7718,7 @@ export default function AdminPage() {
                         Request Balance Payment (${balance.toFixed(2)})
                       </button>
                     )}
-                    {q.status === 'accepted' && (
+                    {POST_DEPOSIT_STATUSES.includes(q.status || '') && (
                       <button
                         onClick={() => { statusMutation.mutate({ id: q.id, status: 'completed' }); setDetailQuote(null); }}
                         className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700"
