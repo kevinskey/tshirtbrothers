@@ -1057,6 +1057,10 @@ export default function DesignStudioPage() {
       // currentView; parallel captures would race each other.
       const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
       const backUrl = hasBack ? await captureSideScreenshot('back') : null;
+      const hasSleeveR = designElements.some((e) => (e.side ?? 'front') === 'sleeve');
+      const hasSleeveL = designElements.some((e) => (e.side ?? 'front') === 'sleeve_left');
+      const sleeveUrl = hasSleeveR ? await captureSideScreenshot('sleeve') : null;
+      const sleeveLeftUrl = hasSleeveL ? await captureSideScreenshot('sleeve_left') : null;
 
       const create = await fetch('/api/admin/mockups', {
         method: 'POST',
@@ -1071,6 +1075,8 @@ export default function DesignStudioPage() {
           product_image_url: productImg,
           preview_image_url: frontUrl,
           preview_image_url_back: backUrl,
+          preview_image_url_sleeve: sleeveUrl,
+          preview_image_url_sleeve_left: sleeveLeftUrl,
           design_elements: designElements,
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
@@ -1125,6 +1131,10 @@ export default function DesignStudioPage() {
       const token = getAuthToken();
       const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
       const backUrl = hasBack ? await captureSideScreenshot('back') : null;
+      const hasSleeveR = designElements.some((e) => (e.side ?? 'front') === 'sleeve');
+      const hasSleeveL = designElements.some((e) => (e.side ?? 'front') === 'sleeve_left');
+      const sleeveUrl = hasSleeveR ? await captureSideScreenshot('sleeve') : null;
+      const sleeveLeftUrl = hasSleeveL ? await captureSideScreenshot('sleeve_left') : null;
 
       const create = await fetch('/api/admin/mockups', {
         method: 'POST',
@@ -1136,6 +1146,8 @@ export default function DesignStudioPage() {
           product_image_url: productImg,
           preview_image_url: frontUrl,
           preview_image_url_back: backUrl,
+          preview_image_url_sleeve: sleeveUrl,
+          preview_image_url_sleeve_left: sleeveLeftUrl,
           design_elements: designElements,
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,
@@ -1174,6 +1186,10 @@ export default function DesignStudioPage() {
       // currentView; parallel captures would race each other.
       const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
       const backUrl = hasBack ? await captureSideScreenshot('back') : null;
+      const hasSleeveR = designElements.some((e) => (e.side ?? 'front') === 'sleeve');
+      const hasSleeveL = designElements.some((e) => (e.side ?? 'front') === 'sleeve_left');
+      const sleeveUrl = hasSleeveR ? await captureSideScreenshot('sleeve') : null;
+      const sleeveLeftUrl = hasSleeveL ? await captureSideScreenshot('sleeve_left') : null;
 
       const patch = await fetch(`/api/admin/mockups/${editMockupId}`, {
         method: 'PATCH',
@@ -1184,6 +1200,8 @@ export default function DesignStudioPage() {
           product_image_url: productImg,
           preview_image_url: frontUrl,
           preview_image_url_back: backUrl,
+          preview_image_url_sleeve: sleeveUrl,
+          preview_image_url_sleeve_left: sleeveLeftUrl,
           design_elements: designElements,
           design_canvas_inches: canvasInches,
           design_canvas_inches_h: canvasInchesH,

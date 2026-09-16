@@ -100,6 +100,8 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       placement,
       preview_image_url,
       preview_image_url_back,
+      preview_image_url_sleeve,
+      preview_image_url_sleeve_left,
       notes,
       design_elements,
       design_canvas_inches,
@@ -132,9 +134,10 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
       `INSERT INTO mockups
          (name, customer_id, customer_email, customer_name, quote_id,
           product_id, product_ss_id, product_name, product_image_url, graphic_url,
-          placement, preview_image_url, preview_image_url_back, notes,
+          placement, preview_image_url, preview_image_url_back,
+          preview_image_url_sleeve, preview_image_url_sleeve_left, notes,
           design_elements, design_canvas_inches, design_canvas_inches_h, design_color_index)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING *`,
       [
         name || 'Untitled Mockup',
@@ -150,6 +153,8 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
         placement ? JSON.stringify(placement) : null,
         preview_image_url || null,
         preview_image_url_back || null,
+        preview_image_url_sleeve || null,
+        preview_image_url_sleeve_left || null,
         notes || null,
         design_elements ? JSON.stringify(design_elements) : null,
         design_canvas_inches || null,
@@ -199,7 +204,7 @@ router.patch('/admin/mockups/:id', authenticate, adminOnly, async (req, res, nex
     const fields = req.body || {};
     const set = [];
     const params = [];
-    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_ss_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id', 'design_elements', 'design_canvas_inches', 'design_canvas_inches_h', 'design_color_index'];
+    const allow = ['name', 'status', 'graphic_url', 'product_id', 'product_ss_id', 'product_name', 'product_image_url', 'placement', 'preview_image_url', 'preview_image_url_back', 'preview_image_url_sleeve', 'preview_image_url_sleeve_left', 'notes', 'customer_id', 'customer_email', 'customer_name', 'quote_id', 'design_elements', 'design_canvas_inches', 'design_canvas_inches_h', 'design_color_index'];
     const jsonbCols = new Set(['placement', 'design_elements']);
     for (const k of allow) {
       if (k in fields) {
