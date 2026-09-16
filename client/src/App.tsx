@@ -26,6 +26,7 @@ import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
 import DrinkwarePage from '@/pages/DrinkwarePage';
+import AwardsPage from '@/pages/AwardsPage';
 import QualityTiersPage from '@/pages/QualityTiersPage';
 import WebstoresPage from '@/pages/WebstoresPage';
 import BlogPage from '@/pages/BlogPage';
@@ -126,6 +127,7 @@ function App() {
           <Route path="/admin/order/:quoteId" element={<AdminOrderDetailPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/drinkware" element={<DrinkwarePage />} />
+          <Route path="/awards" element={<AwardsPage />} />
           <Route path="/compare" element={<QualityTiersPage />} />
           <Route path="/webstores" element={<WebstoresPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).

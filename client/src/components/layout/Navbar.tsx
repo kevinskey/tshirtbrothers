@@ -15,6 +15,7 @@ const catalogueLinks: NavLink[] = [
   { label: 'Outerwear', href: '/shop?category=Outerwear' },
   { label: 'Accessories', href: '/shop?category=Accessories' },
   { label: 'Engraved Drinkware', href: '/drinkware' },
+  { label: 'Awards & Trophies', href: '/awards' },
   { label: 'All Products', href: '/shop' },
 ];
 
@@ -26,6 +27,7 @@ const catalogueLinksEs: NavLink[] = [
   { label: 'Chaquetas', href: '/shop?category=Outerwear' },
   { label: 'Accesorios', href: '/shop?category=Accessories' },
   { label: 'Vasos Grabados', href: '/drinkware' },
+  { label: 'Premios y Trofeos', href: '/awards' },
   { label: 'Todos los Productos', href: '/shop' },
 ];
 
