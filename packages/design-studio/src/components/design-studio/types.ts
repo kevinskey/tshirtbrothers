@@ -14,7 +14,7 @@ import type { FabricObject } from 'fabric';
 
 // Sides supported by the design canvas. Customer-facing studio uses all
 // three; admin Blank Canvas mode pins to 'front'.
-export type ViewSide = 'front' | 'back' | 'sleeve';
+export type ViewSide = 'front' | 'back' | 'sleeve' | 'sleeve_left';
 
 export type UserRole = 'admin' | 'customer';
 

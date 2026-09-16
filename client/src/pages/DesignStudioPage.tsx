@@ -72,7 +72,7 @@ interface DesignElement {
   // Which side of the garment this element belongs to. Optional for
   // backwards-compat: any saved design from before this field existed has
   // no side stored, and we treat that as 'front'.
-  side?: 'front' | 'back' | 'sleeve';
+  side?: 'front' | 'back' | 'sleeve' | 'sleeve_left';
   x: number; // percent
   y: number; // percent
   width: number; // percent
@@ -416,7 +416,7 @@ interface Product {
 type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 'names' | 'ai' | null;
 // Geometric shape types renderable as SVG inside a positioned div.
 type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
-type ViewName = 'front' | 'back' | 'sleeve';
+type ViewName = 'front' | 'back' | 'sleeve' | 'sleeve_left';
 
 // Default product when none is passed via ?product=. Gildan Softstyle
 // (S&S style 32) — the shop's most popular blank and the featured pin
@@ -1595,6 +1595,7 @@ export default function DesignStudioPage() {
     front: { x: 30, y: 22, width: 40, height: 40 },
     back: { x: 25, y: 18, width: 50, height: 50 },
     sleeve: { x: 70, y: 25, width: 18, height: 18 },
+    sleeve_left: { x: 12, y: 25, width: 18, height: 18 },
   });
   const [dragState, setDragState] = useState<{
     elementId: string;
@@ -1705,12 +1706,13 @@ export default function DesignStudioPage() {
           if (isLegacy) {
             const legacy = raw as unknown as { x: number; y: number; width: number; height?: number };
             const rect = { x: legacy.x, y: legacy.y, width: legacy.width, height: legacy.height ?? legacy.width };
-            setPlacement({ front: rect, back: rect, sleeve: rect });
+            setPlacement({ front: rect, back: rect, sleeve: rect, sleeve_left: rect });
           } else {
             setPlacement((prev) => ({
               front: (raw.front as Placement) || prev.front,
               back: (raw.back as Placement) || prev.back,
               sleeve: (raw.sleeve as Placement) || prev.sleeve,
+              sleeve_left: (raw.sleeve_left as Placement) || prev.sleeve_left,
             }));
           }
         }
@@ -1774,7 +1776,11 @@ export default function DesignStudioPage() {
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   // S&S's flat side shot backs the sleeve view when available.
   const sideImage = productColors[selectedColorIdx]?.sideImage || frontImage;
-  const displayImage = currentView === 'back' ? backImage : currentView === 'sleeve' ? sideImage : frontImage;
+  const isSleeveView = currentView === 'sleeve' || currentView === 'sleeve_left';
+  // The S&S side photo shows the RIGHT sleeve toward the camera; the left
+  // sleeve view mirrors the same shot.
+  const mirrorGarment = currentView === 'sleeve_left';
+  const displayImage = currentView === 'back' ? backImage : isSleeveView ? sideImage : frontImage;
 
   // When loading the default product (no ?product= override) and the user
   // hasn't picked a color yet, snap to "Black" once the colorways resolve.
@@ -2714,9 +2720,10 @@ export default function DesignStudioPage() {
           {viewSwitcherOpen && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-500" />}
           <div className="h-16 w-16 mx-auto rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
-              src={currentView === 'back' ? (backImage ?? frontImage) : currentView === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
+              src={currentView === 'back' ? (backImage ?? frontImage) : isSleeveView ? (sideImage ?? frontImage) : frontImage}
               alt={currentView}
               className="h-full w-full object-contain"
+              style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
             />
           </div>
           <span className="mt-1.5 text-[10px] lg:text-[11px] leading-tight text-center">Sides</span>
@@ -2763,9 +2770,10 @@ export default function DesignStudioPage() {
           {viewSwitcherOpen && <div className="absolute top-0 left-0 right-0 h-0.5 bg-orange-500" />}
           <div className="h-5 w-5 shrink-0 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
             <img
-              src={currentView === 'back' ? (backImage ?? frontImage) : currentView === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
+              src={currentView === 'back' ? (backImage ?? frontImage) : isSleeveView ? (sideImage ?? frontImage) : frontImage}
               alt={currentView}
               className="h-full w-full object-contain"
+              style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
             />
           </div>
           <span className="text-[9px] leading-tight text-center">Sides</span>
@@ -3971,6 +3979,7 @@ export default function DesignStudioPage() {
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
               className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+              style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
               draggable={false}
             />
           ) : blankCanvasMode ? (
@@ -4198,7 +4207,7 @@ export default function DesignStudioPage() {
             <div
               className="absolute inset-x-0 flex justify-center pointer-events-none"
               style={{
-                top: currentView === 'sleeve'
+                top: isSleeveView
                   ? '45%'
                   : currentView === 'back'
                     ? '25%'
@@ -4234,7 +4243,7 @@ export default function DesignStudioPage() {
           that column. On mobile it hangs above the bottom nav. */}
       {selectedProduct && frontImage && !showWelcome && viewSwitcherOpen && (
         <div className="fixed left-2 md:left-20 top-20 md:top-20 z-40 flex flex-col gap-2 bg-white rounded-xl shadow-xl border border-gray-200 p-1.5">
-          {(['front', 'back', 'sleeve'] as const).map(view => (
+          {(['front', 'back', 'sleeve', 'sleeve_left'] as const).map(view => (
             <button
               key={view}
               type="button"
@@ -4253,13 +4262,14 @@ export default function DesignStudioPage() {
               <div className="h-8 w-8 md:h-10 md:w-10 rounded bg-gray-100 overflow-hidden flex items-center justify-center">
                 {frontImage && (
                   <img
-                    src={view === 'back' ? (backImage ?? frontImage) : view === 'sleeve' ? (sideImage ?? frontImage) : frontImage}
+                    src={view === 'back' ? (backImage ?? frontImage) : (view === 'sleeve' || view === 'sleeve_left') ? (sideImage ?? frontImage) : frontImage}
+                    style={view === 'sleeve_left' ? { transform: 'scaleX(-1)' } : undefined}
                     alt={view}
                     className="h-full w-full object-contain"
                   />
                 )}
               </div>
-              <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'Side' : view === 'back' ? 'Back' : 'Front'}</span>
+              <span className="text-[9px] md:text-[11px] font-semibold capitalize">{view === 'sleeve' ? 'R Sleeve' : view === 'sleeve_left' ? 'L Sleeve' : view === 'back' ? 'Back' : 'Front'}</span>
             </button>
           ))}
         </div>

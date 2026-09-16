@@ -10,7 +10,7 @@ import type { FabricObject } from 'fabric';
  */
 export interface FabricObjectMeta {
   /** Which side of the garment the object belongs to. */
-  side?: 'front' | 'back' | 'sleeve';
+  side?: 'front' | 'back' | 'sleeve' | 'sleeve_left';
 
   /**
    * For shaped-text groups (curve / arch / valley etc.): the source params
