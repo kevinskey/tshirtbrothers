@@ -7761,6 +7761,58 @@ export default function AdminPage() {
                         Mark Ready{balance > 0 ? ' — emails balance request' : ''}
                       </button>
                     )}
+                    {/* The order leaves the building: pickup completes with the
+                        standard completed email/SMS; ship asks for tracking and
+                        emails the customer a tracking link. Both fire the
+                        one-shot review request. */}
+                    {q.status === 'ready' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Customer picked this order up? This completes the order.')) return;
+                            try {
+                              const res = await fetch(`/api/quotes/admin/${q.id}/fulfill`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+                                body: JSON.stringify({ method: 'pickup' }),
+                              });
+                              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed');
+                              queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                              setDetailQuote(null);
+                            } catch (err) {
+                              alert('Failed: ' + (err as Error).message);
+                            }
+                          }}
+                          className="py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700"
+                        >
+                          Mark Picked Up
+                        </button>
+                        <button
+                          onClick={async () => {
+                            const tracking = window.prompt('Tracking number (leave blank if none):', '');
+                            if (tracking === null) return;
+                            const carrier = window.prompt('Carrier (USPS / UPS / FedEx):', 'USPS');
+                            if (carrier === null) return;
+                            try {
+                              const res = await fetch(`/api/quotes/admin/${q.id}/fulfill`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+                                body: JSON.stringify({ method: 'ship', tracking_number: tracking || undefined, carrier: carrier || undefined }),
+                              });
+                              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed');
+                              alert('Shipped — tracking email sent to ' + customerEmail);
+                              queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                              setDetailQuote(null);
+                            } catch (err) {
+                              alert('Failed: ' + (err as Error).message);
+                            }
+                          }}
+                          className="py-3 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700"
+                        >
+                          Mark Shipped…
+                        </button>
+                      </div>
+                    )}
                     {POST_DEPOSIT_STATUSES.includes(q.status || '') && balance > 0 && (
                       <button
                         onClick={() => {

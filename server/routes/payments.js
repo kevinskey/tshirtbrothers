@@ -9,6 +9,9 @@ import {
   sendGangSheetPaidToCustomer,
   sendGangSheetPaidToAdmin,
   sendGangSheetOrphanPaymentAlert,
+  sendBalancePaidConfirmation,
+  sendBalancePaidToAdmin,
+  quoteLang,
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
@@ -336,7 +339,7 @@ router.post('/create-full-checkout', async (req, res, next) => {
 // POST /create-balance-checkout - Create Stripe Checkout session for remaining balance
 router.post('/create-balance-checkout', async (req, res, next) => {
   try {
-    const { quoteId, token } = req.body;
+    const { quoteId, token, fulfillment } = req.body;
 
     if (!quoteId) {
       return res.status(400).json({ error: 'quoteId is required' });
@@ -354,8 +357,32 @@ router.post('/create-balance-checkout', async (req, res, next) => {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
-    if (quote.status !== 'accepted') {
-      return res.status(400).json({ error: 'Quote must be accepted before paying balance' });
+    // The balance link goes out on 'ready' (and can be sent any time after
+    // the deposit), so every post-deposit state must be payable — gating on
+    // exactly 'accepted' 400'd the very email we send at 'ready'.
+    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+    if (!BALANCE_OK.includes(quote.status)) {
+      return res.status(400).json({ error: 'Quote must be accepted (deposit paid) before paying balance' });
+    }
+
+    // The payment page asks pickup vs ship right before checkout; record
+    // the choice now so the paid-in-full email can say what happens next
+    // even if the customer never returns from Stripe.
+    if (fulfillment && ['pickup', 'ship'].includes(fulfillment.method)) {
+      const addr = fulfillment.method === 'ship' && fulfillment.address && typeof fulfillment.address === 'object'
+        ? JSON.stringify({
+            name: String(fulfillment.address.name || quote.customer_name || '').slice(0, 200),
+            address: String(fulfillment.address.address || '').slice(0, 300),
+            address2: String(fulfillment.address.address2 || '').slice(0, 200),
+            city: String(fulfillment.address.city || '').slice(0, 120),
+            state: String(fulfillment.address.state || '').slice(0, 60),
+            zip: String(fulfillment.address.zip || '').slice(0, 20),
+          })
+        : null;
+      await pool.query(
+        `UPDATE quotes SET fulfillment_method = $1, shipping_address = COALESCE($2::jsonb, shipping_address) WHERE id = $3`,
+        [fulfillment.method, addr, quoteId],
+      );
     }
 
     const total = parseFloat(quote.estimated_price || 0);
@@ -667,17 +694,23 @@ async function handleCheckoutSessionCompleted(session) {
   if (quoteId) {
     try {
       if (paymentType === 'balance') {
+        // balance_paid_at IS NULL makes webhook and success-page fallback
+        // mutually exclusive (the fallback already guards) — whichever runs
+        // first does the bookkeeping AND the paid-in-full notifications.
         const result = await pool.query(
           `UPDATE quotes SET
             deposit_amount = estimated_price,
             balance_paid_at = NOW()
-          WHERE id = $1
+          WHERE id = $1 AND balance_paid_at IS NULL
           RETURNING *`,
           [quoteId]
         );
         if (result.rows.length > 0) {
+          const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
-          await createPaidInvoiceForQuote(result.rows[0], session.amount_total);
+          await createPaidInvoiceForQuote(quote, session.amount_total);
+          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+          sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
         }
       } else if (paymentType === 'full') {
         // Full payment from the choice screen — accept the quote AND
@@ -962,6 +995,8 @@ router.get('/success', async (req, res, next) => {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (stripeDetails.amount_total / 100));
           invoiceForQuote = await createPaidInvoiceForQuote(quote, stripeDetails.amount_total);
+          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+          sendBalancePaidToAdmin(quote, stripeDetails.amount_total / 100).catch(() => {});
         } else {
           // Already balance-paid earlier — surface the existing invoice.
           const existing = await pool.query(

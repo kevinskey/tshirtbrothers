@@ -992,6 +992,144 @@ export async function sendPoShippedToAdmin(po) {
   }
 }
 
+// Carrier tracking URL, or null for carriers we don't recognize (the email
+// then shows the bare number, which every carrier's site accepts).
+function trackingUrl(carrier, number) {
+  if (!number) return null;
+  const c = String(carrier || '').toLowerCase();
+  if (c.includes('usps')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(number)}`;
+  if (c.includes('ups')) return `https://www.ups.com/track?tracknum=${encodeURIComponent(number)}`;
+  if (c.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(number)}`;
+  return null;
+}
+
+function shipToLines(addr) {
+  if (!addr || typeof addr !== 'object') return '';
+  return [addr.name, addr.address || addr.address1, addr.address2, [addr.city, addr.state].filter(Boolean).join(', ') + (addr.zip ? ` ${addr.zip}` : '')]
+    .filter((l) => l && String(l).trim())
+    .map((l) => escapeHtml(String(l)))
+    .join('<br/>');
+}
+
+/**
+ * Balance cleared — tell the customer what happens next based on the
+ * fulfillment choice they made on the payment page: pickup gets the shop
+ * address + hours, shipping gets "tracking to follow".
+ */
+export async function sendBalancePaidConfirmation(quote, lang = 'en') {
+  if (!quote.customer_email) return;
+  const es = lang === 'es';
+  const pickup = quote.fulfillment_method !== 'ship';
+  const addrHtml = shipToLines(quote.shipping_address);
+
+  const nextBlock = pickup ? (es ? `
+    <div style="margin:16px 0;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#166534;">Recoge tu pedido aquí</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${SHOP_ADDRESS}</p>
+      <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">Horario: ${SHOP_HOURS}</p>
+    </div>` : `
+    <div style="margin:16px 0;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#166534;">Pick up your order here</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${SHOP_ADDRESS}</p>
+      <p style="margin:4px 0 0;font-size:14px;color:#6b7280;">Hours: ${SHOP_HOURS}</p>
+    </div>`) : (es ? `
+    <div style="margin:16px 0;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#1e40af;">Enviaremos tu pedido a</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${addrHtml || 'la dirección que nos diste'}</p>
+      <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">Te enviaremos el número de rastreo en cuanto salga.</p>
+    </div>` : `
+    <div style="margin:16px 0;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#1e40af;">We'll ship your order to</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${addrHtml || 'the address you gave us'}</p>
+      <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">You'll get a tracking number the moment it goes out.</p>
+    </div>`);
+
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">¡Pagado por completo!</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''},</p>
+    <p style="margin:0 0 8px;font-size:15px;color:#6b7280;">Recibimos el pago restante de tu pedido #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''}. ¡Gracias!</p>
+    ${nextBlock}
+    <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">Paid in full!</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 8px;font-size:15px;color:#6b7280;">We received the remaining balance on your order #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''}. Thank you!</p>
+    ${nextBlock}
+    <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: es ? `Pedido #${quote.id} pagado — ${pickup ? 'listo para recoger' : 'lo enviamos pronto'}` : `Order #${quote.id} paid in full — ${pickup ? 'pickup details inside' : 'shipping soon'}`,
+      html: baseLayout(es ? 'Pagado por completo' : 'Paid in full', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send balance-paid confirmation:', err);
+  }
+}
+
+/** Balance landed — tell the shop, with the customer's fulfillment choice. */
+export async function sendBalancePaidToAdmin(quote, amount) {
+  const pickup = quote.fulfillment_method !== 'ship';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">💰 Balance paid</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${escapeHtml(quote.customer_name || quote.customer_email || 'Customer')}</strong> paid ${amount ? formatCurrency(amount) : 'the balance'} on Quote #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''}.</p>
+    ${detailsTable(
+      detailRow('Fulfillment', pickup ? 'PICKUP at the shop' : 'SHIP to customer') +
+      (pickup ? '' : detailRow('Ship to', shipToLines(quote.shipping_address) || '⚠️ no address on file — contact the customer'))
+    )}
+    <p style="margin:0;font-size:14px;color:#6b7280;">${pickup ? 'They have the shop address and hours. Hand it over and hit Mark Picked Up.' : 'Ship it and hit Mark Shipped with the tracking number — the customer is expecting tracking.'}</p>
+    ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `Balance paid · Quote #${quote.id} · ${pickup ? 'pickup' : 'SHIP'} · ${quote.customer_name || ''}`,
+      html: baseLayout('Balance paid', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send balance-paid admin notice:', err);
+  }
+}
+
+/** Order went in the mail — tracking email to the customer. */
+export async function sendOrderShippedToCustomer(quote, { carrier, trackingNumber } = {}, lang = 'en') {
+  if (!quote.customer_email) return;
+  const es = lang === 'es';
+  const url = trackingUrl(carrier, trackingNumber);
+  const trackBlock = trackingNumber ? `
+    ${detailsTable(
+      detailRow(es ? 'Transportista' : 'Carrier', escapeHtml(carrier || '—')) +
+      detailRow(es ? 'Número de rastreo' : 'Tracking number', escapeHtml(trackingNumber))
+    )}
+    ${url ? primaryButton(es ? 'Rastrear Mi Paquete' : 'Track My Package', url) : ''}
+  ` : `<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">${es ? 'Tu paquete está en camino.' : 'Your package is on its way.'}</p>`;
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">📦 ¡Tu pedido va en camino!</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''}, tu pedido #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''} acaba de salir.</p>
+    ${trackBlock}
+    <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392.</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">📦 Your order is on its way!</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'}, your order #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''} just shipped.</p>
+    ${trackBlock}
+    <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: es ? `Tu pedido #${quote.id} va en camino 📦` : `Your order #${quote.id} has shipped 📦`,
+      html: baseLayout(es ? 'Pedido enviado' : 'Order shipped', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send order-shipped email:', err);
+    throw err;
+  }
+}
+
 // ── Marketing campaigns ──────────────────────────────────────────────────────
 
 import crypto from 'crypto';
