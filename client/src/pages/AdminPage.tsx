@@ -800,6 +800,13 @@ export default function AdminPage() {
     if (id && /^\d+$/.test(id)) {
       setHighlightedQuoteId(id);
     }
+    // ?section=purchasing&quote=<id> — the mockup-approved email's "Order
+    // the Blanks" button lands here with the PO builder prefilled from the
+    // quote's line items.
+    const prefillQuote = params.get('quote');
+    if (section === 'purchasing' && prefillQuote && /^\d+$/.test(prefillQuote)) {
+      setPurchasingQuoteId(Number(prefillQuote));
+    }
     // Round-trip return from Design Studio: ?section=invoices&editInvoice=<id>
     // means we just attached a mockup; reopen the invoice editor with the
     // mockup populated (the API GET joins mockup_preview_url(_back)).
@@ -7719,6 +7726,25 @@ export default function AdminPage() {
                         One primary next-step button per state so the pipeline
                         stamps (in_production_at / ready_at) actually get set —
                         'ready' also auto-emails the balance-due request. */}
+                    {/* Procurement shortcuts appear the moment the mockup is
+                        approved: blanks PO prefilled from this quote's line
+                        items, and the vendor-send queue for the gang sheet. */}
+                    {(q.status === 'approved' || q.status === 'in_production') && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => { setPurchasingQuoteId(Number(q.id)); setActiveSection('purchasing'); setDetailQuote(null); }}
+                          className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900"
+                        >
+                          Order Blanks (S&S)
+                        </button>
+                        <Link
+                          to="/admin/vendor-send"
+                          className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 text-center"
+                        >
+                          Send Gang Sheet
+                        </Link>
+                      </div>
+                    )}
                     {q.status === 'approved' && (
                       <button
                         onClick={() => { statusMutation.mutate({ id: q.id, status: 'in_production' }); setDetailQuote(null); }}

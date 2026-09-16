@@ -963,6 +963,35 @@ export async function sendQuoteDeclinedToAdmin(quote, reason) {
   }
 }
 
+/**
+ * Nightly PO sweep found blanks that shipped. Without this, tracking only
+ * surfaced when someone pressed the refresh button in admin.
+ */
+export async function sendPoShippedToAdmin(po) {
+  const tracking = Array.isArray(po.tracking) ? po.tracking : [];
+  const rows = tracking.map((t) =>
+    detailRow(
+      `Order ${t.orderNumber || ''}`,
+      `${t.carrier || ''} ${t.method || ''} ${(t.trackingNumbers || []).join(', ') || 'no tracking number yet'}`.trim(),
+    )).join('');
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">📦 Blanks shipped</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">S&amp;S shipped PO <strong>${escapeHtml(po.po_number || String(po.id))}</strong>${po.quote_id ? ` (Quote #${po.quote_id})` : ''}.</p>
+    ${rows ? detailsTable(rows) : ''}
+    ${primaryButton('Open Purchasing', `${DOMAIN}/admin?section=purchasing`)}
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `Blanks shipped · PO ${po.po_number || po.id}${po.quote_id ? ` · Quote #${po.quote_id}` : ''}`,
+      html: baseLayout('Blanks shipped', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send PO-shipped notice:', err);
+  }
+}
+
 // ── Marketing campaigns ──────────────────────────────────────────────────────
 
 import crypto from 'crypto';
@@ -1069,6 +1098,12 @@ export async function sendMockupDecisionToAdmin(mockup, action, note) {
     <p style="margin:20px 0 0;font-size:14px;color:#6b7280;">
       ${approved ? 'Ready to go into production.' : 'Redraw it and send a new mockup for approval.'}
     </p>
+    ${approved && mockup.quote_id ? `
+      ${primaryButton('Order the Blanks (S&S)', `${DOMAIN}/admin?section=purchasing&quote=${mockup.quote_id}`)}
+      <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">
+        Then <a href="${DOMAIN}/admin/vendor-send" style="color:#6b7280;">send the gang sheet to your vendor</a>
+        and hit Start Production on <a href="${DOMAIN}/admin?section=quotes&id=${mockup.quote_id}" style="color:#6b7280;">Quote #${mockup.quote_id}</a>.
+      </p>` : ''}
   `;
   try {
     await resend.emails.send({
