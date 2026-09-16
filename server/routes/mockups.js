@@ -520,11 +520,24 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
             [nextStatus, note || null, mockup.quote_id],
           );
         }
-        const { sendMockupDecisionToAdmin } = await import('../services/email.js');
+        const { sendMockupDecisionToAdmin, sendMockupRejectedAckToCustomer, quoteLang } = await import('../services/email.js');
         const { smsMockupDecisionToAdmin } = await import('../services/sms.js');
+        // A rejection also acknowledges the customer — they asked for
+        // changes and should hear "we're on it", not silence until a new
+        // mockup appears. Same language as their original quote.
+        let rejectAck = Promise.resolve();
+        if (action === 'rejected' && mockup.customer_email) {
+          let lang = 'en';
+          if (mockup.quote_id) {
+            const q = await pool.query('SELECT inputs_json FROM quotes WHERE id = $1', [mockup.quote_id]);
+            if (q.rows[0]) lang = quoteLang(q.rows[0]);
+          }
+          rejectAck = sendMockupRejectedAckToCustomer(mockup, note || '', lang).catch(() => {});
+        }
         await Promise.all([
           sendMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
           smsMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
+          rejectAck,
         ]);
       } catch (err) {
         console.error('[mockups] post-decision notify failed', err);
