@@ -782,14 +782,58 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
 /* ── UI bits ──────────────────────────────────────────────────────────── */
 
 function Shell({ children }: { children: React.ReactNode }) {
-  // Phones: full-bleed flow. sm+: the wizard lives in a centered card so
-  // the page reads like a focused dialog instead of a mostly-empty screen.
+  // Phones: full-bleed flow with a small brand header. sm+: centered card.
+  // lg+: a brand panel joins the card so first-time quote visitors learn
+  // who T-Shirt Brothers is while they fill the wizard in.
   return (
-    <div className="min-h-screen sm:flex sm:items-center sm:justify-center sm:py-10"
+    <div className="relative min-h-screen sm:flex sm:items-center sm:justify-center sm:py-10 overflow-hidden"
       style={{ background: 'linear-gradient(180deg,#fff7ed 0%,#f7f4ee 100%)' }}>
-      <div className="max-w-md w-full mx-auto px-4 py-6 sm:py-0">
-        <div className="sm:bg-white sm:rounded-3xl sm:shadow-2xl sm:border sm:border-orange-100 sm:p-8">
-          {children}
+      {/* Faint oversized splat watermark, behind everything. */}
+      <img
+        src="/tsb-splat.png"
+        alt=""
+        aria-hidden
+        className="pointer-events-none select-none absolute -right-40 -bottom-40 w-[42rem] max-w-none opacity-[0.05] rotate-12 hidden sm:block"
+      />
+      <div className="relative w-full max-w-5xl mx-auto px-4 py-6 sm:py-0 lg:flex lg:items-center lg:gap-12">
+        {/* Brand panel — desktop only */}
+        <div className="hidden lg:block flex-1 max-w-md">
+          <img src="/tsb-splat.png" alt="T-Shirt Brothers" className="w-64 mb-5" />
+          <h2 className="tsb-font-display text-3xl font-black text-gray-900 leading-tight">
+            Atlanta&rsquo;s custom t-shirt shop.
+          </h2>
+          <p className="mt-3 text-gray-600 leading-relaxed">
+            Family-owned in Fairburn, GA. Schools, churches, teams, and
+            businesses across metro Atlanta trust us with their shirts.
+          </p>
+          <ul className="mt-5 space-y-2.5 text-sm text-gray-700">
+            {[
+              'Screen printing · DTF transfers · Embroidery',
+              'Fast turnaround — most orders ready in days, not weeks',
+              'Real mockups before we print, so you approve every design',
+              'No order too small — one shirt or one thousand',
+            ].map((line) => (
+              <li key={line} className="flex items-start gap-2.5">
+                <span className="mt-1 h-2 w-2 rounded-full bg-orange-500 shrink-0" />
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-6 text-sm text-gray-500">
+            Questions? Call <a href="tel:+14706221392" className="font-semibold text-orange-600 hover:underline">(470) 622-1392</a>
+            {' '}or email <a href="mailto:kevin@tshirtbrothers.com" className="font-semibold text-orange-600 hover:underline">kevin@tshirtbrothers.com</a>
+          </p>
+        </div>
+
+        <div className="max-w-md w-full mx-auto lg:mx-0">
+          {/* Mobile / tablet brand header */}
+          <div className="lg:hidden flex flex-col items-center mb-4">
+            <img src="/tsb-splat.png" alt="T-Shirt Brothers" className="w-32 sm:w-36" />
+            <p className="mt-1 text-xs text-gray-500 font-medium">Atlanta&rsquo;s custom t-shirt shop · (470) 622-1392</p>
+          </div>
+          <div className="sm:bg-white sm:rounded-3xl sm:shadow-2xl sm:border sm:border-orange-100 sm:p-8">
+            {children}
+          </div>
         </div>
       </div>
     </div>
