@@ -31,6 +31,7 @@ const STATIC_PAGES = [
   { path: '/dtf',               priority: '0.8', changefreq: 'weekly' },
   { path: '/blog',              priority: '0.8', changefreq: 'weekly' },
   { path: '/brands',            priority: '0.7', changefreq: 'weekly' },
+  { path: '/drinkware',         priority: '0.7', changefreq: 'monthly'},
   { path: '/local-businesses',  priority: '0.7', changefreq: 'monthly'},
 ];
 
