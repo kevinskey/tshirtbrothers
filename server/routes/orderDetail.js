@@ -109,6 +109,99 @@ router.put('/:quoteId/stages', async (req, res, next) => {
   }
 });
 
+// POST /:quoteId/offline-payment {amount, method} — record a payment that
+// happened outside Stripe (cash, Zelle, Cash App, card in person). Creates
+// a deposit invoice for the quote if none exists, applies the payment, and
+// stamps the quote accepted — the same bookkeeping a Stripe deposit does,
+// so the pipeline tabs and stage circles behave identically.
+router.post('/:quoteId/offline-payment', async (req, res, next) => {
+  try {
+    const { quoteId } = req.params;
+    const amount = Number(req.body?.amount);
+    const method = (req.body?.method || 'offline').toString().slice(0, 40);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'A positive amount is required' });
+    }
+
+    const quoteQ = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
+    if (quoteQ.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = quoteQ.rows[0];
+    const total = Number(quote.estimated_price || 0);
+
+    // Reuse the latest invoice for this quote, or create one to hang the
+    // payment on (mirrors createPaidInvoiceForQuote's shape).
+    let invoice = (
+      await pool.query('SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1', [quoteId])
+    ).rows[0];
+    if (!invoice) {
+      const seq = await pool.query(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM 'INV-(\\d+)') AS INTEGER)), 1000) + 1 AS next_num FROM invoices`
+      );
+      const items = [{
+        description: quote.product_name || 'Custom printing order',
+        quantity: quote.quantity || 1,
+        unit_price: quote.quantity ? total / quote.quantity : total,
+        total,
+      }];
+      invoice = (
+        await pool.query(
+          `INSERT INTO invoices
+             (invoice_number, customer_name, customer_email, customer_phone,
+              items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
+              quote_id, status, deposit_percent)
+           VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$6,0,$6,$7,'sent',50)
+           RETURNING *`,
+          [
+            `INV-${seq.rows[0].next_num}`,
+            quote.customer_name || '',
+            quote.customer_email || '',
+            quote.customer_phone || null,
+            JSON.stringify(items),
+            total,
+            quoteId,
+          ]
+        )
+      ).rows[0];
+    }
+
+    const newPaid = Number(invoice.amount_paid || 0) + amount;
+    const newDue = Math.max(0, Number(invoice.total || 0) - newPaid);
+    const payments = typeof invoice.payments === 'string'
+      ? JSON.parse(invoice.payments)
+      : (invoice.payments || []);
+    payments.push({ amount, method, offline: true, date: new Date().toISOString(), recorded_by: req.user?.email || 'admin' });
+
+    const updatedInvoice = (
+      await pool.query(
+        `UPDATE invoices SET amount_paid = $2, amount_due = $3,
+            status = CASE WHEN $3 <= 0 THEN 'paid' ELSE 'partial' END,
+            payments = $4, updated_at = NOW()
+          WHERE id = $1 RETURNING *`,
+        [invoice.id, newPaid, newDue, JSON.stringify(payments)]
+      )
+    ).rows[0];
+
+    // Same quote bookkeeping as the Stripe deposit webhook: accept the
+    // quote and record the deposit. Never demote a later status, and stamp
+    // balance_paid_at when this payment settles the full total.
+    const updatedQuote = (
+      await pool.query(
+        `UPDATE quotes SET
+            status = CASE WHEN status IN ('accepted','completed') THEN status ELSE 'accepted' END,
+            accepted_at = COALESCE(accepted_at, NOW()),
+            deposit_amount = COALESCE(deposit_amount, $2),
+            balance_paid_at = CASE WHEN $3 <= 0 THEN COALESCE(balance_paid_at, NOW()) ELSE balance_paid_at END
+          WHERE id = $1 RETURNING *`,
+        [quoteId, amount, newDue]
+      )
+    ).rows[0];
+
+    res.json({ invoice: updatedInvoice, quote: updatedQuote });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/:quoteId/notes', async (req, res, next) => {
   try {
     const body = (req.body?.body || '').trim();

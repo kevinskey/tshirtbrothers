@@ -90,6 +90,10 @@ export default function AdminOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [offlineFormOpen, setOfflineFormOpen] = useState(false);
+  const [offlineAmount, setOfflineAmount] = useState('');
+  const [offlineMethod, setOfflineMethod] = useState('cash');
+  const [savingPayment, setSavingPayment] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +111,25 @@ export default function AdminOrderDetailPage() {
   }, [quoteId, navigate]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function recordOfflinePayment() {
+    const amount = Number(offlineAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || savingPayment) return;
+    setSavingPayment(true);
+    try {
+      const r = await fetch(`/api/admin/order-detail/${quoteId}/offline-payment`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ amount, method: offlineMethod }),
+      });
+      if (r.ok) {
+        setOfflineFormOpen(false);
+        setOfflineAmount('');
+        await load();
+      }
+    } finally {
+      setSavingPayment(false);
+    }
+  }
 
   async function addNote() {
     if (!noteText.trim()) return;
@@ -302,6 +325,59 @@ export default function AdminOrderDetailPage() {
                   )}
                 </div>
               ))}
+              {/* Money that changed hands outside Stripe — cash, Zelle, Cash
+                  App — still needs to land in the books so Paid/Due and the
+                  Deposit stage reflect reality. */}
+              {!offlineFormOpen ? (
+                <button
+                  onClick={() => {
+                    const est = Number(quote.estimated_price || 0);
+                    setOfflineAmount(totalPaid > 0 ? String(totalDue || '') : (est ? (est / 2).toFixed(2) : ''));
+                    setOfflineFormOpen(true);
+                  }}
+                  className="mt-2 text-sm font-medium text-orange-600 hover:text-orange-700"
+                >
+                  + Record offline payment
+                </button>
+              ) : (
+                <div className="mt-3 border border-gray-200 rounded-lg p-3 text-sm space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="number" min="0.01" step="0.01" value={offlineAmount}
+                      onChange={(e) => setOfflineAmount(e.target.value)}
+                      placeholder="Amount"
+                      className="w-28 border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    <select
+                      value={offlineMethod}
+                      onChange={(e) => setOfflineMethod(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="zelle">Zelle</option>
+                      <option value="cashapp">Cash App</option>
+                      <option value="card">Card (in person)</option>
+                      <option value="check">Check</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => void recordOfflinePayment()}
+                      disabled={savingPayment || !(Number(offlineAmount) > 0)}
+                      className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg"
+                    >
+                      {savingPayment ? 'Saving…' : 'Record payment'}
+                    </button>
+                    <button onClick={() => setOfflineFormOpen(false)} className="text-gray-500 hover:text-gray-700 px-2">
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Creates the invoice if there isn't one, and marks the quote accepted — same as a Stripe deposit.
+                  </p>
+                </div>
+              )}
             </Section>
 
             {/* Blanks */}
