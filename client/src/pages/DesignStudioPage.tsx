@@ -17,6 +17,15 @@ import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
 import { logActivityOnce } from '@/lib/activity';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
+// Filter definitions, CSS previews, SVG defs, and pixel baking live in the
+// shared lib so on-canvas previews and baked print output stay in sync.
+import {
+  IMAGE_FILTERS,
+  imageFilterCss,
+  ImageFilterDefs,
+  bakeImageFilter,
+  type ImageFilterName,
+} from '@/lib/imageFilters';
 
 // Lazy-load the bridge so opentype.js + wawoff2 + Fabric stay out of the
 // main bundle. The full Fabric chunk only downloads when ?canvas=fabric
@@ -106,46 +115,6 @@ interface DesignElement {
 
 type TextShapeName = 'normal' | 'curve' | 'arch' | 'bridge' | 'valley' | 'pinch' | 'bulge' | 'perspective' | 'pointed' | 'downward' | 'upward' | 'cone' | 'circle' | 'circle-bottom';
 
-type ImageFilterName = 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw' | 'vintage' | 'warm' | 'cool' | 'distressed' | 'distressed2';
-
-// The two distressed entries reference SVG filters (feTurbulence alpha
-// erosion) defined in <ImageFilterDefs>, which must stay mounted on the page.
-const IMAGE_FILTERS: { name: ImageFilterName; label: string; css?: string }[] = [
-  { name: 'none', label: 'None' },
-  { name: 'grayscale', label: 'Gray', css: 'grayscale(100%)' },
-  { name: 'bw', label: 'B&W', css: 'grayscale(100%) contrast(1000%)' },
-  { name: 'sepia', label: 'Sepia', css: 'sepia(100%)' },
-  { name: 'invert', label: 'Invert', css: 'invert(100%)' },
-  { name: 'vintage', label: 'Vintage', css: 'sepia(45%) contrast(0.9) brightness(1.05) saturate(1.2)' },
-  { name: 'warm', label: 'Warm', css: 'sepia(25%) saturate(1.35) hue-rotate(-10deg)' },
-  { name: 'cool', label: 'Cool', css: 'saturate(1.1) hue-rotate(12deg) brightness(1.03) sepia(10%)' },
-  { name: 'distressed', label: 'Distressed', css: 'url(#tsb-filter-distressed)' },
-  { name: 'distressed2', label: 'Heavy Distress', css: 'url(#tsb-filter-distressed2)' },
-];
-
-const imageFilterCss = (f: ImageFilterName | undefined): string | undefined =>
-  IMAGE_FILTERS.find(x => x.name === (f ?? 'none'))?.css;
-
-// Invisible SVG defs backing the distressed filters: fractal noise thresholded
-// into an alpha mask, composited "in" so speckles erode out of the artwork.
-function ImageFilterDefs() {
-  return (
-    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true" focusable="false">
-      <defs>
-        <filter id="tsb-filter-distressed" x="-5%" y="-5%" width="110%" height="110%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="4" seed="7" result="noise" />
-          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  4 0 0 0 -1.1" result="mask" />
-          <feComposite in="SourceGraphic" in2="mask" operator="in" />
-        </filter>
-        <filter id="tsb-filter-distressed2" x="-5%" y="-5%" width="110%" height="110%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="5" seed="3" result="noise" />
-          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  6 0 0 0 -2.4" result="mask" />
-          <feComposite in="SourceGraphic" in2="mask" operator="in" />
-        </filter>
-      </defs>
-    </svg>
-  );
-}
 
 const TEXT_SHAPES: { name: TextShapeName; label: string }[] = [
   { name: 'normal', label: 'NORMAL' },
@@ -696,6 +665,48 @@ export default function DesignStudioPage() {
   const useFabricRenderer = useFabricRendererFlag();
   const fabricBridgeRef = useRef<FabricRendererBridgeHandle | null>(null);
 
+  // ─── Baked image filters ───────────────────────────────────────────────
+  // html2canvas ignores the CSS `filter` property, so a filter shown via
+  // CSS/SVG would silently vanish from every capture (mockups, art-library
+  // saves, and the graphic PNGs vendors print from). Instead we bake each
+  // filtered image to real pixels (bakeImageFilter) and render the baked
+  // bitmap in the DOM — preview, mockup, and print file are then the same
+  // pixels. Cache is keyed on content+filter; the CSS/SVG preview covers
+  // the brief in-flight window. Capture paths call ensureImageFiltersBaked
+  // so they never race an unfinished bake.
+  const bakedFiltersRef = useRef<Map<string, { promise: Promise<string | null>; url: string | null }>>(new Map());
+  const [, setBakeTick] = useState(0);
+  const bakedSrcFor = (el: DesignElement): string | null => {
+    if (el.type !== 'image' || !el.filter || el.filter === 'none' || !el.content) return null;
+    return bakedFiltersRef.current.get(`${el.filter}::${el.content}`)?.url ?? null;
+  };
+  const kickPendingBakes = useCallback(() => {
+    const map = bakedFiltersRef.current;
+    for (const el of designElements) {
+      if (el.type !== 'image' || !el.filter || el.filter === 'none' || !el.content) continue;
+      const key = `${el.filter}::${el.content}`;
+      if (map.has(key)) continue;
+      // Bound the cache — toggling filters on large uploads accumulates
+      // sizeable data URLs. Map preserves insertion order, so evict oldest.
+      while (map.size >= 24) {
+        const oldest = map.keys().next().value;
+        if (oldest === undefined) break;
+        map.delete(oldest);
+      }
+      const entry = { promise: bakeImageFilter(el.content, el.filter), url: null as string | null };
+      map.set(key, entry);
+      entry.promise.then((url) => {
+        entry.url = url;
+        setBakeTick((t) => t + 1);
+      });
+    }
+  }, [designElements]);
+  useEffect(() => { kickPendingBakes(); }, [kickPendingBakes]);
+  async function ensureImageFiltersBaked(): Promise<void> {
+    kickPendingBakes();
+    await Promise.all([...bakedFiltersRef.current.values()].map((e) => e.promise));
+  }
+
   // ─── Undo / redo (Phase 2 PR #11) ──────────────────────────────────────
   // Auto-snapshot designElements via a useEffect below. Stack is shared
   // across renderer modes — undo is part of the surrounding page, not
@@ -833,6 +844,7 @@ export default function DesignStudioPage() {
     // we can crop / remove the background as a follow-up.
     const surface = designSurfaceRef.current;
     if (!surface) { setLibrarySaving(false); alert('Save failed: no canvas'); return; }
+    await ensureImageFiltersBaked();
     const prevSelected = selectedElementId;
     setSelectedElementId(null);
 
@@ -998,6 +1010,7 @@ export default function DesignStudioPage() {
     if (els.length === 0) return null;
     const surface = designSurfaceRef.current;
     if (!surface) return null;
+    await ensureImageFiltersBaked();
     const prevView = currentView;
     if (useFabricRenderer && fabricBridgeRef.current) {
       fabricBridgeRef.current.setSide(side);
@@ -1398,6 +1411,7 @@ export default function DesignStudioPage() {
   // Fabric's internal contexts, which is why "Get Price" previously yielded
   // just the product photo.
   async function captureSideMockupAndGraphic(side: ViewName): Promise<{ mockupUrl: string | null; graphicUrl: string | null }> {
+    await ensureImageFiltersBaked();
     // Temporarily flip the renderer to `side` if we're not already there;
     // restore in `finally` so the user's editor view doesn't change.
     const prevView = currentView;
@@ -4149,14 +4163,17 @@ export default function DesignStudioPage() {
                   />
                 ) : el.type === 'image' ? (
                   <img
-                    src={el.content}
+                    // Baked bitmap once ready (real pixels — survives
+                    // html2canvas capture); CSS/SVG filter preview only
+                    // while the bake is in flight.
+                    src={bakedSrcFor(el) ?? el.content}
                     alt="Design element"
                     className={`w-full object-contain pointer-events-none ${el.blend === 'multiply' ? '' : 'drop-shadow-lg'}`}
                     draggable={false}
                     style={{
                       borderRadius: el.borderRadius ? `${el.borderRadius}%` : undefined,
                       opacity: el.opacity != null ? el.opacity : undefined,
-                      filter: imageFilterCss(el.filter),
+                      filter: bakedSrcFor(el) ? undefined : imageFilterCss(el.filter),
                     }}
                   />
                 ) : el.textShape && el.textShape !== 'normal' ? (

@@ -1,4 +1,5 @@
 import type { FabricObject } from 'fabric';
+import type { ImageFilterName } from '../../components/design-studio/types';
 
 /**
  * Metadata we attach to FabricObject.data. Fabric drops anything not in its
@@ -32,7 +33,7 @@ export interface FabricObjectMeta {
    * Fabric's `filters` array so we know which legacy filter was the source
    * and can restore the UI state when an admin re-opens the design.
    */
-  filterName?: 'none' | 'grayscale' | 'invert' | 'sepia' | 'bw';
+  filterName?: ImageFilterName;
 
   /** For images with rounded corners (legacy borderRadius prop). */
   borderRadius?: number;

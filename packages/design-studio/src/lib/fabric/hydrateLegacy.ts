@@ -113,6 +113,34 @@ function buildImageFilters(name: NonNullable<DesignElement['filter']>) {
     // filter produces a 1-bit black/white look that matches the legacy
     // intent better than chaining grayscale + extreme contrast.
     case 'bw': return [new fabricFilters.BlackWhite()];
+    // 2026-09 color filters. Matrices are the CSS chains from the page's
+    // filter popover (see client lib imageFilters.tsx) composed into a
+    // single ColorMatrix; offsets are fractions of 255 per Fabric's format.
+    // vintage = sepia(45%) contrast(0.9) brightness(1.05) saturate(1.2)
+    case 'vintage': return [new fabricFilters.ColorMatrix({ matrix: [
+      0.7721, 0.2592, 0.0745, 0, 0.0525,
+      0.1259, 0.8405, 0.0638, 0, 0.0525,
+      0.0867, 0.1393, 0.6686, 0, 0.0525,
+      0, 0, 0, 1, 0,
+    ] })];
+    // warm = sepia(25%) saturate(1.35) hue-rotate(-10deg)
+    case 'warm': return [new fabricFilters.ColorMatrix({ matrix: [
+      1.0882, 0.1569, -0.1298, 0, 0,
+      0.0075, 0.9635, 0.0730, 0, 0,
+      0.1494, -0.1775, 0.9973, 0, 0,
+      0, 0, 0, 1, 0,
+    ] })];
+    // cool = saturate(1.1) hue-rotate(12deg) brightness(1.03) sepia(10%)
+    case 'cool': return [new fabricFilters.ColorMatrix({ matrix: [
+      0.9757, -0.1252, 0.2156, 0, 0,
+      0.0494, 1.0453, -0.0438, 0, 0,
+      -0.1553, 0.1546, 1.0242, 0, 0,
+      0, 0, 0, 1, 0,
+    ] })];
+    // distressed/distressed2 are alpha-erosion effects with no Fabric
+    // filter equivalent; the page bakes them into the bitmap instead, so
+    // under ?canvas=fabric they render unfiltered until a custom WebGL
+    // filter exists.
     default: return [];
   }
 }
