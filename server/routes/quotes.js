@@ -369,7 +369,18 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const query = `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes ${whereClause} ${orderClause}`;
+    // Latest real blanks PO per quote, so the list can show whether blanks
+    // were ordered (and shipped/received) without opening Purchasing.
+    const query = `
+      SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY},
+             bp.status AS blanks_status, bp.po_number AS blanks_po_number
+        FROM quotes
+        LEFT JOIN LATERAL (
+          SELECT status, po_number FROM purchase_orders
+           WHERE quote_id = quotes.id AND is_test = FALSE
+           ORDER BY created_at DESC LIMIT 1
+        ) bp ON TRUE
+        ${whereClause} ${orderClause}`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);

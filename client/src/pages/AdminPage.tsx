@@ -2944,6 +2944,7 @@ export default function AdminPage() {
                     </div>
                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
                       <StatusBadge status={q.status} />
+                      <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
                       {isRush && (
                         <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">
                           {daysUntil !== null && daysUntil < 0 ? 'OVERDUE' : daysUntil === 0 ? 'TODAY' : `${daysUntil}d`}
@@ -3145,6 +3146,7 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <StatusBadge status={q.status} />
+                          <div><BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} /></div>
                         </td>
                         <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <button
@@ -4332,6 +4334,7 @@ export default function AdminPage() {
                       </div>
                       <div className="flex flex-col items-end gap-1 flex-shrink-0">
                         <StatusBadge status={o.status} />
+                        <BlanksBadge status={(o as any).blanks_status} poNumber={(o as any).blanks_po_number} />
                         {isRush && (
                           <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">
                             {daysUntil !== null && daysUntil < 0 ? 'OVERDUE' : daysUntil === 0 ? 'TODAY' : `${daysUntil}d`}
@@ -4481,6 +4484,7 @@ export default function AdminPage() {
                         </td>
                         <td className="px-6 py-3">
                           <StatusBadge status={o.status} />
+                          <div><BlanksBadge status={(o as any).blanks_status} poNumber={(o as any).blanks_po_number} /></div>
                         </td>
                         <td className="px-6 py-3 relative" onClick={(e) => e.stopPropagation()}>
                           <button
@@ -7249,6 +7253,7 @@ export default function AdminPage() {
                   {/* Status */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={q.status} />
+                    <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
                     {q.date_needed && (
                       <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded">
                         Needed by {new Date(q.date_needed).toLocaleDateString()}
@@ -9445,6 +9450,31 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
         )}
       </td>
     </tr>
+  );
+}
+
+// Tiny chip under the status badge answering "did we order the blanks yet?"
+// blanks_status comes from the quotes list API (latest non-test PO for the
+// quote). No PO → renders nothing, so pre-production rows stay clean.
+function BlanksBadge({ status, poNumber }: { status?: string | null; poNumber?: string | null }) {
+  if (!status) return null;
+  const style =
+    status === 'received' ? 'bg-green-50 text-green-700'
+    : status === 'shipped' ? 'bg-blue-50 text-blue-700'
+    : status === 'cancelled' ? 'bg-gray-100 text-gray-500 line-through'
+    : 'bg-amber-50 text-amber-700'; // submitted / in_progress
+  const label =
+    status === 'received' ? 'blanks received'
+    : status === 'shipped' ? 'blanks shipped'
+    : status === 'cancelled' ? 'blanks cancelled'
+    : 'blanks ordered';
+  return (
+    <span
+      title={poNumber ? `PO ${poNumber} — ${status}` : `Blanks PO ${status}`}
+      className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${style}`}
+    >
+      {label}
+    </span>
   );
 }
 
