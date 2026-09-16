@@ -180,5 +180,14 @@ export function startScheduler() {
     archiveNonResponsiveQuotes();
   });
   setTimeout(() => { archiveNonResponsiveQuotes(); }, 30_000);
-  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, non-responsive quote archive daily @ 06:45 UTC, newsletter schedules every 5 min)');
+  // Twice daily at 07:15 and 15:15 UTC (early morning + mid-morning Atlanta
+  // time) — pull live S&S status/tracking for open blanks POs so shipments
+  // surface without anyone pressing the refresh button. Dynamic import keeps
+  // scheduler boot independent of the S&S client.
+  cron.schedule('15 7,15 * * *', () => {
+    import('./purchaseOrders.js')
+      .then((m) => m.refreshOpenPurchaseOrders())
+      .catch((err) => console.error('[scheduler] PO refresh failed:', err.message));
+  });
+  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, non-responsive quote archive daily @ 06:45 UTC, newsletter schedules every 5 min, S&S PO refresh @ 07:15/15:15 UTC)');
 }

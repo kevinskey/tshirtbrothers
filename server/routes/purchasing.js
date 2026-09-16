@@ -5,10 +5,10 @@ import {
   fetchStyleSkus,
   fetchStyleInventory,
   placeSsOrder,
-  fetchSsOrders,
   fetchPaymentProfiles,
   fetchSsOrderHistory,
 } from '../services/ssActivewear.js';
+import { refreshPurchaseOrder } from '../services/purchaseOrders.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -409,57 +409,14 @@ router.get('/orders', async (req, res, next) => {
 });
 
 // POST /orders/:id/refresh — pull current status + tracking from S&S.
+// Refresh logic lives in services/purchaseOrders.js so the nightly sweep
+// and this button apply identical status-rollup rules.
 router.post('/orders/:id/refresh', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
-    const po = rows[0];
-
-    const ssOrders = Array.isArray(po.ss_orders) ? po.ss_orders : [];
-    const orderNumbers = ssOrders.map((o) => o.orderNumber).filter(Boolean);
-    const live = await fetchSsOrders(
-      orderNumbers.length ? { orderNumbers } : { poNumber: po.po_number }
-    );
-
-    const updatedOrders = live.map((o) => ({
-      orderNumber: o.orderNumber,
-      guid: o.guid,
-      warehouseAbbr: o.warehouseAbbr,
-      orderStatus: o.orderStatus,
-      expectedDeliveryDate: o.expectedDeliveryDate,
-      subtotal: Number(o.subtotal) || 0,
-      shipping: Number(o.shipping) || 0,
-      tax: Number(o.tax) || 0,
-      total: Number(o.total) || 0,
-    }));
-    const tracking = live.map((o) => ({
-      orderNumber: o.orderNumber,
-      carrier: o.shippingCarrier || null,
-      method: o.shippingMethod || null,
-      trackingNumbers: (o.boxes || [])
-        .map((b) => b.trackingNumber)
-        .filter(Boolean)
-        .filter((v, i, a) => a.indexOf(v) === i),
-      invoiceNumber: o.invoiceNumber || null,
-    }));
-
-    // Roll the per-warehouse statuses up to one PO status: any shipment
-    // still open keeps the PO open; everything shipped/invoiced marks it
-    // received-ready.
-    const statuses = updatedOrders.map((o) => (o.orderStatus || '').toLowerCase());
-    let status = po.status;
-    if (po.is_test) status = 'test';
-    else if (statuses.length && statuses.every((s) => s.includes('ship') || s.includes('invoice') || s.includes('complete'))) status = 'shipped';
-    else if (statuses.some((s) => s.includes('cancel'))) status = statuses.every((s) => s.includes('cancel')) ? 'cancelled' : po.status;
-    else if (statuses.length) status = 'in_progress';
-
-    const { rows: updated } = await pool.query(
-      `UPDATE purchase_orders
-          SET ss_orders = $2, tracking = $3, status = $4, updated_at = NOW()
-        WHERE id = $1 RETURNING *`,
-      [po.id, JSON.stringify(updatedOrders), JSON.stringify(tracking), status]
-    );
-    res.json(updated[0]);
+    const { po } = await refreshPurchaseOrder(rows[0]);
+    res.json(po);
   } catch (err) {
     next(err);
   }
