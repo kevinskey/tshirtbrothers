@@ -10,6 +10,10 @@ import {
   sendBalanceDueToCustomer,
   sendQuoteUpdatedToCustomer,
   sendReviewRequestEmail,
+  sendArtworkRequestToCustomer,
+  sendArtworkReceivedToAdmin,
+  sendQuoteDeclinedToAdmin,
+  quoteLang,
 } from '../services/email.js';
 import {
   smsNewQuoteToAdmin,
@@ -766,6 +770,135 @@ router.post('/accept/:id', async (req, res, next) => {
       message: 'Please pay the 50% deposit to accept this quote',
       redirectUrl: `${domain}/payment/checkout?quote=${id}&token=${token}`,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /decline/:id — the quote email has always carried a "Decline this
+// quote" link, but the page behind it never existed: a customer's "no"
+// simply 404'd and the shop kept following up with someone who had already
+// walked away. Token-gated like /accept.
+router.post('/decline/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const token = req.query.token || req.body?.token;
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 2000) : '';
+    if (!token) return res.status(400).json({ error: 'Token is required' });
+
+    const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = lookup.rows[0];
+    if (quote.accept_token !== token) return res.status(403).json({ error: 'Invalid token' });
+    if (quote.status === 'rejected') return res.json({ success: true, message: 'Quote already declined' });
+    // Money has moved — declining is now a phone call, not a link click.
+    if (quote.accepted_at || !['pending', 'reviewed', 'quoted'].includes(quote.status)) {
+      return res.status(409).json({ error: 'This order is already underway. Call us at (470) 622-1392 and we\'ll sort it out.' });
+    }
+
+    await pool.query(
+      `UPDATE quotes
+          SET status = 'rejected',
+              archived_at = COALESCE(archived_at, NOW()),
+              archive_reason = 'customer_declined',
+              notes = CASE WHEN $2 <> '' THEN COALESCE(notes || E'\n\n', '') || 'Customer declined: ' || $2 ELSE notes END
+        WHERE id = $1`,
+      [id, reason],
+    );
+    sendQuoteDeclinedToAdmin(quote, reason).catch(() => {});
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Customer artwork request flow ───────────────────────────────────────
+// Admin asks for artwork; customer gets a tokenized upload page that drops
+// files straight onto the quote — no account, no email attachments to
+// shepherd into the right folder by hand.
+
+// POST /admin/:id/request-artwork — send (or re-send) the ask.
+router.post('/admin/:id/request-artwork', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 2000) : '';
+    const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    let quote = lookup.rows[0];
+    if (!quote.customer_email) return res.status(400).json({ error: 'Quote has no customer email' });
+
+    // The upload link reuses accept_token — same trust level as the pay
+    // link, and older quotes that were never priced may not have one yet.
+    if (!quote.accept_token) {
+      const token = crypto.randomBytes(16).toString('hex');
+      const upd = await pool.query('UPDATE quotes SET accept_token = $1 WHERE id = $2 RETURNING *', [token, id]);
+      quote = upd.rows[0];
+    }
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const uploadUrl = `${domain}/quote/artwork/${id}?token=${quote.accept_token}`;
+    await sendArtworkRequestToCustomer(quote, uploadUrl, { message, lang: quoteLang(quote) });
+    res.json({ success: true, uploadUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /artwork/:id — what the upload page shows (token-gated).
+router.get('/artwork/:id', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, accept_token, customer_name, product_name, quantity, design_url, extra_design_urls, archived_at, customer_email FROM quotes WHERE id = $1',
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const q = rows[0];
+    if (!req.query.token || q.accept_token !== req.query.token) return res.status(403).json({ error: 'Invalid token' });
+    res.json({
+      id: q.id,
+      customer_name: q.customer_name,
+      customer_email: q.customer_email,
+      product_name: q.product_name,
+      quantity: q.quantity,
+      design_url: q.design_url,
+      extra_design_urls: q.extra_design_urls || [],
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /artwork/:id — attach uploaded file URLs to the quote. The files
+// themselves went up through POST /upload-design (public, returns Spaces
+// URLs); this endpoint only accepts URLs from our own bucket so the token
+// can't be used to graffiti arbitrary links onto an order.
+router.post('/artwork/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const token = req.query.token || req.body?.token;
+    const urls = (Array.isArray(req.body?.urls) ? req.body.urls : [])
+      .filter((u) => typeof u === 'string' && /^https:\/\/[a-z0-9.-]*digitaloceanspaces\.com\//i.test(u))
+      .slice(0, 10);
+    if (urls.length === 0) return res.status(400).json({ error: 'urls must contain at least one uploaded file URL' });
+
+    const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = lookup.rows[0];
+    if (!token || quote.accept_token !== token) return res.status(403).json({ error: 'Invalid token' });
+
+    // First file becomes the primary design if the slot is empty; everything
+    // else lands in extra_design_urls, same shape the admin uploader uses.
+    const primary = quote.design_url ? null : urls[0];
+    const extras = quote.design_url ? urls : urls.slice(1);
+    await pool.query(
+      `UPDATE quotes
+          SET design_url = COALESCE($1, design_url),
+              extra_design_urls = COALESCE(extra_design_urls, '[]'::jsonb) || $2::jsonb
+        WHERE id = $3`,
+      [primary, JSON.stringify(extras), id],
+    );
+    sendArtworkReceivedToAdmin(quote, urls).catch(() => {});
+    scheduleRetriage(id);
+    res.json({ success: true, attached: urls.length });
   } catch (err) {
     next(err);
   }

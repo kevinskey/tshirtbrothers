@@ -841,6 +841,128 @@ export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
   }
 }
 
+/**
+ * Acknowledge a mockup rejection to the customer. Without this the reject
+ * button felt like shouting into a void — the shop got the note but the
+ * customer got silence until a new mockup appeared.
+ */
+export async function sendMockupRejectedAckToCustomer(mockup, note, lang = 'en') {
+  if (!mockup.customer_email) return;
+  const es = lang === 'es';
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Recibimos tus comentarios</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${mockup.customer_name || ''},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Gracias por revisar tu muestra. Estamos trabajando en los cambios y te enviaremos una nueva versión para aprobar muy pronto.</p>
+    ${note ? `<div style="margin:0 0 16px;padding:12px;background:#f3f4f6;border-left:3px solid #9ca3af;">
+        <p style="margin:0 0 4px;font-size:12px;color:#6b7280;font-weight:600;">Lo que pediste</p>
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(note)}</p>
+      </div>` : ''}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">We got your feedback</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${mockup.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Thanks for reviewing your mockup. We're working on the changes now and will send you a revised version to approve shortly.</p>
+    ${note ? `<div style="margin:0 0 16px;padding:12px;background:#f3f4f6;border-left:3px solid #9ca3af;">
+        <p style="margin:0 0 4px;font-size:12px;color:#6b7280;font-weight:600;">What you asked for</p>
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(note)}</p>
+      </div>` : ''}
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [mockup.customer_email],
+      subject: es ? 'Recibimos tus cambios - TShirt Brothers' : "We're on your mockup changes - TShirt Brothers",
+      html: baseLayout(es ? 'Recibimos tus comentarios' : 'We got your feedback', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send mockup rejection ack:', err);
+  }
+}
+
+/**
+ * Ask the customer for print-ready artwork, with a tokenized upload link so
+ * they can drop files straight onto their quote without an account.
+ */
+export async function sendArtworkRequestToCustomer(quote, uploadUrl, { message, lang = 'en' } = {}) {
+  const es = lang === 'es';
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Necesitamos tu diseño</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${quote.customer_name || ''},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Para avanzar con tu pedido (Cotización #${quote.id}${quote.product_name ? ` — ${escapeHtml(quote.product_name)}` : ''}) necesitamos el archivo de tu diseño. Usa el botón para subirlo directamente a tu pedido.</p>
+    ${message ? `<div style="margin:0 0 16px;padding:12px;background:#fff7ed;border-left:3px solid ${BRAND_ORANGE};">
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(message)}</p>
+      </div>` : ''}
+    ${primaryButton('Subir Mi Diseño', uploadUrl)}
+    <p style="margin:0;font-size:13px;color:#9ca3af;">Formatos ideales: PNG con fondo transparente, alta resolución. ¿No tienes archivo? Responde a este correo y nuestro equipo de diseño te ayuda gratis.</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">We need your artwork</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name || 'there'},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">To keep your order moving (Quote #${quote.id}${quote.product_name ? ` — ${escapeHtml(quote.product_name)}` : ''}) we need your design file. Use the button below to upload it straight onto your order.</p>
+    ${message ? `<div style="margin:0 0 16px;padding:12px;background:#fff7ed;border-left:3px solid ${BRAND_ORANGE};">
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(message)}</p>
+      </div>` : ''}
+    ${primaryButton('Upload My Artwork', uploadUrl)}
+    <p style="margin:0;font-size:13px;color:#9ca3af;">Best formats: high-resolution PNG with a transparent background. Don't have a file? Reply to this email — our design team helps for free.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [quote.customer_email],
+      subject: es ? `Sube tu diseño - Cotización #${quote.id} - TShirt Brothers` : `Artwork needed for your order - Quote #${quote.id} - TShirt Brothers`,
+      html: baseLayout(es ? 'Necesitamos tu diseño' : 'We need your artwork', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send artwork request:', err);
+    throw err;
+  }
+}
+
+/** Tell the shop the customer uploaded artwork via the request link. */
+export async function sendArtworkReceivedToAdmin(quote, urls) {
+  const imgs = (urls || []).slice(0, 6).map((u) =>
+    `<img src="${escapeHtml(u)}" alt="" style="max-width:160px;max-height:160px;border:1px solid #e5e7eb;border-radius:8px;margin:4px;" />`).join('');
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">🎨 Artwork received</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${escapeHtml(quote.customer_name || quote.customer_email || 'Customer')}</strong> uploaded ${urls.length === 1 ? 'a design file' : `${urls.length} design files`} to Quote #${quote.id}.</p>
+    <div style="text-align:center;">${imgs}</div>
+    ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `Artwork received · Quote #${quote.id} · ${quote.customer_name || quote.customer_email || ''}`,
+      html: baseLayout('Artwork received', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send artwork-received notice:', err);
+  }
+}
+
+/** Tell the shop a customer declined their quote (and why, if they said). */
+export async function sendQuoteDeclinedToAdmin(quote, reason) {
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#b91c1c;">Quote declined</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${escapeHtml(quote.customer_name || quote.customer_email || 'A customer')}</strong> declined Quote #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''}${quote.estimated_price ? ` — ${formatCurrency(quote.estimated_price)}` : ''}.</p>
+    ${reason ? `<div style="margin:0 0 16px;padding:12px;background:#fef2f2;border-left:3px solid #ef4444;">
+        <p style="margin:0 0 4px;font-size:12px;color:#991b1b;font-weight:600;">Their reason</p>
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(reason)}</p>
+      </div>` : ''}
+    ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `Declined · Quote #${quote.id} · ${quote.customer_name || quote.customer_email || ''}`,
+      html: baseLayout('Quote declined', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send quote-declined notice:', err);
+  }
+}
+
 // ── Marketing campaigns ──────────────────────────────────────────────────────
 
 import crypto from 'crypto';

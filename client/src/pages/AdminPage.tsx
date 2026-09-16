@@ -7662,6 +7662,31 @@ export default function AdminPage() {
 
                   {/* Actions */}
                   <div className="pt-2 space-y-2">
+                    {!(q as any).design_url && !['completed', 'rejected'].includes(q.status || '') && (
+                      <button
+                        onClick={async () => {
+                          const msg = window.prompt(
+                            'Optional note to include in the artwork request email:',
+                            '',
+                          );
+                          if (msg === null) return;
+                          try {
+                            const res = await fetch(`/api/quotes/admin/${q.id}/request-artwork`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+                              body: JSON.stringify({ message: msg || undefined }),
+                            });
+                            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed');
+                            alert('Artwork request sent to ' + customerEmail);
+                          } catch (err) {
+                            alert('Failed: ' + (err as Error).message);
+                          }
+                        }}
+                        className="w-full py-3 bg-orange-600 text-white font-semibold rounded-lg hover:bg-orange-700"
+                      >
+                        Request Artwork from Customer
+                      </button>
+                    )}
                     {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                       <button
                         onClick={() => { openPriceModal(q as Quote); setDetailQuote(null); }}

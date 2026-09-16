@@ -40,6 +40,9 @@ import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
 import AdminVendorSendPage from '@/pages/AdminVendorSendPage';
 import AdminOrderDetailPage from '@/pages/AdminOrderDetailPage';
 import MockupApprovalPage from '@/pages/MockupApprovalPage';
+import QuoteDeclinePage from '@/pages/QuoteDeclinePage';
+import QuoteArtworkPage from '@/pages/QuoteArtworkPage';
+import QuoteAcceptedPage from '@/pages/QuoteAcceptedPage';
 import InvoiceViewPage from '@/pages/InvoiceViewPage';
 import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import CityLandingPage from '@/pages/CityLandingPage';
@@ -129,6 +132,10 @@ function App() {
           {/* /quote is the mobile-first Easy Quote card wizard; the full
               live-pricing calculator survives at /quote/classic. */}
           <Route path="/quote" element={<EasyQuotePage />} />
+          {/* Token-gated customer actions linked from quote emails. */}
+          <Route path="/quote/decline/:id" element={<QuoteDeclinePage />} />
+          <Route path="/quote/artwork/:id" element={<QuoteArtworkPage />} />
+          <Route path="/quote/accepted/:id" element={<QuoteAcceptedPage />} />
           <Route path="/es/cotizacion" element={<EasyQuotePage lang="es" />} />
           <Route path="/quote/classic" element={<InstantQuotePage />} />
           <Route path="/instant-quote" element={<Navigate to="/quote" replace />} />
