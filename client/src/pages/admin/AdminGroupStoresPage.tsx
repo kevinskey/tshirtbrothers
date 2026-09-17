@@ -88,12 +88,12 @@ export default function AdminGroupStoresPage() {
           <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
             <div>
               <h1 className="tsb-font-display text-5xl sm:text-6xl font-black tracking-tight leading-none">
-                Group <span style={{ color: TSB_ORANGE }}>Stores</span>
+                Web <span style={{ color: TSB_ORANGE }}>Stores</span>
               </h1>
               <p className="mt-3 text-white/70 max-w-md">
-                White-label storefronts TSB runs for schools &amp; organizations —{' '}
+                Storefronts TSB runs for organizations &amp; businesses (TSB Pro) —{' '}
                 <span className="font-semibold text-white" style={{ fontFamily: "'Caveat', cursive", fontSize: '1.35em', color: TSB_ORANGE }}>
-                  every group gets a shop of their own.
+                  everyone gets a shop of their own.
                 </span>
               </p>
             </div>
@@ -141,6 +141,11 @@ export default function AdminGroupStoresPage() {
                   {/* Awning */}
                   <div className="relative h-16" style={awning(color)}>
                     <div className="tsb-grain" />
+                    {s.store_type === 'business' && (
+                      <span className="absolute top-3 left-3 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider bg-gray-900/90 text-orange-300">
+                        TSB Pro
+                      </span>
+                    )}
                     <span className={`absolute top-3 right-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider backdrop-blur-sm ${
                       s.status === 'active' ? 'bg-white/90 text-emerald-700' :
                       s.status === 'paused' ? 'bg-white/90 text-amber-700' : 'bg-white/90 text-gray-600'
@@ -237,6 +242,7 @@ function StatTile({ icon, n, label, color }: { icon: React.ReactNode; n: number;
 
 // ── Create-store modal ───────────────────────────────────────────────────
 function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [storeType, setStoreType] = useState<'group' | 'business'>('group');
   const [slug, setSlug] = useState('');
   const [subdomain, setSubdomain] = useState('');
   const [name, setName] = useState('');
@@ -244,6 +250,8 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
   const [primaryColor, setPrimaryColor] = useState('#111827');
   const [logoUrl, setLogoUrl] = useState('');
   const [tagline, setTagline] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
   const [fulfillmentMode, setFulfillmentMode] = useState<'ship_only' | 'pickup_only' | 'both'>('ship_only');
   const [pickupName, setPickupName] = useState('');
   const [pickupAddr, setPickupAddr] = useState('');
@@ -263,6 +271,10 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
       const brand: Record<string, unknown> = { primary_color: primaryColor };
       if (logoUrl) brand.logo_url = logoUrl;
       if (tagline) brand.tagline = tagline;
+      if (storeType === 'business') {
+        if (businessAddress) brand.business_address = businessAddress;
+        if (websiteUrl) brand.website_url = websiteUrl;
+      }
       const fundraiser: Record<string, unknown> = {};
       if (isFundraiser) {
         if (fundraiserHeadline) fundraiser.headline = fundraiserHeadline;
@@ -273,13 +285,14 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
       }
       await createGroupStore({
         slug, name, owner_email: ownerEmail,
+        store_type: storeType,
         subdomain: subdomain || undefined,
         brand_json: brand,
         fulfillment_mode: fulfillmentMode,
         pickup_location_json: fulfillmentMode === 'ship_only' ? {} :
           { name: pickupName, address_line1: pickupAddr },
-        is_fundraiser: isFundraiser,
-        fundraiser_json: fundraiser,
+        is_fundraiser: storeType === 'business' ? false : isFundraiser,
+        fundraiser_json: storeType === 'business' ? {} : fundraiser,
         initial_admin: adminEmail ? { email: adminEmail, name: adminName || undefined, role: 'owner' } : undefined,
       });
       toast.success('Store created');
@@ -299,6 +312,25 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
           <h2 className="tsb-font-display text-2xl font-black text-gray-900 flex items-center gap-2">
             <ShoppingBag className="w-5 h-5" style={{ color: TSB_ORANGE }} /> Raise a new storefront
           </h2>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">Store type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([['group', 'Organization'], ['business', 'Business (TSB Pro)']] as const).map(([v, label]) => (
+                <button type="button" key={v} onClick={() => setStoreType(v)}
+                  className={`px-3 py-2 border rounded-full text-sm font-semibold transition-colors ${
+                    storeType === v ? 'border-transparent text-white' : 'border-gray-300 text-gray-600 hover:border-gray-500'
+                  }`}
+                  style={storeType === v ? { background: TSB_ORANGE } : undefined}
+                >{label}</button>
+              ))}
+            </div>
+            {storeType === 'business' && (
+              <p className="mt-1.5 text-xs text-gray-500">
+                Business stores keep the TSB global header and show the company's logo, address &amp; website above their approved products.
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Store name" required>
@@ -333,9 +365,26 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
             </Field>
             <Field label="Tagline">
               <input value={tagline} onChange={(e) => setTagline(e.target.value)}
-                placeholder="Official Spelman Glee gear"
+                placeholder={storeType === 'business' ? 'Crew apparel & branded gear' : 'Official Spelman Glee gear'}
                 className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
             </Field>
+            {storeType === 'business' && (
+              <>
+                <Field label="Business address" hint="Shown on the storefront">
+                  <AddressAutocompleteInput
+                    mode="full"
+                    value={businessAddress}
+                    onChange={setBusinessAddress}
+                    placeholder="6010 Renaissance Pkwy, Fairburn GA"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
+                </Field>
+                <Field label="Business website" hint="Linked from the storefront">
+                  <input value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)}
+                    placeholder="https://yourbusiness.com"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm" />
+                </Field>
+              </>
+            )}
           </div>
 
           <div>
@@ -370,6 +419,7 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
             </div>
           )}
 
+          {storeType !== 'business' && (
           <div className="border-t border-gray-100 pt-4">
             <label className="inline-flex items-center gap-2 text-sm text-gray-700">
               <input type="checkbox" checked={isFundraiser} onChange={(e) => setIsFundraiser(e.target.checked)} />
@@ -402,9 +452,12 @@ function CreateStoreModal({ onClose, onCreated }: { onClose: () => void; onCreat
               </div>
             )}
           </div>
+          )}
 
           <div className="border-t border-gray-100 pt-4">
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">Seed first group admin (optional)</label>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-2">
+              {storeType === 'business' ? 'Seed first store admin — the business owner (optional)' : 'Seed first group admin (optional)'}
+            </label>
             <div className="grid grid-cols-2 gap-3">
               <input type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)}
                 placeholder="admin@yourorg.org"

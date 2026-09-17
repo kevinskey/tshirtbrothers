@@ -41,7 +41,11 @@ const subNavEntries: NavEntry[] = [
   { label: 'Get a Quote', href: '/quote' },
   { label: 'DTF Transfers', href: '/dtf' },
   { label: 'Compare Shirt Tiers', href: '/compare' },
-  { label: 'Webstores for Organizations', href: '/webstores' },
+  { label: 'Web Stores', children: [
+    { label: 'For Organizations', href: '/webstores' },
+    { label: 'For Businesses', href: '/webstores/business' },
+  ] },
+  { label: 'TSB Pro', href: '/pro' },
   { label: 'Services', href: '/services', desktopOnly: true },
   { label: 'About', href: '/about', desktopOnly: true },
 ];
@@ -52,7 +56,11 @@ const subNavEntriesEs: NavEntry[] = [
   { label: 'Obtener Cotización', href: '/es/cotizacion' },
   { label: 'Transferencias DTF', href: '/dtf' },
   { label: 'Compara Camisetas', href: '/compare' },
-  { label: 'Tiendas para Organizaciones', href: '/webstores' },
+  { label: 'Tiendas Web', children: [
+    { label: 'Para Organizaciones', href: '/webstores' },
+    { label: 'Para Negocios', href: '/webstores/business' },
+  ] },
+  { label: 'TSB Pro', href: '/pro' },
   { label: 'Servicios', href: '/services', desktopOnly: true },
   { label: 'Nosotros', href: '/about', desktopOnly: true },
 ];
@@ -80,7 +88,8 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const t = NAV_T[lang];
   const entries = lang === 'es' ? subNavEntriesEs : subNavEntries;
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [mobileCatalogueOpen, setMobileCatalogueOpen] = useState(false);
+  // Which nav group (Catalogue, Web Stores, …) is expanded, by label.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -217,13 +226,13 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                 <div key={entry.label}>
                   <button
                     type="button"
-                    onClick={() => setMobileCatalogueOpen((v) => !v)}
+                    onClick={() => setOpenGroup((v) => (v === entry.label ? null : entry.label))}
                     className="w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
                   >
                     <span>{entry.label}</span>
-                    <ChevronDown className={cn('h-4 w-4 transition-transform', mobileCatalogueOpen && 'rotate-180')} />
+                    <ChevronDown className={cn('h-4 w-4 transition-transform', openGroup === entry.label && 'rotate-180')} />
                   </button>
-                  {mobileCatalogueOpen && (
+                  {openGroup === entry.label && (
                     <div className="ml-3 pl-3 border-l border-gray-200 space-y-1 mt-1">
                       {entry.children.map((c) => (
                         <Link

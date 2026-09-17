@@ -23,13 +23,13 @@ router.get('/list', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT s.id, s.slug, s.subdomain, s.name, s.status, s.owner_email,
-              s.fulfillment_mode, s.is_fundraiser, s.created_at,
+              s.store_type, s.fulfillment_mode, s.is_fundraiser, s.created_at,
               s.brand_json, s.fundraiser_json,
               (SELECT COUNT(*) FROM store_products sp WHERE sp.store_id = s.id AND sp.is_active) AS active_product_count,
               (SELECT COUNT(*) FROM store_orders  so WHERE so.store_id = s.id)                    AS order_count,
               (SELECT COUNT(*) FROM store_admins  a  WHERE a.store_id  = s.id)                    AS admin_count
          FROM stores s
-        WHERE s.store_type = 'group'
+        WHERE s.store_type IN ('group', 'business')
         ORDER BY s.created_at DESC`,
     );
     res.json({ stores: rows });
@@ -47,10 +47,16 @@ router.post('/', async (req, res, next) => {
       slug, name, owner_email, subdomain,
       brand_json, fulfillment_mode, pickup_location_json,
       is_fundraiser, fundraiser_json,
-      initial_admin,
+      initial_admin, store_type,
     } = req.body ?? {};
     if (!slug || !name || !owner_email) {
       return res.status(400).json({ error: 'slug + name + owner_email required' });
+    }
+    // 'group' = organizations (default, the original flavor);
+    // 'business' = TSB Pro business web stores. Same machinery either way.
+    const storeType = store_type ?? 'group';
+    if (!['group', 'business'].includes(storeType)) {
+      return res.status(400).json({ error: "store_type must be 'group' or 'business'" });
     }
     if (fulfillment_mode && !['ship_only', 'pickup_only', 'both'].includes(fulfillment_mode)) {
       return res.status(400).json({ error: 'invalid fulfillment_mode' });
@@ -68,8 +74,8 @@ router.post('/', async (req, res, next) => {
            (slug, name, owner_email, store_type, status, brand_json,
             fulfillment_mode, pickup_location_json, is_fundraiser, fundraiser_json,
             subdomain)
-         VALUES ($1, $2, $3, 'group', 'active', $4, $5, $6, $7, $8, $9)
-         RETURNING id, slug, subdomain, name, brand_json, fulfillment_mode,
+         VALUES ($1, $2, $3, $10, 'active', $4, $5, $6, $7, $8, $9)
+         RETURNING id, slug, subdomain, name, store_type, brand_json, fulfillment_mode,
                    is_fundraiser, created_at`,
         [
           slug, name, owner_email,
@@ -79,6 +85,7 @@ router.post('/', async (req, res, next) => {
           !!is_fundraiser,
           fundraiser_json ?? {},
           subdomain ? subdomain.toLowerCase() : null,
+          storeType,
         ],
       );
       const store = storeIns.rows[0];
@@ -159,7 +166,7 @@ router.patch('/:id', async (req, res, next) => {
     params.push(id);
     const { rows } = await pool.query(
       `UPDATE stores SET ${patches.join(', ')}
-        WHERE id = $${params.length} AND store_type = 'group'
+        WHERE id = $${params.length} AND store_type IN ('group', 'business')
       RETURNING id, slug, name, status, brand_json, fulfillment_mode,
                 pickup_location_json, is_fundraiser, fundraiser_json`,
       params,
@@ -175,10 +182,10 @@ router.get('/:id', async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return next();
     const store = await pool.query(
-      `SELECT id, slug, subdomain, name, status, owner_email, brand_json,
-              fulfillment_mode, pickup_location_json, is_fundraiser,
+      `SELECT id, slug, subdomain, name, status, owner_email, store_type,
+              brand_json, fulfillment_mode, pickup_location_json, is_fundraiser,
               fundraiser_json, created_at
-         FROM stores WHERE id = $1 AND store_type = 'group'`,
+         FROM stores WHERE id = $1 AND store_type IN ('group', 'business')`,
       [id],
     );
     if (!store.rows[0]) return res.status(404).json({ error: 'Group store not found' });
@@ -219,7 +226,7 @@ router.delete('/:id', async (req, res, next) => {
 
     const { rows: [store] } = await pool.query(
       `SELECT id, slug, name, gleeworld_tenant_slug
-         FROM stores WHERE id = $1 AND store_type = 'group'`,
+         FROM stores WHERE id = $1 AND store_type IN ('group', 'business')`,
       [id],
     );
     if (!store) return res.status(404).json({ error: 'Group store not found' });
@@ -244,7 +251,7 @@ router.delete('/:id', async (req, res, next) => {
     }
 
     const { rows: [deleted] } = await pool.query(
-      `DELETE FROM stores WHERE id = $1 AND store_type = 'group' RETURNING slug, name`,
+      `DELETE FROM stores WHERE id = $1 AND store_type IN ('group', 'business') RETURNING slug, name`,
       [id],
     );
     if (!deleted) return res.status(404).json({ error: 'Group store not found' });
@@ -285,7 +292,7 @@ router.post('/:id/products', async (req, res, next) => {
     }
 
     const storeRow = await pool.query(
-      `SELECT id FROM stores WHERE id = $1 AND store_type = 'group'`, [id],
+      `SELECT id FROM stores WHERE id = $1 AND store_type IN ('group', 'business')`, [id],
     );
     if (!storeRow.rows[0]) return res.status(404).json({ error: 'Group store not found' });
 
@@ -514,7 +521,7 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     }
 
     const storeRow = await pool.query(
-      `SELECT id FROM stores WHERE id = $1 AND store_type = 'group'`, [id],
+      `SELECT id FROM stores WHERE id = $1 AND store_type IN ('group', 'business')`, [id],
     );
     if (!storeRow.rows[0]) return res.status(404).json({ error: 'Group store not found' });
 

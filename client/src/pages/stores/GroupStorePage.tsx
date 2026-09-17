@@ -10,6 +10,7 @@ import {
   Loader2, ShoppingBag, MapPin, Truck, ShieldCheck, ArrowRight,
   Bell, Target, ChevronRight, Star, Package, ExternalLink, Menu, X,
 } from 'lucide-react';
+import BusinessStoreFront from './BusinessStoreFront';
 
 interface StoreProfile {
   slug: string;
@@ -35,8 +36,11 @@ interface StoreProfile {
     // Declared collections, rendered as shelves in this order even when
     // empty (products join a shelf via matching campaign_ref).
     collections?: Array<{ key: string; title: string }>;
+    // Business (TSB Pro) store profile fields
+    business_address?: string;
+    website_url?: string;
   };
-  store_type: 'franchise' | 'group';
+  store_type: 'franchise' | 'group' | 'business';
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
   pickup_location_json: {
     name?: string;
@@ -131,6 +135,13 @@ export default function GroupStorePage() {
         </div>
       </div>
     );
+  }
+
+  // TSB Pro business stores keep the global T-Shirt Brothers header and
+  // render a simpler "your company's apparel" storefront instead of the
+  // white-label org chrome below.
+  if (store.store_type === 'business') {
+    return <BusinessStoreFront store={store} products={products} slug={slug} />;
   }
 
   const primary = store.brand_json.primary_color || '#111827';

@@ -226,6 +226,12 @@ export default function WebstoresPage() {
             Your members shop online, we print and deliver, you collect the proceeds.
             Management styles vary — every store is customized to suit your group's needs.
           </p>
+          <p className="mt-3 text-sm text-gray-500">
+            Running a business instead?{' '}
+            <Link to="/webstores/business" className="font-bold text-orange-700 hover:text-orange-800">
+              Web Stores for Businesses (TSB Pro) →
+            </Link>
+          </p>
         </div>
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 mt-6 sm:mt-10">
           <PitchDeck />

@@ -167,7 +167,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'invoices',  label: 'Invoices',     icon: Receipt },
     { key: 'mail',      label: 'Mail',         icon: Mail },
     { key: 'customers', label: 'Customers',    icon: Users },
-    { key: 'group-stores', label: 'Group Stores', icon: Store, to: '/admin/group-stores' },
+    { key: 'group-stores', label: 'Web Stores', icon: Store, to: '/admin/group-stores' },
   ]},
   { label: 'Catalog', items: [
     { key: 'products',    label: 'Products',     icon: Package },

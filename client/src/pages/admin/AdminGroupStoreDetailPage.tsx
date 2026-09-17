@@ -77,7 +77,14 @@ export default function AdminGroupStoreDetailPage() {
             <ArrowLeft className="w-4 h-4" /> Group stores
           </Link>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold text-gray-900">{store.name}</h1>
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+              {store.name}
+              {store.store_type === 'business' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider bg-gray-900 text-orange-400">
+                  TSB Pro
+                </span>
+              )}
+            </h1>
             <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1">
               <Link to={`/stores/${store.slug}`} target="_blank" rel="noreferrer"
                 className="text-xs text-blue-600 hover:underline inline-flex items-center gap-1">
@@ -109,6 +116,13 @@ export default function AdminGroupStoreDetailPage() {
           onRetire={() => void setStatus('off')}
           onReactivate={() => void setStatus('active')}
         />
+        {store.store_type === 'business' && (
+          <BusinessProfileCard
+            storeId={storeId}
+            brand={store.brand_json as Record<string, unknown>}
+            onSaved={() => void load()}
+          />
+        )}
         <input
           ref={coverInputRef}
           type="file"
@@ -769,6 +783,79 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
         </div>
       </form>
     </div>
+  );
+}
+
+// ── Business profile (TSB Pro stores) ────────────────────────────────────
+// Edits the business-facing identity fields stored in brand_json. PATCH
+// replaces brand_json wholesale, so merge over the existing object.
+function BusinessProfileCard({ storeId, brand, onSaved }: {
+  storeId: number;
+  brand: Record<string, unknown>;
+  onSaved: () => void;
+}) {
+  const [address, setAddress] = useState(typeof brand.business_address === 'string' ? brand.business_address : '');
+  const [website, setWebsite] = useState(typeof brand.website_url === 'string' ? brand.website_url : '');
+  const [logoUrl, setLogoUrl] = useState(typeof brand.logo_url === 'string' ? brand.logo_url : '');
+  const [tagline, setTagline] = useState(typeof brand.tagline === 'string' ? brand.tagline : '');
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const next: Record<string, unknown> = { ...brand };
+      const put = (k: string, v: string) => { if (v.trim()) next[k] = v.trim(); else delete next[k]; };
+      put('business_address', address);
+      put('website_url', website);
+      put('logo_url', logoUrl);
+      put('tagline', tagline);
+      await updateGroupStore(storeId, { brand_json: next });
+      toast.success('Business profile saved');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-5">
+      <h2 className="text-lg font-semibold text-gray-900">Business profile</h2>
+      <p className="text-xs text-gray-500 mt-0.5">
+        Shown at the top of the business's storefront, under the TSB header.
+      </p>
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Business address</label>
+          <input value={address} onChange={(e) => setAddress(e.target.value)}
+            placeholder="6010 Renaissance Pkwy, Fairburn GA"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Website</label>
+          <input value={website} onChange={(e) => setWebsite(e.target.value)}
+            placeholder="https://yourbusiness.com"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Logo URL</label>
+          <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)}
+            placeholder="https://…/logo.png"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Tagline</label>
+          <input value={tagline} onChange={(e) => setTagline(e.target.value)}
+            placeholder="Crew apparel & branded gear"
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+        </div>
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button onClick={save} disabled={busy}
+          className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save profile'}
+        </button>
+      </div>
+    </section>
   );
 }
 

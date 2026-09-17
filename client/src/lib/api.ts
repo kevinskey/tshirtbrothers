@@ -1225,6 +1225,7 @@ export interface GroupStoreSummary {
   name: string;
   status: string;
   owner_email: string;
+  store_type?: 'franchise' | 'group' | 'business';
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
   is_fundraiser: boolean;
   created_at: string;
@@ -1311,6 +1312,7 @@ export async function fetchGroupStore(id: number) {
 
 export async function createGroupStore(data: {
   slug: string; name: string; owner_email: string;
+  store_type?: 'group' | 'business';
   subdomain?: string;
   brand_json?: Record<string, unknown>;
   fulfillment_mode?: 'ship_only' | 'pickup_only' | 'both';
