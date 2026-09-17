@@ -6,10 +6,12 @@ import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain
 import Seo from '@/components/Seo';
 import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin } from 'lucide-react';
 import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
+import Layout from '@/components/layout/Layout';
 
 interface StoreProfile {
   slug: string;
   name: string;
+  store_type?: 'franchise' | 'group' | 'business';
   brand_json: {
     logo_url?: string;
     primary_color?: string;
@@ -153,8 +155,11 @@ export default function GroupStoreProductPage() {
 
   const showFulfillment = store.fulfillment_mode === 'both';
   const pickupLoc = store.pickup_location_json;
+  // Business (TSB Pro) stores keep the global TSB header; the store's own
+  // mini-header becomes a slim identity strip instead.
+  const isBusiness = store.store_type === 'business';
 
-  return (
+  const page = (
     <div className="min-h-screen bg-gray-50">
       <Seo
         title={`${product.title} · ${store.name}`}
@@ -166,11 +171,14 @@ export default function GroupStoreProductPage() {
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
           {store.brand_json.logo_url && (
-            <img src={store.brand_json.logo_url} alt="" className="h-10 w-10 object-contain" />
+            <img src={store.brand_json.logo_url} alt="" className={isBusiness ? 'h-8 w-8 object-contain' : 'h-10 w-10 object-contain'} />
           )}
           <Link to={storeLink(slug, "/")} className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold truncate" style={{ color: primary }}>{store.name}</h1>
+            <h1 className={`font-bold truncate ${isBusiness ? 'text-base' : 'text-lg'}`} style={{ color: primary }}>{store.name}</h1>
           </Link>
+          {isBusiness && (
+            <span className="text-[11px] text-gray-400 whitespace-nowrap">Powered by T-Shirt Brothers</span>
+          )}
         </div>
       </header>
 
@@ -329,4 +337,6 @@ export default function GroupStoreProductPage() {
       </main>
     </div>
   );
+
+  return isBusiness ? <Layout>{page}</Layout> : page;
 }

@@ -58,7 +58,9 @@ async function findGroupStore(slug) {
   );
   const s = rows[0];
   if (!s) return null;
-  if (s.store_type !== 'group') return null;
+  // Business (TSB Pro) stores share the whole group-store admin surface —
+  // magic-link login, orders, bulk orders, design drafts.
+  if (s.store_type !== 'group' && s.store_type !== 'business') return null;
   if (s.status !== 'active') return null;
   return s;
 }

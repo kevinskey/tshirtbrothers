@@ -2,14 +2,22 @@
 // redirects here with ?session_id=<cs_...>. We don't need to do
 // anything server-side (the webhook already captured the order) —
 // this page just shows a confirmation + link back to the store.
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { CheckCircle2 } from 'lucide-react';
+import { getStoreSubdomain } from '@/lib/storeSubdomain';
 
 export default function StoreSuccessPage() {
   const { slug = '' } = useParams<{ slug: string }>();
   const [params] = useSearchParams();
+  const location = useLocation();
   const sessionId = params.get('session_id');
+  // This page serves three route shapes: /store/:slug/success (franchise),
+  // /stores/:slug/success (group/business), and /success on a store
+  // subdomain — send the buyer back to the storefront they came from.
+  const backTo = getStoreSubdomain()
+    ? '/'
+    : location.pathname.startsWith('/stores/') ? `/stores/${slug}` : `/store/${slug}`;
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-6">
@@ -26,7 +34,7 @@ export default function StoreSuccessPage() {
           </p>
         )}
         <Link
-          to={`/store/${slug}`}
+          to={backTo}
           className="mt-6 inline-block bg-gray-900 text-white text-sm font-semibold px-5 py-2 rounded-md hover:bg-gray-800"
         >
           Back to store

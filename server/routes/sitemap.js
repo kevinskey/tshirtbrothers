@@ -34,6 +34,9 @@ const STATIC_PAGES = [
   { path: '/drinkware',         priority: '0.7', changefreq: 'monthly'},
   { path: '/awards',            priority: '0.7', changefreq: 'monthly'},
   { path: '/local-businesses',  priority: '0.7', changefreq: 'monthly'},
+  { path: '/webstores',           priority: '0.8', changefreq: 'monthly'},
+  { path: '/webstores/business',  priority: '0.8', changefreq: 'monthly'},
+  { path: '/pro',                 priority: '0.8', changefreq: 'monthly'},
 ];
 
 const SHOP_CATEGORIES = ['T-Shirts', 'Fleece', 'Headwear', 'Polos', 'Outerwear'];
