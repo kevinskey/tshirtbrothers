@@ -8,6 +8,7 @@ import {
   FontPicker,
   TextEffectsPanel,
   CropModal,
+  EraserModal,
   DimensionReadout,
   HoldRepeatButton,
 } from '@tshirtbrothers/design-studio';
@@ -3726,6 +3727,11 @@ export default function DesignStudioPage() {
   const croppingElement = croppingElementId
     ? designElements.find(e => e.id === croppingElementId) ?? null
     : null;
+  // Eraser modal: id of the image element being erased, null = closed.
+  const [erasingElementId, setErasingElementId] = useState<string | null>(null);
+  const erasingElement = erasingElementId
+    ? designElements.find(e => e.id === erasingElementId) ?? null
+    : null;
 
   const imageToolbar = selectedEl && selectedEl.type === 'image' ? (
     <div className="fixed top-20 right-2 md:right-4 z-40 flex flex-col items-center gap-0.5 bg-white rounded-xl shadow-lg border border-gray-200 px-1 py-1.5 max-h-[calc(100vh-6rem)] overflow-y-auto">
@@ -3748,6 +3754,15 @@ export default function DesignStudioPage() {
         <CropIcon className="h-3.5 w-3.5" />
         <span>Crop</span>
       </button>
+
+      {/* Eraser — opens the paint-to-erase modal. Replaces el.content with
+          the erased PNG data URL on Apply, same flow as Crop. */}
+      <button
+        type="button"
+        onClick={() => setErasingElementId(selectedEl.id)}
+        title="Erase parts of the image"
+        className="px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 text-gray-600 hover:bg-gray-100"
+      >🧽<span>Eraser</span></button>
 
       {/* Rotate */}
       <div className="relative">
@@ -4969,6 +4984,20 @@ export default function DesignStudioPage() {
           onApply={(dataUrl) => {
             updateElement(croppingElement.id, { content: dataUrl });
             setCroppingElementId(null);
+          }}
+        />
+      )}
+
+      {/* Paint-to-erase editor. Mounts only while an image is being erased;
+          Apply replaces el.content with the erased PNG data URL, which the
+          save flow uploads to Spaces like any other data: image. */}
+      {erasingElement && erasingElement.type === 'image' && (
+        <EraserModal
+          src={erasingElement.content}
+          onCancel={() => setErasingElementId(null)}
+          onApply={(dataUrl) => {
+            updateElement(erasingElement.id, { content: dataUrl });
+            setErasingElementId(null);
           }}
         />
       )}
