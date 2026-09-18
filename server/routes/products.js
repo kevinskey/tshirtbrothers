@@ -75,8 +75,47 @@ router.get('/', async (req, res, next) => {
       let paramIndex = 1;
 
       if (search) {
+        // Garment-type words are CATEGORY intent, not fuzzy text: a search
+        // for "tshirts" must return t-shirts — not long-sleeves, chef coats,
+        // and anything else whose name or category happens to contain
+        // "T-Shirt". Matched phrases become an exact category filter and
+        // are removed from the text search; whatever's left ("gildan",
+        // "G500", a color) still matches the usual way. Order matters:
+        // "long sleeve t-shirt" must resolve before the bare tee intent,
+        // "hooded sweatshirt" before the crewneck intent.
+        const GARMENT_INTENTS = [
+          { re: /\blong[\s-]?sleeves?\b(?:\s+(?:t[\s-]?shirts?|tees?))?/i,
+            cats: ['T-Shirts - Long Sleeve'] },
+          { re: /\bhood(?:ies?|ed)?\b(?:\s+sweatshirts?)?/i,
+            cats: ['Fleece - Core - Hood', 'Fleece - Premium - Hood'] },
+          { re: /\b(?:crew\s?necks?|sweatshirts?)\b/i,
+            cats: ['Fleece - Core - Crew', 'Fleece - Premium - Crew'] },
+          // Tanks share the tee categories, so keep the word as a name
+          // match inside them rather than dropping it.
+          { re: /\btanks?\b(?:\s+tops?)?/i,
+            cats: ['T-Shirts - Core', 'T-Shirts - Premium'], keepTerm: true },
+          { re: /\bt[\s-]?shirts?\b|\btees?\b/i,
+            cats: ['T-Shirts - Core', 'T-Shirts - Premium'] },
+          { re: /\bpolos?\b/i, cats: ['Polos'] },
+          { re: /\b(?:hats?|caps?|beanies?)\b/i, cats: ['Headwear'] },
+        ];
+        let remaining = search.trim();
+        const intentCats = new Set();
+        for (const g of GARMENT_INTENTS) {
+          if (g.re.test(remaining)) {
+            g.cats.forEach((c) => intentCats.add(c));
+            if (!g.keepTerm) {
+              remaining = remaining.replace(new RegExp(g.re.source, 'gi'), ' ');
+            }
+          }
+        }
+        if (intentCats.size > 0) {
+          conditions.push(`category = ANY($${paramIndex})`);
+          params.push([...intentCats]);
+          paramIndex++;
+        }
         // Normalize common terms: "tshirt" → "t-shirt", "hoodie" → "hood"
-        let normalized = search.trim()
+        let normalized = remaining
           .replace(/\btshirts?\b/gi, 't-shirt')
           .replace(/\bhoodies?\b/gi, 'hood')
           .replace(/\bpolos?\b/gi, 'polo');

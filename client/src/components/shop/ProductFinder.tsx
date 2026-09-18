@@ -58,21 +58,44 @@ const GARMENT_EMOJI: Record<string, string> = {
   Polo: '🎽', Tank: '🎽', Hat: '🧢',
 };
 
-// Garment name → catalogue filter to apply for "see everything similar".
-// Category values are the retail labels /api/products understands.
-const SIMILAR_FILTER: Record<string, { category?: string; search?: string }> = {
-  'T-shirt':     { category: 'T-Shirts' },
-  'Long-sleeve': { category: 'Long Sleeve Tees' },
-  Hoodie:        { category: 'Hoodies' },
-  Sweatshirt:    { category: 'Crewneck Sweatshirts' },
-  Polo:          { category: 'Polos' },
-  Hat:           { category: 'Headwear' },
-  Tank:          { search: 'tank' },
-};
+// Garment × tier → catalogue filter for "browse all similar", constrained
+// to the tier's price family so results stay within the pricing model.
+// S&S's raw taxonomy already splits the big categories by price line
+// (Core vs Premium), and the Ultra tier's defaults are all garment-dyed
+// heavyweights — so Standard maps to Core, Premium to Premium, and Ultra
+// to Premium narrowed to the garment-dyed line. Polos/hats have no price
+// split in the taxonomy, so all tiers browse the whole category.
+function similarFilter(
+  garment: string,
+  tier: GarmentTier['quality_tier'],
+): { category?: string; search?: string; label: string } {
+  const std = tier === 'Standard';
+  const dyed = tier === 'Ultra' ? 'garment-dyed' : undefined;
+  const label = `${tier} ${garment.toLowerCase()}s`;
+  switch (garment) {
+    case 'T-shirt':
+      return { category: std ? 'T-Shirts - Core' : 'T-Shirts - Premium', search: dyed, label };
+    case 'Long-sleeve':
+      return { category: 'T-Shirts - Long Sleeve', search: dyed, label };
+    case 'Hoodie':
+      return { category: std ? 'Fleece - Core - Hood' : 'Fleece - Premium - Hood', search: dyed, label };
+    case 'Sweatshirt':
+      return { category: std ? 'Fleece - Core - Crew' : 'Fleece - Premium - Crew', search: dyed, label };
+    case 'Polo':
+      return { category: 'Polos', label };
+    case 'Hat':
+      return { category: 'Headwear', label };
+    case 'Tank':
+      return { search: dyed ? 'garment-dyed tank' : 'tank', label };
+    default:
+      return { search: garment, label };
+  }
+}
 
 export default function ProductFinder({ onBrowseSimilar }: {
-  /** Apply catalogue filters (category and/or search) for the picked garment. */
-  onBrowseSimilar: (filter: { category?: string; search?: string }) => void;
+  /** Apply catalogue filters (category and/or search) for the picked
+   *  garment × tier; label names the active filter in the toolbar. */
+  onBrowseSimilar: (filter: { category?: string; search?: string; label: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [garment, setGarment] = useState<string | null>(null);
@@ -107,7 +130,7 @@ export default function ProductFinder({ onBrowseSimilar }: {
   });
 
   const reset = () => { setGarment(null); setTier(null); };
-  const similar = garment ? SIMILAR_FILTER[garment] ?? { search: garment } : {};
+  const similar = garment && tier ? similarFilter(garment, tier) : { label: '' };
 
   if (!open) {
     return (
