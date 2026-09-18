@@ -231,6 +231,10 @@ export default function ShopPage() {
   const [search, setSearch] = useState(urlSearch);
   const [brand, setBrand] = useState(urlBrand);
   const [category, setCategory] = useState(urlCategory);
+  // Set when the guided picker applied a tier-scoped filter (a raw S&S
+  // category like "T-Shirts - Core" that isn't in the retail dropdown);
+  // names the active selection and clears on any manual filter change.
+  const [finderLabel, setFinderLabel] = useState<string | null>(null);
 
   // Sync filters from URL when links are clicked
   useEffect(() => {
@@ -349,10 +353,11 @@ export default function ShopPage() {
               Premium / Ultra) applied to the catalogue: two questions in,
               one recommended blank + a filtered browse out. */}
           <ProductFinder
-            onBrowseSimilar={({ category: cat, search: q }) => {
+            onBrowseSimilar={({ category: cat, search: q, label }) => {
               setBrand('');
               setCategory(cat ?? '');
               setSearch(q ?? '');
+              setFinderLabel(label);
             }}
           />
 
@@ -368,6 +373,7 @@ export default function ShopPage() {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
+                  setFinderLabel(null);
                   // filters reset handled by queryKey change
                 }}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
@@ -379,6 +385,7 @@ export default function ShopPage() {
               value={brand}
               onChange={(e) => {
                 setBrand(e.target.value);
+                setFinderLabel(null);
               }}
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
@@ -395,10 +402,17 @@ export default function ShopPage() {
               value={category}
               onChange={(e) => {
                 setCategory(e.target.value);
+                if (e.target.value !== category) setFinderLabel(null);
               }}
               className="border border-gray-200 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-600/20 focus:border-red-600"
             >
               <option value="">All Categories</option>
+              {/* Finder-applied raw S&S category (tier-scoped, not in the
+                  retail list) — surfaced under its tier label so the
+                  dropdown never shows blank. */}
+              {finderLabel && category && !(apiCategories.length > 0 ? apiCategories : ALL_CATEGORIES).includes(category) && (
+                <option value={category}>{finderLabel}</option>
+              )}
               {(apiCategories.length > 0 ? apiCategories : ALL_CATEGORIES).map((c) => (
                 <option key={c} value={c}>
                   {c}
