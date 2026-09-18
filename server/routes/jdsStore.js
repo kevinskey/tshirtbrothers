@@ -30,13 +30,33 @@ function getStripe() {
 }
 
 // ── Public: storefront list ──────────────────────────────────────────────
-router.get('/products', async (_req, res, next) => {
+// ?search= matches name/sku/description (every term must hit);
+// ?page/?limit paginate (default 48, max 96). Returns total for the UI.
+router.get('/products', async (req, res, next) => {
   try {
+    const search = String(req.query.search ?? '').trim();
+    const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+    const limit = Math.min(96, Math.max(1, parseInt(String(req.query.limit ?? '48'), 10) || 48));
+
+    const conditions = ['active'];
+    const params = [];
+    for (const term of search.split(/\s+/).filter(Boolean).slice(0, 8)) {
+      params.push(`%${term}%`);
+      conditions.push(`(name ILIKE $${params.length} OR sku ILIKE $${params.length} OR description ILIKE $${params.length})`);
+    }
+    const where = conditions.join(' AND ');
+
+    const count = await pool.query(`SELECT COUNT(*) FROM jds_products WHERE ${where}`, params);
+    params.push(limit, (page - 1) * limit);
     const { rows } = await pool.query(
       `SELECT id, sku, name, description, image_url, retail_price_cents
-         FROM jds_products WHERE active ORDER BY created_at DESC`,
+         FROM jds_products WHERE ${where}
+        ORDER BY name ASC
+        LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
     );
-    res.json({ products: rows });
+    const total = parseInt(count.rows[0].count, 10);
+    res.json({ products: rows, total, page, totalPages: Math.max(1, Math.ceil(total / limit)) });
   } catch (err) { next(err); }
 });
 
