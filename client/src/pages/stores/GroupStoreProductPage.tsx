@@ -36,7 +36,9 @@ interface StoreProduct {
   description: string | null;
   cover_image: string | null;
   retail_price_cents: number;
-  variants_json: { sizes?: string[]; colors?: string[] };
+  // images: optional gallery (e.g. front/back renders of a two-sided
+  // shirt), populated by the publish-from-mockup flow.
+  variants_json: { sizes?: string[]; colors?: string[]; images?: string[] };
 }
 
 type Fulfillment = 'ship' | 'pickup';
@@ -56,6 +58,7 @@ export default function GroupStoreProductPage() {
   const [fulfillment, setFulfillment] = useState<Fulfillment>('ship');
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [galleryIdx, setGalleryIdx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,6 +162,12 @@ export default function GroupStoreProductPage() {
   // mini-header becomes a slim identity strip instead.
   const isBusiness = store.store_type === 'business';
 
+  // Front/back gallery for two-sided products; falls back to cover only.
+  const gallery = product.variants_json.images?.length
+    ? product.variants_json.images
+    : (product.cover_image ? [product.cover_image] : []);
+  const galleryImage = gallery[galleryIdx] ?? gallery[0] ?? null;
+
   const page = (
     <div className="min-h-screen bg-gray-50">
       <Seo
@@ -188,16 +197,34 @@ export default function GroupStoreProductPage() {
         </Link>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="aspect-square bg-gray-100">
-              {product.cover_image ? (
-                <img src={product.cover_image} alt={product.title} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <ShoppingBag className="w-16 h-16 text-gray-300" />
-                </div>
-              )}
+          <div>
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="aspect-square bg-gray-100">
+                {(galleryImage || product.cover_image) ? (
+                  <img src={galleryImage || product.cover_image || undefined} alt={product.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ShoppingBag className="w-16 h-16 text-gray-300" />
+                  </div>
+                )}
+              </div>
             </div>
+            {gallery.length > 1 && (
+              <div className="mt-3 flex gap-2">
+                {gallery.map((url, i) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => setGalleryIdx(i)}
+                    aria-label={i === 0 ? 'Front view' : i === 1 ? 'Back view' : `View ${i + 1}`}
+                    className={`h-16 w-16 rounded-md border-2 overflow-hidden bg-gray-100 ${i === galleryIdx ? '' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                    style={i === galleryIdx ? { borderColor: primary } : undefined}
+                  >
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
