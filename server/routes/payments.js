@@ -771,6 +771,38 @@ async function handleCheckoutSessionCompleted(session) {
   }
 
   const gangSheetOrderId = session.metadata?.gang_sheet_order_id;
+  // Admin-sent quote/requote adjustments (send-quote endpoint) reuse the
+  // gang_sheet_order_id metadata but must NOT run the normal paid
+  // transition — the order is usually already paid. Add the amount to the
+  // order total and leave a paper trail in admin_note. The session id in
+  // the note doubles as the replay guard.
+  if (gangSheetOrderId && session.metadata?.kind === 'adjustment') {
+    if (session.payment_status && session.payment_status !== 'paid') return;
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, admin_note FROM gang_sheet_orders WHERE id = $1',
+        [gangSheetOrderId],
+      );
+      if (!rows[0]) {
+        console.error(`[Stripe Webhook] adjustment for missing gang_sheet_order ${gangSheetOrderId} — session ${session.id}; MONEY RECEIVED, investigate`);
+        return;
+      }
+      if ((rows[0].admin_note || '').includes(session.id)) return; // replay
+      const cents = session.amount_total || 0;
+      const noteLine = `Adjustment $${(cents / 100).toFixed(2)} paid ${new Date().toISOString().slice(0, 10)} (${session.id})`;
+      await pool.query(
+        `UPDATE gang_sheet_orders
+           SET price_cents = price_cents + $2,
+               admin_note = COALESCE(admin_note || E'\n', '') || $3
+         WHERE id = $1`,
+        [gangSheetOrderId, cents, noteLine],
+      );
+      console.log(`[Stripe Webhook] gang_sheet_order ${gangSheetOrderId} adjustment of ${cents} cents recorded`);
+    } catch (err) {
+      console.error('[Stripe Webhook] gang sheet adjustment handling crashed for session ' + session.id + ':', err);
+    }
+    return;
+  }
   if (gangSheetOrderId) {
     // Stripe fires checkout.session.completed even for sessions that end up
     // unpaid (e.g. async payment methods that later fail) — only ever mark

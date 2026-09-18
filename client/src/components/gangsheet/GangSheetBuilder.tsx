@@ -44,6 +44,50 @@ interface DesignItem {
   // Many customer PNGs carry fat transparent margins; packing the visible
   // art instead of the file rectangle is what keeps sheets tight.
   trim?: { x: number; y: number; w: number; h: number };
+  // Flattened white background detected (opaque image, near-white border).
+  // DTF prints white as white ink, so this is almost always a mistake —
+  // the row shows a warning with a one-click Remove BG fix. Cleared when
+  // the customer removes the background or explicitly keeps it.
+  whiteBg?: boolean;
+}
+
+// Detect a flattened white background: no meaningful transparency AND a
+// mostly near-white border ring. Mirrors the server-side check in
+// gangsheetStore.js so the customer sees the warning the moment they add
+// the file, not after checkout. False on any failure (taint, decode).
+async function detectWhiteBackground(imageUrl: string): Promise<boolean> {
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = imageUrl;
+    });
+    const SIZE = 64;
+    const cnv = document.createElement('canvas');
+    cnv.width = SIZE; cnv.height = SIZE;
+    const ctx = cnv.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, SIZE, SIZE);
+    const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+    let transparent = 0;
+    for (let i = 0; i < SIZE * SIZE; i++) {
+      if (data[i * 4 + 3]! < 32) transparent++;
+    }
+    if (transparent / (SIZE * SIZE) > 0.02) return false;
+    let border = 0, whiteOpaque = 0;
+    const check = (x: number, y: number) => {
+      const o = (y * SIZE + x) * 4;
+      border++;
+      if (data[o]! >= 240 && data[o + 1]! >= 240 && data[o + 2]! >= 240 && data[o + 3]! >= 224) whiteOpaque++;
+    };
+    for (let x = 0; x < SIZE; x++) { check(x, 0); check(x, SIZE - 1); }
+    for (let y = 1; y < SIZE - 1; y++) { check(0, y); check(SIZE - 1, y); }
+    return whiteOpaque / border >= 0.8;
+  } catch {
+    return false;
+  }
 }
 
 // Measure the opaque bounding box of an image (fractions of natural size).
@@ -485,6 +529,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       setDesigns(prev => [...prev, design]);
       void measureAlphaTrim(imageUrl).then((trim) => {
         if (trim) setDesigns((prev) => prev.map((x) => (x.id === id ? { ...x, trim } : x)));
+      });
+      void detectWhiteBackground(imageUrl).then((flag) => {
+        if (flag) setDesigns((prev) => prev.map((x) => (x.id === id ? { ...x, whiteBg: true } : x)));
       });
 
       const img = await loadFabricImage(imageUrl);
@@ -956,9 +1003,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     resolveOverlaps();
     checkFit();
     recalculateSheet();
-    // New bitmap (rotate/BG-removal/upscale) — re-measure visible bounds.
+    // New bitmap (rotate/BG-removal/upscale) — re-measure visible bounds
+    // and re-run the white-background check (BG removal should clear it).
     void measureAlphaTrim(dataUrl).then((trim) => {
       setDesigns((prevD) => prevD.map((x) => (x.id === designId ? { ...x, trim } : x)));
+    });
+    void detectWhiteBackground(dataUrl).then((flag) => {
+      setDesigns((prevD) => prevD.map((x) => (x.id === designId ? { ...x, whiteBg: flag } : x)));
     });
   }
 
@@ -1607,6 +1658,18 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     if (designs.length === 0) {
       setCheckoutError('Add at least one design first');
       return;
+    }
+    // White-background designs the customer hasn't fixed or explicitly
+    // kept: one last confirm before money changes hands. The flag also
+    // rides server-side onto the order for the admin queue.
+    const whiteBgNames = designs.filter((d) => d.whiteBg).map((d) => d.name);
+    if (whiteBgNames.length > 0) {
+      const ok = window.confirm(
+        `Heads up: ${whiteBgNames.join(', ')} ${whiteBgNames.length === 1 ? 'has' : 'have'} a solid white background. ` +
+        'DTF prints white areas as white ink on your garment. ' +
+        'Click Cancel to go back and use "Remove background", or OK to print it exactly as shown.'
+      );
+      if (!ok) return;
     }
     // I2: catch an over-length sheet BEFORE burning a round-trip on a compose
     // request that would just get rejected — checkFit() already keeps
@@ -2448,6 +2511,34 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                               <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
                             </div>
                           </label>
+                          {d.whiteBg && (
+                            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2">
+                              <p className="text-[11px] font-semibold text-red-700">
+                                ⚠ Solid white background detected
+                              </p>
+                              <p className="mt-0.5 text-[11px] text-red-600">
+                                DTF prints exactly what you see — white areas will print as white ink on your garment.
+                              </p>
+                              <div className="mt-1.5 flex gap-2">
+                                <button
+                                  onClick={() => handleRemoveBg(d.id)}
+                                  disabled={aiBusyId === d.id}
+                                  className="flex-1 flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
+                                >
+                                  {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Eraser className="w-3 h-3" />}
+                                  Remove background
+                                </button>
+                                <button
+                                  onClick={() => setDesigns((prev) => prev.map((x) => (x.id === d.id ? { ...x, whiteBg: false } : x)))}
+                                  disabled={aiBusyId === d.id}
+                                  className="text-[11px] px-2 py-1.5 rounded-lg text-red-600 hover:bg-red-100"
+                                  title="The white background is intentional — keep it"
+                                >
+                                  Keep it
+                                </button>
+                              </div>
+                            </div>
+                          )}
                           <div className="flex gap-2 mt-2">
                             {/* Enhance tools open to customers (Kevin,
                                 2026-09-07) so art gets print-ready before it
