@@ -493,7 +493,7 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     // mockups didn't always link an S&S row explicitly).
     const src = await pool.query(
       `SELECT m.id, m.name, m.product_id, m.product_name,
-              m.product_image_url, m.preview_image_url,
+              m.product_image_url, m.preview_image_url, m.preview_image_url_back,
               COALESCE(p_by_id.ss_id, p_by_name.ss_id)           AS ss_id,
               COALESCE(p_by_id.base_price, p_by_name.base_price) AS base_price,
               COALESCE(p_by_id.colors, p_by_name.colors)         AS colors,
@@ -537,11 +537,15 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
 
     const blankCostCents =
       m.base_price != null ? Math.round(Number(m.base_price) * 100) : null;
-    const coverImage = m.preview_image_url || m.product_image_url || null;
+    const coverImage = m.preview_image_url || m.preview_image_url_back || m.product_image_url || null;
     const variants = {
       sizes:  Array.isArray(m.sizes)  ? m.sizes  : (m.sizes  ?? []),
       colors: Array.isArray(m.colors) ? m.colors : (m.colors ?? []),
     };
+    // Two-sided mockups: carry every preview so the storefront can show a
+    // front/back gallery. Rides inside variants_json — no schema change.
+    const images = [m.preview_image_url, m.preview_image_url_back].filter(Boolean);
+    if (images.length > 1) variants.images = images;
 
     try {
       const { rows } = await pool.query(
