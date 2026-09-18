@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Loader2, Package, Search } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2, Package, Search, Gift, ExternalLink } from 'lucide-react';
 
 // Blanks (JDS): SKU lookup against the JDS Industries product API — pricing
-// tiers, images, and live inventory. JDS has no ordering API, so unlike the
-// S&S section this is a read-only pricing/stock reference; orders still go
-// through the JDS website or a rep.
+// tiers, images, and live inventory. JDS has no ordering API, so blanks are
+// still ordered on the JDS website — but looked-up SKUs can be PUBLISHED to
+// the public /gifts store, where customers buy them through Stripe. Orders
+// land below for manual fulfillment on jdsindustries.com.
 
 type JdsProduct = Record<string, unknown> & { sku?: string; notFound?: boolean };
 
@@ -40,11 +41,92 @@ function num(p: JdsProduct, key: string): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
+interface PublishedProduct {
+  id: number;
+  sku: string;
+  name: string;
+  image_url: string | null;
+  cost_cents: number | null;
+  retail_price_cents: number;
+  active: boolean;
+}
+
+interface JdsOrder {
+  id: number;
+  sku: string;
+  product_name: string | null;
+  qty: number;
+  total_cents: number;
+  customer_email: string | null;
+  customer_name: string | null;
+  shipping_address: Record<string, string> | null;
+  status: string;
+  created_at: string;
+}
+
 export default function JdsAdmin() {
   const [skuText, setSkuText] = useState('');
   const [products, setProducts] = useState<JdsProduct[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // /gifts store publishing state
+  const [sellSku, setSellSku] = useState<string | null>(null);
+  const [sellPrice, setSellPrice] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState<PublishedProduct[]>([]);
+  const [orders, setOrders] = useState<JdsOrder[]>([]);
+
+  const loadStore = async () => {
+    try {
+      const [p, o] = await Promise.all([
+        fetch('/api/jds-store/admin/products', { headers: authHeaders() }).then((r) => r.json()),
+        fetch('/api/jds-store/admin/orders', { headers: authHeaders() }).then((r) => r.json()),
+      ]);
+      setPublished(p.products ?? []);
+      setOrders(o.orders ?? []);
+    } catch { /* section just stays empty */ }
+  };
+  useEffect(() => { loadStore(); }, []);
+
+  const publish = async (sku: string) => {
+    const dollars = parseFloat(sellPrice);
+    if (!Number.isFinite(dollars) || dollars <= 0 || publishing) return;
+    setPublishing(true);
+    setError(null);
+    try {
+      const r = await fetch('/api/jds-store/admin/publish', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ sku, retail_price_cents: Math.round(dollars * 100) }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => null))?.error || 'Publish failed');
+      setSellSku(null);
+      setSellPrice('');
+      await loadStore();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Publish failed');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const toggleActive = async (p: PublishedProduct) => {
+    await fetch(`/api/jds-store/admin/products/${p.id}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ active: !p.active }),
+    });
+    loadStore();
+  };
+
+  const setOrderStatus = async (id: number, status: string) => {
+    await fetch(`/api/jds-store/admin/orders/${id}`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({ status }),
+    });
+    loadStore();
+  };
 
   const lookup = async () => {
     const skus = skuText.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
@@ -115,6 +197,7 @@ export default function JdsAdmin() {
                 ))}
                 <th className="px-3 py-3 text-right">Local stock</th>
                 <th className="px-4 py-3 text-right">All warehouses</th>
+                <th className="px-4 py-3 text-right">Gifts store</th>
               </tr>
             </thead>
             <tbody>
@@ -124,7 +207,7 @@ export default function JdsAdmin() {
                   return (
                     <tr key={`${sku}-${i}`} className="border-b border-gray-100 last:border-0">
                       <td className="px-4 py-3 font-mono text-gray-900">{sku}</td>
-                      <td colSpan={tiersInUse.length + 2} className="px-3 py-3 text-red-600">
+                      <td colSpan={tiersInUse.length + 3} className="px-3 py-3 text-red-600">
                         Not found — check the SKU on jdsindustries.com
                       </td>
                     </tr>
@@ -161,11 +244,152 @@ export default function JdsAdmin() {
                     <td className={`px-4 py-3 text-right tabular-nums ${avail === 0 ? 'text-red-600 font-medium' : ''}`}>
                       {avail ?? '—'}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      {sellSku === sku ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            autoFocus
+                            value={sellPrice}
+                            onChange={(e) => setSellPrice(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && publish(sku)}
+                            placeholder="Retail $"
+                            className="w-20 border border-gray-300 rounded px-2 py-1 text-right text-sm"
+                          />
+                          <button
+                            onClick={() => publish(sku)}
+                            disabled={publishing}
+                            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-medium px-2.5 py-1.5 rounded"
+                          >
+                            {publishing ? '…' : 'Publish'}
+                          </button>
+                          <button onClick={() => setSellSku(null)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                        </span>
+                      ) : published.some((pp) => pp.sku === sku) ? (
+                        <span className="text-xs font-medium text-green-700">Listed</span>
+                      ) : (
+                        <button
+                          onClick={() => { setSellSku(sku); setSellPrice(''); }}
+                          className="text-xs font-medium text-orange-600 hover:text-orange-700"
+                        >
+                          Sell on site
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Published /gifts products */}
+      {published.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <Gift className="w-4 h-4 text-orange-500" /> Listed on the Gifts store
+            </h3>
+            <a href="/gifts" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-orange-600 hover:text-orange-700">
+              View /gifts <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                  <th className="px-4 py-3">Product</th>
+                  <th className="px-3 py-3 text-right">Cost</th>
+                  <th className="px-3 py-3 text-right">Retail</th>
+                  <th className="px-3 py-3 text-right">Margin</th>
+                  <th className="px-4 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {published.map((p) => (
+                  <tr key={p.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {p.image_url && <img src={p.image_url} alt="" className="w-10 h-10 object-contain rounded border border-gray-200 bg-white" />}
+                        <div>
+                          <div className="font-medium text-gray-900 max-w-xs truncate">{p.name}</div>
+                          <div className="font-mono text-xs text-gray-500">{p.sku}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{p.cost_cents != null ? `$${(p.cost_cents / 100).toFixed(2)}` : '—'}</td>
+                    <td className="px-3 py-3 text-right tabular-nums">${(p.retail_price_cents / 100).toFixed(2)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-green-700">
+                      {p.cost_cents != null ? `$${((p.retail_price_cents - p.cost_cents) / 100).toFixed(2)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => toggleActive(p)}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-full ${p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        {p.active ? 'Active' : 'Hidden'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Stripe orders awaiting JDS fulfillment */}
+      {orders.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">Gifts store orders</h3>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                  <th className="px-4 py-3">Order</th>
+                  <th className="px-3 py-3">Customer</th>
+                  <th className="px-3 py-3">Ship to</th>
+                  <th className="px-3 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((o) => (
+                  <tr key={o.id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900 max-w-[220px] truncate">{o.product_name || o.sku}</div>
+                      <div className="text-xs text-gray-500 font-mono">{o.sku} × {o.qty} · {new Date(o.created_at).toLocaleDateString()}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="text-gray-900">{o.customer_name || '—'}</div>
+                      <div className="text-xs text-gray-500">{o.customer_email || ''}</div>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-gray-600 max-w-[200px]">
+                      {o.shipping_address
+                        ? `${o.shipping_address.line1 || ''}, ${o.shipping_address.city || ''} ${o.shipping_address.state || ''} ${o.shipping_address.postal_code || ''}`
+                        : 'Pickup'}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">${(o.total_cents / 100).toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <select
+                        value={o.status}
+                        onChange={(e) => setOrderStatus(o.id, e.target.value)}
+                        className="text-xs border border-gray-300 rounded px-2 py-1 bg-white"
+                      >
+                        <option value="paid">Paid — order from JDS</option>
+                        <option value="ordered">Ordered from JDS</option>
+                        <option value="shipped">Shipped / picked up</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

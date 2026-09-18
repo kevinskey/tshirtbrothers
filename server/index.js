@@ -44,6 +44,7 @@ import addressRouter from './routes/address.js';
 import newsletterRouter from './routes/newsletter.js';
 import purchasingRouter from './routes/purchasing.js';
 import jdsRouter from './routes/jds.js';
+import jdsStoreRouter from './routes/jdsStore.js';
 import mailRouter from './routes/mail.js';
 import orderDetailRouter from './routes/orderDetail.js';
 import { startMailSync } from './services/mailbox.js';
@@ -102,6 +103,7 @@ app.use('/api/address', addressRouter);
 app.use('/api/newsletter', newsletterRouter);
 app.use('/api/purchasing', purchasingRouter);
 app.use('/api/jds', jdsRouter);
+app.use('/api/jds-store', jdsStoreRouter); // JDS gifts & awards retail store (Stripe)
 app.use('/api/mail', mailRouter);
 app.use('/api/admin/order-detail', orderDetailRouter);
 app.use('/api', sitemapRouter);
