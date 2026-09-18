@@ -10,7 +10,7 @@
  * filter to browse everything similar in the catalogue below.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Sparkles, X, ArrowLeft, Palette, Tag, LayoutGrid, Loader2 } from 'lucide-react';
@@ -136,7 +136,14 @@ export default function ProductFinder({ onBrowseSimilar }: {
   });
 
   const reset = () => { setGarment(null); setTier(null); };
-  const similar = garment && tier ? similarFilter(garment, tier) : { label: '' };
+
+  // The grid must correspond to the selection the moment a pick exists —
+  // apply the tier-scoped filter as soon as both answers are in, so the
+  // products behind the card are already the right ones.
+  useEffect(() => {
+    if (garment && tier) onBrowseSimilar(similarFilter(garment, tier));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [garment, tier]);
 
   if (!open) {
     return (
@@ -260,9 +267,11 @@ export default function ProductFinder({ onBrowseSimilar }: {
                   >
                     <Tag className="h-3.5 w-3.5" /> Get a price
                   </Link>
+                  {/* Filter is already applied by the selection effect —
+                      this just collapses the card so the grid is visible. */}
                   <button
                     type="button"
-                    onClick={() => { onBrowseSimilar(similar); reset(); setOpen(false); }}
+                    onClick={() => { reset(); setOpen(false); }}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
                   >
                     <LayoutGrid className="h-3.5 w-3.5" /> Browse all similar
@@ -280,7 +289,7 @@ export default function ProductFinder({ onBrowseSimilar }: {
               </p>
               <button
                 type="button"
-                onClick={() => { onBrowseSimilar(similar); reset(); setOpen(false); }}
+                onClick={() => { reset(); setOpen(false); }}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 transition-colors"
               >
                 <LayoutGrid className="h-3.5 w-3.5" /> Show {garment?.toLowerCase()}s
