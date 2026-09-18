@@ -32,6 +32,7 @@ import WebstoresPage from '@/pages/WebstoresPage';
 import WebstoresBusinessPage from '@/pages/WebstoresBusinessPage';
 import TsbProPage from '@/pages/TsbProPage';
 import ProLoginPage from '@/pages/ProLoginPage';
+import GiftsStorePage from '@/pages/GiftsStorePage';
 import BlogPage from '@/pages/BlogPage';
 import BlogPostPage from '@/pages/BlogPostPage';
 import AccountPage from '@/pages/AccountPage';
@@ -136,6 +137,7 @@ function App() {
           <Route path="/webstores/business" element={<WebstoresBusinessPage />} />
           {/* TSB Pro — B2B program landing (business web stores). */}
           <Route path="/pro" element={<TsbProPage />} />
+          <Route path="/gifts" element={<GiftsStorePage />} />
           <Route path="/pro/login" element={<ProLoginPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.

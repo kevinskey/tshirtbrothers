@@ -655,7 +655,39 @@ async function handleCheckoutSessionCompleted(session) {
   const quoteId = session.metadata?.quoteId;
   const invoiceId = session.metadata?.invoice_id;
   const storeId = session.metadata?.store_id;
+  const jdsSku = session.metadata?.jds_sku;
   const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+
+  // JDS gifts-store purchase (routes/jdsStore.js). Record the order for
+  // manual fulfillment on jdsindustries.com; idempotent on session id so
+  // Stripe webhook retries can't double-log.
+  if (jdsSku) {
+    try {
+      await pool.query(
+        `INSERT INTO jds_orders
+           (stripe_session_id, sku, product_name, qty, unit_price_cents,
+            shipping_cents, total_cents, customer_email, customer_name,
+            shipping_address, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'paid')
+         ON CONFLICT (stripe_session_id) DO NOTHING`,
+        [
+          session.id, jdsSku,
+          session.metadata?.jds_product_name || null,
+          parseInt(session.metadata?.qty || '1', 10) || 1,
+          parseInt(session.metadata?.unit_price_cents || '0', 10) || 0,
+          session.total_details?.amount_shipping ?? 0,
+          session.amount_total ?? 0,
+          session.customer_details?.email || null,
+          session.customer_details?.name || session.shipping_details?.name || null,
+          session.shipping_details?.address
+            ? JSON.stringify(session.shipping_details.address) : null,
+        ],
+      );
+    } catch (err) {
+      console.error('[Stripe Webhook] JDS order capture failed:', err);
+    }
+    return;
+  }
 
   // Franchise-store checkout: distinct metadata shape from quote/invoice
   // flows. Route to the store capture pipeline (which handles idempotency,
