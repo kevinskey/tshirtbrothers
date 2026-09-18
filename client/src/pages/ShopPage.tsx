@@ -199,7 +199,11 @@ async function fetchCatalog(params: {
   if (params.category) query.set('category', params.category);
   query.set('page', String(params.page));
 
-  query.set('limit', '48');
+  // 500 is the API's max page size — filtered sets (a tier browse, a
+  // garment search) load completely in one shot instead of appearing
+  // capped at ~48; infinite scroll still pages anything larger. Card
+  // images are loading="lazy", so the big first page stays cheap.
+  query.set('limit', '500');
   const res = await fetch(`/api/products?${query.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch products');
   return res.json() as Promise<ProductsResponse>;
