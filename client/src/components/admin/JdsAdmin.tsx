@@ -75,6 +75,11 @@ export default function JdsAdmin() {
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState<PublishedProduct[]>([]);
   const [orders, setOrders] = useState<JdsOrder[]>([]);
+  // Bulk publish: apply cost × multiplier (rounded to .99) to every
+  // looked-up SKU that isn't already listed.
+  const [bulkMult, setBulkMult] = useState('3');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkSummary, setBulkSummary] = useState<string | null>(null);
 
   const loadStore = async () => {
     try {
@@ -107,6 +112,33 @@ export default function JdsAdmin() {
       setError(e instanceof Error ? e.message : 'Publish failed');
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const bulkPublish = async () => {
+    const skus = products.filter((p) => !p.notFound && p.sku).map((p) => String(p.sku));
+    const mult = parseFloat(bulkMult);
+    if (!skus.length || !Number.isFinite(mult) || mult <= 0 || bulkBusy) return;
+    setBulkBusy(true);
+    setBulkSummary(null);
+    setError(null);
+    try {
+      const r = await fetch('/api/jds-store/admin/bulk-publish', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ skus, multiplier: mult }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || 'Bulk publish failed');
+      const skippedByReason: Record<string, number> = {};
+      for (const s of body.skipped ?? []) skippedByReason[s.reason] = (skippedByReason[s.reason] ?? 0) + 1;
+      const skippedText = Object.entries(skippedByReason).map(([r2, n]) => `${n} ${r2}`).join(', ');
+      setBulkSummary(`Published ${body.published?.length ?? 0} to /gifts${skippedText ? ` · skipped: ${skippedText}` : ''}`);
+      await loadStore();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Bulk publish failed');
+    } finally {
+      setBulkBusy(false);
     }
   };
 
@@ -185,6 +217,33 @@ export default function JdsAdmin() {
           {error && <span className="text-sm text-red-600">{error}</span>}
         </div>
       </div>
+
+      {products.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+          <Gift className="w-4 h-4 text-orange-600 shrink-0" />
+          <span className="text-sm text-gray-700">
+            Publish all {products.filter((p) => !p.notFound).length} results to the Gifts store at cost ×
+          </span>
+          <input
+            type="number"
+            min="1"
+            step="0.1"
+            value={bulkMult}
+            onChange={(e) => setBulkMult(e.target.value)}
+            className="w-16 border border-gray-300 rounded px-2 py-1 text-sm text-right bg-white"
+          />
+          <span className="text-xs text-gray-500">rounded to .99 · already-listed SKUs keep their price</span>
+          <button
+            onClick={bulkPublish}
+            disabled={bulkBusy}
+            className="inline-flex items-center gap-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
+          >
+            {bulkBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+            Publish all
+          </button>
+          {bulkSummary && <span className="text-sm font-medium text-green-700">{bulkSummary}</span>}
+        </div>
+      )}
 
       {products.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
