@@ -9,7 +9,7 @@ import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
-import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles } from '../services/email.js';
+import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles, sendGangSheetQuoteToCustomer } from '../services/email.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const router = Router();
@@ -21,6 +21,43 @@ function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('Stripe not configured');
   return new Stripe(key);
+}
+
+// DTF prints exactly what's in the file — an opaque image with a near-white
+// border is almost always a flattened logo that should have had a
+// transparent background (white areas print as white ink; see order #17).
+// Downscale to 64px and sample: flag when the image has no meaningful
+// transparency AND ≥80% of its border ring is near-white. A legit full-bleed
+// design (photo patch, solid color block) stays unflagged because its border
+// isn't white; a proper cut-out stays unflagged because it has transparency.
+async function looksWhiteBackground(buf, limitInputPixels) {
+  try {
+    const SIZE = 64;
+    const { data, info } = await sharp(buf, { limitInputPixels })
+      .resize(SIZE, SIZE, { fit: 'fill' })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const total = info.width * info.height;
+    let transparent = 0;
+    for (let i = 0; i < total; i++) {
+      if (data[i * 4 + 3] < 32) transparent++;
+    }
+    if (transparent / total > 0.02) return false;
+    let border = 0;
+    let whiteOpaque = 0;
+    const check = (x, y) => {
+      const o = (y * info.width + x) * 4;
+      border++;
+      if (data[o] >= 240 && data[o + 1] >= 240 && data[o + 2] >= 240 && data[o + 3] >= 224) whiteOpaque++;
+    };
+    for (let x = 0; x < info.width; x++) { check(x, 0); check(x, info.height - 1); }
+    for (let y = 1; y < info.height - 1; y++) { check(0, y); check(info.width - 1, y); }
+    return whiteOpaque / border >= 0.8;
+  } catch (err) {
+    console.error('[dtf-store] white-bg check failed:', err.message);
+    return false;
+  }
 }
 
 // Tier promises are copy, centralised so client + emails agree.
@@ -201,6 +238,14 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
         error: `Your file is ${Math.ceil(dims.height / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
       });
     }
+    // A whole-sheet PNG with a solid white background would print the
+    // entire sheet in white ink — hard-stop it here with an actionable
+    // message rather than letting it reach production (order #17 lesson).
+    if (await looksWhiteBackground(fileBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1))) {
+      return res.status(400).json({
+        error: 'This sheet has a solid white background — DTF prints white areas as white ink. Export your PNG with a transparent background and re-upload.',
+      });
+    }
     // Embed the server-parsed dims directly in the key so /checkout can
     // derive width/height from the key itself instead of trusting whatever
     // the client claims in the checkout request body (C1 fix).
@@ -293,19 +338,21 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
 
     // Layout stashed at compose time (builder sheets); null for uploads.
     let layoutJson = null;
+    let whiteBgFlag = false;
     try {
-      const lay = await pool.query('SELECT layout FROM gang_sheet_layouts WHERE file_key = $1', [file_key]);
+      const lay = await pool.query('SELECT layout, white_bg_flag FROM gang_sheet_layouts WHERE file_key = $1', [file_key]);
       layoutJson = lay.rows[0]?.layout ? JSON.stringify(lay.rows[0].layout) : null;
+      whiteBgFlag = lay.rows[0]?.white_bg_flag === true;
     } catch { /* table may not exist yet on first boot — non-fatal */ }
 
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
         (customer_name, customer_email, length_ft, tier, price_cents, shipping_cents,
-         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
       [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson],
+       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag],
     );
     const orderId = ins.rows[0].id;
 
@@ -628,6 +675,15 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
       return res.status(400).json({ error: 'Could not fetch one of your design images — try re-adding it' });
     }
 
+    // Flag (don't block) placements that look like flattened white-background
+    // art. The builder UI warns the customer with a remove-background offer;
+    // this server-side flag rides the layout onto the order so the admin
+    // queue shows it even if the customer clicked past the warning.
+    let anyWhiteBg = false;
+    for (const buf of bufferByUrl.values()) {
+      if (await looksWhiteBackground(buf, pixelLimit)) { anyWhiteBg = true; break; }
+    }
+
     let composeInputs;
     try {
       composeInputs = await Promise.all(cleaned.map(async (p) => {
@@ -680,12 +736,12 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     // sizes. Best-effort: a failure here must not break composing.
     try {
       await pool.query(
-        `INSERT INTO gang_sheet_layouts (file_key, layout)
-         VALUES ($1, $2) ON CONFLICT (file_key) DO NOTHING`,
+        `INSERT INTO gang_sheet_layouts (file_key, layout, white_bg_flag)
+         VALUES ($1, $2, $3) ON CONFLICT (file_key) DO NOTHING`,
         [key, JSON.stringify(cleaned.map((p) => ({
           image_url: p.imageUrl, left: p.left, top: p.top,
           width: p.width, height: p.height, rotation: p.rotation,
-        })))]
+        }))), anyWhiteBg]
       );
     } catch (layoutErr) {
       console.error('[dtf-store] compose: layout stash failed:', layoutErr.message);
@@ -810,6 +866,72 @@ router.patch('/admin/orders/:id', ...adminGuard, async (req, res, next) => {
         .catch((e) => console.error('[dtf-store] ready email failed:', e.message));
     }
     res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Admin: shop-side note on an order ─────────────────────────────────────
+// Separate from `note` (the customer's checkout note, immutable).
+router.patch('/admin/orders/:id/note', ...adminGuard, async (req, res, next) => {
+  try {
+    const adminNote = typeof req.body?.admin_note === 'string'
+      ? req.body.admin_note.trim().slice(0, 4000)
+      : '';
+    const { rows } = await pool.query(
+      'UPDATE gang_sheet_orders SET admin_note = $1 WHERE id = $2 RETURNING *',
+      [adminNote || null, req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
+// ── Admin: email a quote / requote to the customer ────────────────────────
+// Body: { message: string, amount_cents?: number }
+// With amount_cents > 0, a Stripe Checkout link for that amount rides along
+// (metadata.kind='adjustment' so the webhook adds it to the order total
+// instead of re-running the normal paid transition). Without it, the email
+// is just the message — useful for "fix your file" requotes with no charge.
+router.post('/admin/orders/:id/send-quote', ...adminGuard, async (req, res, next) => {
+  try {
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim().slice(0, 4000) : '';
+    if (!message) return res.status(400).json({ error: 'message required' });
+    const amountCents = Number.isInteger(req.body?.amount_cents) && req.body.amount_cents > 0
+      ? Math.min(req.body.amount_cents, 500_000)
+      : 0;
+
+    const { rows } = await pool.query('SELECT * FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    const order = rows[0];
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.customer_email) return res.status(400).json({ error: 'Order has no customer email' });
+
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    let payUrl = null;
+    if (amountCents > 0) {
+      const session = await getStripe().checkout.sessions.create({
+        mode: 'payment',
+        payment_method_types: ['card'],
+        line_items: [{
+          price_data: {
+            currency: 'usd',
+            product_data: { name: `DTF gang sheet order #${order.id} — adjustment` },
+            unit_amount: amountCents,
+          },
+          quantity: 1,
+        }],
+        customer_email: order.customer_email,
+        success_url: `${domain}/dtf/success?order=${order.id}`,
+        cancel_url: `${domain}/dtf`,
+        metadata: { gang_sheet_order_id: String(order.id), kind: 'adjustment' },
+      });
+      payUrl = session.url;
+    }
+
+    await sendGangSheetQuoteToCustomer({ order, message, amountCents, payUrl });
+    const { rows: updated } = await pool.query(
+      'UPDATE gang_sheet_orders SET quote_sent_at = now() WHERE id = $1 RETURNING *',
+      [order.id],
+    );
+    res.json({ ok: true, pay_url: payUrl, order: updated[0] });
   } catch (err) { next(err); }
 });
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X } from 'lucide-react';
+import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X, PenSquare, Mail } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsheet/SendToVendorDialog';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -27,6 +27,9 @@ type OrderRow = {
   ship_address: ShipAddress | null;
   file_height_px: number | null;
   note: string | null;
+  admin_note: string | null;
+  quote_sent_at: string | null;
+  white_bg_flag: boolean | null;
   status: string;
   paid_at: string | null;
   created_at: string;
@@ -539,6 +542,77 @@ function DtfOrdersQueue() {
   }
   const [vendorFiles, setVendorFiles] = useState<File[]>([]);
 
+  // Admin note editor + quote/requote composer (null = closed).
+  const [noteOrder, setNoteOrder] = useState<OrderRow | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [quoteOrder, setQuoteOrder] = useState<OrderRow | null>(null);
+  const [quoteMessage, setQuoteMessage] = useState('');
+  const [quoteAmount, setQuoteAmount] = useState('');
+  const [quoteSending, setQuoteSending] = useState(false);
+
+  function openNoteEditor(order: OrderRow) {
+    setNoteOrder(order);
+    setNoteText(order.admin_note || '');
+  }
+
+  async function saveAdminNote() {
+    if (!noteOrder) return;
+    setNoteSaving(true);
+    try {
+      const r = await fetch(`/api/gangsheet-store/admin/orders/${noteOrder.id}/note`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ admin_note: noteText }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || 'Save failed');
+      toast.success('Note saved');
+      setNoteOrder(null);
+      queryClient.invalidateQueries({ queryKey: ['dtf-admin-orders'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  function openQuoteComposer(order: OrderRow) {
+    setQuoteOrder(order);
+    setQuoteMessage(`Hi ${order.customer_name || 'there'},\n\nAbout your DTF gang sheet order #${order.id}: `);
+    setQuoteAmount('');
+  }
+
+  async function sendQuote() {
+    if (!quoteOrder || !quoteMessage.trim()) return;
+    const dollars = quoteAmount.trim() === '' ? 0 : Number(quoteAmount);
+    if (Number.isNaN(dollars) || dollars < 0) { toast.error('Amount must be a number'); return; }
+    setQuoteSending(true);
+    try {
+      const r = await fetch(`/api/gangsheet-store/admin/orders/${quoteOrder.id}/send-quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({
+          message: quoteMessage,
+          amount_cents: dollars > 0 ? Math.round(dollars * 100) : undefined,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || 'Send failed');
+      toast.success(
+        dollars > 0
+          ? `Quote with $${dollars.toFixed(2)} payment link sent to ${quoteOrder.customer_email}`
+          : `Email sent to ${quoteOrder.customer_email}`,
+      );
+      setQuoteOrder(null);
+      queryClient.invalidateQueries({ queryKey: ['dtf-admin-orders'] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Send failed');
+    } finally {
+      setQuoteSending(false);
+    }
+  }
+
   async function sendFilesToVendor(payload: VendorSendPayload) {
     if (vendorFiles.length === 0) return;
     const fd = new FormData();
@@ -694,6 +768,14 @@ function DtfOrdersQueue() {
                             </span>
                           )}
                         </div>
+                        {order.white_bg_flag && (
+                          <span
+                            className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700"
+                            title="At least one placed image is fully opaque with a white border — white areas will print as white ink. Check the sheet before production."
+                          >
+                            ⚠ White background
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <div className="font-medium text-gray-900">{order.customer_name || '—'}</div>
@@ -716,6 +798,16 @@ function DtfOrdersQueue() {
                       </td>
                       <td className="px-3 py-3 max-w-[160px]">
                         {order.note && <p className="text-xs italic text-gray-600">{order.note}</p>}
+                        {order.admin_note && (
+                          <p className="mt-1 whitespace-pre-wrap rounded bg-amber-50 px-1.5 py-1 text-xs text-amber-900">{order.admin_note}</p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openNoteEditor(order)}
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-gray-700"
+                        >
+                          <PenSquare className="h-3 w-3" /> {order.admin_note ? 'Edit note' : 'Add note'}
+                        </button>
                       </td>
                       <td className="px-3 py-3">
                         <div className="font-semibold text-gray-900">{money(order.price_cents)}</div>
@@ -758,6 +850,20 @@ function DtfOrdersQueue() {
                               {new Date(order.vendor_sent_at).toLocaleDateString()}
                             </span>
                           )}
+                          {order.customer_email && (
+                            <button
+                              type="button"
+                              onClick={() => openQuoteComposer(order)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-purple-200 px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50"
+                            >
+                              <Mail className="h-3.5 w-3.5" /> Email quote
+                            </button>
+                          )}
+                          {order.quote_sent_at && (
+                            <span className="text-[11px] text-gray-500">
+                              Quote sent {new Date(order.quote_sent_at).toLocaleDateString()}
+                            </span>
+                          )}
                           {action && (
                             <button
                               type="button"
@@ -788,6 +894,77 @@ function DtfOrdersQueue() {
           </div>
         )}
       </div>
+
+      {/* Admin note editor */}
+      {noteOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setNoteOrder(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-gray-900">Note on order #{noteOrder.id}</h3>
+            <p className="mt-0.5 text-xs text-gray-500">Shop-side only — the customer never sees this.</p>
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              rows={5}
+              autoFocus
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+              placeholder="Called customer about the white background; waiting on a new file…"
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setNoteOrder(null)} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800">Cancel</button>
+              <button
+                onClick={() => void saveAdminNote()}
+                disabled={noteSaving}
+                className="rounded-lg bg-gray-900 px-4 py-1.5 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                {noteSaving ? 'Saving…' : 'Save note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quote / requote composer */}
+      {quoteOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setQuoteOrder(null)}>
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-gray-900">Email {quoteOrder.customer_name || quoteOrder.customer_email} about order #{quoteOrder.id}</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Sends from the shop with reply-to your inbox. Add an amount to include a Stripe payment link —
+              when paid, it's added to the order total automatically.
+            </p>
+            <textarea
+              value={quoteMessage}
+              onChange={(e) => setQuoteMessage(e.target.value)}
+              rows={7}
+              autoFocus
+              className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+            />
+            <div className="mt-3 flex items-center gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">Adjustment $</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={quoteAmount}
+                onChange={(e) => setQuoteAmount(e.target.value)}
+                placeholder="0.00 (optional)"
+                className="w-32 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-orange-500 focus:outline-none"
+              />
+              <span className="text-xs text-gray-400">Leave blank for a message-only email</span>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setQuoteOrder(null)} className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-800">Cancel</button>
+              <button
+                onClick={() => void sendQuote()}
+                disabled={quoteSending || !quoteMessage.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+              >
+                <Mail className="h-3.5 w-3.5" /> {quoteSending ? 'Sending…' : 'Send email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sheet viewer: what's on the sheet (counts + sizes) and the PNG itself */}
       {viewOrder && (

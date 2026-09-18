@@ -1558,6 +1558,40 @@ export async function sendGangSheetReadyToCustomer({ order }) {
   });
 }
 
+// Quote / requote from the shop about a DTF gang sheet order — free-form
+// admin message, optionally with a Stripe payment link for an adjustment
+// amount (file fix fee, size change, etc.). replyTo is the admin inbox so
+// the customer's answer lands somewhere monitored.
+export async function sendGangSheetQuoteToCustomer({ order, message, amountCents = 0, payUrl = null }) {
+  const paragraphs = String(message).split(/\n{2,}/).map((p) =>
+    `<p style="margin:0 0 12px;font-size:15px;color:#374151;">${escapeHtml(p).replace(/\n/g, '<br/>')}</p>`
+  ).join('');
+  const payBlock = amountCents > 0 && payUrl
+    ? `
+      ${detailsTable(
+        detailRow('Order', `#${order.id}`) +
+        detailRow('Adjustment', `<strong>${formatCurrency(amountCents / 100)}</strong>`)
+      )}
+      ${primaryButton(`Pay ${formatCurrency(amountCents / 100)}`, payUrl)}
+      <p style="font-size:13px;color:#6b7280;margin-top:12px;">Direct payment link: <a href="${payUrl}" style="color:${BRAND_ORANGE};word-break:break-all;">${payUrl}</a></p>
+    `
+    : detailsTable(detailRow('Order', `#${order.id}`));
+  const body = `
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.customer_name || 'there')},</p>
+    ${paragraphs}
+    ${payBlock}
+    <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-1392.</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [order.customer_email],
+    replyTo: ADMIN_EMAIL,
+    bcc: [ADMIN_EMAIL],
+    subject: `About your DTF order #${order.id}`,
+    html: baseLayout('Your DTF Order', body),
+  });
+}
+
 // Presigned-link handoff for a single gang sheet print file — used by the
 // admin builder's File > Email Sheet action and the sheets-folder Email
 // button. Lighter than the vendor email: no production spec table, just
