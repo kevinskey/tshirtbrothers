@@ -36,8 +36,12 @@ export default function GiftsStorePage() {
   const purchased = searchParams.get('purchased') === '1';
   const [buyingSku, setBuyingSku] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  // ?search= lets menu links land pre-filtered (Engraved Drinkware →
+  // /gifts?search=tumbler).
+  const urlSearch = searchParams.get('search') || '';
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const [search, setSearch] = useState(urlSearch);
+  useEffect(() => { setSearchInput(urlSearch); setSearch(urlSearch); }, [urlSearch]);
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Debounce typing so we don't hammer the API per keystroke.

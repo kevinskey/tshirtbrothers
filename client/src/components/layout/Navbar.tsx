@@ -14,8 +14,8 @@ const catalogueLinks: NavLink[] = [
   { label: 'Polos', href: '/shop?category=Polos' },
   { label: 'Outerwear', href: '/shop?category=Outerwear' },
   { label: 'Accessories', href: '/shop?category=Accessories' },
-  { label: 'Engraved Drinkware', href: '/drinkware' },
-  { label: 'Awards & Trophies', href: '/awards' },
+  { label: 'Engraved Drinkware', href: '/gifts?search=tumbler' },
+  { label: 'Awards & Trophies', href: '/gifts?search=award' },
   { label: 'All Products', href: '/shop' },
 ];
 
@@ -26,8 +26,8 @@ const catalogueLinksEs: NavLink[] = [
   { label: 'Polos', href: '/shop?category=Polos' },
   { label: 'Chaquetas', href: '/shop?category=Outerwear' },
   { label: 'Accesorios', href: '/shop?category=Accessories' },
-  { label: 'Vasos Grabados', href: '/drinkware' },
-  { label: 'Premios y Trofeos', href: '/awards' },
+  { label: 'Vasos Grabados', href: '/gifts?search=tumbler' },
+  { label: 'Premios y Trofeos', href: '/gifts?search=award' },
   { label: 'Todos los Productos', href: '/shop' },
 ];
 
@@ -39,6 +39,7 @@ const subNavEntries: NavEntry[] = [
   { label: 'Design Studio', href: '/design' },
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
+  { label: 'Gifts & Awards', href: '/gifts' },
   { label: 'DTF Transfers', href: '/dtf' },
   { label: 'Compare Shirt Tiers', href: '/compare' },
   { label: 'Web Stores', children: [
@@ -54,6 +55,7 @@ const subNavEntriesEs: NavEntry[] = [
   { label: 'Estudio de Diseño', href: '/design' },
   { label: 'Catálogo', children: catalogueLinksEs },
   { label: 'Obtener Cotización', href: '/es/cotizacion' },
+  { label: 'Regalos y Premios', href: '/gifts' },
   { label: 'Transferencias DTF', href: '/dtf' },
   { label: 'Compara Camisetas', href: '/compare' },
   { label: 'Tiendas Web', children: [
