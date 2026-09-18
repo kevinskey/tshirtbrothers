@@ -149,6 +149,50 @@ type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected' | 'archived';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
+// Customers table column sorting.
+type CustomerSortKey = 'name' | 'email' | 'type' | 'spent' | 'designs' | 'quotes' | 'studio' | 'last_active' | 'joined';
+// First click on a column sorts in its natural direction: text ascending,
+// numbers and dates descending (biggest/newest first).
+const CUSTOMER_SORT_DEFAULT_DIR: Record<CustomerSortKey, 'asc' | 'desc'> = {
+  name: 'asc', email: 'asc', type: 'desc', spent: 'desc', designs: 'desc',
+  quotes: 'desc', studio: 'desc', last_active: 'desc', joined: 'desc',
+};
+function customerSortValue(c: Customer, key: CustomerSortKey): string | number {
+  switch (key) {
+    case 'name': return (c.name || '').toLowerCase();
+    case 'email': return (c.email || '').toLowerCase();
+    case 'type': return c.buying ? 1 : 0;
+    case 'spent': return c.paid_cents || 0;
+    case 'designs': return c.design_count || 0;
+    case 'quotes': return c.quote_count || 0;
+    case 'studio': return c.activity?.design_studio_open || 0;
+    case 'last_active': return c.last_active ? new Date(c.last_active).getTime() : 0;
+    case 'joined': return c.created_at ? new Date(c.created_at).getTime() : 0;
+  }
+}
+function CustomerSortTh({ label, k, sort, onSort, align, title }: {
+  label: string;
+  k: CustomerSortKey;
+  sort: { key: CustomerSortKey; dir: 'asc' | 'desc' };
+  onSort: (k: CustomerSortKey) => void;
+  align?: 'right';
+  title?: string;
+}) {
+  const active = sort.key === k;
+  return (
+    <th className={`px-3 py-2 font-medium whitespace-nowrap ${align === 'right' ? 'text-right' : ''}`} title={title}>
+      <button
+        type="button"
+        onClick={() => onSort(k)}
+        className={`inline-flex items-center gap-0.5 hover:text-gray-900 transition-colors ${active ? 'text-gray-900 font-semibold' : ''}`}
+      >
+        {label}
+        <span className="text-[9px] leading-none w-2 text-left">{active ? (sort.dir === 'asc' ? '▲' : '▼') : ''}</span>
+      </button>
+    </th>
+  );
+}
+
 // Sidebar nav, grouped. Categories, Orders, and Promotions are deliberately
 // NOT in the sidebar — they're routable via ?section= deep-links and reachable
 // as sub-tabs inside Products / Pipeline / Settings respectively. Keeps the
@@ -888,6 +932,10 @@ export default function AdminPage() {
   // Multi-select for bulk delete (account rows only — guests have no users row).
   const [checkedCustomerIds, setCheckedCustomerIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Client-side sort + filters over the loaded customer list.
+  const [customerSort, setCustomerSort] = useState<{ key: CustomerSortKey; dir: 'asc' | 'desc' }>({ key: 'joined', dir: 'desc' });
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<'all' | 'buying' | 'non-buying'>('all');
+  const [customerKindFilter, setCustomerKindFilter] = useState<'all' | 'accounts' | 'guests'>('all');
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address_street: '', address_city: '', address_state: '', address_zip: '' });
@@ -2538,6 +2586,30 @@ export default function AdminPage() {
   const categories = categoriesQuery.data ?? [];
   const designs = designsQuery.data ?? [];
   const customers = customersQuery.data ?? [];
+  // Filtered + sorted view for the Customers table only — `customers` stays
+  // raw because the invoice customer-autocomplete searches the full list.
+  const customersView = useMemo(() => {
+    let list = customers;
+    if (customerTypeFilter !== 'all') {
+      list = list.filter((c) => (customerTypeFilter === 'buying' ? c.buying : !c.buying));
+    }
+    if (customerKindFilter !== 'all') {
+      list = list.filter((c) => String(c.id).startsWith('guest:') === (customerKindFilter === 'guests'));
+    }
+    const { key, dir } = customerSort;
+    const mul = dir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const av = customerSortValue(a, key);
+      const bv = customerSortValue(b, key);
+      if (av < bv) return -mul;
+      if (av > bv) return mul;
+      return 0;
+    });
+  }, [customers, customerSort, customerTypeFilter, customerKindFilter]);
+  const toggleCustomerSort = (k: CustomerSortKey) =>
+    setCustomerSort((prev) => (prev.key === k
+      ? { key: k, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key: k, dir: CUSTOMER_SORT_DEFAULT_DIR[k] }));
   const orders = ordersQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
   const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
@@ -3850,6 +3922,35 @@ export default function AdminPage() {
               />
             </div>
 
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                {([['all', 'All'], ['buying', 'Buying'], ['non-buying', 'Non-buying']] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    onClick={() => setCustomerTypeFilter(v)}
+                    className={`px-3 py-1.5 text-xs font-medium transition ${
+                      customerTypeFilter === v ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select
+                value={customerKindFilter}
+                onChange={(e) => setCustomerKindFilter(e.target.value as typeof customerKindFilter)}
+                className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 bg-white"
+              >
+                <option value="all">Accounts + guests</option>
+                <option value="accounts">Accounts only</option>
+                <option value="guests">Guests only</option>
+              </select>
+              <span className="text-xs text-gray-400 ml-1">
+                {customersView.length} of {customers.length}
+              </span>
+            </div>
+
             {/* Bulk actions — appears once anything is checked */}
             {checkedCustomerIds.size > 0 && (
               <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
@@ -3904,32 +4005,32 @@ export default function AdminPage() {
                           type="checkbox"
                           aria-label="Select all"
                           checked={(() => {
-                            const selectable = customers.filter((c: Customer) => !String(c.id).startsWith('guest:'));
+                            const selectable = customersView.filter((c: Customer) => !String(c.id).startsWith('guest:'));
                             return selectable.length > 0 && selectable.every((c: Customer) => checkedCustomerIds.has(String(c.id)));
                           })()}
                           onChange={(e) => {
-                            const selectable = customers
+                            const selectable = customersView
                               .filter((c: Customer) => !String(c.id).startsWith('guest:'))
                               .map((c: Customer) => String(c.id));
                             setCheckedCustomerIds(e.target.checked ? new Set(selectable) : new Set());
                           }}
                         />
                       </th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">Name</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
+                      <CustomerSortTh label="Name" k="name" sort={customerSort} onSort={toggleCustomerSort} />
+                      <CustomerSortTh label="Email" k="email" sort={customerSort} onSort={toggleCustomerSort} />
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Phone</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">Type</th>
-                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Spent</th>
-                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Designs</th>
-                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Quotes</th>
-                      <th className="px-3 py-2 font-medium text-right whitespace-nowrap" title="Design studio opens (first-party tracking)">Studio</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">Last Active</th>
-                      <th className="px-3 py-2 font-medium whitespace-nowrap">Joined</th>
+                      <CustomerSortTh label="Type" k="type" sort={customerSort} onSort={toggleCustomerSort} />
+                      <CustomerSortTh label="Spent" k="spent" sort={customerSort} onSort={toggleCustomerSort} align="right" />
+                      <CustomerSortTh label="Designs" k="designs" sort={customerSort} onSort={toggleCustomerSort} align="right" />
+                      <CustomerSortTh label="Quotes" k="quotes" sort={customerSort} onSort={toggleCustomerSort} align="right" />
+                      <CustomerSortTh label="Studio" k="studio" sort={customerSort} onSort={toggleCustomerSort} align="right" title="Design studio opens (first-party tracking)" />
+                      <CustomerSortTh label="Last Active" k="last_active" sort={customerSort} onSort={toggleCustomerSort} />
+                      <CustomerSortTh label="Joined" k="joined" sort={customerSort} onSort={toggleCustomerSort} />
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {customers.map((c: Customer) => (
+                    {customersView.map((c: Customer) => (
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="px-3 py-2 w-8">
                           {!String(c.id).startsWith('guest:') && (
@@ -4030,7 +4131,7 @@ export default function AdminPage() {
                         </td>
                       </tr>
                     ))}
-                    {customers.length === 0 && !customersQuery.isLoading && (
+                    {customersView.length === 0 && !customersQuery.isLoading && (
                       <tr>
                         <td colSpan={12} className="px-3 py-8 text-center text-gray-400">
                           No customers found
