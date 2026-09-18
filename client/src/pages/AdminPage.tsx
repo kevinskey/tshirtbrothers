@@ -9536,6 +9536,30 @@ function InvoicePipelineCard({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invo
 function GangSheetRow({ order }: { order: GangSheetOrder }) {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Print files are private in Spaces, so the thumb comes through the
+  // authenticated admin endpoint as a blob (it backfills the thumbnail
+  // server-side for orders that predate thumb generation).
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [thumbFailed, setThumbFailed] = useState(false);
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/gangsheet-store/admin/orders/${order.id}/thumb`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        });
+        if (!r.ok) throw new Error(`thumb ${r.status}`);
+        const blob = await r.blob();
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setThumbUrl(objectUrl);
+      } catch {
+        if (!cancelled) setThumbFailed(true);
+      }
+    })();
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [order.id]);
   const when = order.paid_at || order.created_at;
   const size = order.length_ft ? `${order.length_ft} ft` : 'Gang sheet';
   const rush = order.tier === 'hot_rush' || order.tier === 'rush';
@@ -9543,14 +9567,22 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
   // invoice rows open their detail views.
   return (
     <tr onClick={() => navigate('/admin/dtf-orders')} className="hover:bg-gray-50 cursor-pointer">
-      {/* No thumbnail: the print file lives in a private Spaces bucket and
-          needs a signed URL, which the DTF orders page mints on demand. A
-          broken <img> here would read as "no artwork attached" — worse than
-          an honest placeholder. */}
       <td className="px-3 py-2">
-        <div className="w-10 h-10 rounded bg-gray-100 border border-gray-200 shrink-0 grid place-items-center text-[9px] text-gray-400 font-semibold">
-          FILE
-        </div>
+        {thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt={`Gang sheet for ${order.customer_name || 'order'} #${order.id}`}
+            className="w-10 h-10 rounded border border-gray-200 shrink-0 object-cover object-top"
+            // Checkerboard behind the transparent print file so white art
+            // stays visible (and a flattened white background reads as the
+            // solid block it really is).
+            style={{ background: 'repeating-conic-gradient(#e5e7eb 0% 25%, #ffffff 0% 50%) 0 0 / 12px 12px' }}
+          />
+        ) : (
+          <div className="w-10 h-10 rounded bg-gray-100 border border-gray-200 shrink-0 grid place-items-center text-[9px] text-gray-400 font-semibold">
+            {thumbFailed ? 'FILE' : '…'}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
         {new Date(when).toLocaleDateString()}
