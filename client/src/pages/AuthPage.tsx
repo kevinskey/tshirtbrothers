@@ -7,6 +7,14 @@ import { rememberEmail } from '@/lib/activity';
 
 type Tab = 'login' | 'register';
 
+// Browser-computed signup proof: sha256 hex of `${token}:${email}`. The
+// server requires it alongside the signup token — a bot replaying raw HTTP
+// requests without running this JS gets silently ignored.
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -25,6 +33,8 @@ export default function AuthPage() {
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirm, setRegConfirm] = useState('');
+  // Honeypot — hidden from real users; bots that auto-fill forms trip it.
+  const [regCompanyWebsite, setRegCompanyWebsite] = useState('');
 
   // Anti-bot signup token, fetched on mount — the server requires it to be
   // a few seconds old by submit time, so it must be grabbed up front.
@@ -76,6 +86,8 @@ export default function AuthPage() {
       await register({
         name: regName, email: regEmail, password: regPassword, phone: regPhone,
         signup_token: signupTokenRef.current,
+        signup_proof: await sha256Hex(`${signupTokenRef.current}:${regEmail.toLowerCase()}`),
+        company_website: regCompanyWebsite,
       });
       // /register no longer auto-issues a session (it answers the same
       // whether the email was new or already registered — anti-enumeration).
@@ -165,6 +177,16 @@ export default function AuthPage() {
                       style={{ fontSize: '16px' }}
                     />
                   </div>
+                </div>
+                {/* Honeypot — visually hidden, real users never fill it.
+                    Not display:none so naive bots still "see" the field. */}
+                <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', height: 0, overflow: 'hidden' }}>
+                  <label htmlFor="reg-company-website">Company website</label>
+                  <input
+                    id="reg-company-website" type="text" tabIndex={-1} autoComplete="off"
+                    value={regCompanyWebsite}
+                    onChange={(e) => setRegCompanyWebsite(e.target.value)}
+                  />
                 </div>
                 <div>
                   <label htmlFor="reg-phone" className="block text-sm font-semibold text-gray-700 mb-1.5">

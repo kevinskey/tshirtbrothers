@@ -50,19 +50,90 @@ function signupTokenValid(token) {
   return age >= 3_000 && age <= 2 * 60 * 60 * 1000;
 }
 
+// Gmail ignores dots and everything after '+' in the local part, so
+// k.lucy+x@gmail.com and klucy@gmail.com are the same inbox. The 2026-09
+// bots lean on this to mint "unique" emails. Returns the canonical form
+// for gmail addresses, lowercased passthrough for everything else.
+function normalizeEmail(email) {
+  const lower = String(email).toLowerCase().trim();
+  const at = lower.lastIndexOf('@');
+  if (at === -1) return lower;
+  let local = lower.slice(0, at);
+  const domain = lower.slice(at + 1);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    local = local.split('+')[0].replace(/\./g, '');
+    return `${local}@gmail.com`;
+  }
+  return lower;
+}
+
+function countDots(email) {
+  const local = String(email).split('@')[0] ?? '';
+  return (local.match(/\./g) || []).length;
+}
+
+// The register page computes sha256(`${signup_token}:${email.toLowerCase()}`)
+// in browser JS (WebCrypto) and sends it as signup_proof. A script that only
+// replays raw HTTP requests has to re-implement this to get a row inserted —
+// and because failures are swallowed (see below), it gets no signal that
+// anything is wrong.
+function signupProofValid(token, email, proof) {
+  if (typeof proof !== 'string' || !/^[0-9a-f]{64}$/.test(proof)) return false;
+  const expected = crypto.createHash('sha256')
+    .update(`${token}:${String(email).toLowerCase()}`)
+    .digest('hex');
+  return crypto.timingSafeEqual(Buffer.from(proof), Buffer.from(expected));
+}
+
 // POST /register — always responds { ok: true } on a well-formed request,
 // whether or not the email already existed. The client immediately calls
 // /login with the same credentials, which succeeds only for a genuinely new
 // account (or the real owner typing their real password).
+//
+// Bot-signal failures below are swallowed: respond { ok: true } and insert
+// nothing. The 2026-09 bot wave adapted to every defense that returned an
+// error (400 "token too fresh" → they added a 5s sleep), so the one thing
+// we don't give them anymore is feedback.
 router.post('/register', registerLimiter, async (req, res, next) => {
   try {
-    const { email, password, name, phone, signup_token } = req.body;
+    const { email, password, name, phone, signup_token, signup_proof, company_website } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     if (!signupTokenValid(signup_token)) {
       return res.status(400).json({ error: 'Could not verify your signup — refresh the page and try again.' });
+    }
+
+    // ── Silent bot filters — { ok: true }, no insert, no feedback ──────
+    // company_website is a honeypot: hidden field the real form never fills.
+    const swallow = (reason) => {
+      console.warn(`[auth] register swallowed (${reason}): ${email} from ${req.ip}`);
+      return res.status(200).json({ ok: true });
+    };
+    if (typeof company_website === 'string' && company_website.trim() !== '') {
+      return swallow('honeypot');
+    }
+    if (!signupProofValid(signup_token, email, signup_proof)) {
+      return swallow('bad proof');
+    }
+    // Gmail dot-alias abuse: 3+ dots in the local part is a bot tell
+    // (c.o.s.tar.i.s.67@…), and a normalized-form collision means this
+    // inbox already has an account under another spelling.
+    const isGmail = /@(gmail|googlemail)\.com$/i.test(String(email).trim());
+    if (isGmail && countDots(email) >= 3) {
+      return swallow('gmail dot alias');
+    }
+    if (isGmail) {
+      const normalizedLocal = normalizeEmail(email).split('@')[0];
+      const collision = await pool.query(
+        `SELECT 1 FROM users
+          WHERE lower(email) ~ '@(gmail|googlemail)\\.com$'
+            AND regexp_replace(split_part(split_part(lower(email), '@', 1), '+', 1), '\\.', '', 'g') = $1
+          LIMIT 1`,
+        [normalizedLocal],
+      );
+      if (collision.rows.length > 0) return swallow('gmail alias collision');
     }
 
     // Hash BEFORE the existence check so response timing is identical for

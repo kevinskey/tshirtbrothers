@@ -81,7 +81,14 @@ export async function getSignupToken() {
   return request<{ token: string }>('/auth/signup-token');
 }
 
-export async function register(data: { name: string; email: string; password: string; phone?: string; signup_token: string }) {
+export async function register(data: {
+  name: string; email: string; password: string; phone?: string;
+  signup_token: string;
+  /** sha256 hex of `${signup_token}:${email.toLowerCase()}` — computed in browser JS. */
+  signup_proof: string;
+  /** Honeypot — the visible form never fills this. */
+  company_website?: string;
+}) {
   return request<{ ok: boolean }>('/auth/register', {
     method: 'POST',
     body: JSON.stringify(data),
