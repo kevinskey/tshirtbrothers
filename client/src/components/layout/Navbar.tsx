@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart } from 'lucide-react';
+import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type NavLink = { label: string; href: string; desktopOnly?: boolean };
@@ -145,6 +145,16 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             {/* Right side actions — phone contact lives in the hamburger
                 menu's "Text us" entry, not the header. */}
             <div className="flex items-center gap-1 sm:gap-3 ml-auto flex-shrink-0">
+              {/* TSB Pro store-owner login — pill button, desktop/tablet
+                  only; phones get it in the hamburger menu instead. */}
+              <Link
+                to="/pro/login"
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-orange-600 text-sm font-semibold text-orange-600 hover:bg-orange-600 hover:text-white transition-colors whitespace-nowrap"
+              >
+                <Briefcase className="h-4 w-4" />
+                TSB Pro Login
+              </Link>
+
               {/* Favorites (heart) */}
               <Link
                 to={isLoggedIn ? '/favorites' : '/auth'}
@@ -260,6 +270,16 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               </Link>
             );
           })}
+
+          {/* TSB Pro login — mobile home for the header pill (hidden < sm) */}
+          <Link
+            to="/pro/login"
+            className="flex sm:hidden items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50 transition-colors"
+            onClick={() => setMobileOpen(false)}
+          >
+            <Briefcase className="h-4 w-4" />
+            TSB Pro Login
+          </Link>
 
           <a
             href="sms:+14706221392"
