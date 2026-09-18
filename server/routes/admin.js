@@ -308,6 +308,26 @@ router.delete('/customers/:id', async (req, res, next) => {
   }
 });
 
+// POST /customers/bulk-delete - Delete several customers at once (bot
+// cleanup). Account rows only — guests (id "guest:<email>") have no users
+// row to delete. Same scope as the single delete: role='customer' only,
+// so an admin account can never be swept up.
+router.post('/customers/bulk-delete', async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? [...new Set(req.body.ids.map(Number).filter(Number.isInteger))].slice(0, 500)
+      : [];
+    if (ids.length === 0) return res.status(400).json({ error: 'ids required' });
+    const result = await pool.query(
+      `DELETE FROM users WHERE id = ANY($1::int[]) AND role = 'customer' RETURNING id`,
+      [ids],
+    );
+    res.json({ deleted: result.rows.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /customers/:id - Update customer contact info
 router.put('/customers/:id', async (req, res, next) => {
   try {

@@ -885,6 +885,9 @@ export default function AdminPage() {
   const [customerSearch, setCustomerSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  // Multi-select for bulk delete (account rows only — guests have no users row).
+  const [checkedCustomerIds, setCheckedCustomerIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '', address_street: '', address_city: '', address_state: '', address_zip: '' });
@@ -3847,10 +3850,71 @@ export default function AdminPage() {
               />
             </div>
 
+            {/* Bulk actions — appears once anything is checked */}
+            {checkedCustomerIds.size > 0 && (
+              <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+                <span className="text-sm font-semibold text-red-800">
+                  {checkedCustomerIds.size} selected
+                </span>
+                <button
+                  disabled={bulkDeleting}
+                  onClick={async () => {
+                    const n = checkedCustomerIds.size;
+                    if (!(await confirmDestructive(`Delete ${n} customer${n === 1 ? '' : 's'}? Their quotes and designs will be unlinked. This cannot be undone.`))) return;
+                    setBulkDeleting(true);
+                    try {
+                      const res = await fetch('/api/admin/customers/bulk-delete', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}`,
+                        },
+                        body: JSON.stringify({ ids: [...checkedCustomerIds].map(Number) }),
+                      });
+                      const body = await res.json().catch(() => ({}));
+                      if (!res.ok) { toast(body.error || 'Bulk delete failed', 'error'); return; }
+                      toast(`Deleted ${body.deleted} customer${body.deleted === 1 ? '' : 's'}`);
+                      setCheckedCustomerIds(new Set());
+                      queryClient.invalidateQueries({ queryKey: ['admin', 'customers'] });
+                    } catch {
+                      toast('Network error deleting customers', 'error');
+                    } finally {
+                      setBulkDeleting(false);
+                    }
+                  }}
+                  className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> {bulkDeleting ? 'Deleting…' : 'Delete selected'}
+                </button>
+                <button
+                  onClick={() => setCheckedCustomerIds(new Set())}
+                  className="text-xs text-gray-500 hover:text-gray-800"
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left text-gray-500 text-xs">
+                      <th className="px-3 py-2 w-8">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all"
+                          checked={(() => {
+                            const selectable = customers.filter((c: Customer) => !String(c.id).startsWith('guest:'));
+                            return selectable.length > 0 && selectable.every((c: Customer) => checkedCustomerIds.has(String(c.id)));
+                          })()}
+                          onChange={(e) => {
+                            const selectable = customers
+                              .filter((c: Customer) => !String(c.id).startsWith('guest:'))
+                              .map((c: Customer) => String(c.id));
+                            setCheckedCustomerIds(e.target.checked ? new Set(selectable) : new Set());
+                          }}
+                        />
+                      </th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Name</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Phone</th>
@@ -3867,6 +3931,23 @@ export default function AdminPage() {
                   <tbody className="divide-y divide-gray-100">
                     {customers.map((c: Customer) => (
                       <tr key={c.id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 w-8">
+                          {!String(c.id).startsWith('guest:') && (
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${c.name || c.email}`}
+                              checked={checkedCustomerIds.has(String(c.id))}
+                              onChange={(e) => {
+                                setCheckedCustomerIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(String(c.id));
+                                  else next.delete(String(c.id));
+                                  return next;
+                                });
+                              }}
+                            />
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-gray-900 font-medium">
                           <Link to={`/admin/customers/${c.id}`} className="block max-w-[160px] truncate hover:text-orange-600 hover:underline" title={c.name}>{c.name}</Link>
                         </td>
@@ -3951,7 +4032,7 @@ export default function AdminPage() {
                     ))}
                     {customers.length === 0 && !customersQuery.isLoading && (
                       <tr>
-                        <td colSpan={7} className="px-3 py-8 text-center text-gray-400">
+                        <td colSpan={12} className="px-3 py-8 text-center text-gray-400">
                           No customers found
                         </td>
                       </tr>
