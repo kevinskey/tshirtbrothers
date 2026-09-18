@@ -60,6 +60,27 @@ async function looksWhiteBackground(buf, limitInputPixels) {
   }
 }
 
+// Small private thumbnail stored alongside each print file so admin lists
+// can show a preview without pulling the (potentially 50 MB+) full sheet.
+// Key is derived from the file key — no schema change needed.
+const THUMB_WIDTH = 300;
+function thumbKeyFor(fileKey) {
+  return fileKey.replace(/\.png$/, '-thumb.png');
+}
+async function makeSheetThumb(buf, limitInputPixels) {
+  return sharp(buf, { limitInputPixels }).resize({ width: THUMB_WIDTH }).png().toBuffer();
+}
+// Best-effort: a missing thumbnail must never fail an upload/compose —
+// the admin thumb endpoint backfills on first view anyway.
+async function uploadSheetThumb(fileKey, buf, limitInputPixels) {
+  try {
+    const thumb = await makeSheetThumb(buf, limitInputPixels);
+    await uploadObject({ key: thumbKeyFor(fileKey), body: thumb, contentType: 'image/png', acl: 'private' });
+  } catch (err) {
+    console.error('[dtf-store] thumb generation failed:', err.message);
+  }
+}
+
 // Tier promises are copy, centralised so client + emails agree.
 export const TIER_PROMISES = {
   standard: 'Ready in 2 business days',
@@ -253,6 +274,7 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     // Customer production files must stay private — override uploadObject's
     // public-read default via its `acl` param.
     await uploadObject({ key, body: fileBuf, contentType: 'image/png', acl: 'private' });
+    await uploadSheetThumb(key, fileBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1));
     res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: req.file.size });
   } catch (err) { next(err); }
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
@@ -731,6 +753,7 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     if (!dims) return res.status(500).json({ error: 'Could not compose your sheet — try again' });
     const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
     await uploadObject({ key, body: composedBuf, contentType: 'image/png', acl: 'private' });
+    await uploadSheetThumb(key, composedBuf, pixelLimit);
     // Stash the placement layout by file_key so /checkout can copy it onto
     // the order — that's what lets the admin queue show graphic counts and
     // sizes. Best-effort: a failure here must not break composing.
@@ -932,6 +955,36 @@ router.post('/admin/orders/:id/send-quote', ...adminGuard, async (req, res, next
       [order.id],
     );
     res.json({ ok: true, pay_url: payUrl, order: updated[0] });
+  } catch (err) { next(err); }
+});
+
+// Small preview of an order's print file for admin lists. Thumbs are
+// generated at upload/compose time; orders that predate that (or whose
+// thumb upload failed) get backfilled here on first view — resize the
+// full file once, store the thumb, serve it.
+router.get('/admin/orders/:id/thumb', ...adminGuard, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT file_key FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    const client = getSpacesClient();
+    const tKey = thumbKeyFor(rows[0].file_key);
+    let buf;
+    try {
+      const obj = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: tKey }));
+      buf = Buffer.from(await obj.Body.transformToByteArray());
+    } catch (err) {
+      const missing = err.name === 'NoSuchKey' || err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404;
+      if (!missing) throw err;
+      const full = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
+      const fullBuf = Buffer.from(await full.Body.transformToByteArray());
+      const settings = await loadSettings();
+      buf = await makeSheetThumb(fullBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1));
+      uploadObject({ key: tKey, body: buf, contentType: 'image/png', acl: 'private' })
+        .catch((e) => console.error('[dtf-store] thumb backfill upload failed:', e.message));
+    }
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(buf);
   } catch (err) { next(err); }
 });
 
