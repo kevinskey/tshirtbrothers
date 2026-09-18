@@ -73,15 +73,21 @@ export default function ProLoginPage() {
           My store address
         </label>
         <div className="flex gap-2">
-          <div className="flex-1 flex items-center rounded-lg border border-gray-300 focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-300 overflow-hidden">
-            <span className="pl-3 text-sm text-gray-400 whitespace-nowrap select-none">tshirtbrothers.com/stores/</span>
+          {/* The URL prefix sits in its own shaded segment so the editable
+              part reads as a real input — with the prefix inline in the
+              same box, users couldn't tell whether the field had focus. */}
+          <div className="flex-1 flex items-stretch rounded-lg border-2 border-gray-300 focus-within:border-orange-500 focus-within:ring-2 focus-within:ring-orange-500/30 overflow-hidden transition-colors">
+            <span className="flex items-center px-3 text-sm text-gray-500 whitespace-nowrap select-none bg-gray-100 border-r border-gray-200">
+              tshirtbrothers.com/stores/
+            </span>
             <input
               type="text"
+              autoFocus
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && goToStore()}
               placeholder="your-store"
-              className="flex-1 min-w-0 px-1 py-2.5 text-sm focus:outline-none"
+              className="flex-1 min-w-0 px-3 py-2.5 text-sm bg-white placeholder-gray-300 focus:outline-none caret-orange-600"
               style={{ fontSize: '16px' }}
             />
           </div>

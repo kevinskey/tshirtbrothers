@@ -74,7 +74,13 @@ function similarFilter(
   const label = `${tier} ${garment.toLowerCase()}s`;
   switch (garment) {
     case 'T-shirt':
-      return { category: std ? 'T-Shirts - Core' : 'T-Shirts - Premium', search: dyed, label };
+      // The 'tshirts' search word triggers the API's tee intent, which
+      // excludes the tanks/jerseys/raglans that share these categories.
+      return {
+        category: std ? 'T-Shirts - Core' : 'T-Shirts - Premium',
+        search: dyed ? 'garment-dyed tshirts' : 'tshirts',
+        label,
+      };
     case 'Long-sleeve':
       return { category: 'T-Shirts - Long Sleeve', search: dyed, label };
     case 'Hoodie':

@@ -83,6 +83,18 @@ router.get('/', async (req, res, next) => {
         // "G500", a color) still matches the usual way. Order matters:
         // "long sleeve t-shirt" must resolve before the bare tee intent,
         // "hooded sweatshirt" before the crewneck intent.
+        // The S&S tee categories also hold tanks, athletic jerseys,
+        // muscle shirts, 3/4-sleeve raglans, etc. A t-shirt search must
+        // exclude those by name. "Jersey" is fabric when followed by
+        // tee/shirt ("Fine Jersey Tee" stays) and a garment when not
+        // ("Basketball Jersey" goes). Static SQL, no user input.
+        const NON_TEE_CLAUSE = `NOT (
+          name ILIKE '%tank%' OR name ILIKE '%racerback%' OR name ILIKE '%singlet%'
+          OR name ILIKE '%muscle%' OR name ILIKE '%camisole%'
+          OR name ILIKE '%bodysuit%' OR name ILIKE '%onesie%'
+          OR name ILIKE '%3/4%' OR name ILIKE '%three-quarter%'
+          OR (name ILIKE '%jersey%' AND name NOT ILIKE '%tee%' AND name NOT ILIKE '%shirt%')
+        )`;
         const GARMENT_INTENTS = [
           { re: /\blong[\s-]?sleeves?\b(?:\s+(?:t[\s-]?shirts?|tees?))?/i,
             cats: ['T-Shirts - Long Sleeve'] },
@@ -95,15 +107,17 @@ router.get('/', async (req, res, next) => {
           { re: /\btanks?\b(?:\s+tops?)?/i,
             cats: ['T-Shirts - Core', 'T-Shirts - Premium'], keepTerm: true },
           { re: /\bt[\s-]?shirts?\b|\btees?\b/i,
-            cats: ['T-Shirts - Core', 'T-Shirts - Premium'] },
+            cats: ['T-Shirts - Core', 'T-Shirts - Premium'], exclude: NON_TEE_CLAUSE },
           { re: /\bpolos?\b/i, cats: ['Polos'] },
           { re: /\b(?:hats?|caps?|beanies?)\b/i, cats: ['Headwear'] },
         ];
         let remaining = search.trim();
         const intentCats = new Set();
+        const intentExcludes = new Set();
         for (const g of GARMENT_INTENTS) {
           if (g.re.test(remaining)) {
             g.cats.forEach((c) => intentCats.add(c));
+            if (g.exclude) intentExcludes.add(g.exclude);
             if (!g.keepTerm) {
               remaining = remaining.replace(new RegExp(g.re.source, 'gi'), ' ');
             }
@@ -113,6 +127,7 @@ router.get('/', async (req, res, next) => {
           conditions.push(`category = ANY($${paramIndex})`);
           params.push([...intentCats]);
           paramIndex++;
+          intentExcludes.forEach((c) => conditions.push(c));
         }
         // Normalize common terms: "tshirt" → "t-shirt", "hoodie" → "hood"
         let normalized = remaining
