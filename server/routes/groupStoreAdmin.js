@@ -116,6 +116,52 @@ router.post('/login/request', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── POST /login/find ─────────────────────────────────────────────────────
+// Body: { email }
+// "Where's my store?" helper behind the header's TSB Pro Login button.
+// Emails the person direct links to every store dashboard they admin.
+// Always responds { ok: true } — same anti-enumeration stance as
+// /login/request, so nothing about membership leaks on-screen.
+router.post('/login/find', async (req, res, next) => {
+  try {
+    const { email } = req.body ?? {};
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'email required' });
+    }
+    const { rows } = await pool.query(
+      `SELECT s.slug, s.name
+         FROM store_admins a
+         JOIN stores s ON s.id = a.store_id
+        WHERE lower(a.email) = lower($1)
+          AND s.status = 'active'
+          AND s.store_type IN ('group', 'business')
+        ORDER BY s.name`,
+      [email.trim()],
+    );
+    if (rows.length === 0) return res.json({ ok: true });
+
+    const links = rows.map((s) =>
+      `<p style="margin:8px 0;"><a href="https://tshirtbrothers.com/stores/${s.slug}/admin" style="color:#ea580c;font-weight:600;">${s.name}</a></p>`,
+    ).join('');
+    if (process.env.RESEND_API_KEY) {
+      resend.emails.send({
+        from: FROM,
+        to: email.trim(),
+        subject: 'Your TSB Pro store dashboard link' + (rows.length > 1 ? 's' : ''),
+        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;">
+          <h2 style="margin:0 0 12px;">Your store dashboard${rows.length > 1 ? 's' : ''}</h2>
+          <p style="margin:0 0 16px;color:#4b5563;">Click your store below, then enter this same email address to get a sign-in code.</p>
+          ${links}
+          <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can ignore this email.</p>
+        </div>`,
+      }).catch((err) => console.error('[groupStoreAdmin] find email failed:', err.message));
+    } else {
+      console.log(`[groupStoreAdmin] store links for ${email}:`, rows.map((s) => s.slug).join(', '));
+    }
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
 // ── POST /login/verify ───────────────────────────────────────────────────
 // Body: { slug, email, code }
 // Consumes the code and issues a session token.
