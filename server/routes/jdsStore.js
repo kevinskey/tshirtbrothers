@@ -160,6 +160,67 @@ admin.post('/publish', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Bulk publish with a markup rule. Skips SKUs that are already listed
+// (protecting hand-set prices), have no usable cost, or aren't found.
+// Body: { skus: string[], multiplier?: number (default 3),
+//         min_price_cents?: number (default 999) }
+// Retail = one-piece cost × multiplier, rounded UP to the next .99.
+admin.post('/bulk-publish', async (req, res, next) => {
+  try {
+    const skus = Array.isArray(req.body?.skus)
+      ? [...new Set(req.body.skus.map((s) => String(s).trim().toUpperCase()).filter(Boolean))]
+      : [];
+    if (!skus.length) return res.status(400).json({ error: 'skus is required' });
+    if (skus.length > 500) return res.status(400).json({ error: 'max 500 SKUs per bulk publish' });
+    const multiplier = Number(req.body?.multiplier) > 0 ? Number(req.body.multiplier) : 3;
+    const minCents = Number.isInteger(req.body?.min_price_cents) && req.body.min_price_cents > 0
+      ? req.body.min_price_cents : 999;
+
+    const { rows: existing } = await pool.query(
+      `SELECT sku FROM jds_products WHERE sku = ANY($1)`, [skus],
+    );
+    const already = new Set(existing.map((r) => r.sku));
+
+    // JDS lookup in chunks of 100 (their per-call limit).
+    const details = [];
+    for (let i = 0; i < skus.length; i += 100) {
+      details.push(...await fetchJdsProducts(skus.slice(i, i + 100)));
+    }
+    const bySku = new Map(details.map((p) => [String(p.sku || '').toUpperCase(), p]));
+
+    const published = [];
+    const skipped = [];
+    for (const sku of skus) {
+      if (already.has(sku)) { skipped.push({ sku, reason: 'already listed' }); continue; }
+      const jds = bySku.get(sku);
+      if (!jds || jds.notFound) { skipped.push({ sku, reason: 'not found at JDS' }); continue; }
+      const cost = [jds.onePiece, jds.lessThanCase, jds.oneCase]
+        .find((v) => typeof v === 'number' && Number.isFinite(v) && v > 0);
+      if (cost == null) { skipped.push({ sku, reason: 'no price from JDS' }); continue; }
+
+      const costCents = Math.round(cost * 100);
+      // Round up to the same-dollar .99: $6.65 × 3 = $19.95 → $19.99,
+      // $20.00 → $20.99. Never lands below cost × multiplier.
+      const raw = Math.round(costCents * multiplier);
+      const retail = Math.max(minCents, Math.floor(raw / 100) * 100 + 99);
+
+      const name = jds.name || jds.description || jds.title || sku;
+      const image = jds.image || jds.thumbnail || jds.quickImage || null;
+      const { rows } = await pool.query(
+        `INSERT INTO jds_products (sku, name, image_url, cost_cents, retail_price_cents, active)
+         VALUES ($1, $2, $3, $4, $5, TRUE)
+         ON CONFLICT (sku) DO NOTHING
+         RETURNING id`,
+        [sku, name, image, costCents, retail],
+      );
+      if (rows[0]) published.push({ sku, name, cost_cents: costCents, retail_price_cents: retail });
+      else skipped.push({ sku, reason: 'already listed' });
+    }
+
+    res.json({ published, skipped, multiplier });
+  } catch (err) { next(err); }
+});
+
 admin.get('/products', async (_req, res, next) => {
   try {
     const { rows } = await pool.query(`SELECT * FROM jds_products ORDER BY created_at DESC`);
