@@ -3,6 +3,7 @@ import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tansta
 import { Link, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import ProductFinder from '@/components/shop/ProductFinder';
 import { Search, Loader2, X, Heart } from 'lucide-react';
 
 function favAuthHeaders(): Record<string, string> {
@@ -343,6 +344,17 @@ export default function ShopPage() {
               Thousands of blanks, ready for custom printing.
             </p>
           </div>
+
+          {/* Guided picker — the Instant Quote 3-tier method (Standard /
+              Premium / Ultra) applied to the catalogue: two questions in,
+              one recommended blank + a filtered browse out. */}
+          <ProductFinder
+            onBrowseSimilar={({ category: cat, search: q }) => {
+              setBrand('');
+              setCategory(cat ?? '');
+              setSearch(q ?? '');
+            }}
+          />
 
           {/* Toolbar — search full width; brand + category share one row
               on phones so the grid starts high on the page. */}
