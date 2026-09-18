@@ -5167,12 +5167,29 @@ export default function AdminPage() {
                           )}
                           {invoiceForm.extra_mockups.map((m, i) => (
                             <div key={`${m.front}-${i}`} className="relative flex flex-col items-center">
-                              <img src={m.front} alt={`Mockup ${i + 2}`} className="w-full h-40 object-contain bg-white rounded border border-gray-200" />
+                              {/* Older rows may have front=null (back-only
+                                  studio saves) — show the back instead of a
+                                  broken image. */}
+                              <img src={m.front || m.back || undefined} alt={`Mockup ${i + 2}`} className="w-full h-40 object-contain bg-white rounded border border-gray-200" />
                               <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">Mockup {i + 2}</span>
                               <button
                                 type="button"
                                 aria-label="Remove mockup"
-                                onClick={() => setInvoiceForm((p) => ({ ...p, extra_mockups: p.extra_mockups.filter((_, j) => j !== i) }))}
+                                onClick={async () => {
+                                  const next = invoiceForm.extra_mockups.filter((_, j) => j !== i);
+                                  setInvoiceForm((p) => ({ ...p, extra_mockups: p.extra_mockups.filter((_, j) => j !== i) }));
+                                  // On a saved invoice, persist right away —
+                                  // the local-only removal silently came back
+                                  // on reopen if the admin never hit Update.
+                                  if (editingInvoiceId) {
+                                    try {
+                                      await updateInvoice(editingInvoiceId, { extra_mockups: next });
+                                      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+                                    } catch {
+                                      toast('Failed to remove mockup on the server — hit Update to retry', 'error');
+                                    }
+                                  }
+                                }}
                                 className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white"
                               >✕</button>
                             </div>
