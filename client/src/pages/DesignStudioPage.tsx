@@ -2091,7 +2091,11 @@ export default function DesignStudioPage() {
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
-    setUploadQueue((q) => [...q, ...Array.from(files)]);
+    // Snapshot now: a file input's FileList is live, and the caller clears
+    // input.value right after this call — by the time React runs the state
+    // updater the list would already be empty (drag-drop was unaffected).
+    const picked = Array.from(files);
+    setUploadQueue((q) => [...q, ...picked]);
   }, []);
 
   const finishUpload = useCallback(async (imageUrl: string) => {
