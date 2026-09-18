@@ -683,6 +683,9 @@ router.get('/options', async (_req, res, next) => {
       garments: t.garments.map((g) => ({
         id: g.id, name: g.name, quality_tier: g.quality_tier,
         base_cost: Number(g.base_cost), image_url: g.image_url,
+        // Lets the catalogue's guided picker resolve each garment × tier
+        // to its recommended blank via /api/products/by-ssid/:ssId.
+        default_ss_id: g.default_ss_id ?? null,
       })),
       print_methods: t.printMethods.map((m) => ({
         id: m.id, name: m.name, charges_per_color: m.charges_per_color,
