@@ -93,6 +93,7 @@ export { LayersPanel } from './components/design-studio/LayersPanel';
 export { TextEffectsPanel } from './components/design-studio/TextEffectsPanel';
 export { FontPicker } from './components/design-studio/FontPicker';
 export { CropModal } from './components/design-studio/CropModal';
+export { EraserModal } from './components/design-studio/EraserModal';
 export { DimensionReadout } from './components/design-studio/DimensionReadout';
 export { HoldRepeatButton } from './components/design-studio/HoldRepeatButton';
 export { CanvasSizeControl } from './components/design-studio/CanvasSizeControl';
