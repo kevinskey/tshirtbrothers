@@ -580,38 +580,6 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ── PATCH /:id/products/:productId ───────────────────────────────────────
-router.patch('/:id/products/:productId', async (req, res, next) => {
-  try {
-    const id = parseInt(req.params.id, 10);
-    const productId = parseInt(req.params.productId, 10);
-    if (!Number.isInteger(id) || !Number.isInteger(productId)) {
-      return res.status(400).json({ error: 'invalid id' });
-    }
-    const allowed = ['title', 'description', 'cover_image', 'retail_price_cents',
-                     'variants_json', 'blank_cost_cents', 'decoration_cost_cents',
-                     'min_qty', 'is_active', 'opens_at', 'closes_at'];
-    const patches = [];
-    const params = [];
-    for (const key of allowed) {
-      if (req.body?.[key] !== undefined) {
-        params.push(req.body[key]);
-        patches.push(`${key} = $${params.length}`);
-      }
-    }
-    if (patches.length === 0) return res.status(400).json({ error: 'no fields to update' });
-    params.push(productId, id);
-    const { rows } = await pool.query(
-      `UPDATE store_products SET ${patches.join(', ')}
-        WHERE id = $${params.length - 1} AND store_id = $${params.length}
-      RETURNING id, title, slug, retail_price_cents, is_active`,
-      params,
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
-    res.json(rows[0]);
-  } catch (err) { next(err); }
-});
-
 // ── S&S catalog picker ───────────────────────────────────────────────────
 // GET /ss-catalog?q=hoodie&brand=Bella&limit=50
 //
