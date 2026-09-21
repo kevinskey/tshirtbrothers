@@ -15,8 +15,13 @@
  */
 
 export const REF_UNITS = 800;
-export const MIN_TEXT_WIDTH_PCT = 5;
-export const MAX_TEXT_WIDTH_PCT = 95;
+// The box FOLLOWS the glyphs — never the reverse. A tight max here used to
+// clamp the box narrower than the text at large sizes, and the pre-wrap
+// span then wrapped lines the user never typed (the text's size was being
+// determined by its box). The user decides how much space text takes;
+// boxes may extend past the canvas.
+export const MIN_TEXT_WIDTH_PCT = 1;
+export const MAX_TEXT_WIDTH_PCT = 300;
 
 export interface TextMetricsInput {
   content: string;
@@ -85,10 +90,10 @@ export function measureTextWidthPct(
 
 /**
  * New x that keeps the element's visual center fixed while its box width
- * changes (Size stepper, font swap, retype). Clamped to the same 0–90 range
- * the drag handler enforces.
+ * changes (Size stepper, font swap, retype). Loosely clamped — boxes wider
+ * than the canvas need negative x to stay visually centered.
  */
 export function recenteredX(x: number, oldWidth: number, newWidth: number): number {
   const nx = x + (oldWidth - newWidth) / 2;
-  return Math.max(0, Math.min(90, nx));
+  return Math.max(-200, Math.min(95, nx));
 }
