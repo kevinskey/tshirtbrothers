@@ -1,6 +1,10 @@
 import { Router } from 'express';
 import pool from '../db.js';
-import { fetchProducts as fetchSSProducts } from '../services/ssActivewear.js';
+import { authenticate, adminOnly } from '../middleware/auth.js';
+import {
+  fetchProducts as fetchSSProducts,
+  fetchStyle, fetchStyleColors, fetchStyleSkus, fetchStyleInventory,
+} from '../services/ssActivewear.js';
 import { expandRetailCategory, groupIntoRetailCategories } from '../lib/retailCategories.js';
 
 const router = Router();
@@ -535,6 +539,36 @@ router.get('/by-ssid/:ssId', async (req, res, next) => {
 });
 
 // GET /:id - Single product
+// ── GET /detail/:id — full live S&S dossier for one catalog product:
+// style info, colorways with swatch/front images, per-SKU wholesale
+// pricing, and per-warehouse inventory. Admin-only (wholesale prices).
+// Cached per style — S&S data barely moves intraday and one dossier is
+// four upstream calls.
+const detailCache = new Map(); // ss_id -> { at, body }
+const DETAIL_TTL_MS = 10 * 60 * 1000;
+router.get('/detail/:id', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM products WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+    const product = rows[0];
+    if (!product.ss_id) return res.json({ product, live: null });
+    const hit = detailCache.get(product.ss_id);
+    if (hit && Date.now() - hit.at < DETAIL_TTL_MS) {
+      return res.json({ product, live: hit.body });
+    }
+    const [style, colors, skus, inventory] = await Promise.all([
+      fetchStyle(product.ss_id).catch(() => null),
+      fetchStyleColors(product.ss_id).catch(() => []),
+      fetchStyleSkus(product.ss_id).catch(() => []),
+      fetchStyleInventory(product.ss_id).catch(() => ({})),
+    ]);
+    const live = { style, colors, skus, inventory };
+    if (detailCache.size >= 200) detailCache.delete(detailCache.keys().next().value);
+    detailCache.set(product.ss_id, { at: Date.now(), body: live });
+    res.json({ product, live });
+  } catch (err) { next(err); }
+});
+
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
