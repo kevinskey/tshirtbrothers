@@ -6887,7 +6887,12 @@ export default function AdminPage() {
                     const pl = m.placement || { x: 35, y: 30, width: 30 };
                     return (
                       <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
-                        <div className="relative bg-gray-50 aspect-square flex items-center justify-center border-b border-gray-100">
+                        {/* aspect-square is only a preferred size — a portrait
+                            product photo laid out at w-full stretches the box
+                            taller and makes cards in one row different heights.
+                            overflow-hidden + absolutely-positioned images make
+                            the square a hard constraint. */}
+                        <div className="relative bg-gray-50 aspect-square overflow-hidden flex items-center justify-center border-b border-gray-100">
                           {m.preview_image_url ? (
                             <MockupSideScroller
                               alt={m.name || 'Mockup'}
@@ -6901,7 +6906,7 @@ export default function AdminPage() {
                           ) : (
                             <>
                               {m.product_image_url && (
-                                <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full h-full object-contain" />
+                                <img src={m.product_image_url} alt={m.product_name || 'Product'} className="absolute inset-0 w-full h-full object-contain" />
                               )}
                               {m.graphic_url && (
                                 <img
@@ -9392,7 +9397,7 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
   const cur = images[Math.min(idx, images.length - 1)]!;
   return (
     <div className="relative w-full h-full group">
-      <img src={cur.src} alt={`${alt} — ${cur.label}`} className="w-full h-full object-contain" />
+      <img src={cur.src} alt={`${alt} — ${cur.label}`} className="absolute inset-0 w-full h-full object-contain" />
       {images.length > 1 && (
         <>
           <button
