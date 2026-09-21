@@ -192,6 +192,25 @@ export default function GroupStorePage() {
     return a.localeCompare(b);
   });
 
+  // Hero columns (two on md+, stacked on phones): featured collection
+  // first, then the next collection that has products; when there's only
+  // one, the second column becomes an everything slider so the hero never
+  // renders a blank block again.
+  const heroImgs = (list: StoreProduct[]) =>
+    list.map((p) => p.cover_image).filter((u): u is string => !!u).slice(0, 6);
+  const heroCards: Array<{ title: string; href: string; images: string[]; count: number }> = [];
+  if (featured) {
+    heroCards.push({ title: featured.title, href: '#featured', images: heroImgs(featuredProducts), count: featuredProducts.length });
+  }
+  for (const [key, items] of collections) {
+    if (heroCards.length >= 2) break;
+    if (!key || items.length === 0) continue;
+    heroCards.push({ title: collectionLabel(key), href: `#collection-${key}`, images: heroImgs(items), count: items.length });
+  }
+  if (heroCards.length < 2 && products.length > 0) {
+    heroCards.push({ title: 'Shop Everything', href: '#shop', images: heroImgs(products), count: products.length });
+  }
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
       {store.brand_json.demo && (
@@ -331,7 +350,7 @@ export default function GroupStorePage() {
         className="relative overflow-hidden border-b border-gray-100"
         style={{ background: `linear-gradient(180deg, ${tint(primary, 0.10)} 0%, #ffffff 100%)` }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] gap-8 lg:gap-12 items-center">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14">
           <div>
             {isEmpty && (
               <span
@@ -401,24 +420,39 @@ export default function GroupStorePage() {
             </div>
           </div>
 
-          {/* Hero visual */}
-          <div className="relative">
-            {featured && (featured.media?.length || featured.video_url) ? (
-              <HeroCarousel
-                slides={
-                  featured.media?.length
-                    ? featured.media
-                    : [{ type: 'video' as const, url: featured.video_url!, poster: featured.poster_url }]
-                }
-                primary={primary}
-              />
-            ) : store.brand_json.hero_url ? (
-              <div className="aspect-square rounded-2xl overflow-hidden shadow-xl mx-auto max-w-[420px] lg:max-w-none">
-                <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
-              </div>
-            ) : (
+          {/* Hero visual — two columns on iPad/desktop, stacked on phones.
+              Each column features a collection (auto-rotating product-image
+              slider), with the featured collection's video carousel taking
+              the first column when one is configured. Empty stores keep the
+              logo placeholder + Coming soon badge. */}
+          {!isEmpty && heroCards.length > 0 ? (
+            <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-5">
+              {featured && (featured.media?.length || featured.video_url) ? (
+                <div className="relative">
+                  <HeroCarousel
+                    slides={
+                      featured.media?.length
+                        ? featured.media
+                        : [{ type: 'video' as const, url: featured.video_url!, poster: featured.poster_url }]
+                    }
+                    primary={primary}
+                  />
+                </div>
+              ) : heroCards[0] && (
+                <HeroSliderCard {...heroCards[0]} primary={primary} />
+              )}
+              {heroCards[1] ? (
+                <HeroSliderCard {...heroCards[1]} primary={primary} />
+              ) : store.brand_json.hero_url ? (
+                <div className="rounded-2xl overflow-hidden shadow-xl aspect-[4/3]">
+                  <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="relative mt-10 max-w-[420px]">
               <div
-                className="aspect-square rounded-2xl shadow-xl mx-auto max-w-[420px] lg:max-w-none flex items-center justify-center relative overflow-hidden"
+                className="aspect-square rounded-2xl shadow-xl flex items-center justify-center relative overflow-hidden"
                 style={{ background: primary }}
               >
                 {store.brand_json.logo_url ? (
@@ -433,14 +467,14 @@ export default function GroupStorePage() {
                   style={{ background: 'radial-gradient(circle at 30% 20%, rgba(255,255,255,0.4), transparent 60%)' }}
                 />
               </div>
-            )}
-            {isEmpty && (
-              <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-lg px-5 py-2 text-sm font-semibold flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: primary }} />
-                Coming soon
-              </div>
-            )}
-          </div>
+              {isEmpty && (
+                <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 bg-white rounded-full shadow-lg px-5 py-2 text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: primary }} />
+                  Coming soon
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 
@@ -657,6 +691,53 @@ export default function GroupStorePage() {
 // Auto-rotating hero carousel for the featured collection. Crossfades
 // between slides; video slides keep playing muted underneath. Dots are
 // clickable and pause the auto-advance briefly after manual navigation.
+// One hero column: a collection teaser that auto-rotates through the
+// collection's product photos, with the title + shop link overlaid.
+function HeroSliderCard({ title, href, images, count, primary }: {
+  title: string; href: string; images: string[]; count: number; primary: string;
+}) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (images.length < 2) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % images.length), 3500);
+    return () => clearInterval(t);
+  }, [images.length]);
+  return (
+    <a href={href} className="group relative block rounded-2xl overflow-hidden shadow-xl aspect-[4/3] bg-gray-100">
+      {images.length === 0 ? (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ background: primary }}>
+          <ShoppingBag className="w-14 h-14 text-white/70" />
+        </div>
+      ) : (
+        images.map((src, i) => (
+          <img
+            key={`${src}-${i}`}
+            src={src}
+            alt=""
+            loading={i === 0 ? 'eager' : 'lazy'}
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+            style={{ opacity: i === idx ? 1 : 0 }}
+          />
+        ))
+      )}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/25 to-transparent pt-16 pb-4 px-5">
+        <p className="text-white font-extrabold text-xl sm:text-2xl leading-tight">{title}</p>
+        <p className="text-white/85 text-sm mt-1 inline-flex items-center gap-1.5 font-medium">
+          {count} item{count === 1 ? '' : 's'} · Shop now
+          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+        </p>
+      </div>
+      {images.length > 1 && (
+        <div className="absolute top-3 right-3 flex gap-1.5">
+          {images.map((_, i) => (
+            <span key={i} className="w-1.5 h-1.5 rounded-full transition-colors" style={{ background: i === idx ? '#fff' : 'rgba(255,255,255,0.4)' }} />
+          ))}
+        </div>
+      )}
+    </a>
+  );
+}
+
 function HeroCarousel({ slides, primary }: {
   slides: Array<{ type: 'image' | 'video'; url: string; poster?: string }>;
   primary: string;
