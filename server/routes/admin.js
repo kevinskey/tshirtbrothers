@@ -1348,22 +1348,30 @@ router.get('/dashboard-ops', async (req, res, next) => {
           COALESCE(SUM(amt) FILTER (WHERE at >= date_trunc('month', now()) - interval '1 month'
                                       AND at <  date_trunc('month', now())), 0)::numeric(12,2) AS last_month
         FROM pays`),
+      // Every live-state metric excludes archived quotes — the archive is
+      // exactly where expired/dead quotes go to leave these numbers, and
+      // before this filter the dashboard kept counting them (7 phantom
+      // pending, $27k "awaiting response"). Intake counts (new_today /
+      // new_yesterday) stay unfiltered: a quote received then archived was
+      // still received. Archived non-won quotes count as lost so the
+      // conversion rate has a real denominator.
       pool.query(`
         SELECT
-          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-          COUNT(*) FILTER (WHERE status = 'pending' AND created_at < now() - interval '24 hours')::int AS pending_over_24h,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'pending')::int AS pending,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'pending' AND created_at < now() - interval '24 hours')::int AS pending_over_24h,
           COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE)::int AS new_today,
           COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE - 1)::int AS new_yesterday,
-          COUNT(*) FILTER (WHERE status = 'quoted')::int AS quoted,
-          COALESCE(SUM(estimated_price) FILTER (WHERE status = 'quoted'), 0)::numeric(12,2) AS quoted_value,
-          COUNT(*) FILTER (WHERE status = 'quoted' AND created_at < now() - interval '3 days')::int AS quotes_need_follow_up,
-          COUNT(*) FILTER (WHERE status = 'quoted' AND created_at < now() - interval '14 days')::int AS abandoned_quotes,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted')::int AS quoted,
+          COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'quoted'), 0)::numeric(12,2) AS quoted_value,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '3 days')::int AS quotes_need_follow_up,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '14 days')::int AS abandoned_quotes,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed'))::int AS won,
-          COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected'))::int AS decided,
-          COALESCE(SUM(estimated_price) FILTER (WHERE status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
+          COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected')
+            OR (archived_at IS NOT NULL AND status NOT IN ('accepted', 'completed')))::int AS decided,
+          COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
           COALESCE(SUM(GREATEST(estimated_price - COALESCE(deposit_amount, 0), 0))
-            FILTER (WHERE status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
-          COUNT(*) FILTER (WHERE status = 'accepted' AND mockup_sent_at IS NOT NULL
+            FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND mockup_sent_at IS NOT NULL
             AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval
         FROM quotes`),
       pool.query(`
@@ -1402,7 +1410,8 @@ router.get('/dashboard-ops', async (req, res, next) => {
                in_production_at, ready_at, deposit_amount, balance_paid_at,
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
           FROM quotes
-         WHERE status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
+         WHERE archived_at IS NULL
+           AND status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
@@ -1412,7 +1421,8 @@ router.get('/dashboard-ops', async (req, res, next) => {
          ORDER BY paid_at ASC LIMIT 50`),
       pool.query(`
         SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
-          FROM quotes WHERE status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
+          FROM quotes WHERE archived_at IS NULL
+           AND status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
          GROUP BY 1`),
       // Active blanks POs — incoming shipments and will-call pickups.
       pool.query(`
