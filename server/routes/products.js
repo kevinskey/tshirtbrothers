@@ -546,6 +546,46 @@ router.get('/by-ssid/:ssId', async (req, res, next) => {
 });
 
 // GET /:id - Single product
+// ── GET /jds-search — JDS Industries catalog rows shaped like studio
+// products (pseudo ss_id "jds:<sku>", no colorways/sizes) so the Design
+// Studio picker can offer drinkware / awards / engraving blanks
+// alongside S&S apparel. Must stay above the '/:id' catch-all.
+router.get('/jds-search', async (req, res, next) => {
+  try {
+    const q = String(req.query.search || '').trim();
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 12));
+    const params = [];
+    let where = 'active = TRUE';
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND (name ILIKE $1 OR sku ILIKE $1 OR description ILIKE $1)`;
+    }
+    params.push(limit);
+    const { rows } = await pool.query(
+      `SELECT id, sku, name, image_url, retail_price_cents
+         FROM jds_products
+        WHERE ${where}
+        ORDER BY name
+        LIMIT $${params.length}`,
+      params,
+    );
+    res.json({
+      products: rows.map((r) => ({
+        id: `jds-${r.id}`,
+        ss_id: `jds:${r.sku}`,
+        name: r.name,
+        brand: 'JDS',
+        category: 'Gifts & Engraving',
+        image_url: r.image_url,
+        base_price: null,
+        price: r.retail_price_cents / 100,
+        colors: [],
+        sizes: [],
+      })),
+    });
+  } catch (err) { next(err); }
+});
+
 // ── GET /detail/:id — full live S&S dossier for one catalog product:
 // style info, colorways with swatch/front images, per-SKU wholesale
 // pricing, and per-warehouse inventory. Admin-only (wholesale prices).

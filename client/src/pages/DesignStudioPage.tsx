@@ -1722,9 +1722,16 @@ export default function DesignStudioPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ limit: '24' });
       if (productSearch) params.set('search', productSearch);
-      const res = await fetch(`/api/products?${params}`);
-      if (!res.ok) throw new Error('Failed');
-      return res.json() as Promise<{ products: Product[] }>;
+      // S&S apparel + JDS (drinkware / awards / engraving blanks) in one
+      // picker. JDS rows carry pseudo ss_id "jds:<sku>" and no colorways.
+      const [ssRes, jdsRes] = await Promise.all([
+        fetch(`/api/products?${params}`),
+        fetch(`/api/products/jds-search?${params}`).catch(() => null),
+      ]);
+      if (!ssRes.ok) throw new Error('Failed');
+      const ss = await ssRes.json() as { products: Product[] };
+      const jds = jdsRes?.ok ? await jdsRes.json() as { products: Product[] } : { products: [] };
+      return { products: [...ss.products, ...jds.products] };
     },
   });
 
@@ -1864,7 +1871,8 @@ export default function DesignStudioPage() {
       if (!res.ok) return { colors: [] };
       return res.json() as Promise<{ colors: ProductColor[] }>;
     },
-    enabled: !!selectedProduct?.ss_id,
+    // JDS items (pseudo "jds:" ids) have no S&S colorways — skip the fetch.
+    enabled: !!selectedProduct?.ss_id && !selectedProduct.ss_id.startsWith('jds:'),
     staleTime: 1000 * 60 * 30, // cache 30 min
   });
 
@@ -1877,7 +1885,9 @@ export default function DesignStudioPage() {
   const selectedColorImage = productColors[selectedColorIdx]?.image || null;
   // While the colors query is in flight for an S&S product, don't paint the
   // styled shot at all — a spinner beats a model photo that blinks away.
-  const colorsLoading = !!selectedProduct?.ss_id && colorsData === undefined;
+  // JDS items never load colors (query disabled) — without the guard the
+  // canvas would spin forever waiting on colorsData.
+  const colorsLoading = !!selectedProduct?.ss_id && !selectedProduct.ss_id.startsWith('jds:') && colorsData === undefined;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   // S&S's flat side shot backs the sleeve view when available.
