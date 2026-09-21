@@ -1069,6 +1069,10 @@ export default function AdminPage() {
 
   // Send Price modal state
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
+  // Line-items editor inside the price modal — auto-opened when the quote
+  // has no catalog product linked (e.g. "Custom: Other" wizard quotes), so
+  // the admin can attach the product they'll actually be quoting.
+  const [priceItemsOpen, setPriceItemsOpen] = useState(false);
   const [, setPriceBase] = useState('');
   const [, setPricePrinting] = useState('');
   const [priceDesignFee, setPriceDesignFee] = useState('0');
@@ -2449,6 +2453,7 @@ export default function AdminPage() {
 
   async function openPriceModal(quote: Quote) {
     setPriceModalQuote(quote);
+    setPriceItemsOpen(false);
     setPriceBase('');
     setPricePrinting('');
     setPriceDesignFee('0');
@@ -2473,6 +2478,7 @@ export default function AdminPage() {
     try {
       const fresh = await fetchQuote(String(quote.id));
       setPriceModalQuote(fresh);
+      setPriceItemsOpen(!(fresh.items ?? []).some((it) => it.product_id));
       setSizeMarkups((prev) => {
         // Don't clobber inputs the user has already typed.
         const seeded = initialMarkups(fresh);
@@ -8373,6 +8379,48 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Product / line-items editor — the same editor as the quote
+                    detail drawer, embedded here so a "Custom: Other" quote can
+                    be linked to a real catalog product without leaving the
+                    pricing flow. Auto-opens when no product is attached. */}
+                <div className="border border-gray-200 rounded-lg bg-amber-50/40 mb-6">
+                  <button
+                    type="button"
+                    onClick={() => setPriceItemsOpen((v) => !v)}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-semibold text-amber-900"
+                  >
+                    <span>
+                      🏷️ Product &amp; Line Items
+                      {!(priceModalQuote.items ?? []).some((it) => it.product_id) && (
+                        <span className="ml-2 text-xs font-medium text-orange-600">no catalog product linked</span>
+                      )}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${priceItemsOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {priceItemsOpen && (
+                    <div className="border-t border-gray-200 p-4 bg-white rounded-b-lg">
+                      <QuoteItemsEditor
+                        quote={priceModalQuote}
+                        onSaved={(updated) => {
+                          setPriceModalQuote(updated);
+                          setSizeMarkups((prev) => {
+                            // Reseed for any new sizes, keep what's typed.
+                            const seeded = initialMarkups(updated);
+                            for (const k of Object.keys(prev)) {
+                              if (prev[k] && prev[k] !== '' && k in seeded) seeded[k] = prev[k];
+                            }
+                            return seeded;
+                          });
+                          setCostColor(updated.color || '');
+                          void fetchLiveCost('', updated.color || '', updated.id);
+                          queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+                          queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* S&S Wholesale Pricing Info */}
