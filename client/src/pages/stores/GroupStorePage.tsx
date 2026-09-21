@@ -192,6 +192,11 @@ export default function GroupStorePage() {
     return a.localeCompare(b);
   });
 
+  // Empty declared collections stay in config (they keep their order for
+  // when products arrive) but never render — no "coming soon" shelves or
+  // dead nav links on the storefront.
+  const visibleCollections = collections.filter(([, items]) => items.length > 0);
+
   // Hero columns (two on md+, stacked on phones): featured collection
   // first, then the next collection that has products; when there's only
   // one, the second column becomes an everything slider so the hero never
@@ -255,7 +260,7 @@ export default function GroupStorePage() {
           </Link>
           <nav className="hidden md:flex items-center gap-6 ml-6 text-sm font-medium text-gray-700">
             <a href="#shop" className="hover:text-black">Shop</a>
-            {(featured || collections.some(([k]) => k !== '')) && (
+            {(featured || visibleCollections.some(([k]) => k !== '')) && (
               <div className="relative"
                 onMouseEnter={() => setNavCollectionsOpen(true)}
                 onMouseLeave={() => setNavCollectionsOpen(false)}
@@ -275,7 +280,7 @@ export default function GroupStorePage() {
                           <Star className="w-3.5 h-3.5" style={{ color: primary }} />
                         </a>
                       )}
-                      {collections.filter(([k]) => k !== '').map(([key, items]) => (
+                      {visibleCollections.filter(([k]) => k !== '').map(([key, items]) => (
                         <a key={key} href={`#collection-${key}`} onClick={() => setNavCollectionsOpen(false)}
                           className="flex items-center justify-between gap-4 px-4 py-2 hover:bg-gray-50">
                           <span>{collectionLabel(key).replace(/^The | Collection$/g, '')}</span>
@@ -323,7 +328,7 @@ export default function GroupStorePage() {
                 <Star className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5" style={{ color: primary }} />{featured.title}
               </a>
             )}
-            {collections.filter(([k]) => k !== '').map(([key, items]) => (
+            {visibleCollections.filter(([k]) => k !== '').map(([key, items]) => (
               <a key={key} href={`#collection-${key}`} onClick={() => setMobileNavOpen(false)}
                 className="flex items-center justify-between px-2 py-2 rounded-lg hover:bg-gray-50">
                 <span className="pl-5">{collectionLabel(key).replace(/^The | Collection$/g, '')}</span>
@@ -584,7 +589,7 @@ export default function GroupStorePage() {
           <EmptyShopStrip primary={primary} storeSlug={store.slug} />
         ) : (
           <div className="space-y-8">
-            {collections.map(([key, items]) => (
+            {visibleCollections.map(([key, items]) => (
               /* Each collection is a bounded card: tinted header band with a
                  brand-color accent marks where the section begins, the card
                  border + footer edge mark where it ends, and the shelf clips
