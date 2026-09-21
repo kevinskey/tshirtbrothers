@@ -1355,6 +1355,11 @@ export default function AdminPage() {
     enabled: activeSection === 'mockups',
   });
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
+  // Mockups grid toolbar — search matches name/customer/product; status
+  // chips and sort are applied client-side (the list is already loaded).
+  const [mockupSearch, setMockupSearch] = useState('');
+  const [mockupStatusFilter, setMockupStatusFilter] = useState<'all' | Mockup['status']>('all');
+  const [mockupSortOrder, setMockupSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
   // Default decoration placement per garment type, in % of the product
   // photo — chest for tees/fleece, front panel for headwear, left chest
   // for polos/outerwear. Seeded when a product is picked; the sliders
@@ -6838,7 +6843,19 @@ export default function AdminPage() {
         })()}
 
         {activeSection === 'mockups' && (() => {
-          const mockups: Mockup[] = mockupsQuery.data ?? [];
+          const allMockups: Mockup[] = mockupsQuery.data ?? [];
+          const mq = mockupSearch.trim().toLowerCase();
+          const mockups = allMockups
+            .filter((m) => mockupStatusFilter === 'all' || m.status === mockupStatusFilter)
+            .filter((m) => !mq || [m.name, m.customer_name, m.customer_email, m.product_name]
+              .some((v) => (v || '').toLowerCase().includes(mq)))
+            .sort((a, b) => {
+              if (mockupSortOrder === 'name') return (a.name || '').localeCompare(b.name || '');
+              const at = new Date(a.created_at).getTime();
+              const bt = new Date(b.created_at).getTime();
+              return mockupSortOrder === 'oldest' ? at - bt : bt - at;
+            });
+          const statusCount = (s: Mockup['status']) => allMockups.filter((m) => m.status === s).length;
           const STATUS_COLORS: Record<Mockup['status'], string> = {
             draft: 'bg-gray-100 text-gray-700',
             sent: 'bg-blue-100 text-blue-800',
@@ -6877,9 +6894,56 @@ export default function AdminPage() {
                 </div>
               )}
 
+              {/* Search / filter / sort toolbar */}
+              <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="search"
+                    value={mockupSearch}
+                    onChange={(e) => setMockupSearch(e.target.value)}
+                    placeholder="Search name, customer, product…"
+                    className="w-full pl-9 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(['all', 'draft', 'sent', 'approved', 'rejected', 'converted_to_quote'] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setMockupStatusFilter(s)}
+                      className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        mockupStatusFilter === s
+                          ? 'bg-gray-900 text-white border-gray-900'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                      }`}
+                    >
+                      {s === 'all' ? `All (${allMockups.length})`
+                        : `${s.replace(/_/g, ' ')} (${statusCount(s)})`}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={mockupSortOrder}
+                  onChange={(e) => setMockupSortOrder(e.target.value as typeof mockupSortOrder)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </div>
+
               {mockups.length === 0 ? (
                 <div className="bg-white border border-gray-200 rounded-xl p-12 text-center text-gray-500">
-                  <p className="text-sm">No mockups yet. Click <span className="font-semibold">New Mockup</span> to create one for a customer.</p>
+                  {allMockups.length === 0 ? (
+                    <p className="text-sm">No mockups yet. Click <span className="font-semibold">New Mockup</span> to create one for a customer.</p>
+                  ) : (
+                    <p className="text-sm">
+                      No mockups match{mq ? <> "<span className="font-semibold">{mockupSearch}</span>"</> : ''} in this view.{' '}
+                      <button className="text-red-600 underline" onClick={() => { setMockupSearch(''); setMockupStatusFilter('all'); }}>Clear filters</button>
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
