@@ -201,7 +201,7 @@ export default function GroupStoreProductPage() {
             <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
               <div className="aspect-square bg-gray-100">
                 {(galleryImage || product.cover_image) ? (
-                  <img src={galleryImage || product.cover_image || undefined} alt={product.title} className="w-full h-full object-cover" />
+                  <img src={galleryImage || product.cover_image || undefined} alt={product.title} className="w-full h-full object-contain bg-white" />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
                     <ShoppingBag className="w-16 h-16 text-gray-300" />
@@ -220,7 +220,7 @@ export default function GroupStoreProductPage() {
                     className={`h-16 w-16 rounded-md border-2 overflow-hidden bg-gray-100 ${i === galleryIdx ? '' : 'border-transparent opacity-70 hover:opacity-100'}`}
                     style={i === galleryIdx ? { borderColor: primary } : undefined}
                   >
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img src={url} alt="" className="w-full h-full object-contain bg-white" />
                   </button>
                 ))}
               </div>
