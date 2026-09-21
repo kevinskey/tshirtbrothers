@@ -123,6 +123,14 @@ export default function AdminGroupStoreDetailPage() {
             onSaved={() => void load()}
           />
         )}
+        {store.store_type === 'group' && (
+          <CollectionsEditor
+            storeId={storeId}
+            brand={store.brand_json as Record<string, unknown>}
+            products={products}
+            onSaved={() => void load()}
+          />
+        )}
         <input
           ref={coverInputRef}
           type="file"
@@ -783,6 +791,147 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
         </div>
       </form>
     </div>
+  );
+}
+
+// ── Collections editor (group stores) ────────────────────────────────────
+// Edits brand_json.collections (declared shelves: display title + order on
+// the storefront) and which collection is featured. Undeclared tags that
+// products already carry (campaign_ref) are offered for one-click declare.
+// featured_collection may hold video/media config — only key/title are
+// touched here; the rest is preserved on save.
+function CollectionsEditor({ storeId, brand, products, onSaved }: {
+  storeId: number;
+  brand: Record<string, unknown>;
+  products: GroupStoreDetail['products'];
+  onSaved: () => void;
+}) {
+  type Row = { key: string; title: string };
+  const initial: Row[] = Array.isArray(brand.collections)
+    ? (brand.collections as Row[]).filter((c) => c && c.key).map((c) => ({ key: String(c.key), title: String(c.title || c.key) }))
+    : [];
+  const featuredCfg = (brand.featured_collection ?? null) as (Record<string, unknown> & { key?: string }) | null;
+  const [rows, setRows] = useState<Row[]>(initial);
+  const [featuredKey, setFeaturedKey] = useState<string>(featuredCfg?.key ? String(featuredCfg.key) : '');
+  const [busy, setBusy] = useState(false);
+
+  const titleFromKey = (k: string) => k.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const productCount = (k: string) => products.filter((p) => p.campaign_ref === k).length;
+  // Tags in use on products but not declared yet.
+  const undeclared = [...new Set(products.map((p) => p.campaign_ref).filter((c): c is string => !!c))]
+    .filter((k) => !rows.some((r) => r.key === k))
+    .sort();
+
+  const move = (i: number, dir: -1 | 1) => {
+    setRows((prev) => {
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      const a = next[i]!; next[i] = next[j]!; next[j] = a;
+      return next;
+    });
+  };
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const next: Record<string, unknown> = { ...brand };
+      const cleaned = rows
+        .map((r) => ({ key: r.key.trim(), title: r.title.trim() || titleFromKey(r.key) }))
+        .filter((r) => r.key);
+      if (cleaned.length) next.collections = cleaned;
+      else delete next.collections;
+      if (featuredKey) {
+        next.featured_collection = {
+          ...(featuredCfg && featuredCfg.key === featuredKey ? featuredCfg : {}),
+          key: featuredKey,
+          title: cleaned.find((r) => r.key === featuredKey)?.title || titleFromKey(featuredKey),
+        };
+      } else {
+        delete next.featured_collection;
+      }
+      await updateGroupStore(storeId, { brand_json: next });
+      toast.success('Collections saved');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-5">
+      <h2 className="text-lg font-semibold text-gray-900">Collections</h2>
+      <p className="text-xs text-gray-500 mt-0.5">
+        Storefront shelves, in this order. Products join a collection via their category/collection tag; tags in use below can be declared with one click to control their display name and position.
+      </p>
+
+      <div className="mt-4 space-y-2">
+        {rows.length === 0 && (
+          <p className="text-sm text-gray-400 italic">No declared collections — the storefront auto-derives them from product tags, alphabetically.</p>
+        )}
+        {rows.map((r, i) => (
+          <div key={r.key} className="flex items-center gap-2">
+            <div className="flex flex-col">
+              <button onClick={() => move(i, -1)} disabled={i === 0} className="text-gray-400 hover:text-gray-700 disabled:opacity-25 leading-none text-xs px-1">▲</button>
+              <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="text-gray-400 hover:text-gray-700 disabled:opacity-25 leading-none text-xs px-1">▼</button>
+            </div>
+            <input
+              value={r.title}
+              onChange={(e) => setRows((prev) => prev.map((x, xi) => (xi === i ? { ...x, title: e.target.value } : x)))}
+              className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+              placeholder={titleFromKey(r.key)}
+            />
+            <span className="text-[11px] text-gray-400 font-mono whitespace-nowrap">{r.key} · {productCount(r.key)} item{productCount(r.key) === 1 ? '' : 's'}</span>
+            <button
+              onClick={() => setRows((prev) => prev.filter((_, xi) => xi !== i))}
+              className="text-gray-300 hover:text-red-500 text-sm px-1"
+              title="Remove from declared list (products keep their tag; the shelf falls back to auto-derived)"
+            >✕</button>
+          </div>
+        ))}
+      </div>
+
+      {undeclared.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Tags in use, not declared</p>
+          <div className="flex flex-wrap gap-1.5">
+            {undeclared.map((k) => (
+              <button
+                key={k}
+                onClick={() => setRows((prev) => [...prev, { key: k, title: titleFromKey(k) }])}
+                className="text-xs px-2.5 py-1 rounded-full border border-dashed border-gray-300 text-gray-600 hover:border-gray-500 hover:bg-gray-50"
+              >
+                + {k} ({productCount(k)})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="text-xs font-medium text-gray-700 uppercase tracking-wider">Featured collection</label>
+        <select
+          value={featuredKey}
+          onChange={(e) => setFeaturedKey(e.target.value)}
+          className="border border-gray-300 rounded-md px-2 py-1.5 text-sm"
+        >
+          <option value="">— none —</option>
+          {[...new Set([...rows.map((r) => r.key), ...undeclared])].map((k) => (
+            <option key={k} value={k}>{rows.find((r) => r.key === k)?.title || titleFromKey(k)}</option>
+          ))}
+        </select>
+        {featuredCfg?.key && featuredKey !== String(featuredCfg.key) && (
+          <span className="text-[11px] text-orange-600">Changing this drops the current featured hero's video/media config.</span>
+        )}
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <button onClick={save} disabled={busy}
+          className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save collections'}
+        </button>
+      </div>
+    </section>
   );
 }
 
