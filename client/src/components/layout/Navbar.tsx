@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-type NavLink = { label: string; href: string; desktopOnly?: boolean };
+type NavLink = { label: string; href: string; desktopOnly?: boolean; highlight?: boolean };
 type NavEntry = NavLink | { label: string; children: NavLink[]; desktopOnly?: boolean };
 const isGroup = (e: NavEntry): e is { label: string; children: NavLink[]; desktopOnly?: boolean } => 'children' in e;
 
@@ -36,6 +36,9 @@ const catalogueLinksEs: NavLink[] = [
 // three high-intent CTAs — Design Studio, Catalogue, Get a Quote — so it
 // stays one screen-width without horizontal scrolling.
 const subNavEntries: NavEntry[] = [
+  // TSB Direct — the ready-to-wear storefront on its own subdomain.
+  // Top of the menu, brand orange.
+  { label: 'Ready to Wear', href: 'https://shop.tshirtbrothers.com', highlight: true },
   { label: 'Design Studio', href: '/design' },
   { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
@@ -52,6 +55,7 @@ const subNavEntries: NavEntry[] = [
 ];
 
 const subNavEntriesEs: NavEntry[] = [
+  { label: 'Listo para Usar', href: 'https://shop.tshirtbrothers.com', highlight: true },
   { label: 'Estudio de Diseño', href: '/design' },
   { label: 'Catálogo', children: catalogueLinksEs },
   { label: 'Obtener Cotización', href: '/es/cotizacion' },
@@ -259,6 +263,25 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                     </div>
                   )}
                 </div>
+              );
+            }
+            // External entries (e.g. the TSB Direct subdomain shop) need a
+            // real <a> — react-router's Link treats full URLs as app paths.
+            if (entry.href.startsWith('http')) {
+              return (
+                <a
+                  key={entry.label}
+                  href={entry.href}
+                  className={cn(
+                    'block rounded-lg px-3 py-2.5 text-sm transition-colors',
+                    entry.highlight
+                      ? 'bg-orange-600 text-white font-bold hover:bg-orange-700'
+                      : 'font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50',
+                  )}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {entry.label}
+                </a>
               );
             }
             return (
