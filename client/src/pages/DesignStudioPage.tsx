@@ -3125,12 +3125,16 @@ export default function DesignStudioPage() {
   // so the input gets the full panel width to itself.
   const textPanelContent = (
     <div className="p-3">
-      <input
-        placeholder="Enter your text..."
+      {/* Multi-line: Enter adds a line (awards/engraving need stacked
+          lines), Cmd/Ctrl+Enter or the Add button places the text. */}
+      <textarea
+        placeholder={'Enter your text...\nPress Enter for a new line'}
         value={textInput}
         onChange={e => setTextInput(e.target.value)}
-        onKeyDown={e => { if (e.key === 'Enter') addTextToCanvas(); }}
-        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addTextToCanvas(); }}
+        rows={3}
+        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-y"
+        style={{ fontSize: '16px' }}
         autoFocus
       />
     </div>
@@ -4586,13 +4590,15 @@ export default function DesignStudioPage() {
         </button>
         {textPop === 'tx' && (
           <div className="absolute bottom-full left-0 mb-2 bg-white border rounded-lg shadow-xl p-2 w-64 z-50">
-            <input
-              type="text"
+            <textarea
               value={selectedEl.content}
               onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              rows={3}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+              style={{ fontSize: '16px' }}
               autoFocus
             />
+            <p className="text-[10px] text-gray-400 px-1 mt-1">Enter starts a new line</p>
           </div>
         )}
       </div>
@@ -4792,11 +4798,12 @@ export default function DesignStudioPage() {
       </div>
 
       <div className="p-5 space-y-5">
-        <input
-          type="text"
+        <textarea
           value={selectedEl.content}
           onChange={e => updateElement(selectedEl.id, { content: e.target.value })}
-          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+          rows={3}
+          className="w-full rounded-lg border border-gray-200 px-4 py-3 text-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+          style={{ fontSize: '16px' }}
         />
 
         <div>
