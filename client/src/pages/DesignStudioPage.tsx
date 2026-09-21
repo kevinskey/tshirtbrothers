@@ -409,6 +409,8 @@ function preloadAllFonts() {
 interface ProductColor {
   name: string;
   hex: string;
+  /** S&S fabric swatch photo — the only color imagery some styles have. */
+  swatch?: string | null;
   image?: string;
   backImage?: string;
   sideImage?: string;
@@ -3456,11 +3458,15 @@ export default function DesignStudioPage() {
               type="button"
               title={c.name}
               onClick={() => { setSelectedColorIdx(i); setUserPickedColor(true); }}
-              className={`h-7 w-7 md:h-8 md:w-8 rounded-full border-2 transition ${
+              className={`h-7 w-7 md:h-8 md:w-8 rounded-full border-2 overflow-hidden transition ${
                 selectedColorIdx === i ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
               }`}
               style={{ backgroundColor: c.hex || '#ccc' }}
-            />
+            >
+              {/* Fabric swatch photo beats a flat hex circle when S&S has
+                  one (heathers, camo, and any style with sparse hex data). */}
+              {c.swatch && <img src={c.swatch} alt={c.name} className="w-full h-full object-cover" loading="lazy" />}
+            </button>
           ))}
         </div>
       ) : (
@@ -4407,9 +4413,13 @@ export default function DesignStudioPage() {
             <div className="flex items-center gap-2">
               {productColors[selectedColorIdx]?.hex && (
                 <span
-                  className="inline-block h-4 w-4 rounded-full border border-gray-300"
+                  className="inline-block h-4 w-4 rounded-full border border-gray-300 overflow-hidden"
                   style={{ backgroundColor: productColors[selectedColorIdx].hex }}
-                />
+                >
+                  {productColors[selectedColorIdx]?.swatch && (
+                    <img src={productColors[selectedColorIdx].swatch!} alt="" className="w-full h-full object-cover" />
+                  )}
+                </span>
               )}
               <span className="text-xs text-gray-500">{productColors[selectedColorIdx]?.name ?? 'White'}</span>
               <button
