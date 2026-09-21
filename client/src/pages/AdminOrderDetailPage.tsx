@@ -39,6 +39,9 @@ interface Detail {
     mockup_image_url: string | null; mockup_image_url_back: string | null;
     created_at: string; accepted_at: string | null; balance_paid_at: string | null;
     order_stages: Record<string, string> | null;
+    shipping_method: string | null; fulfillment_method: string | null;
+    picked_up_at: string | null; shipped_at: string | null;
+    tracking_number: string | null; tracking_carrier: string | null;
   };
   items: QuoteItem[];
   invoices: InvoiceRow[];
@@ -90,6 +93,9 @@ export default function AdminOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [trkNumber, setTrkNumber] = useState('');
+  const [trkCarrier, setTrkCarrier] = useState('');
   const [offlineFormOpen, setOfflineFormOpen] = useState(false);
   const [offlineAmount, setOfflineAmount] = useState('');
   const [offlineMethod, setOfflineMethod] = useState('cash');
@@ -186,7 +192,7 @@ export default function AdminOrderDetailPage() {
     { label: 'Pressed', done: !!stages.pressed, when: dt(stages.pressed), stageKey: 'pressed' },
     { label: 'Customer contacted', done: !!stages.pickup_contacted, when: dt(stages.pickup_contacted), stageKey: 'pickup_contacted' },
     { label: 'Final payment', done: !!quote.balance_paid_at || (totalDue === 0 && totalPaid > 0), when: dt(quote.balance_paid_at) },
-    { label: 'Completed', done: quote.status === 'completed', when: null },
+    { label: 'Completed', done: quote.status === 'completed', when: dt(quote.picked_up_at || quote.shipped_at) },
   ];
 
   async function toggleStage(key: string, done: boolean) {
@@ -196,6 +202,28 @@ export default function AdminOrderDetailPage() {
     if (r.ok) {
       const data = await r.json();
       setDetail((d) => (d ? { ...d, quote: { ...d.quote, order_stages: data.order_stages } } : d));
+    }
+  }
+
+  // Complete the order via the fulfill endpoint — sets status, stamps the
+  // pickup/ship date, and fires the customer notification + review request.
+  async function completeOrder(method: 'pickup' | 'ship') {
+    if (completing) return;
+    if (totalDue > 0 && !window.confirm(`${money(totalDue)} is still due on this order. Complete it anyway?`)) return;
+    setCompleting(true);
+    try {
+      const r = await fetch(`/api/quotes/admin/${quoteId}/fulfill`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({
+          method,
+          tracking_number: trkNumber.trim() || undefined,
+          carrier: trkCarrier.trim() || undefined,
+        }),
+      });
+      if (r.ok) await load();
+      else alert(`Failed to complete order (HTTP ${r.status})`);
+    } finally {
+      setCompleting(false);
     }
   }
 
@@ -251,6 +279,56 @@ export default function AdminOrderDetailPage() {
           <div className="text-[11px] text-gray-500 mt-2">
             Gang sheet / pressed / customer-contacted circles are click-to-toggle; the rest check themselves from payments, POs, and vendor sends.
           </div>
+
+          {/* Complete-order controls — the only stage with no data signal
+              and no toggle. Calls the fulfill endpoint: sets status to
+              completed, stamps the date, notifies the customer, and sends
+              the review request. */}
+          {quote.status !== 'completed' ? (
+            <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-gray-700">Complete this order:</span>
+              <button
+                onClick={() => void completeOrder('pickup')}
+                disabled={completing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
+              >
+                {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Picked up
+              </button>
+              <span className="text-xs text-gray-400">or</span>
+              <input
+                value={trkNumber}
+                onChange={(e) => setTrkNumber(e.target.value)}
+                placeholder="Tracking # (optional)"
+                className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-44"
+              />
+              <input
+                value={trkCarrier}
+                onChange={(e) => setTrkCarrier(e.target.value)}
+                placeholder="Carrier"
+                className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-24"
+              />
+              <button
+                onClick={() => void completeOrder('ship')}
+                disabled={completing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
+              >
+                {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                Shipped
+              </button>
+              <span className="text-[11px] text-gray-500 basis-full">
+                Marks the order completed, stamps the date, and emails/texts the customer (plus a review request).
+              </span>
+            </div>
+          ) : (
+            <div className="mt-2 text-xs font-medium text-green-700">
+              Completed — {quote.picked_up_at
+                ? `picked up ${dt(quote.picked_up_at)}`
+                : quote.shipped_at
+                  ? `shipped ${dt(quote.shipped_at)}${quote.tracking_number ? ` · ${[quote.tracking_carrier, quote.tracking_number].filter(Boolean).join(' ')}` : ''}`
+                  : 'done'}
+            </div>
+          )}
         </div>
 
         <div className="grid lg:grid-cols-2 gap-5 items-start">
