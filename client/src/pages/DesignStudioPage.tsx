@@ -2527,7 +2527,15 @@ export default function DesignStudioPage() {
         setDesignElements(prev =>
           prev.map(el =>
             el.id === elementId
-              ? { ...el, x: Math.max(0, Math.min(90, startX + dx)), y: Math.max(0, Math.min(90, startY + dy)) }
+              // Text may sit partly off-canvas (wide boxes need negative x
+              // to center); other elements stay within the surface.
+              ? {
+                  ...el,
+                  x: el.type === 'text'
+                    ? Math.max(-200, Math.min(95, startX + dx))
+                    : Math.max(0, Math.min(90, startX + dx)),
+                  y: Math.max(0, Math.min(90, startY + dy)),
+                }
               : el,
           ),
         );
@@ -2549,7 +2557,10 @@ export default function DesignStudioPage() {
                 : Math.max(5, Math.min(100, startHeight + dy));
               return { ...el, width: newW, height: newH };
             }
-            const newW = Math.max(5, Math.min(80, startWidth + dx));
+            // Text can grow well past the old 80% cap — the user decides
+            // how much of the product the text covers, not the box.
+            const maxW = el.type === 'text' ? 300 : 80;
+            const newW = Math.max(5, Math.min(maxW, startWidth + dx));
             if (el.type === 'text' && (!el.textShape || el.textShape === 'normal') && startFontSize) {
               // Resizing text scales the glyphs with the box (it used to
               // change only the invisible box, leaving the text untouched).
@@ -4258,7 +4269,11 @@ export default function DesignStudioPage() {
                   </div>
                 ) : (
                   <span
-                    className="block whitespace-pre-wrap pointer-events-none"
+                    // whitespace-pre (not pre-wrap): the box always tracks
+                    // the measured glyph width, so auto-wrap only ever fired
+                    // when the box was clamped smaller than the text — lines
+                    // the user never typed. Explicit newlines still break.
+                    className="block whitespace-pre pointer-events-none"
                     style={{
                       // Compute fontSize in px from the measured surface
                       // width. cqw would be cleaner CSS but html2canvas
