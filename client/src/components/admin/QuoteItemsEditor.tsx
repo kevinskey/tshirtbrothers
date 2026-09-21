@@ -122,26 +122,69 @@ export default function QuoteItemsEditor({
   useEffect(() => { draftsRef.current = drafts; });
   const autoPriceTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Catalog colorways for each linked product, so the Color field offers
-  // the product's REAL color names (exact S&S spellings — that's what lets
-  // the blanks builder auto-match later) instead of a blind text box.
-  const [colorOptions, setColorOptions] = useState<Record<number, string[]>>({});
+  // Catalog info for each linked product: real colorway names (exact S&S
+  // spellings — that's what lets the blanks builder auto-match later), the
+  // style's real size run, and price hints. Many synced catalog rows are
+  // thin (empty colors/sizes, base_price 0) — for those, fall back to the
+  // live-cost endpoint, which pulls colors/sizes/costs straight from S&S.
+  type ProductMeta = {
+    colors: string[]; sizes: string[];
+    retail: number | null; custom: number | null; costMin: number | null;
+  };
+  const [productMeta, setProductMeta] = useState<Record<number, ProductMeta>>({});
   useEffect(() => {
     const ids = [...new Set(drafts.map((d) => d.product_id).filter((x): x is number => !!x))];
     for (const id of ids) {
-      if (colorOptions[id] !== undefined) continue;
-      setColorOptions((prev) => ({ ...prev, [id]: [] }));
-      fetch(`/api/products/${id}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((prod) => {
-          const names = Array.isArray(prod?.colors)
+      if (productMeta[id] !== undefined) continue;
+      setProductMeta((prev) => ({ ...prev, [id]: { colors: [], sizes: [], retail: null, custom: null, costMin: null } }));
+      (async () => {
+        try {
+          const r = await fetch(`/api/products/${id}`);
+          if (!r.ok) return;
+          const prod = await r.json();
+          let colors = Array.isArray(prod?.colors)
             ? (prod.colors as Array<{ name?: string }>).map((c) => c?.name).filter((n): n is string => !!n)
             : [];
-          setColorOptions((prev) => ({ ...prev, [id]: names }));
-        })
-        .catch(() => {});
+          let sizes = Array.isArray(prod?.sizes) ? (prod.sizes as unknown[]).map(String).filter(Boolean) : [];
+          let costMin: number | null = null;
+          if (colors.length === 0 && (prod?.style_number || prod?.name)) {
+            const lr = await fetch(
+              `/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(prod.style_number || prod.name)}`,
+              { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } },
+            );
+            if (lr.ok) {
+              const live = await lr.json();
+              if (Array.isArray(live?.colors)) colors = live.colors.filter(Boolean);
+              const liveSizes = live?.sizes && typeof live.sizes === 'object' ? live.sizes as Record<string, { cost?: number }> : {};
+              if (sizes.length === 0) sizes = Object.keys(liveSizes);
+              const costs = Object.values(liveSizes).map((s) => Number(s?.cost)).filter(Number.isFinite);
+              if (costs.length) costMin = Math.min(...costs);
+            }
+          }
+          const retail = Number(prod?.retail_price);
+          const custom = Number(prod?.custom_price);
+          setProductMeta((prev) => ({ ...prev, [id]: {
+            colors, sizes,
+            retail: Number.isFinite(retail) && retail > 0 ? retail : null,
+            custom: Number.isFinite(custom) && custom > 0 ? custom : null,
+            costMin,
+          } }));
+        } catch { /* best effort */ }
+      })();
     }
-  }, [drafts, colorOptions]);
+  }, [drafts, productMeta]);
+
+  // Seed an empty unit price from the catalog once meta arrives — the
+  // admin's custom price if one is set, retail otherwise. Never overwrites
+  // a typed value, and the field stays fully editable.
+  useEffect(() => {
+    setDrafts((prev) => prev.map((d) => {
+      if (!d.product_id || d.unit_price.trim() !== '') return d;
+      const m = productMeta[d.product_id];
+      const seed = m ? (m.custom ?? m.retail) : null;
+      return seed ? { ...d, unit_price: seed.toFixed(2) } : d;
+    }));
+  }, [productMeta]);
 
   // Auto-price: once a line has size quantities and the admin hasn't typed
   // a unit price, run the same calculation the Recalculate button does.
@@ -321,13 +364,13 @@ export default function QuoteItemsEditor({
                   value={d.color}
                   onChange={(e) => updateDraft(i, { color: e.target.value })}
                   list={d.product_id ? `qie-colors-${d.product_id}` : undefined}
-                  placeholder={d.product_id && (colorOptions[d.product_id]?.length ?? 0) > 0 ? 'Pick or type a color…' : undefined}
+                  placeholder={d.product_id && (productMeta[d.product_id]?.colors.length ?? 0) > 0 ? 'Pick or type a color…' : undefined}
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white"
                   style={{ fontSize: '16px' }}
                 />
-                {d.product_id && (colorOptions[d.product_id]?.length ?? 0) > 0 && (
+                {d.product_id && (productMeta[d.product_id]?.colors.length ?? 0) > 0 && (
                   <datalist id={`qie-colors-${d.product_id}`}>
-                    {colorOptions[d.product_id]!.map((c) => <option key={c} value={c} />)}
+                    {productMeta[d.product_id]!.colors.map((c) => <option key={c} value={c} />)}
                   </datalist>
                 )}
               </div>
@@ -342,13 +385,26 @@ export default function QuoteItemsEditor({
                   className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 bg-white"
                   style={{ fontSize: '16px' }}
                 />
+                {d.product_id && productMeta[d.product_id] && (productMeta[d.product_id]!.costMin !== null || productMeta[d.product_id]!.retail !== null) && (
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    {productMeta[d.product_id]!.costMin !== null && <>S&amp;S blank from ${productMeta[d.product_id]!.costMin!.toFixed(2)}</>}
+                    {productMeta[d.product_id]!.costMin !== null && productMeta[d.product_id]!.retail !== null && ' · '}
+                    {productMeta[d.product_id]!.retail !== null && <>retail ${productMeta[d.product_id]!.retail!.toFixed(2)}</>}
+                  </p>
+                )}
               </div>
             </div>
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Sizes</label>
               <div className="grid grid-cols-4 gap-1.5">
-                {COMMON_SIZES.map((size) => {
+                {/* The style's real size run when we know it (One Size, tall
+                    vests, ...), the common garment run otherwise — plus any
+                    size already on the line so typed counts never vanish. */}
+                {[...new Set([
+                  ...((d.product_id && productMeta[d.product_id]?.sizes.length ? productMeta[d.product_id]!.sizes : COMMON_SIZES)),
+                  ...d.sizes.map((s) => s.size),
+                ])].map((size) => {
                   const cur = d.sizes.find((s) => s.size === size)?.quantity ?? 0;
                   return (
                     <div key={size} className="flex items-center gap-1 bg-white rounded border border-gray-200 px-1.5 py-1">
