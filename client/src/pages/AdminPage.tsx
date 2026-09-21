@@ -133,6 +133,7 @@ import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
 import NewslettersAdmin from '@/components/admin/NewslettersAdmin';
 import ProspectsAdmin from '@/components/admin/ProspectsAdmin';
+import ProductDetailModal from '@/components/admin/ProductDetailModal';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
@@ -1068,6 +1069,8 @@ export default function AdminPage() {
   }, [detailQuote]);
 
   // Send Price modal state
+  // S&S-style product dossier modal on the Products list.
+  const [detailProductId, setDetailProductId] = useState<string | null>(null);
   const [priceModalQuote, setPriceModalQuote] = useState<Quote | null>(null);
   // Line-items editor inside the price modal — auto-opened when the quote
   // has no catalog product linked (e.g. "Custom: Other" wizard quotes), so
@@ -3429,10 +3432,15 @@ export default function AdminPage() {
                       return (
                       <tr key={p.id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDetailProductId(String(p.id))}
+                            className="flex items-center gap-2 text-left hover:text-red-700"
+                            title="View colors, sizes, pricing & warehouse stock"
+                          >
                             {p.image_url && <img src={String(p.image_url)} alt="" className="h-8 w-8 rounded bg-gray-100 object-contain" />}
-                            <span className="text-gray-900 font-medium text-xs">{p.name}</span>
-                          </div>
+                            <span className="text-gray-900 font-medium text-xs underline-offset-2 hover:underline">{p.name}</span>
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-gray-600 text-xs">{p.brand}</td>
                         <td className="px-4 py-3 text-gray-600 text-xs">{p.category}</td>
@@ -8311,6 +8319,11 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Product dossier modal (Products list) */}
+        {detailProductId && (
+          <ProductDetailModal productId={detailProductId} onClose={() => setDetailProductId(null)} />
         )}
 
         {/* Send Price Modal */}
