@@ -6921,7 +6921,7 @@ export default function AdminPage() {
                         </div>
                         <div className="p-3 flex-1 flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
-                            <h3 className="font-semibold text-gray-900 text-sm truncate">{m.name || 'Untitled'}</h3>
+                            <MockupNameEditor mockup={m} onSaved={() => mockupsQuery.refetch()} />
                             <button onClick={() => handleDeleteMockup(m.id)} className="text-gray-300 hover:text-red-500 shrink-0">
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -9392,6 +9392,57 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
  */
 /** Mockup-card preview scroller: pages through every rendered side (front,
  *  back, …) with arrows + dots. Single image renders exactly as before. */
+// Click-to-rename title on a mockup card. Saves on Enter/blur via the
+// mockups PATCH endpoint; Escape cancels.
+function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setEditing(false);
+    const name = draft.trim();
+    if (!name || name === (mockup.name || '')) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/admin/mockups/${mockup.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ name }),
+      });
+      if (r.ok) onSaved();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setEditing(false);
+        }}
+        className="w-full text-sm font-semibold text-gray-900 border border-orange-400 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
+        style={{ fontSize: '16px' }}
+      />
+    );
+  }
+  return (
+    <h3
+      className="font-semibold text-gray-900 text-sm truncate cursor-text rounded px-0.5 -mx-0.5 hover:bg-orange-50"
+      title="Click to rename"
+      onClick={() => { setDraft(mockup.name || ''); setEditing(true); }}
+    >
+      {saving ? 'Saving…' : (mockup.name || 'Untitled')}
+    </h3>
+  );
+}
+
 function MockupSideScroller({ images, alt }: { images: Array<{ src: string; label: string }>; alt: string }) {
   const [idx, setIdx] = useState(0);
   const cur = images[Math.min(idx, images.length - 1)]!;
