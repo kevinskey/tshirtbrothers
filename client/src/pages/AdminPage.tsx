@@ -9397,13 +9397,15 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
 function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
+  // Optimistic: show the new name the moment it's submitted — waiting for
+  // the full list refetch made renames feel seconds slow. Reverts on error.
+  const [localName, setLocalName] = useState<string | null>(null);
 
   async function save() {
     setEditing(false);
     const name = draft.trim();
-    if (!name || name === (mockup.name || '')) return;
-    setSaving(true);
+    if (!name || name === (localName ?? mockup.name ?? '')) return;
+    setLocalName(name);
     try {
       const r = await fetch(`/api/admin/mockups/${mockup.id}`, {
         method: 'PATCH',
@@ -9411,8 +9413,9 @@ function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => 
         body: JSON.stringify({ name }),
       });
       if (r.ok) onSaved();
-    } finally {
-      setSaving(false);
+      else setLocalName(null);
+    } catch {
+      setLocalName(null);
     }
   }
 
@@ -9436,9 +9439,9 @@ function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => 
     <h3
       className="font-semibold text-gray-900 text-sm truncate cursor-text rounded px-0.5 -mx-0.5 hover:bg-orange-50"
       title="Click to rename"
-      onClick={() => { setDraft(mockup.name || ''); setEditing(true); }}
+      onClick={() => { setDraft(localName ?? mockup.name ?? ''); setEditing(true); }}
     >
-      {saving ? 'Saving…' : (mockup.name || 'Untitled')}
+      {localName ?? mockup.name ?? 'Untitled'}
     </h3>
   );
 }
