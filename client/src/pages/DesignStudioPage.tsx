@@ -1004,6 +1004,28 @@ export default function DesignStudioPage() {
 
   // Screenshot the studio's "product photo + design overlay" surface
   // exactly as the admin sees it, upload the PNG, and return the URL.
+  // html2canvas ignores object-fit and stretches the product photo to fill
+  // its box — portrait on-model shots came out warped in saved mockup
+  // previews. Emulate `contain` in the capture clone: size the img box to
+  // the photo's fitted rect. Shared by every surface capture below.
+  const fixProductPhotoFit = (doc: Document) => {
+    const live = productImgRef.current;
+    const clone = doc.querySelector<HTMLImageElement>('img[data-product-photo]');
+    if (!live || !clone || !live.naturalWidth || !live.naturalHeight) return;
+    const box = live.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const fit = Math.min(box.width / live.naturalWidth, box.height / live.naturalHeight);
+    const w = live.naturalWidth * fit;
+    const h = live.naturalHeight * fit;
+    clone.style.objectFit = 'fill';
+    clone.style.width = `${w}px`;
+    clone.style.height = `${h}px`;
+    clone.style.left = `${(box.width - w) / 2}px`;
+    clone.style.top = `${(box.height - h) / 2}px`;
+    clone.style.right = 'auto';
+    clone.style.bottom = 'auto';
+  };
+
   // Replaces the server-side compose math — what you see is what saves.
   // Switches the visible side first (Fabric: via the bridge; legacy: by
   // setting currentView) and waits a frame so the canvas paints before
@@ -1030,7 +1052,7 @@ export default function DesignStudioPage() {
     let dataUrl: string;
     try {
       const html2canvas = (await import('html2canvas')).default;
-      const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false } as const;
+      const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit };
 
       // html2canvas ignores CSS mix-blend-mode, so 'multiply' elements
       // would export as opaque stickers. Capture in two passes instead:
@@ -1443,7 +1465,7 @@ export default function DesignStudioPage() {
         if (surface) {
           try {
             const html2canvas = (await import('html2canvas')).default;
-            const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false });
+            const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit });
             mockupDataUrl = cvAll.toDataURL('image/png');
             const productImg = productImgRef.current;
             if (productImg) {
@@ -4074,6 +4096,7 @@ export default function DesignStudioPage() {
           ) : displayImage ? (
             <img
               ref={productImgRef}
+              data-product-photo
               src={displayImage}
               alt={selectedProduct?.name ?? 'Product'}
               className="absolute inset-0 w-full h-full object-contain pointer-events-none"
