@@ -166,9 +166,11 @@ export default function GroupStorePage() {
   const collectionLabel = (key: string) => {
     const t = declaredTitle.get(key);
     if (t) return `The ${t} Collection`;
-    return key.length <= 3
-      ? `The ${key.toUpperCase()} Collection`
-      : `The ${key.charAt(0).toUpperCase()}${key.slice(1).replace(/-/g, ' ')} Collection`;
+    if (key.length <= 3) return `The ${key.toUpperCase()} Collection`;
+    // Undeclared tags (e.g. auto-derived from a product category like
+    // "hoodies-sweatshirts") title-case per word.
+    const words = key.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+    return `The ${words} Collection`;
   };
   const collections: Array<[string, StoreProduct[]]> = declared.map((c) => [c.key, []]);
   for (const p of regularProducts) {
