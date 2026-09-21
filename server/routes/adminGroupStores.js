@@ -546,9 +546,13 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     // front/back gallery. Rides inside variants_json — no schema change.
     const images = [m.preview_image_url, m.preview_image_url_back].filter(Boolean);
     if (images.length > 1) variants.images = images;
-    // Storefront category also rides in variants_json — no schema change.
+    // Storefront category: rides in variants_json for the /stores page
+    // chips AND becomes campaign_ref — that's what the subdomain
+    // storefront (GroupStorePage) actually groups collections by.
+    let campaignRef = null;
     if (typeof category === 'string' && category.trim()) {
       variants.category = category.trim().slice(0, 60);
+      campaignRef = variants.category.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || null;
     }
 
     try {
@@ -557,8 +561,8 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
            (store_id, tsb_blank_ss_id, title, slug, description, cover_image,
             retail_price_cents, variants_json, active_agreement_id,
             blank_cost_cents, decoration_cost_cents, min_qty,
-            opens_at, closes_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            opens_at, closes_at, campaign_ref)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING id, slug, title, retail_price_cents, min_qty, is_active, published_at`,
         [
           id, m.ss_id, title, slug,
@@ -572,6 +576,7 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
           min_qty ?? 1,
           opens_at ?? null,
           closes_at ?? null,
+          campaignRef,
         ],
       );
       res.status(201).json(rows[0]);
