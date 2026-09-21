@@ -1,7 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Download } from 'lucide-react';
+
+// Cross-origin images (DO Spaces) ignore the <a download> attribute, so
+// route through our same-origin image proxy and save the blob. Falls back
+// to opening the image in a new tab if anything fails.
+async function downloadImage(url: string, filename: string) {
+  try {
+    const r = await fetch(`/api/products/image-proxy?url=${encodeURIComponent(url)}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const obj = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = obj;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(obj);
+  } catch {
+    window.open(url, '_blank', 'noopener');
+  }
+}
 
 interface PublicMockup {
   id: number;
@@ -109,6 +130,19 @@ export default function MockupApprovalPage() {
                 />
               )}
             </div>
+          )}
+          {(mockup.preview_image_url || mockup.product_image_url) && (
+            <button
+              type="button"
+              onClick={() => downloadImage(
+                mockup.preview_image_url || mockup.product_image_url!,
+                `${(mockup.name || 'mockup').replace(/[^a-zA-Z0-9-_ ]/g, '')}.png`,
+              )}
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <Download className="w-4 h-4" />
+              Download Mockup
+            </button>
           )}
           {mockup.product_name && (
             <p className="mt-3 text-sm text-gray-600"><span className="font-medium">Product:</span> {mockup.product_name}</p>

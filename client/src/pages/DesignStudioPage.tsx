@@ -1274,6 +1274,10 @@ export default function DesignStudioPage() {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
+          // Persist the studio title — without this, renames were silently
+          // dropped on every Save Mockup. The placeholder never overwrites
+          // a real name.
+          name: designName.trim() && designName !== 'Untitled design' ? designName.trim() : undefined,
           product_ss_id: selectedProduct?.ss_id || undefined,
           product_name: selectedProduct?.name || undefined,
           product_image_url: productImg,
@@ -1774,6 +1778,10 @@ export default function DesignStudioPage() {
         });
         if (!res.ok) return;
         const m = await res.json();
+
+        // Show the mockup's saved name in the title box so a re-save
+        // round-trips it instead of dropping back to the placeholder.
+        if (m.name) setDesignName(m.name);
 
         // Product hydration: prefer product_ss_id (studio-native lookup) and
         // fall back to the integer product_id for legacy rows. If neither

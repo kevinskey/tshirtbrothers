@@ -447,6 +447,39 @@ router.post('/admin/mockups/:id/convert-to-quote', authenticate, adminOnly, asyn
 });
 
 // DELETE /admin/mockups/:id
+// POST /admin/mockups/:id/duplicate — copy a mockup as a fresh draft.
+// Copies every content column (design, previews, product link, customer)
+// but resets workflow state: new id, status draft, no approve token, not
+// sent. The copy opens in the studio exactly like the original.
+router.post('/admin/mockups/:id/duplicate', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO mockups
+         (name, customer_id, customer_email, customer_name, quote_id,
+          product_id, product_ss_id, product_name, product_image_url, graphic_url,
+          placement, preview_image_url, preview_image_url_back,
+          preview_image_url_sleeve, preview_image_url_sleeve_left, notes,
+          design_elements, design_canvas_inches, design_canvas_inches_h, design_color_index,
+          back_graphic_url, back_placement, back_product_image_url, elements, color_index,
+          back_preview_image_url, status)
+       SELECT COALESCE(name, 'Mockup') || ' (copy)', customer_id, customer_email, customer_name, quote_id,
+          product_id, product_ss_id, product_name, product_image_url, graphic_url,
+          placement, preview_image_url, preview_image_url_back,
+          preview_image_url_sleeve, preview_image_url_sleeve_left, notes,
+          design_elements, design_canvas_inches, design_canvas_inches_h, design_color_index,
+          back_graphic_url, back_placement, back_product_image_url, elements, color_index,
+          back_preview_image_url, 'draft'
+        FROM mockups WHERE id = $1
+       RETURNING *`,
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.delete('/admin/mockups/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const r = await pool.query('DELETE FROM mockups WHERE id = $1 RETURNING id', [req.params.id]);
