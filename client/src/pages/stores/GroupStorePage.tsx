@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import {
-  Loader2, ShoppingBag, MapPin, Truck, ShieldCheck, ArrowRight,
+  Loader2, ShoppingBag, Truck, ShieldCheck, ArrowRight,
   Bell, Target, ChevronRight, Star, Package, ExternalLink, Menu, X,
 } from 'lucide-react';
 import BusinessStoreFront from './BusinessStoreFront';
@@ -216,6 +216,16 @@ export default function GroupStorePage() {
     heroCards.push({ title: 'Shop Everything', href: '#shop', images: heroImgs(products), count: products.length });
   }
 
+  // Shop promises for the hero's scrolling trust ticker.
+  const trustItems = [
+    'Secure Stripe checkout',
+    'Ships in 3–5 days',
+    ...(store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both'
+      ? ['Local pickup available'] : []),
+    'Family-owned print shop',
+    'Screenprinted in Fairburn, GA',
+  ];
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
       {store.brand_json.demo && (
@@ -347,81 +357,83 @@ export default function GroupStorePage() {
       </header>
 
       {/* ── HERO ──────────────────────────────────────────────────────── */}
-      {/* Tighter than the previous py-16/24 + full-column 4:5 image which
-          rendered as a ~640×800px slab on wide screens. Trimmed vertical
-          padding, capped the visual column so text/image split feels
-          balanced instead of image-dominated. */}
+      {/* Print-shop editorial, matching the main site's house style:
+          halftone-dot paper background, mono stamp eyebrow, Fraunces
+          display headline, offset-shadow "stamp" buttons, and the trust
+          line as a full-bleed brand-color ticker at the section's foot.
+          Replaces the pill badge / pill button / icon-row template look. */}
       <section
-        className="relative overflow-hidden border-b border-gray-100"
-        style={{ background: `linear-gradient(180deg, ${tint(primary, 0.10)} 0%, #ffffff 100%)` }}
+        className="relative overflow-hidden border-b border-gray-100 bg-[#fdfcf9]"
+        style={{
+          backgroundImage: `radial-gradient(${tint(primary, 0.22)} 1.2px, transparent 1.2px)`,
+          backgroundSize: '18px 18px',
+        }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14">
           <div>
-            {isEmpty && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <span
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider"
-                style={{ background: tint(primary, 0.18), color: primary }}
+                className="tsb-font-mono inline-flex items-center gap-3 text-[11px] sm:text-xs font-medium uppercase tracking-[0.22em]"
+                style={{ color: primary }}
               >
-                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: primary }} />
-                Store launching soon
+                <span className="h-px w-10" style={{ background: primary }} />
+                {store.name}
+                {featured && <> · {featured.title} drop</>}
               </span>
-            )}
-            {store.is_fundraiser && !isEmpty && (
-              <span
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider"
-                style={{ background: tint(primary, 0.18), color: primary }}
-              >
-                <Target className="w-3.5 h-3.5" /> Fundraiser
-              </span>
-            )}
-            {featured && (
-              <span
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider"
-                style={{ background: tint(primary, 0.18), color: primary }}
-              >
-                <Star className="w-3.5 h-3.5" /> Featured: {featured.title}
-              </span>
-            )}
+              {isEmpty && (
+                <span
+                  className="tsb-font-mono inline-flex items-center gap-1.5 border px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] -rotate-1"
+                  style={{ borderColor: primary, color: primary }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: primary }} />
+                  Launching soon
+                </span>
+              )}
+              {store.is_fundraiser && !isEmpty && (
+                <span
+                  className="tsb-font-mono inline-flex items-center gap-1.5 border px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] -rotate-1"
+                  style={{ borderColor: primary, color: primary }}
+                >
+                  <Target className="w-3.5 h-3.5" /> Fundraiser
+                </span>
+              )}
+            </div>
 
-            <h1 className="mt-5 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-[1.05]">
-              {isEmpty
-                ? 'The first drop is on the way.'
-                : `Welcome to ${store.name}.`}
+            <h1 className="tsb-font-display mt-6 text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95] text-gray-900">
+              {isEmpty ? (
+                <>The first drop is <em style={{ color: primary }}>on the way.</em></>
+              ) : featured ? (
+                <>The <em style={{ color: primary }}>{featured.title}</em> drop is live.</>
+              ) : (
+                <>Fresh ink for <em style={{ color: primary }}>{store.name}.</em></>
+              )}
             </h1>
-            <p className="mt-5 text-lg text-gray-600 max-w-xl">
+            <p className="mt-6 text-lg text-gray-600 max-w-xl">
               {isEmpty
                 ? `We're printing the first collection right now. Drop your email and be the first to know when it goes live.`
                 : store.brand_json.tagline
                   || `Official merchandise for ${store.name}. Designed and screenprinted by TShirt Brothers in Fairburn, GA.`}
             </p>
 
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
+            <div className="mt-8 flex flex-col sm:flex-row sm:items-center gap-4">
               {isEmpty ? (
                 <NotifyForm primary={primary} storeSlug={store.slug} />
               ) : (
                 <>
                   <a href={featured ? '#featured' : '#shop'}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full text-white font-semibold shadow-sm hover:opacity-90"
+                    className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-white font-bold border-2 border-gray-900 shadow-[4px_4px_0_#111827] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0_#111827] transition-all"
                     style={{ background: primary }}
                   >
                     {featured ? `Shop ${featured.title}` : 'Shop the collection'} <ArrowRight className="w-4 h-4" />
                   </a>
                   <a href={featured ? '#shop' : '#about'}
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full border border-gray-300 font-semibold hover:border-gray-900">
-                    {featured ? 'Shop everything' : 'Learn more'}
+                    className="inline-flex items-center justify-center gap-1.5 font-semibold text-gray-900 underline underline-offset-4 decoration-2 hover:decoration-4"
+                    style={{ textDecorationColor: primary }}
+                  >
+                    {featured ? 'Shop everything' : 'Learn more'} <ChevronRight className="w-4 h-4" />
                   </a>
                 </>
               )}
-            </div>
-
-            {/* Trust icons */}
-            <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-xs text-gray-500">
-              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3.5 h-3.5" /> Secure Stripe checkout</span>
-              <span className="inline-flex items-center gap-1.5"><Truck className="w-3.5 h-3.5" /> Ships in 3–5 days</span>
-              {(store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both') && (
-                <span className="inline-flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Local pickup available</span>
-              )}
-              <span className="inline-flex items-center gap-1.5"><Star className="w-3.5 h-3.5" /> Family-owned print shop</span>
             </div>
           </div>
 
@@ -480,6 +492,27 @@ export default function GroupStorePage() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Trust ticker — full-bleed brand band, scrolls the shop promises
+            like floor tape. Two identical halves so the -50% marquee loops
+            seamlessly. */}
+        <div className="relative overflow-hidden border-t-2 border-gray-900 text-white" style={{ background: primary }}>
+          <div className="tsb-grain" />
+          <div className="tsb-marquee-track flex w-max whitespace-nowrap py-2.5 tsb-font-mono text-[11px] uppercase tracking-[0.22em]">
+            {[0, 1].map((half) => (
+              <div key={half} className="flex shrink-0" aria-hidden={half === 1}>
+                {Array.from({ length: 3 }).map((_, rep) =>
+                  trustItems.map((item) => (
+                    <span key={`${rep}-${item}`} className="inline-flex items-center">
+                      <span className="px-5">{item}</span>
+                      <span className="opacity-70">✦</span>
+                    </span>
+                  ))
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
