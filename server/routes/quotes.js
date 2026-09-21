@@ -339,33 +339,36 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     // The archive is its own view: status=archived shows only archived
     // quotes; every other view hides them so expired quotes leave the
     // pipeline entirely.
+    // Columns must be quotes-qualified: the blanks-PO LATERAL join (bp)
+    // also has a status column, and a bare `status = ...` makes Postgres
+    // reject the whole query as ambiguous — which blanked every status tab.
     if (status === 'archived') {
-      conditions.push('archived_at IS NOT NULL');
+      conditions.push('quotes.archived_at IS NOT NULL');
     } else if (status === 'deposit_paid') {
       // The "Deposit Paid" tab: every quote where money has actually been
       // received, whatever stage it's in now. deposit_amount alone is NOT
       // evidence — send-price stamps it with the 50% ask on every quoted
       // quote; the payment webhook is what sets accepted_at / 'accepted'.
-      conditions.push(`archived_at IS NULL AND (
-        accepted_at IS NOT NULL OR balance_paid_at IS NOT NULL
-        OR status IN ('accepted', 'in_production', 'ready', 'completed')
+      conditions.push(`quotes.archived_at IS NULL AND (
+        quotes.accepted_at IS NOT NULL OR quotes.balance_paid_at IS NOT NULL
+        OR quotes.status IN ('accepted', 'in_production', 'ready', 'completed')
       )`);
     } else {
-      conditions.push('archived_at IS NULL');
+      conditions.push('quotes.archived_at IS NULL');
       if (status) {
         params.push(status);
-        conditions.push(`status = $${params.length}`);
+        conditions.push(`quotes.status = $${params.length}`);
       }
     }
 
     if (search) {
       params.push(`%${search}%`);
-      conditions.push(`(customer_name ILIKE $${params.length} OR customer_email ILIKE $${params.length} OR product_name ILIKE $${params.length})`);
+      conditions.push(`(quotes.customer_name ILIKE $${params.length} OR quotes.customer_email ILIKE $${params.length} OR quotes.product_name ILIKE $${params.length})`);
     }
 
-    let orderClause = 'ORDER BY created_at DESC';
+    let orderClause = 'ORDER BY quotes.created_at DESC';
     if (sort === 'date_needed') {
-      orderClause = 'ORDER BY date_needed ASC NULLS LAST, created_at DESC';
+      orderClause = 'ORDER BY quotes.date_needed ASC NULLS LAST, quotes.created_at DESC';
     }
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
