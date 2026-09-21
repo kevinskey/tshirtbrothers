@@ -479,7 +479,7 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     const {
       mockup_id, title, slug, retail_price_cents,
       decoration_cost_cents, min_qty, description,
-      opens_at, closes_at,
+      opens_at, closes_at, category,
     } = req.body ?? {};
 
     if (!Number.isInteger(mockup_id)) return res.status(400).json({ error: 'mockup_id (int) required' });
@@ -546,6 +546,10 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     // front/back gallery. Rides inside variants_json — no schema change.
     const images = [m.preview_image_url, m.preview_image_url_back].filter(Boolean);
     if (images.length > 1) variants.images = images;
+    // Storefront category also rides in variants_json — no schema change.
+    if (typeof category === 'string' && category.trim()) {
+      variants.category = category.trim().slice(0, 60);
+    }
 
     try {
       const { rows } = await pool.query(

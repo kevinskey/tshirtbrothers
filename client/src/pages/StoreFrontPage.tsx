@@ -28,7 +28,7 @@ interface StoreProduct {
   description: string | null;
   cover_image: string | null;
   retail_price_cents: number;
-  variants_json: { sizes?: string[]; colors?: string[] };
+  variants_json: { sizes?: string[]; colors?: string[]; category?: string };
   campaign_ref: string | null;
   opens_at: string | null;
   closes_at: string | null;
@@ -40,6 +40,7 @@ export default function StoreFrontPage() {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading]   = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('all');
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +117,30 @@ export default function StoreFrontPage() {
 
       {/* Product grid */}
       <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Category chips — only when the store's products actually carry
+            categories (rides in variants_json; older products have none). */}
+        {(() => {
+          const cats = [...new Set(products.map((p) => p.variants_json?.category).filter((c): c is string => !!c))].sort();
+          if (cats.length === 0) return null;
+          return (
+            <div className="flex flex-wrap gap-2 mb-6">
+              {['all', ...cats].map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setActiveCategory(c)}
+                  className={`text-sm px-3 py-1.5 rounded-full border font-medium transition ${
+                    activeCategory === c
+                      ? 'text-white border-transparent'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                  }`}
+                  style={activeCategory === c ? { backgroundColor: primary } : undefined}
+                >
+                  {c === 'all' ? 'All' : c}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
         {products.length === 0 ? (
           <div className="bg-white rounded-lg border border-gray-200 p-16 text-center">
             <ShoppingBag className="w-12 h-12 mx-auto text-gray-300" />
@@ -123,7 +148,7 @@ export default function StoreFrontPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {products.map((p) => (
+            {products.filter((p) => activeCategory === 'all' || p.variants_json?.category === activeCategory).map((p) => (
               <Link
                 key={p.id}
                 to={`/store/${slug}/product/${p.slug}`}
