@@ -1355,6 +1355,14 @@ export default function AdminPage() {
     enabled: activeSection === 'mockups',
   });
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
+  // Mockups grid toolbar — search matches name/customer/product; status
+  // chips and sort are applied client-side (the list is already loaded).
+  const [mockupSearch, setMockupSearch] = useState('');
+  const [mockupStatusFilter, setMockupStatusFilter] = useState<'all' | Mockup['status']>('all');
+  const [mockupSortOrder, setMockupSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
+  // "Add to TSB Direct" — publish a mockup as a store product via the
+  // group-stores from-mockup endpoint.
+  const [storeMockupTarget, setStoreMockupTarget] = useState<Mockup | null>(null);
   // Default decoration placement per garment type, in % of the product
   // photo — chest for tees/fleece, front panel for headwear, left chest
   // for polos/outerwear. Seeded when a product is picked; the sliders
@@ -6838,7 +6846,19 @@ export default function AdminPage() {
         })()}
 
         {activeSection === 'mockups' && (() => {
-          const mockups: Mockup[] = mockupsQuery.data ?? [];
+          const allMockups: Mockup[] = mockupsQuery.data ?? [];
+          const mq = mockupSearch.trim().toLowerCase();
+          const mockups = allMockups
+            .filter((m) => mockupStatusFilter === 'all' || m.status === mockupStatusFilter)
+            .filter((m) => !mq || [m.name, m.customer_name, m.customer_email, m.product_name]
+              .some((v) => (v || '').toLowerCase().includes(mq)))
+            .sort((a, b) => {
+              if (mockupSortOrder === 'name') return (a.name || '').localeCompare(b.name || '');
+              const at = new Date(a.created_at).getTime();
+              const bt = new Date(b.created_at).getTime();
+              return mockupSortOrder === 'oldest' ? at - bt : bt - at;
+            });
+          const statusCount = (s: Mockup['status']) => allMockups.filter((m) => m.status === s).length;
           const STATUS_COLORS: Record<Mockup['status'], string> = {
             draft: 'bg-gray-100 text-gray-700',
             sent: 'bg-blue-100 text-blue-800',
@@ -6877,9 +6897,56 @@ export default function AdminPage() {
                 </div>
               )}
 
+              {/* Search / filter / sort toolbar */}
+              <div className="bg-white border border-gray-200 rounded-xl p-3 mb-4 flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="search"
+                    value={mockupSearch}
+                    onChange={(e) => setMockupSearch(e.target.value)}
+                    placeholder="Search name, customer, product…"
+                    className="w-full pl-9 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                    style={{ fontSize: '16px' }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(['all', 'draft', 'sent', 'approved', 'rejected', 'converted_to_quote'] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setMockupStatusFilter(s)}
+                      className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                        mockupStatusFilter === s
+                          ? 'bg-gray-900 text-white border-gray-900'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                      }`}
+                    >
+                      {s === 'all' ? `All (${allMockups.length})`
+                        : `${s.replace(/_/g, ' ')} (${statusCount(s)})`}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={mockupSortOrder}
+                  onChange={(e) => setMockupSortOrder(e.target.value as typeof mockupSortOrder)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm text-gray-700"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">Name A–Z</option>
+                </select>
+              </div>
+
               {mockups.length === 0 ? (
                 <div className="bg-white border border-gray-200 rounded-xl p-12 text-center text-gray-500">
-                  <p className="text-sm">No mockups yet. Click <span className="font-semibold">New Mockup</span> to create one for a customer.</p>
+                  {allMockups.length === 0 ? (
+                    <p className="text-sm">No mockups yet. Click <span className="font-semibold">New Mockup</span> to create one for a customer.</p>
+                  ) : (
+                    <p className="text-sm">
+                      No mockups match{mq ? <> "<span className="font-semibold">{mockupSearch}</span>"</> : ''} in this view.{' '}
+                      <button className="text-red-600 underline" onClick={() => { setMockupSearch(''); setMockupStatusFilter('all'); }}>Clear filters</button>
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -6986,6 +7053,13 @@ export default function AdminPage() {
                             >
                               Convert to Quote
                             </button>
+                            <button
+                              onClick={() => setStoreMockupTarget(m)}
+                              className="text-[11px] px-2 py-1 rounded bg-orange-50 text-orange-700 hover:bg-orange-100"
+                              title="Publish this mockup as a product in the TSB Direct store"
+                            >
+                              Add to TSB Direct
+                            </button>
                           </div>
                         </div>
                       </div>
@@ -6997,6 +7071,15 @@ export default function AdminPage() {
             </div>
           );
         })()}
+
+        {/* Add-to-TSB-Direct modal — publish a mockup as a store product. */}
+        {storeMockupTarget && (
+          <AddToStoreModal
+            mockup={storeMockupTarget}
+            onClose={() => setStoreMockupTarget(null)}
+            onDone={(msg) => { setStoreMockupTarget(null); toast(msg); }}
+          />
+        )}
 
         {/* Mockup share modal — ad-hoc email/SMS send. */}
         {shareMockupTarget && (
@@ -9392,6 +9475,163 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
  */
 /** Mockup-card preview scroller: pages through every rendered side (front,
  *  back, …) with arrows + dots. Single image renders exactly as before. */
+// "Add to TSB Direct" dialog — publishes a mockup as a store product via
+// POST /api/admin/group-stores/:id/products/from-mockup. The server pulls
+// the blank (ss_id), cost, colors/sizes, and previews off the mockup; the
+// admin only sets title/slug/price and options here.
+function AddToStoreModal({ mockup, onClose, onDone }: { mockup: Mockup; onClose: () => void; onDone: (msg: string) => void }) {
+  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+  const [title, setTitle] = useState(mockup.name || '');
+  const [slug, setSlug] = useState(slugify(mockup.name || ''));
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [price, setPrice] = useState('');
+  const [minQty, setMinQty] = useState('1');
+  const [decoCost, setDecoCost] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const cents = Math.round((parseFloat(price) || 0) * 100);
+    if (!title.trim() || !slug.trim()) { setError('Title and URL slug are required.'); return; }
+    if (cents <= 0) { setError('Enter a retail price.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const auth = { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
+      // Resolve the TSB Direct store id by slug — don't trust a hardcoded id.
+      const listRes = await fetch('/api/admin/group-stores/list', { headers: auth });
+      if (!listRes.ok) throw new Error('Could not load stores');
+      const stores = await listRes.json();
+      const direct = (Array.isArray(stores) ? stores : stores.stores || []).find(
+        (s: { slug?: string }) => s.slug === 'tsb-direct',
+      );
+      if (!direct) throw new Error('TSB Direct store not found');
+      const res = await fetch(`/api/admin/group-stores/${direct.id}/products/from-mockup`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({
+          mockup_id: mockup.id,
+          title: title.trim(),
+          slug: slug.trim(),
+          retail_price_cents: cents,
+          min_qty: Math.max(1, parseInt(minQty, 10) || 1),
+          decoration_cost_cents: decoCost.trim() ? Math.round((parseFloat(decoCost) || 0) * 100) : undefined,
+          category: category.trim() || undefined,
+          description: description.trim() || undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      onDone(`"${body.title}" is live on TSB Direct at /stores/tsb-direct`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Publish failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between rounded-t-2xl">
+          <div className="flex items-center gap-3 min-w-0">
+            {(mockup.preview_image_url || mockup.product_image_url) && (
+              <img src={mockup.preview_image_url || mockup.product_image_url || ''} alt="" className="w-10 h-10 rounded border border-gray-200 object-contain bg-gray-50" />
+            )}
+            <div className="min-w-0">
+              <h3 className="font-display font-semibold text-gray-900">Add to TSB Direct</h3>
+              <p className="text-xs text-gray-500 truncate">{mockup.name || `Mockup #${mockup.id}`} · {mockup.product_name || 'no product'}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-3"><X className="w-5 h-5" /></button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Product title</label>
+            <input
+              value={title}
+              onChange={(e) => { setTitle(e.target.value); if (!slugTouched) setSlug(slugify(e.target.value)); }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              style={{ fontSize: '16px' }}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">URL slug</label>
+            <input
+              value={slug}
+              onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)); }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+              style={{ fontSize: '16px' }}
+              required
+            />
+            <p className="text-[11px] text-gray-400 mt-0.5">tshirtbrothers.com/stores/tsb-direct/{slug || '…'}</p>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Retail price</label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" step="0.01" min="0.01" value={price} onChange={(e) => setPrice(e.target.value)}
+                  className="w-full pl-6 pr-2 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} required />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Min qty</label>
+              <input type="number" min="1" value={minQty} onChange={(e) => setMinQty(e.target.value)}
+                className="w-full px-2 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Deco cost</label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input type="number" step="0.01" min="0" value={decoCost} onChange={(e) => setDecoCost(e.target.value)}
+                  placeholder="opt." className="w-full pl-6 pr-2 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} />
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Category (optional)</label>
+            <input
+              list="tsb-direct-categories"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="Pick or type a category…"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              style={{ fontSize: '16px' }}
+            />
+            <datalist id="tsb-direct-categories">
+              {['T-Shirts', 'Long Sleeves', 'Hoodies & Sweatshirts', 'Hats', 'Youth', 'Holiday', 'Faith', 'Accessories'].map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Description (optional)</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" style={{ fontSize: '16px' }} />
+          </div>
+          <p className="text-[11px] text-gray-500">
+            The blank, colors, sizes, wholesale cost, and preview images come from the mockup automatically.
+          </p>
+          {error && <div className="bg-red-50 text-red-700 text-sm rounded-lg p-2.5">{error}</div>}
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={saving}
+              className="flex-1 flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {saving ? 'Publishing…' : 'Publish to TSB Direct'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // Click-to-rename title on a mockup card. Saves on Enter/blur via the
 // mockups PATCH endpoint; Escape cancels.
 function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => void }) {
