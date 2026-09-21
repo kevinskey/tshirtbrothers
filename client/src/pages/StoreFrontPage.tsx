@@ -159,7 +159,7 @@ export default function StoreFrontPage() {
                     <img
                       src={p.cover_image}
                       alt={p.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      className="w-full h-full object-contain bg-white group-hover:scale-105 transition-transform"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">

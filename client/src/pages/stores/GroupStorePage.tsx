@@ -551,7 +551,7 @@ export default function GroupStorePage() {
                       <img
                         src={p.cover_image}
                         alt={p.title}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+                        className="w-full h-full object-contain bg-white transition-transform duration-500 group-hover:scale-[1.05]"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
@@ -1016,7 +1016,7 @@ function ProductGrid({ products, slug, primary }: { products: StoreProduct[]; sl
                 src={p.cover_image}
                 alt={p.title}
                 loading="lazy"
-                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
+                className="w-full h-full object-contain bg-white transition-transform duration-500 group-hover:scale-[1.05]"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
