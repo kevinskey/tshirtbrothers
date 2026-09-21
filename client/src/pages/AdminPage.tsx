@@ -9090,6 +9090,70 @@ export default function AdminPage() {
 // URL if one is set. Falls back to a Palette icon if there's no graphic data
 // at all. NEVER renders the product backdrop — that's by design (Customer
 // Designs is graphics-only).
+// True product composite for studio-saved designs: the product photo with
+// the design elements overlaid at their saved coordinates — the same view
+// the studio showed. Falls back to the art-only canvas render (below) for
+// rows without a product photo or with unsupported element types only.
+function DesignProductComposite({ design, alt }: { design: CustomerDesign; alt: string }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const measure = () => setBoxW(node.getBoundingClientRect().width);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+  type El = {
+    type?: string; x?: number; y?: number; width?: number; content?: string;
+    fontSize?: number; color?: string; fontFamily?: string; rotation?: number;
+    textAlign?: string; side?: string; lineHeight?: number; letterSpacing?: number;
+  };
+  const els = ((design.elements || []) as El[]).filter((e) => (e?.side ?? 'front') === 'front');
+  return (
+    <div ref={ref} className="absolute inset-0 overflow-hidden">
+      <img src={design.product_image!} alt={alt} className="absolute inset-0 w-full h-full object-contain" />
+      {boxW > 0 && els.map((e, i) => {
+        const base: React.CSSProperties = {
+          position: 'absolute',
+          left: `${e.x ?? 0}%`,
+          top: `${e.y ?? 0}%`,
+          width: `${e.width ?? 20}%`,
+          transform: e.rotation ? `rotate(${e.rotation}deg)` : undefined,
+        };
+        if (e.type === 'text' && e.content) {
+          return (
+            <span
+              key={i}
+              style={{
+                ...base,
+                display: 'block',
+                whiteSpace: 'pre',
+                fontSize: `${((e.fontSize ?? 24) * boxW) / 800}px`,
+                color: e.color ?? '#000',
+                fontFamily: e.fontFamily ?? 'Inter',
+                fontWeight: 700,
+                textAlign: (e.textAlign as React.CSSProperties['textAlign']) ?? 'center',
+                lineHeight: e.lineHeight ?? 1.2,
+                letterSpacing: e.letterSpacing != null ? `${e.letterSpacing}em` : undefined,
+              }}
+            >
+              {e.content}
+            </span>
+          );
+        }
+        if (e.type === 'image' && e.content && /^https?:/.test(e.content)) {
+          return <img key={i} src={e.content} alt="" style={base} loading="lazy" />;
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string }) {
   const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
   const elementsKey = useMemo(
@@ -9097,8 +9161,14 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
     [design.elements],
   );
   const directUrl = design.thumbnail || (design.source === 'quote' || design.source === 'mockup' ? design.print_url : null);
+  // Studio saves know their product photo + element coordinates — show the
+  // real product composite instead of artwork floating on white.
+  const showComposite =
+    design.source === 'design' && !!design.product_image &&
+    Array.isArray(design.elements) && design.elements.length > 0;
 
   useEffect(() => {
+    if (showComposite) return; // composite path renders live, no canvas needed
     if (directUrl) return; // No need to render — we have a hosted graphic.
     const els = (design.elements || []) as { type?: string; x?: number; y?: number; width?: number; content?: string; fontSize?: number; color?: string; fontFamily?: string; rotation?: number; textAlign?: string; side?: string }[];
     if (!Array.isArray(els) || els.length === 0) return;
@@ -9265,6 +9335,9 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elementsKey, directUrl]);
 
+  if (showComposite) {
+    return <DesignProductComposite design={design} alt={alt} />;
+  }
   const src = directUrl || renderedUrl;
   if (!src) {
     return (
