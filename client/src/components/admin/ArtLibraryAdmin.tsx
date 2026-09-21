@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check, Upload } from 'lucide-react';
 import {
   fetchArtCategories,
   fetchAdminArtLibrary,
@@ -28,6 +28,8 @@ export default function ArtLibraryAdmin() {
   const [editDraft, setEditDraft] = useState('');
   const [newCat, setNewCat] = useState('');
   const [creating, setCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState('');
 
   // Categories list (with counts).
   const categoriesQ = useQuery({
@@ -96,6 +98,60 @@ export default function ArtLibraryAdmin() {
     },
     onError: (err: Error) => alert('Move failed: ' + err.message),
   });
+
+  // Upload image files from disk straight into the active category:
+  // each file goes to DO Spaces via the upload endpoint, then a library
+  // row is created pointing at the stored URL. Sequential on purpose —
+  // a burst of parallel POSTs trips the endpoint's rate limit.
+  async function uploadFiles(files: FileList | null) {
+    if (!files || files.length === 0 || uploading) return;
+    const category = active === ALL ? 'general' : active;
+    const auth = { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
+    setUploading(true);
+    let ok = 0;
+    try {
+      for (const [i, file] of Array.from(files).entries()) {
+        setUploadProgress(`${i + 1}/${files.length}: ${file.name}`);
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const rd = new FileReader();
+            rd.onload = () => resolve(String(rd.result));
+            rd.onerror = () => reject(new Error('read failed'));
+            rd.readAsDataURL(file);
+          });
+          const up = await fetch('/api/quotes/upload-design', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...auth },
+            body: JSON.stringify({ imageBase64: dataUrl, filename: file.name, customerEmail: 'art-library' }),
+          });
+          if (!up.ok) continue;
+          const { url } = await up.json();
+          if (!url) continue;
+          const row = await fetch('/api/admin/designs-library', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...auth },
+            body: JSON.stringify({
+              name: file.name.replace(/\.[a-zA-Z0-9]+$/, ''),
+              image_url: url,
+              thumbnail_url: url,
+              category,
+              file_size: file.size,
+              tags: ['uploaded'],
+            }),
+          });
+          if (row.ok) ok += 1;
+        } catch { /* counted below */ }
+      }
+    } finally {
+      setUploading(false);
+      setUploadProgress('');
+    }
+    qc.invalidateQueries({ queryKey: ['admin', 'art-categories'] });
+    qc.invalidateQueries({ queryKey: ['admin', 'art-library'] });
+    alert(ok === files.length
+      ? `Uploaded ${ok} design${ok === 1 ? '' : 's'} to "${category}".`
+      : `Uploaded ${ok} of ${files.length} — retry the rest.`);
+  }
 
   // ── Render ───────────────────────────────────────────────────────
   return (
@@ -240,6 +296,19 @@ export default function ArtLibraryAdmin() {
                 style={{ fontSize: '16px' }}
               />
             </div>
+            <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap ${
+              uploading ? 'bg-gray-100 text-gray-400 pointer-events-none' : 'bg-red-600 hover:bg-red-700 text-white'
+            }`}>
+              {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {uploading ? (uploadProgress || 'Uploading…') : `Upload to ${active === ALL ? 'general' : active}`}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => { void uploadFiles(e.target.files); e.currentTarget.value = ''; }}
+              />
+            </label>
             {selected.size > 0 && (
               <BulkMoveBar
                 count={selected.size}
