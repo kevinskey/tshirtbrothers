@@ -1122,6 +1122,22 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (status === 'awaiting_approval') patches.push('mockup_sent_at = NOW()');
     if (status === 'in_production')     patches.push('in_production_at = NOW()');
     if (status === 'ready')             patches.push('ready_at = NOW()');
+    // Completing via the status dropdown should leave the same fulfillment
+    // trail as the fulfill endpoint: stamp picked_up_at (or shipped_at for
+    // ship orders) and fulfillment_method — but never overwrite stamps the
+    // fulfill endpoint already set.
+    if (status === 'completed') {
+      patches.push(`fulfillment_method = COALESCE(fulfillment_method,
+        CASE WHEN shipping_method = 'ship' THEN 'ship' ELSE 'pickup' END)`);
+      patches.push(`picked_up_at = CASE
+        WHEN picked_up_at IS NULL AND shipped_at IS NULL
+             AND COALESCE(shipping_method, 'pickup') <> 'ship'
+        THEN NOW() ELSE picked_up_at END`);
+      patches.push(`shipped_at = CASE
+        WHEN picked_up_at IS NULL AND shipped_at IS NULL
+             AND shipping_method = 'ship'
+        THEN NOW() ELSE shipped_at END`);
+    }
     if (notes          !== undefined) push('notes',          notes);
     if (customer_email !== undefined) push('customer_email', customer_email);
     if (customer_name  !== undefined) push('customer_name',  customer_name);
