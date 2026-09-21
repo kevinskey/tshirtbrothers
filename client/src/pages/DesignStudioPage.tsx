@@ -424,6 +424,9 @@ interface Product {
   back_image_url?: string;
   colors: ProductColor[];
   category: string;
+  /** Physical size parsed from the name (JDS awards/engraving items). */
+  est_width_in?: number | null;
+  est_height_in?: number | null;
 }
 
 type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 'names' | 'ai' | null;
@@ -642,6 +645,84 @@ export default function DesignStudioPage() {
       ? loadState.canvasInchesH
       : 12,
   );
+
+  // ── Product-area detection (JDS awards / engraving items) ─────────
+  // Single-photo products sit on white; scanning the photo for non-white
+  // pixels yields the item's bounding box. That box (fractions of the
+  // photo) drives a dashed decorable-area hint, scales default text to
+  // the item instead of the whole photo, and — when the product name
+  // carries physical dimensions — calibrates the inch ruler so the Size
+  // stepper speaks true inches.
+  // imgZone: fractions of the PHOTO. productZone: fractions of the design
+  // SURFACE (the photo renders object-contain, so the two differ whenever
+  // the photo's aspect doesn't match the surface box — same letterbox math
+  // the capture path uses).
+  const [imgZone, setImgZone] = useState<{ x: number; y: number; w: number; h: number; imgW: number; imgH: number } | null>(null);
+  const [productZone, setProductZone] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const isJdsProduct = !!selectedProduct?.ss_id?.startsWith('jds:');
+  useEffect(() => {
+    setImgZone(null);
+    setProductZone(null);
+    if (!isJdsProduct || !selectedProduct?.image_url) return;
+    let cancelled = false;
+    // window.Image — the bare name collides with lucide's Image icon.
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (cancelled) return;
+      try {
+        const scale = Math.min(1, 300 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * scale));
+        const h = Math.max(1, Math.round(img.naturalHeight * scale));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        for (let py = 0; py < h; py++) {
+          for (let px = 0; px < w; px++) {
+            const i = (py * w + px) * 4;
+            if ((data[i + 3] ?? 0) < 16) continue; // transparent
+            if ((data[i] ?? 0) > 244 && (data[i + 1] ?? 0) > 244 && (data[i + 2] ?? 0) > 244) continue; // near-white bg
+            if (px < minX) minX = px;
+            if (px > maxX) maxX = px;
+            if (py < minY) minY = py;
+            if (py > maxY) maxY = py;
+          }
+        }
+        if (maxX <= minX || maxY <= minY) return;
+        const pad = 0.02;
+        setImgZone({
+          x: Math.max(0, minX / w - pad),
+          y: Math.max(0, minY / h - pad),
+          w: Math.min(1, (maxX - minX) / w + pad * 2),
+          h: Math.min(1, (maxY - minY) / h + pad * 2),
+          imgW: img.naturalWidth,
+          imgH: img.naturalHeight,
+        });
+      } catch { /* tainted canvas / decode failure — no zone, no harm */ }
+    };
+    img.src = `/api/products/image-proxy?url=${encodeURIComponent(selectedProduct.image_url)}`;
+    return () => { cancelled = true; };
+  }, [isJdsProduct, selectedProduct?.image_url]);
+
+  // Calibrate physical size: the photo's real width = product width ÷ the
+  // fraction of the photo the product occupies. Only when the name gave
+  // us dimensions.
+  useEffect(() => {
+    if (!isJdsProduct || !productZone) return;
+    const wIn = selectedProduct?.est_width_in;
+    const hIn = selectedProduct?.est_height_in;
+    if (wIn && wIn > 0 && productZone.w > 0.05) {
+      setCanvasInches(Math.min(60, Math.max(0.5, wIn / productZone.w)));
+    }
+    if (hIn && hIn > 0 && productZone.h > 0.05) {
+      setCanvasInchesH(Math.min(60, Math.max(0.5, hIn / productZone.h)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isJdsProduct, productZone]);
 
   // Display zoom — multiplier on the canvas surface's width. 1.0 = fit
   // viewport (the legacy responsive behavior). > 1 makes the canvas
@@ -1688,6 +1769,34 @@ export default function DesignStudioPage() {
     return () => ro.disconnect();
   }, []);
 
+  // Map the photo-space product zone through the object-contain letterbox
+  // into surface-space fractions — recomputed when the surface resizes so
+  // the decorable-area hint keeps tracking the photo.
+  useEffect(() => {
+    if (!imgZone) { setProductZone(null); return; }
+    const compute = () => {
+      const surface = designSurfaceRef.current;
+      if (!surface) return;
+      const s = surface.getBoundingClientRect();
+      if (!s.width || !s.height) return;
+      const fit = Math.min(s.width / imgZone.imgW, s.height / imgZone.imgH);
+      const fw = imgZone.imgW * fit;
+      const fh = imgZone.imgH * fit;
+      const fx = (s.width - fw) / 2;
+      const fy = (s.height - fh) / 2;
+      setProductZone({
+        x: (fx + imgZone.x * fw) / s.width,
+        y: (fy + imgZone.y * fh) / s.height,
+        w: (imgZone.w * fw) / s.width,
+        h: (imgZone.h * fh) / s.height,
+      });
+    };
+    // The surface paints a frame after state lands — compute next frame.
+    const raf = requestAnimationFrame(compute);
+    window.addEventListener('resize', compute);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', compute); };
+  }, [imgZone, surfaceWidth]);
+
   // Per-side placement is kept for forward-compat (the mockup row still
   // stores it as JSONB), but the UI no longer constrains design elements
   // to it. Saving the current state preserves backward compatibility
@@ -2445,19 +2554,33 @@ export default function DesignStudioPage() {
     // Box width derives from the glyphs (was a hardcoded 40% that "HI" and
     // "CONGRATULATIONS" both got, letting text paint past its own box).
     const content = textInput.trim();
+    // Default size adapts to the detected product area (JDS items): text
+    // starts at ~55% of the ITEM's width, not the whole photo — the old
+    // fixed default dwarfed keychains and medallions. Never scales UP
+    // past the standard default; on garments nothing changes.
+    let fontSize = textFontSize;
+    if (productZone) {
+      const at80 = measureTextWidthPct({ content, fontSize: textFontSize, fontFamily: 'Inter' });
+      const target = productZone.w * 100 * 0.55;
+      if (Number.isFinite(at80) && at80 > 0) {
+        fontSize = Math.max(8, textFontSize * Math.min(1, target / at80));
+      }
+    }
     const measured = measureTextWidthPct({
       content,
-      fontSize: textFontSize,
+      fontSize,
       fontFamily: 'Inter',
     });
     const width = Number.isFinite(measured) ? measured : 40;
     addDesignElement({
       type: 'text',
-      x: Math.max(0, 50 - width / 2),
-      y: 22,
+      x: productZone
+        ? productZone.x * 100 + (productZone.w * 100 - width) / 2
+        : Math.max(0, 50 - width / 2),
+      y: productZone ? productZone.y * 100 + productZone.h * 100 * 0.35 : 22,
       width,
       content,
-      fontSize: textFontSize,
+      fontSize,
       color: textColor,
       fontFamily: 'Inter',
       rotation: 0,
@@ -2470,7 +2593,7 @@ export default function DesignStudioPage() {
     if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
-  }, [textInput, textFontSize, textColor, addDesignElement]);
+  }, [textInput, textFontSize, textColor, addDesignElement, productZone]);
 
   /* ---------------------------------------------------------------- */
   /*  Drag / Resize handlers                                           */
@@ -4127,15 +4250,29 @@ export default function DesignStudioPage() {
               <Loader2 className="h-8 w-8 animate-spin text-gray-300" />
             </div>
           ) : displayImage ? (
-            <img
-              ref={productImgRef}
-              data-product-photo
-              src={displayImage}
-              alt={selectedProduct?.name ?? 'Product'}
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
-              draggable={false}
-            />
+            <>
+              <img
+                ref={productImgRef}
+                data-product-photo
+                src={displayImage}
+                alt={selectedProduct?.name ?? 'Product'}
+                className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
+                draggable={false}
+              />
+              {/* Detected decorable area (JDS items) — a hint, not a fence. */}
+              {isJdsProduct && productZone && productZone.w < 0.92 && (
+                <div
+                  className="absolute border-2 border-dashed border-blue-400/60 rounded-md pointer-events-none"
+                  style={{
+                    left: `${productZone.x * 100}%`,
+                    top: `${productZone.y * 100}%`,
+                    width: `${productZone.w * 100}%`,
+                    height: `${productZone.h * 100}%`,
+                  }}
+                />
+              )}
+            </>
           ) : blankCanvasMode ? (
             <div className="absolute inset-4 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center pointer-events-none">
               <p className="text-sm text-gray-400 font-medium">Blank canvas — add text, art, or AI designs</p>

@@ -16,7 +16,7 @@ router.get('/image-proxy', async (req, res) => {
     return res.status(400).json({ error: 'Invalid URL' });
   }
   // Only allow S&S Activewear and our own DO Spaces images
-  const allowed = url.includes('ssactivewear.com') || url.includes('digitaloceanspaces.com') || url.includes('api.iconify.design') || url.includes('oaidalleapi') || url.includes('blob.core.windows.net');
+  const allowed = url.includes('ssactivewear.com') || url.includes('digitaloceanspaces.com') || url.includes('api.iconify.design') || url.includes('oaidalleapi') || url.includes('blob.core.windows.net') || url.includes('res.cloudinary.com');
   if (!allowed) {
     return res.status(400).json({ error: 'URL not allowed' });
   }
@@ -550,6 +550,23 @@ router.get('/by-ssid/:ssId', async (req, res, next) => {
 // products (pseudo ss_id "jds:<sku>", no colorways/sizes) so the Design
 // Studio picker can offer drinkware / awards / engraving blanks
 // alongside S&S apparel. Must stay above the '/:id' catch-all.
+// Physical dimensions from a JDS product name: "6 x 8 Plaque",
+// "6 1/2 x 8 ...", '6 x 8" ...', "2.5 x 3.5". ~40% of the catalog names
+// carry these; the studio uses them to calibrate its inch ruler.
+function parseJdsDims(text) {
+  const num = String.raw`(\d+(?:\.\d+)?(?:\s+\d+/\d+)?|\d+/\d+)`;
+  const m = new RegExp(`${num}\\s*(?:"|in(?:ch(?:es)?)?\\.?)?\\s*[xX×]\\s*${num}`).exec(text || '');
+  if (!m) return null;
+  const toNum = (s) => s.trim().split(/\s+/).reduce((sum, part) => {
+    if (part.includes('/')) { const [a, b] = part.split('/'); return sum + Number(a) / Number(b); }
+    return sum + Number(part);
+  }, 0);
+  const w = toNum(m[1]);
+  const h = toNum(m[2]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0 || w > 60 || h > 60) return null;
+  return { w, h };
+}
+
 router.get('/jds-search', async (req, res, next) => {
   try {
     const q = String(req.query.search || '').trim();
@@ -570,18 +587,23 @@ router.get('/jds-search', async (req, res, next) => {
       params,
     );
     res.json({
-      products: rows.map((r) => ({
-        id: `jds-${r.id}`,
-        ss_id: `jds:${r.sku}`,
-        name: r.name,
-        brand: 'JDS',
-        category: 'Gifts & Engraving',
-        image_url: r.image_url,
-        base_price: null,
-        price: r.retail_price_cents / 100,
-        colors: [],
-        sizes: [],
-      })),
+      products: rows.map((r) => {
+        const dims = parseJdsDims(r.name);
+        return {
+          id: `jds-${r.id}`,
+          ss_id: `jds:${r.sku}`,
+          name: r.name,
+          brand: 'JDS',
+          category: 'Gifts & Engraving',
+          image_url: r.image_url,
+          base_price: null,
+          price: r.retail_price_cents / 100,
+          colors: [],
+          sizes: [],
+          est_width_in: dims?.w ?? null,
+          est_height_in: dims?.h ?? null,
+        };
+      }),
     });
   } catch (err) { next(err); }
 });
