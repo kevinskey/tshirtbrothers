@@ -6941,6 +6941,25 @@ export default function AdminPage() {
                             >
                               Share
                             </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await fetch(`/api/admin/mockups/${m.id}/duplicate`, {
+                                    method: 'POST',
+                                    headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+                                  });
+                                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                  await mockupsQuery.refetch();
+                                  toast('Mockup duplicated — the copy is a new draft');
+                                } catch {
+                                  toast('Duplicate failed', 'error');
+                                }
+                              }}
+                              className="text-[11px] px-2 py-1 rounded bg-green-50 text-green-700 hover:bg-green-100"
+                              title="Copy this mockup as a fresh draft (same design, product, and previews)"
+                            >
+                              Duplicate
+                            </button>
                             {/* Re-render only makes sense for legacy mockups
                                 whose preview comes from server compose
                                 (graphic_url + placement). Studio mockups
