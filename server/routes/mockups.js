@@ -453,6 +453,12 @@ router.post('/admin/mockups/:id/convert-to-quote', authenticate, adminOnly, asyn
 // sent. The copy opens in the studio exactly like the original.
 router.post('/admin/mockups/:id/duplicate', authenticate, adminOnly, async (req, res, next) => {
   try {
+    // Duplicating a copy shouldn't stack suffixes into "(copy) (copy)" —
+    // strip any existing copy suffix before appending one.
+    const src = await pool.query('SELECT name FROM mockups WHERE id = $1', [req.params.id]);
+    if (src.rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
+    const base = String(src.rows[0].name || 'Mockup').replace(/(\s*\(copy\))+\s*$/i, '').trim() || 'Mockup';
+    const copyName = `${base} (copy)`;
     const { rows } = await pool.query(
       `INSERT INTO mockups
          (name, customer_id, customer_email, customer_name, quote_id,
@@ -462,7 +468,7 @@ router.post('/admin/mockups/:id/duplicate', authenticate, adminOnly, async (req,
           design_elements, design_canvas_inches, design_canvas_inches_h, design_color_index,
           back_graphic_url, back_placement, back_product_image_url, elements, color_index,
           back_preview_image_url, status)
-       SELECT COALESCE(name, 'Mockup') || ' (copy)', customer_id, customer_email, customer_name, quote_id,
+       SELECT $2, customer_id, customer_email, customer_name, quote_id,
           product_id, product_ss_id, product_name, product_image_url, graphic_url,
           placement, preview_image_url, preview_image_url_back,
           preview_image_url_sleeve, preview_image_url_sleeve_left, notes,
@@ -471,9 +477,8 @@ router.post('/admin/mockups/:id/duplicate', authenticate, adminOnly, async (req,
           back_preview_image_url, 'draft'
         FROM mockups WHERE id = $1
        RETURNING *`,
-      [req.params.id],
+      [req.params.id, copyName],
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
     res.status(201).json(rows[0]);
   } catch (err) {
     next(err);
