@@ -9,13 +9,6 @@ import { useCgcPath } from '../lib/base';
 // stored at Spaces cgc/clean/) so hero/tile/banner products read as blank.
 // PDPs still show the raw supplier photo. Regenerate via the scripts noted
 // in memory if these SKUs change.
-const HERO_ITEMS = [
-  { sku: 'LTM952', name: 'Polar Camel 14 oz. Orange Pilsner Tumbler', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/LTM952.png?v=3', cls: 'max-h-[55%]' },
-  { sku: 'GFT3067', name: 'Acacia Cutting Board with Black Marble Accent', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/GFT3067.png?v=3', cls: 'max-h-[92%]' },
-  { sku: 'GFT246A', name: 'Black/Gold Laserable Leatherette Portfolio', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/GFT246A.png?v=3', cls: 'max-h-[78%]' },
-  { sku: 'CRY89', name: 'Clear Crystal Facet Tower Award', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1684356903/products/images/large/CRY89--9841d933.png', cls: 'max-h-[70%]' },
-];
-
 const CATEGORY_TILES = [
   { label: 'Personalized Gifts', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/CE6506.png?v=3' },
   { label: 'Drinkware', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/SM11CC.png?v=3' },
@@ -75,29 +68,18 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Product composition on pedestals, per the approved layout.
-              Fixed-height stage; each image is height-capped as a % of the
-              stage and width-capped as a % of the row so four items can
-              never overflow the column. */}
-          <div className="relative h-64 sm:h-80 lg:h-[26rem]">
-            <div className="absolute inset-x-0 bottom-0 h-1/2 rounded-2xl bg-cgc-cream-deep" aria-hidden />
-            <div className="absolute inset-0 flex items-end justify-center gap-2 sm:gap-4 px-3 pb-6">
-              {HERO_ITEMS.map((item, i) => (
-                <Link
-                  key={item.sku}
-                  to={p(`/product/${item.sku}`)}
-                  className={`flex items-end justify-center h-full max-w-[28%] ${i % 2 === 1 ? 'pb-6 sm:pb-10' : ''}`}
-                  aria-label={item.name}
-                >
-                  <img
-                    src={item.img}
-                    alt={item.name}
-                    className={`${item.cls} max-w-full w-auto object-contain drop-shadow-xl mix-blend-multiply`}
-                  />
-                </Link>
-              ))}
-            </div>
-          </div>
+          {/* Doc's approved hero photograph (2026-09-22): staged shot of
+              the tumbler / board / journal / crystal on pedestals. The
+              pictured product types are all live catalog items; the whole
+              image shops the assortment. */}
+          <Link to={p('/shop')} aria-label="Shop all products">
+            <img
+              src="/cgc-hero.jpg"
+              alt="Personalized gifts: orange tumbler, walnut cutting board, leather journal, and crystal award"
+              className="rounded-2xl w-full h-auto shadow-sm"
+              fetchPriority="high"
+            />
+          </Link>
         </div>
       </section>
 
