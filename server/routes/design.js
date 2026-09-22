@@ -1,4 +1,5 @@
 import express, { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { generateDesign } from '../services/openai.js';
@@ -423,6 +424,70 @@ router.post('/remove-bg', async (req, res, next) => {
     }
 
     res.json({ imageBase64: result });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /personalize-sample — swap the sample engraving's text ─────────────
+// JDS supplier photos ship with sample engravings ("The Anderson Family",
+// team crests…). Those samples are good design ideas — this endpoint lets
+// the studio keep the sample's style/placement but re-render it with the
+// customer's own text via FLUX Kontext. Costs ~$0.04/run, so rate-limited.
+// Body: { imageUrl, text }  →  { url } (result stored in Spaces).
+const ALLOWED_SAMPLE_HOSTS = [
+  'https://res.cloudinary.com/business-products/',
+  'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/',
+  'https://tshirtbrothers.atl1.digitaloceanspaces.com/',
+];
+
+const personalizeSampleLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many preview generations — try again in a few minutes.' },
+});
+
+router.post('/personalize-sample', personalizeSampleLimiter, async (req, res, next) => {
+  try {
+    const imageUrl = String(req.body?.imageUrl || '');
+    const text = String(req.body?.text || '').trim().slice(0, 120);
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    if (!ALLOWED_SAMPLE_HOSTS.some((h) => imageUrl.startsWith(h))) {
+      return res.status(400).json({ error: 'imageUrl must be a catalog product photo' });
+    }
+    if (!process.env.REPLICATE_API_KEY && !process.env.REPLICATE_API_TOKEN) {
+      return res.status(503).json({ error: 'AI editing not configured' });
+    }
+
+    const prompt =
+      `Replace the sample engraved/personalized text on this product with the text: "${text}". ` +
+      'Keep the same engraving style, technique, lettering feel, size, and position as the sample. ' +
+      'Keep any decorative artwork from the sample. Keep the product, material, lighting, and ' +
+      'background exactly the same. Clean professional product photography.';
+
+    const output = await replicate.run('black-forest-labs/flux-kontext-pro', {
+      input: { prompt, input_image: imageUrl, output_format: 'png' },
+    });
+    // The replicate SDK returns a plain URL string on older versions and a
+    // FileOutput (with .url()) on newer ones — handle both.
+    const raw = Array.isArray(output) ? output[0] : output;
+    const resultUrl = typeof raw === 'string' ? raw
+      : typeof raw?.url === 'function' ? String(raw.url()) : String(raw);
+    const imgRes = await fetch(resultUrl);
+    if (!imgRes.ok) throw new Error(`result fetch ${imgRes.status}`);
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha1').update(imageUrl + '\n' + text).digest('hex').slice(0, 16);
+    const url = await uploadObject({
+      key: `cgc/personalized-previews/${hash}.png`,
+      body: buffer,
+      contentType: 'image/png',
+      cacheControl: 'public, max-age=31536000',
+    });
+    res.json({ url });
   } catch (err) {
     next(err);
   }

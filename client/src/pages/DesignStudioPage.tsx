@@ -606,6 +606,13 @@ export default function DesignStudioPage() {
     };
   }, []);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  // "Make this sample yours" — JDS supplier photos ship with sample
+  // engravings. The panel asks for replacement text and AI-rerenders the
+  // sample with it (POST /api/design/personalize-sample), swapping the
+  // product photo on the canvas. jdsOriginalImageRef remembers the real
+  // supplier photo so the customer can restore it.
+  const [sampleSwap, setSampleSwap] = useState({ open: false, text: '', busy: false, error: '' });
+  const jdsOriginalImageRef = useRef<string | null>(null);
   const [selectedColorIdx, setSelectedColorIdx] = useState(loadState?.colorIndex || 0);
   const [userPickedColor, setUserPickedColor] = useState(!!loadState?.colorIndex);
   const [currentView, setCurrentView] = useState<ViewName>('front');
@@ -723,6 +730,43 @@ export default function DesignStudioPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isJdsProduct, productZone]);
+
+  // Different product → forget the previous product's original photo.
+  useEffect(() => {
+    jdsOriginalImageRef.current = null;
+    setSampleSwap({ open: false, text: '', busy: false, error: '' });
+  }, [selectedProduct?.ss_id]);
+
+  const personalizeSample = async () => {
+    const text = sampleSwap.text.trim();
+    const sourceImage = jdsOriginalImageRef.current || selectedProduct?.image_url;
+    if (!sourceImage || !text) return;
+    setSampleSwap((s) => ({ ...s, busy: true, error: '' }));
+    try {
+      const res = await fetch('/api/design/personalize-sample', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: sourceImage, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Generation failed — try again');
+      if (!jdsOriginalImageRef.current) jdsOriginalImageRef.current = selectedProduct?.image_url ?? null;
+      setSelectedProduct((prev) => (prev ? { ...prev, image_url: data.url } : prev));
+      setSampleSwap((s) => ({ ...s, open: false, busy: false }));
+    } catch (err) {
+      setSampleSwap((s) => ({
+        ...s, busy: false,
+        error: err instanceof Error ? err.message : 'Generation failed — try again',
+      }));
+    }
+  };
+
+  const restoreSampleImage = () => {
+    const original = jdsOriginalImageRef.current;
+    if (!original) return;
+    jdsOriginalImageRef.current = null;
+    setSelectedProduct((prev) => (prev ? { ...prev, image_url: original } : prev));
+  };
 
   // Display zoom — multiplier on the canvas surface's width. 1.0 = fit
   // viewport (the legacy responsive behavior). > 1 makes the canvas
@@ -4271,6 +4315,80 @@ export default function DesignStudioPage() {
                     height: `${productZone.h * 100}%`,
                   }}
                 />
+              )}
+              {/* Sample-swap: the supplier photo's sample engraving is a
+                  design idea — offer to re-render it with the customer's
+                  own text. */}
+              {isJdsProduct && displayImage && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSampleSwap((s) => ({ ...s, open: true, error: '' })); }}
+                    className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-red-400"
+                  >
+                    ✨ Use this sample with your text
+                  </button>
+                  {jdsOriginalImageRef.current && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); restoreSampleImage(); }}
+                      className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800"
+                    >
+                      Restore original
+                    </button>
+                  )}
+                </div>
+              )}
+              {sampleSwap.open && (
+                <div
+                  className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 pointer-events-auto"
+                  onClick={() => !sampleSwap.busy && setSampleSwap((s) => ({ ...s, open: false }))}
+                >
+                  <div
+                    className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h3 className="text-lg font-bold text-gray-900">Make this sample yours</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Like the sample design on this product? Tell us what it
+                      should say instead, and AI redraws it in the same style
+                      and spot with your words.
+                    </p>
+                    <label htmlFor="sample-swap-text" className="sr-only">Replacement text</label>
+                    <input
+                      id="sample-swap-text"
+                      type="text"
+                      maxLength={120}
+                      autoFocus
+                      value={sampleSwap.text}
+                      onChange={(e) => setSampleSwap((s) => ({ ...s, text: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && !sampleSwap.busy) personalizeSample(); }}
+                      placeholder="e.g. The Anderson Family — Est. 2019"
+                      className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-red"
+                    />
+                    {sampleSwap.error && (
+                      <p className="mt-2 text-sm text-red-600">{sampleSwap.error}</p>
+                    )}
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        disabled={sampleSwap.busy}
+                        onClick={() => setSampleSwap((s) => ({ ...s, open: false }))}
+                        className="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={sampleSwap.busy || !sampleSwap.text.trim()}
+                        onClick={personalizeSample}
+                        className="rounded-lg bg-red px-4 py-2 text-sm font-bold text-white hover:bg-red-dark disabled:opacity-50"
+                      >
+                        {sampleSwap.busy ? 'Generating… (~15s)' : 'Generate preview'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
             </>
           ) : blankCanvasMode ? (
