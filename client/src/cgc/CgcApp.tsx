@@ -62,7 +62,7 @@ export default function CgcStandaloneApp() {
             <Route path="/*" element={<CgcRoutes base="" />} />
           </Routes>
         </BrowserRouter>
-        <Toaster position="top-right" richColors />
+        <Toaster position="top-right" richColors duration={3000} />
       </QueryClientProvider>
     </HelmetProvider>
   );

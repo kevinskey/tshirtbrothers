@@ -96,7 +96,7 @@ export default function ProductPage() {
     });
     setAdded(true);
     setTimeout(() => setAdded(false), 2000);
-    toast.success('Added to your bag');
+    toast.success('Added to your bag', { duration: 3000 });
   };
 
   if (isLoading) {
