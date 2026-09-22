@@ -68,6 +68,11 @@ export default function HolidayPage() {
                       Launching soon
                     </span>
                   )}
+                  {prod.featured && (
+                    <span className="absolute top-3 right-3 rounded-full bg-cgc-orange text-white text-[11px] font-bold uppercase tracking-wide px-3 py-1">
+                      Featured
+                    </span>
+                  )}
                 </div>
                 <div className="p-4">
                   <h2 className="font-extrabold text-cgc-ink group-hover:text-cgc-orange transition-colors">

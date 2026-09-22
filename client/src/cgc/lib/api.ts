@@ -66,6 +66,7 @@ export interface CgcHolidayProduct {
   slug: string;
   title: string;
   intro: string;
+  featured: boolean;
   designs: CgcHolidayDesign[];
   fields: CgcHolidayField[];
   limits: string;
@@ -95,6 +96,58 @@ export function fetchProducts(params: Record<string, string | number | undefined
   }
   return getJson<CgcListResponse>(`/api/cgc/products?${qs}`);
 }
+
+// Admin shape (CGC /admin/holiday page): adds worksheet numbers and, per
+// variant, the JDS account cost + catalog retail.
+export interface CgcHolidayAdminVariant extends CgcHolidayVariant {
+  cost_cents?: number | null;
+  catalog_retail_cents?: number;
+  missing?: boolean;
+}
+
+export interface CgcHolidayAdminProduct extends CgcHolidayProduct {
+  id: number;
+  published: boolean;
+  position: number;
+  engraving_minutes: string | number | null;
+  packaging_cost_cents: number | null;
+  selling_price_cents: number | null;
+  sample_approved: boolean;
+  variants: CgcHolidayAdminVariant[];
+}
+
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('tsb_token') || '';
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+}
+
+async function adminJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, { ...init, headers: authHeaders() });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data as { error?: string })?.error || `Request failed (${res.status})`);
+  return data as T;
+}
+
+export const fetchHolidayAdmin = () =>
+  adminJson<{ products: CgcHolidayAdminProduct[] }>('/api/cgc/admin/holiday');
+
+export const lookupHolidaySku = (sku: string) =>
+  adminJson<{ product: { sku: string; name: string; image_url: string | null; cost_cents: number | null; retail_price_cents: number; active: boolean } }>(
+    `/api/cgc/admin/holiday/sku/${encodeURIComponent(sku)}`,
+  );
+
+export const createHolidayProduct = (body: Record<string, unknown>) =>
+  adminJson<{ product: { id: number } }>('/api/cgc/admin/holiday', {
+    method: 'POST', body: JSON.stringify(body),
+  });
+
+export const updateHolidayProduct = (id: number, body: Record<string, unknown>) =>
+  adminJson<{ product: { id: number } }>(`/api/cgc/admin/holiday/${id}`, {
+    method: 'PATCH', body: JSON.stringify(body),
+  });
+
+export const deleteHolidayProduct = (id: number) =>
+  adminJson<{ ok: boolean }>(`/api/cgc/admin/holiday/${id}`, { method: 'DELETE' });
 
 export const fetchHoliday = () =>
   getJson<{ products: CgcHolidayProduct[] }>('/api/cgc/holiday');

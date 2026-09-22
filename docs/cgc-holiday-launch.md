@@ -2,8 +2,14 @@
 
 Campaign: **“Give Something Only You Could Give.”**
 Collection lives at `/holiday` (customgiftclub.com and tshirtbrothers.com/gift-club/holiday).
-Launch config: `server/lib/cgcHoliday.js` — flip a product's `published: true`
-only when every column in its row below is filled and the sample is approved.
+
+**Managed from the CGC admin page: https://customgiftclub.com/admin/holiday**
+(admin sign-in required). That page is the live worksheet — add products,
+set Featured, fill engraving time / packaging cost / selling price, tick
+sample approval, and hit Publish per product. Data lives in the
+`cgc_holiday_products` table (seeded by `server/migrations/cgc_holiday_products.sql`).
+The tables below are the launch-day snapshot for reference; the admin
+page supersedes them as numbers get filled in.
 
 Account costs and listed retails below were read from `jds_products` on
 **2026-09-22** (cost_cents = JDS one-piece cost at publish time). Listed
