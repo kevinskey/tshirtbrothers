@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && npm run prerender",
+    "build": "tsc -b && vite build && node scripts/make-cgc-shell.mjs && npm run prerender",
     "build:nopre": "tsc -b && vite build",
     "prerender": "node scripts/prerender.mjs",
     "preview": "vite preview"
