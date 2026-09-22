@@ -46,8 +46,10 @@ export default function ProductPage() {
     return { lines, font, notes: notes.trim(), artUrl };
   }, [personalize, line1, line2, font, notes, artUrl]);
 
+  // The fee follows the Personalized toggle itself, so the shown price
+  // changes the moment the buyer picks it — not only once they've typed.
   const unitCents = product
-    ? product.retail_price_cents + (personalization ? feeCents : 0)
+    ? product.retail_price_cents + (personalize ? feeCents : 0)
     : 0;
 
   const uploadArt = async (file: File) => {
@@ -77,6 +79,13 @@ export default function ProductPage() {
 
   const addToBag = () => {
     if (!product) return;
+    // A "personalized" item with nothing to apply would charge a fee for
+    // no work (or silently fall back to blank) — make the buyer give us
+    // something first.
+    if (personalize && !personalization) {
+      toast.error('Add a name, artwork, or a note first — or choose Blank.');
+      return;
+    }
     add({
       sku: product.sku,
       name: product.name.trim(),
