@@ -25,6 +25,7 @@ import {
 } from '../services/sms.js';
 
 import { uploadObject } from '../services/spaces.js';
+import { sendMockupApprovalById } from './mockups.js';
 
 const router = Router();
 
@@ -1313,6 +1314,50 @@ router.delete('/admin/:id/extra-mockup', authenticate, adminOnly, async (req, re
       [JSON.stringify(kept), req.params.id],
     );
     res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
+// POST /admin/:id/send-mockup — email the customer the approval link for
+// the Studio mockup linked to this quote (newest quote_id match wins).
+// Customer contact is backfilled from the quote first so mockups born in
+// the Studio attach-to-quote round trip send without manual editing. The
+// shared sender in mockups.js stamps status/approve_token and advances the
+// quote to awaiting_approval when its status allows.
+router.post('/admin/:id/send-mockup', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const q = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    if (q.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = q.rows[0];
+    if (!quote.customer_email) return res.status(400).json({ error: 'Quote has no customer email' });
+
+    const m = await pool.query(
+      'SELECT id, customer_email, customer_name FROM mockups WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+      [id],
+    );
+    if (m.rows.length === 0) {
+      return res.status(404).json({ error: 'No Studio mockup is linked to this quote yet — design or pick one first' });
+    }
+    const mockup = m.rows[0];
+    if (!mockup.customer_email || !mockup.customer_name) {
+      await pool.query(
+        `UPDATE mockups
+            SET customer_email = COALESCE(customer_email, $1),
+                customer_name = COALESCE(customer_name, $2),
+                updated_at = NOW()
+          WHERE id = $3`,
+        [quote.customer_email, quote.customer_name || null, mockup.id],
+      );
+    }
+
+    const sent = await sendMockupApprovalById(mockup.id);
+    if (sent.error) return res.status(sent.code || 500).json({ error: sent.error });
+
+    const fresh = await pool.query(
+      `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
+      [id],
+    );
+    res.json({ quote: fresh.rows[0], approve_url: sent.approveUrl, mockup_id: mockup.id });
   } catch (err) { next(err); }
 });
 

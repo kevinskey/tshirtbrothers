@@ -293,50 +293,60 @@ router.post('/admin/mockups/backfill-previews', authenticate, adminOnly, async (
   } catch (err) { next(err); }
 });
 
+// Email the customer an approval link for a mockup row. Shared by the
+// mockups-section Send button and the quote modal's send-mockup route
+// (quotes.js), so a quote-linked send behaves identically wherever it
+// starts. Returns { row, approveUrl } or { error, code }.
+export async function sendMockupApprovalById(id) {
+  const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [id]);
+  if (rows.length === 0) return { error: 'Not found', code: 404 };
+  let m = rows[0];
+  if (!m.customer_email) return { error: 'Mockup has no customer_email', code: 400 };
+
+  // Make sure the customer's approval link has a flattened composite to
+  // show. If it doesn't yet, render one before sending.
+  if (!m.preview_image_url && m.product_image_url && m.graphic_url) {
+    m = await regeneratePreviewForMockup(m);
+  }
+
+  const token = m.approve_token || crypto.randomBytes(16).toString('hex');
+  const updated = await pool.query(
+    `UPDATE mockups SET approve_token = $1, status = 'sent', updated_at = NOW()
+     WHERE id = $2 RETURNING *`,
+    [token, id],
+  );
+
+  const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+  const approveUrl = `${domain}/mockup/${token}`;
+
+  // Fire-and-forget email. Uses the Resend client already configured in services/email.js.
+  try {
+    const { sendMockupForApproval, quoteLang } = await import('../services/email.js');
+    // Mockups made from a Spanish-site quote email the customer in Spanish.
+    let lang = 'en';
+    if (updated.rows[0].quote_id) {
+      const q = await pool.query('SELECT inputs_json FROM quotes WHERE id = $1', [updated.rows[0].quote_id]);
+      if (q.rows[0]) lang = quoteLang(q.rows[0]);
+    }
+    if (typeof sendMockupForApproval === 'function') {
+      await sendMockupForApproval(updated.rows[0], approveUrl, lang);
+    }
+  } catch (err) {
+    console.error('[mockup send] email failed:', err.message);
+    // Non-fatal: the admin can copy the link manually.
+  }
+
+  await advanceQuoteOnMockupSend(updated.rows[0].quote_id);
+
+  return { row: updated.rows[0], approveUrl };
+}
+
 // POST /admin/mockups/:id/send - email the customer an approval link
 router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [req.params.id]);
-    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
-    let m = rows[0];
-    if (!m.customer_email) return res.status(400).json({ error: 'Mockup has no customer_email' });
-
-    // Make sure the customer's approval link has a flattened composite to
-    // show. If it doesn't yet, render one before sending.
-    if (!m.preview_image_url && m.product_image_url && m.graphic_url) {
-      m = await regeneratePreviewForMockup(m);
-    }
-
-    const token = m.approve_token || crypto.randomBytes(16).toString('hex');
-    const updated = await pool.query(
-      `UPDATE mockups SET approve_token = $1, status = 'sent', updated_at = NOW()
-       WHERE id = $2 RETURNING *`,
-      [token, req.params.id],
-    );
-
-    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
-    const approveUrl = `${domain}/mockup/${token}`;
-
-    // Fire-and-forget email. Uses the Resend client already configured in services/email.js.
-    try {
-      const { sendMockupForApproval, quoteLang } = await import('../services/email.js');
-      // Mockups made from a Spanish-site quote email the customer in Spanish.
-      let lang = 'en';
-      if (updated.rows[0].quote_id) {
-        const q = await pool.query('SELECT inputs_json FROM quotes WHERE id = $1', [updated.rows[0].quote_id]);
-        if (q.rows[0]) lang = quoteLang(q.rows[0]);
-      }
-      if (typeof sendMockupForApproval === 'function') {
-        await sendMockupForApproval(updated.rows[0], approveUrl, lang);
-      }
-    } catch (err) {
-      console.error('[mockup send] email failed:', err.message);
-      // Non-fatal: the admin can copy the link manually.
-    }
-
-    await advanceQuoteOnMockupSend(updated.rows[0].quote_id);
-
-    res.json({ ...updated.rows[0], approve_url: approveUrl });
+    const sent = await sendMockupApprovalById(req.params.id);
+    if (sent.error) return res.status(sent.code || 500).json({ error: sent.error });
+    res.json({ ...sent.row, approve_url: sent.approveUrl });
   } catch (err) { next(err); }
 });
 

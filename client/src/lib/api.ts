@@ -392,6 +392,17 @@ export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
   });
 }
 
+// Email the customer the approval link for the Studio mockup linked to
+// this quote. Server finds the newest quote-linked mockup, backfills its
+// customer contact from the quote, and reuses the mockups send flow (which
+// advances the quote to awaiting_approval when its status allows).
+export async function sendQuoteMockupForApproval(quoteId: string | number) {
+  return authRequest<{ quote: Quote; approve_url: string; mockup_id: number }>(
+    `/quotes/admin/${quoteId}/send-mockup`,
+    { method: 'POST' },
+  );
+}
+
 export async function attachMockupToQuote(
   quoteId: string | number,
   payload: { mockup_image_url?: string; mockup_image_url_back?: string | null; mockup_id?: number; add_extra?: boolean },

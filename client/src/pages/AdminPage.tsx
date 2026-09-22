@@ -114,6 +114,7 @@ import {
   fetchAdminCounts,
   fetchQuote,
   attachMockupToQuote,
+  sendQuoteMockupForApproval,
   fetchQuoteArchiveAnalytics,
   fetchNonBuyingCustomers,
 } from '@/lib/api';
@@ -854,6 +855,23 @@ export default function AdminPage() {
     const prefillQuote = params.get('quote');
     if (section === 'purchasing' && prefillQuote && /^\d+$/.test(prefillQuote)) {
       setPurchasingQuoteId(Number(prefillQuote));
+    }
+    // Round-trip return from Design Studio: ?section=quotes&openQuote=<id>
+    // means we just attached a mockup to a quote; reopen the quote detail
+    // modal with the fresh mockup showing.
+    const openQuote = params.get('openQuote');
+    if (openQuote && /^\d+$/.test(openQuote)) {
+      (async () => {
+        try {
+          const q = await fetchQuote(openQuote);
+          setDetailQuote(q);
+          const next = new URLSearchParams(window.location.search);
+          next.delete('openQuote');
+          setSearchParams(next, { replace: true });
+        } catch (e) {
+          console.warn('[admin] openQuote load failed:', e);
+        }
+      })();
     }
     // Round-trip return from Design Studio: ?section=invoices&editInvoice=<id>
     // means we just attached a mockup; reopen the invoice editor with the
@@ -1610,6 +1628,28 @@ export default function AdminPage() {
       toast(err instanceof Error ? err.message : 'Upload failed', 'error');
     } finally {
       setUploadingQuoteGraphic(false);
+    }
+  }
+
+  // Email the customer the approval link for the quote's Studio mockup.
+  // The server finds the newest quote-linked mockup and reuses the mockups
+  // send flow, so this behaves exactly like Send from the Mockups grid.
+  const [sendingQuoteMockup, setSendingQuoteMockup] = useState(false);
+  async function sendQuoteMockup(q: Quote) {
+    if (sendingQuoteMockup) return;
+    if (!q.customer_email) { toast('Add a customer email first', 'error'); return; }
+    if (!confirm(`Email the mockup approval link to ${q.customer_email}?`)) return;
+    setSendingQuoteMockup(true);
+    try {
+      const result = await sendQuoteMockupForApproval(q.id);
+      setDetailQuote(result.quote);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      queryClient.invalidateQueries({ queryKey: ['mockups'] });
+      toast(`Mockup approval link sent to ${q.customer_email}`);
+    } catch (err) {
+      toast((err as Error).message || 'Send failed', 'error');
+    } finally {
+      setSendingQuoteMockup(false);
     }
   }
 
@@ -7673,12 +7713,31 @@ export default function AdminPage() {
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
                       <button
+                        onClick={() => navigate(`/design?attachToQuote=${q.id}`)}
+                        className="w-full mt-2 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <Palette className="w-3.5 h-3.5" />
+                        Design mockup in Studio
+                      </button>
+                      <button
                         onClick={() => { setMockupPickerFor('quote-primary'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full mt-2 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
                       >
                         <GalleryHorizontal className="w-3.5 h-3.5" />
                         {q.mockup_image_url ? 'Change mockup' : 'Pick mockup from Studio'}
                       </button>
+                      {q.mockup_image_url && (
+                        <button
+                          onClick={() => sendQuoteMockup(q as Quote)}
+                          disabled={sendingQuoteMockup}
+                          className="w-full mt-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-2 rounded-lg flex items-center justify-center gap-1 disabled:opacity-50"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          {sendingQuoteMockup
+                            ? 'Sending…'
+                            : q.status === 'awaiting_approval' ? 'Re-send mockup for approval' : 'Send mockup for approval'}
+                        </button>
+                      )}
                       {q.mockup_image_url && (
                         <button
                           onClick={() => { setMockupPickerFor('quote-extra'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
@@ -7730,6 +7789,13 @@ export default function AdminPage() {
                         <input type="file" accept="image/*" multiple className="hidden"
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
+                      <button
+                        onClick={() => navigate(`/design?attachToQuote=${q.id}`)}
+                        className="w-full mb-2 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
+                      >
+                        <Palette className="w-3.5 h-3.5" />
+                        Design mockup in Studio
+                      </button>
                       <button
                         onClick={() => { setMockupPickerFor('quote-primary'); setMockupPickerSearch(''); setMockupPickerOpen(true); }}
                         className="w-full text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
