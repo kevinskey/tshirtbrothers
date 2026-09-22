@@ -8,10 +8,10 @@ import { useCgcPath } from '../lib/base';
 // into jds_products (Cloudinary URLs from the supplier feed) — the SKUs are
 // live catalog items, so every image click-through lands on a buyable PDP.
 const HERO_ITEMS = [
-  { sku: 'LTM952', name: 'Polar Camel 14 oz. Orange Pilsner Tumbler', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669757586/products/images/large/LTM952--2228b537.png', cls: 'h-40 sm:h-52 lg:h-64 -mb-2' },
-  { sku: 'GFT3067', name: 'Acacia Cutting Board with Black Marble Accent', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1783026571/products/images/large/GFT3067--fc604067.png', cls: 'h-48 sm:h-64 lg:h-80' },
-  { sku: 'GFT246A', name: 'Black/Gold Laserable Leatherette Portfolio', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733945329/products/images/large/GFT246A--fab6b626.png', cls: 'h-44 sm:h-56 lg:h-72' },
-  { sku: 'CRY89', name: 'Clear Crystal Facet Tower Award', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1684356903/products/images/large/CRY89--9841d933.png', cls: 'h-40 sm:h-52 lg:h-64' },
+  { sku: 'LTM952', name: 'Polar Camel 14 oz. Orange Pilsner Tumbler', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669757586/products/images/large/LTM952--2228b537.png', cls: 'max-h-[55%]' },
+  { sku: 'GFT3067', name: 'Acacia Cutting Board with Black Marble Accent', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1783026571/products/images/large/GFT3067--fc604067.png', cls: 'max-h-[92%]' },
+  { sku: 'GFT246A', name: 'Black/Gold Laserable Leatherette Portfolio', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733945329/products/images/large/GFT246A--fab6b626.png', cls: 'max-h-[78%]' },
+  { sku: 'CRY89', name: 'Clear Crystal Facet Tower Award', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1684356903/products/images/large/CRY89--9841d933.png', cls: 'max-h-[70%]' },
 ];
 
 const CATEGORY_TILES = [
@@ -28,7 +28,7 @@ const CATEGORY_TILES = [
 const BANNER_ITEMS = [
   { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669756997/products/images/large/LTM7102--8d171aec.png', alt: 'Black insulated tumbler', cls: 'h-28 sm:h-40' },
   { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733247922/products/images/large/LZGB11--4876f29c.png', alt: 'Black gift box', cls: 'h-24 sm:h-36' },
-  { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1667537949/products/images/large/LMG21--9993b8cb.jpg', alt: 'Black ceramic mug', cls: 'h-20 sm:h-28' },
+  { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1722371414/products/images/large/LTM852--8d35445c.png', alt: 'Black stemless wine tumbler', cls: 'h-20 sm:h-28' },
 ];
 
 export default function HomePage() {
@@ -50,8 +50,9 @@ export default function HomePage() {
             <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.15em] text-cgc-orange">
               Personal gifts. Real connections.
             </p>
-            <h1 id="hero-heading" className="mt-3 text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-[1.05] tracking-tight text-cgc-ink">
-              Give something <span className="text-cgc-orange">only you</span> could give<span className="text-cgc-orange">.</span>
+            <h1 id="hero-heading" className="mt-3 text-4xl sm:text-5xl lg:text-[3.4rem] font-extrabold leading-[1.08] tracking-tight text-cgc-ink">
+              Give something<br className="hidden sm:block" />{' '}
+              <span className="text-cgc-orange">only you</span> could give<span className="text-cgc-orange">.</span>
             </h1>
             <p className="mt-4 text-base sm:text-lg text-cgc-charcoal max-w-md">
               Turn names, memories, and milestones into gifts worth keeping.
@@ -72,22 +73,24 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Product composition on pedestals, per the approved layout */}
-          <div className="relative">
+          {/* Product composition on pedestals, per the approved layout.
+              Fixed-height stage; each image is height-capped as a % of the
+              stage and width-capped as a % of the row so four items can
+              never overflow the column. */}
+          <div className="relative h-64 sm:h-80 lg:h-[26rem]">
             <div className="absolute inset-x-0 bottom-0 h-1/2 rounded-2xl bg-cgc-cream-deep" aria-hidden />
-            <div className="relative flex items-end justify-center gap-1 sm:gap-3 px-2 pt-6 pb-8">
+            <div className="absolute inset-0 flex items-end justify-center gap-2 sm:gap-4 px-3 pb-6">
               {HERO_ITEMS.map((item, i) => (
                 <Link
                   key={item.sku}
                   to={p(`/product/${item.sku}`)}
-                  className={`shrink-0 ${i % 2 === 1 ? 'mb-6 sm:mb-10' : ''}`}
+                  className={`flex items-end justify-center h-full max-w-[26%] ${i % 2 === 1 ? 'pb-6 sm:pb-10' : ''}`}
                   aria-label={item.name}
                 >
                   <img
                     src={item.img}
                     alt={item.name}
-                    className={`${item.cls} w-auto object-contain drop-shadow-xl mix-blend-multiply`}
-                    loading={i < 2 ? 'eager' : 'lazy'}
+                    className={`${item.cls} max-w-full w-auto object-contain drop-shadow-xl mix-blend-multiply`}
                   />
                 </Link>
               ))}
@@ -109,7 +112,7 @@ export default function HomePage() {
               Shop all categories <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {CATEGORY_TILES.map((tile) => (
               <Link key={tile.label} to={shopHref(tile.label)} className="group text-center">
                 <div className="aspect-square rounded-xl bg-cgc-cream flex items-center justify-center p-6 overflow-hidden group-hover:shadow-md transition-shadow">
