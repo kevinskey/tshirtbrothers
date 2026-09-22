@@ -82,10 +82,6 @@ export default function FavoritesPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {products.map((p) => {
-              const wholesale = Number(p.base_price || 0);
-              const yourPrice = p.custom_price != null && Number(p.custom_price) > 0
-                ? Number(p.custom_price)
-                : wholesale > 0 ? wholesale * 2 : null;
               return (
                 <div key={p.id} className="relative border border-gray-100 rounded-xl overflow-hidden bg-white hover:shadow-lg transition-shadow">
                   <button
