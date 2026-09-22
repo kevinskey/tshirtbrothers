@@ -33,13 +33,35 @@ interface UseStoreBrand {
   slug: string | null;
 }
 
+// Built-in brands that aren't stores rows. "cgc" is the Custom Gift Club
+// sister brand (customgiftclub.com) — its PDPs deep-link into the studio
+// with ?store=cgc so the chrome rebrands without a network fetch.
+const BUILTIN_BRANDS: Record<string, StoreBrand> = {
+  cgc: {
+    slug: 'cgc',
+    name: 'Custom Gift Club',
+    brand_json: {
+      logo_url: '/cgc-logo.png',
+      primary_color: '#f97316',
+      back_url: 'https://customgiftclub.com',
+      footer_note: 'Custom Gift Club — a sister company of T-Shirt Brothers',
+    },
+  },
+};
+
 export function useStoreBrand(): UseStoreBrand {
   const [params] = useSearchParams();
   const slug = params.get('store');
-  const [brand, setBrand] = useState<StoreBrand | null>(null);
-  const [loading, setLoading] = useState(!!slug);
+  const builtin = slug ? BUILTIN_BRANDS[slug] ?? null : null;
+  const [brand, setBrand] = useState<StoreBrand | null>(builtin);
+  const [loading, setLoading] = useState(!!slug && !builtin);
 
   useEffect(() => {
+    if (builtin) {
+      setBrand(builtin);
+      setLoading(false);
+      return;
+    }
     if (!slug) {
       setBrand(null);
       setLoading(false);

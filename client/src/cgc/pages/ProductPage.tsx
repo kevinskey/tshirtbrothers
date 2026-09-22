@@ -283,7 +283,13 @@ export default function ProductPage() {
 
           <p className="mt-4 text-sm text-cgc-stone">
             Want full design control?{' '}
-            <a href="https://tshirtbrothers.com/design" target="_blank" rel="noopener noreferrer" className="font-semibold text-cgc-orange hover:text-cgc-orange-dark">
+            {/* Deep link: ?product=jds:<sku> preselects this blank (handled
+                by /api/products/by-ssid), ?store=cgc rebrands the studio
+                chrome as Custom Gift Club, ?back returns here. */}
+            <a
+              href={`https://tshirtbrothers.com/design?product=${encodeURIComponent(`jds:${product.sku}`)}&store=cgc&back=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://customgiftclub.com')}`}
+              className="font-semibold text-cgc-orange hover:text-cgc-orange-dark"
+            >
               Open this in the Design Studio
             </a>{' '}
             for advanced artwork and live preview.

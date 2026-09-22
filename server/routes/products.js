@@ -534,10 +534,40 @@ router.get('/colors/:styleId', async (req, res, next) => {
   }
 });
 
-// GET /by-ssid/:ssId - Find product by ss_id
+// GET /by-ssid/:ssId - Find product by ss_id. Also accepts the studio's
+// pseudo id "jds:<sku>" (see /jds-search below) so deep links like
+// /design?product=jds:LTM952 — used by the Custom Gift Club PDP — land
+// on the right JDS blank; the row is shaped exactly like a /jds-search
+// result so the studio's isJdsProduct handling kicks in.
 router.get('/by-ssid/:ssId', async (req, res, next) => {
   try {
-    const result = await pool.query('SELECT * FROM products WHERE ss_id = $1 LIMIT 1', [req.params.ssId]);
+    const ssId = req.params.ssId;
+    if (/^jds:/i.test(ssId)) {
+      const sku = ssId.slice(4).toUpperCase();
+      const { rows } = await pool.query(
+        `SELECT id, sku, name, image_url, retail_price_cents
+           FROM jds_products WHERE sku = $1 AND active LIMIT 1`,
+        [sku],
+      );
+      if (!rows.length) return res.status(404).json(null);
+      const r = rows[0];
+      const dims = parseJdsDims(r.name);
+      return res.json({
+        id: `jds-${r.id}`,
+        ss_id: `jds:${r.sku}`,
+        name: r.name,
+        brand: 'JDS',
+        category: 'Gifts & Engraving',
+        image_url: r.image_url,
+        base_price: null,
+        price: r.retail_price_cents / 100,
+        colors: [],
+        sizes: [],
+        est_width_in: dims?.w ?? null,
+        est_height_in: dims?.h ?? null,
+      });
+    }
+    const result = await pool.query('SELECT * FROM products WHERE ss_id = $1 LIMIT 1', [ssId]);
     if (result.rows.length === 0) return res.status(404).json(null);
     res.json(result.rows[0]);
   } catch (err) {
