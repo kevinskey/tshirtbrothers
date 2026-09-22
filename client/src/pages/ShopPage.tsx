@@ -32,6 +32,7 @@ interface Product {
   image_url?: string;
   back_image_url?: string;
   base_price?: number | string;
+  custom_price?: number | string;
   specifications?: { description?: string; material?: string; weight?: string };
   price_breaks?: { qty?: number; minQty?: number; price?: number }[];
 }
@@ -504,12 +505,14 @@ export default function ShopPage() {
                         Hidden when S&S didn't return a price (a few discontinued
                         styles return 0). */}
                     {(() => {
+                      const custom = Number(product.custom_price || 0);
                       const wholesale = Number(product.base_price || 0);
-                      if (!(wholesale > 0)) return null;
+                      const retail = custom > 0 ? custom : wholesale * 2;
+                      if (!(retail > 0)) return null;
                       return (
                         <p className="mt-2 text-sm">
                           <span className="text-gray-500">Your price: </span>
-                          <span className="font-semibold text-gray-900">${(wholesale * 2).toFixed(2)}</span>
+                          <span className="font-semibold text-gray-900">${retail.toFixed(2)}</span>
                         </p>
                       );
                     })()}
@@ -599,12 +602,14 @@ export default function ShopPage() {
 
                 <div className="space-y-4 text-sm">
                   {(() => {
+                    const custom = Number(p.custom_price || 0);
                     const wholesale = Number(p.base_price || 0);
-                    if (!(wholesale > 0)) return null;
+                    const retail = custom > 0 ? custom : wholesale * 2;
+                    if (!(retail > 0)) return null;
                     return (
                       <div className="rounded-xl bg-orange-50 border border-orange-200 px-4 py-3">
                         <p className="text-xs uppercase tracking-wider text-orange-700/70 font-medium">Your price</p>
-                        <p className="font-display text-2xl font-bold text-gray-900">${(wholesale * 2).toFixed(2)}</p>
+                        <p className="font-display text-2xl font-bold text-gray-900">${retail.toFixed(2)}</p>
                         <p className="text-[11px] text-gray-500 mt-0.5">Blank garment. Print pricing calculated separately.</p>
                       </div>
                     );
