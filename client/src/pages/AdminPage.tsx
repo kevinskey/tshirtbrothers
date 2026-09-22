@@ -7588,7 +7588,14 @@ export default function AdminPage() {
           // settled once balance_paid_at is set.
           const acceptedAt = (q as Quote & { accepted_at?: string | null }).accepted_at || null;
           const balancePaidAt = q.balance_paid_at || null;
-          const depositRequired = q.deposit_amount != null ? Number(q.deposit_amount) : 0;
+          // Until the deposit is actually paid, what's DUE is 50% of the
+          // current total — the stored deposit_amount is a snapshot from the
+          // last send-price and goes stale when line items change after it.
+          // Once accepted, the column holds what was actually paid (the
+          // webhook overwrites it), so show that.
+          const depositRequired = acceptedAt
+            ? (q.deposit_amount != null ? Number(q.deposit_amount) : 0)
+            : Math.round(total * 50) / 100;
           const paid = (balancePaidAt ? total : (acceptedAt ? depositRequired : 0));
           const balance = total - paid;
 
