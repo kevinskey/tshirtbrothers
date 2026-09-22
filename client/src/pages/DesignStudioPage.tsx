@@ -546,8 +546,13 @@ export default function DesignStudioPage() {
   // composites, attaches them to a mockup row tied to the invoice, then
   // navigates back to the admin invoice editor.
   const attachToInvoiceId = searchParams.get('attachToInvoice') || '';
+  // When set, the studio is building the approval mockup for an admin
+  // quote. Hydrates the quote's uploaded artwork + quoted product on
+  // mount; "Save Mockup to Quote" creates a quote-linked mockup row,
+  // stamps its composite onto the quote, and returns to the quote modal.
+  const attachToQuoteId = searchParams.get('attachToQuote') || '';
   // '&extraMockup=1' => this new mockup should be APPENDED to the invoice's
-  // extra_mockups instead of replacing its primary mockup.
+  // (or quote's) extra_mockups instead of replacing its primary mockup.
   const attachAsExtraMockup = searchParams.get('extraMockup') === '1';
   // When set, the studio is acting as the editor for an existing mockup row.
   // Hydrates product / canvas dims / elements from the mockup on mount and
@@ -1346,6 +1351,80 @@ export default function DesignStudioPage() {
     }
   }
 
+  // ─── Attach-to-quote mockup save ────────────────────────────────────
+  // Mirror of handleSaveMockupToInvoice for the admin quote modal
+  // (?attachToQuote=<id>): create a quote-linked mockup row from the
+  // current canvas, stamp its composite onto the quote (primary or
+  // extra), then return to the quote modal so the admin can hit "Send
+  // mockup for approval".
+  const [savingQuoteMockup, setSavingQuoteMockup] = useState(false);
+  async function handleSaveMockupToQuote() {
+    if (!attachToQuoteId || savingQuoteMockup) return;
+    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
+    const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
+    const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
+    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+
+    setSavingQuoteMockup(true);
+    try {
+      const token = getAuthToken();
+      // Sequential captures — each one temporarily flips currentView.
+      const frontUrl = hasFront ? await captureSideScreenshot('front') : null;
+      const backUrl = hasBack ? await captureSideScreenshot('back') : null;
+      const hasSleeveR = designElements.some((e) => (e.side ?? 'front') === 'sleeve');
+      const hasSleeveL = designElements.some((e) => (e.side ?? 'front') === 'sleeve_left');
+      const sleeveUrl = hasSleeveR ? await captureSideScreenshot('sleeve') : null;
+      const sleeveLeftUrl = hasSleeveL ? await captureSideScreenshot('sleeve_left') : null;
+
+      const create = await fetch('/api/admin/mockups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          name: designName && designName !== 'Untitled design' ? designName : `Quote #${attachToQuoteId} Mockup`,
+          quote_id: Number(attachToQuoteId),
+          customer_name: attachQuote?.customer_name || null,
+          customer_email: attachQuote?.customer_email || null,
+          product_id: null,
+          product_ss_id: selectedProduct?.ss_id || null,
+          product_name: selectedProduct?.name || null,
+          product_image_url: productImg,
+          preview_image_url: frontUrl,
+          preview_image_url_back: backUrl,
+          preview_image_url_sleeve: sleeveUrl,
+          preview_image_url_sleeve_left: sleeveLeftUrl,
+          design_elements: designElements,
+          design_canvas_inches: canvasInches,
+          design_canvas_inches_h: canvasInchesH,
+          design_color_index: selectedColorIdx,
+          placement,
+          status: 'draft',
+        }),
+      });
+      if (!create.ok) throw new Error('mockup save failed');
+      const row = await create.json();
+
+      // Stamp the composite onto the quote so the modal, recent-quotes
+      // thumbnail, and customer approval page all show it.
+      const patch = await fetch(`/api/quotes/admin/${encodeURIComponent(attachToQuoteId)}/mockup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ mockup_id: row.id, add_extra: attachAsExtraMockup || undefined }),
+      });
+      if (!patch.ok) throw new Error('attaching mockup to quote failed');
+
+      await Promise.all([
+        studioQueryClient.refetchQueries({ queryKey: ['mockups'] }),
+        studioQueryClient.refetchQueries({ queryKey: ['admin', 'quotes'] }),
+      ]);
+      navigate(`/admin?section=quotes&openQuote=${encodeURIComponent(attachToQuoteId)}`);
+    } catch (e) {
+      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+    } finally {
+      setSavingQuoteMockup(false);
+    }
+  }
+
   // ─── Save edits back to an existing mockup row ──────────────────────
   // PATCHes /admin/mockups/<id> with fresh composite URLs + the elements
   // so opening the mockup again rehydrates the same design.
@@ -1951,6 +2030,56 @@ export default function DesignStudioPage() {
       } catch { /* keep default empty state */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Attach-to-quote mode ────────────────────────────────────────────
+  // When ?attachToQuote=<id> is set, fetch the quote so the canvas opens
+  // with the customer's uploaded artwork already placed on the quoted
+  // product, and keep the customer's name/email around so the saved
+  // mockup row can be sent for approval without manual editing.
+  const [attachQuote, setAttachQuote] = useState<{ id: number; customer_name?: string | null; customer_email?: string | null } | null>(null);
+  useEffect(() => {
+    if (!attachToQuoteId) return;
+    (async () => {
+      try {
+        const token = getAuthToken();
+        const res = await fetch(`/api/quotes/${encodeURIComponent(attachToQuoteId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const q = await res.json();
+        setAttachQuote({ id: q.id, customer_name: q.customer_name, customer_email: q.customer_email });
+        setDesignName(`Quote #${q.id}${q.customer_name ? ` — ${q.customer_name}` : ''}`);
+        // Seed the customer's artwork as a front image element. Same
+        // caveat as the legacy-mockup seed above: we can't translate a
+        // product-photo placement into print-area coords, so drop it
+        // centered at a comfortable size for the admin to position.
+        if (q.design_url) {
+          setDesignElements((prev) => (prev.length > 0 ? prev : [{
+            id: `quote-${q.id}-design`,
+            type: 'image',
+            content: q.design_url,
+            x: 20,
+            y: 20,
+            width: 60,
+            side: 'front',
+          } as DesignElement]));
+        }
+        // Hydrate the quoted product: the first line item's picked S&S id
+        // is studio-native; fall back to the quote's legacy product_id.
+        const firstItem = Array.isArray(q.items) ? q.items[0] : null;
+        const ssid = firstItem?.picked_product?.ss_id;
+        if (ssid) {
+          const pRes = await fetch(`/api/products/by-ssid/${encodeURIComponent(ssid)}`);
+          if (pRes.ok) { setSelectedProduct(await pRes.json()); return; }
+        }
+        if (q.product_id) {
+          const pRes = await fetch(`/api/products/${encodeURIComponent(q.product_id)}`);
+          if (pRes.ok) setSelectedProduct(await pRes.json());
+        }
+      } catch { /* silent — studio shows blank canvas + picker */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Edit-existing-mockup mode ───────────────────────────────────────
@@ -2850,9 +2979,11 @@ export default function DesignStudioPage() {
             to={
               attachToInvoiceId
                 ? `/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`
-                : (editMockupId || newMockupMode)
-                  ? '/admin?section=mockups'
-                  : (loadState?.backTo || '/')
+                : attachToQuoteId
+                  ? `/admin?section=quotes&openQuote=${encodeURIComponent(attachToQuoteId)}`
+                  : (editMockupId || newMockupMode)
+                    ? '/admin?section=mockups'
+                    : (loadState?.backTo || '/')
             }
             className="text-gray-500 hover:text-gray-900 transition"
             title="Back"
@@ -2992,6 +3123,18 @@ export default function DesignStudioPage() {
           >
             {savingInvoiceMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {savingInvoiceMockup ? 'Saving…' : 'Save Mockup to Invoice'}
+          </button>
+        )}
+        {attachToQuoteId && !editMockupId && (
+          <button
+            type="button"
+            onClick={handleSaveMockupToQuote}
+            disabled={savingQuoteMockup}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+            title={`Save mockup and attach to quote ${attachToQuoteId}`}
+          >
+            {savingQuoteMockup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {savingQuoteMockup ? 'Saving…' : 'Save Mockup to Quote'}
           </button>
         )}
         {editMockupId && (
