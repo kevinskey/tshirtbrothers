@@ -107,12 +107,8 @@ export default function FavoritesPage() {
                     <div className="p-3">
                       <span className="text-[10px] uppercase tracking-wider text-gray-400 font-medium">{p.brand}</span>
                       <h3 className="font-display font-semibold text-sm mt-0.5 leading-tight line-clamp-2">{p.name}</h3>
-                      {yourPrice != null && (
-                        <p className="mt-2 text-sm">
-                          <span className="text-gray-500">Your price: </span>
-                          <span className="font-semibold text-gray-900">${yourPrice.toFixed(2)}</span>
-                        </p>
-                      )}
+                      {/* No price on grid cards — matches /shop, where most
+                          styles have no stored price to show. */}
                     </div>
                   </Link>
                 </div>

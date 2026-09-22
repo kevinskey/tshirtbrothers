@@ -501,21 +501,11 @@ export default function ShopPage() {
                       {styleNum}{styleNum && colors.length ? ' · ' : ''}{colors.length > 0 ? `${colors.length} colors` : ''}{sizeRange ? ` · ${sizeRange}` : ''}
                     </p>
 
-                    {/* Your Price — wholesale doubled, rounded to two decimals.
-                        Hidden when S&S didn't return a price (a few discontinued
-                        styles return 0). */}
-                    {(() => {
-                      const custom = Number(product.custom_price || 0);
-                      const wholesale = Number(product.base_price || 0);
-                      const retail = custom > 0 ? custom : wholesale * 2;
-                      if (!(retail > 0)) return null;
-                      return (
-                        <p className="mt-2 text-sm">
-                          <span className="text-gray-500">Your price: </span>
-                          <span className="font-semibold text-gray-900">${retail.toFixed(2)}</span>
-                        </p>
-                      );
-                    })()}
+                    {/* No price on grid cards: most S&S styles have no
+                        stored price, so a price on the occasional card
+                        (e.g. house varsity jackets with custom_price)
+                        reads as inconsistent. Pricing lives in the
+                        product quick-view, where every item shows it. */}
 
                     {/* Color dots */}
                     {colors.length > 0 && (
