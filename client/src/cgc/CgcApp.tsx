@@ -21,6 +21,8 @@ import SuccessPage from './pages/SuccessPage';
 import BusinessPage from './pages/BusinessPage';
 import FavoritesPage from './pages/FavoritesPage';
 import AccountPage from './pages/AccountPage';
+import HolidayPage from './pages/HolidayPage';
+import HolidayProductPage from './pages/HolidayProductPage';
 
 export function CgcRoutes({ base }: { base: string }) {
   return (
@@ -33,6 +35,8 @@ export function CgcRoutes({ base }: { base: string }) {
               <Route index element={<HomePage />} />
               <Route path="shop" element={<ShopPage />} />
               <Route path="product/:sku" element={<ProductPage />} />
+              <Route path="holiday" element={<HolidayPage />} />
+              <Route path="holiday/:slug" element={<HolidayProductPage />} />
               <Route path="cart" element={<CartPage />} />
               <Route path="success" element={<SuccessPage />} />
               <Route path="business" element={<BusinessPage />} />

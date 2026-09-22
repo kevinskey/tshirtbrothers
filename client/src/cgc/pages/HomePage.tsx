@@ -83,6 +83,26 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Holiday collection strip — campaign headline lives on /holiday */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 pt-8" aria-labelledby="holiday-strip-heading">
+        <Link
+          to={p('/holiday')}
+          className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-cgc-orange text-white px-6 sm:px-10 py-6"
+        >
+          <div>
+            <h2 id="holiday-strip-heading" className="text-xl sm:text-2xl font-extrabold tracking-tight">
+              The Holiday Collection is coming.
+            </h2>
+            <p className="mt-1 text-white/90 text-sm sm:text-base">
+              Personalized tumblers, cutting boards, ornaments &amp; journals — engraved to order.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 font-bold whitespace-nowrap group-hover:gap-3 transition-all">
+            See Holiday Gifts <ArrowRight className="h-4 w-4" aria-hidden />
+          </span>
+        </Link>
+      </section>
+
       <GiftFinder />
 
       {/* Categories */}

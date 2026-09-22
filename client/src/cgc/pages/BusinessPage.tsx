@@ -1,17 +1,46 @@
 import { useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { toast } from 'sonner';
-import { Building2, CheckCircle2, Loader2 } from 'lucide-react';
+import { Building2, Check, CheckCircle2, Loader2, Upload } from 'lucide-react';
 
 // Business & bulk gifting inquiry — lands on the shared Sales Prospects
-// board via /api/cgc/business-inquiry.
+// board via /api/cgc/business-inquiry. Covers the holiday "Gifts for
+// Teams & Clients" ask: quantity, budget per gift, requested delivery
+// date, and a logo upload (same public upload endpoint the PDPs use).
 export default function BusinessPage() {
   const [form, setForm] = useState({
     business_name: '', contact_name: '', email: '', phone: '',
-    business_type: '', quantity: '', needs: '',
+    business_type: '', quantity: '', budget_per_gift: '', delivery_date: '',
+    logo_url: '', needs: '',
   });
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [sent, setSent] = useState(false);
+
+  const uploadLogo = async (file: File) => {
+    setUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: dataUrl, filename: `cgc-biz-logo-${file.name}` }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || 'Upload failed');
+      setForm((f) => ({ ...f, logo_url: body.url }));
+      toast.success('Logo uploaded');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -90,6 +119,28 @@ export default function BusinessPage() {
           <div>
             <label htmlFor="bz-qty" className="block text-sm font-semibold text-cgc-ink mb-1">Approximate quantity</label>
             <input id="bz-qty" className={input} placeholder="e.g. 50 tumblers" value={form.quantity} onChange={set('quantity')} />
+          </div>
+          <div>
+            <label htmlFor="bz-budget" className="block text-sm font-semibold text-cgc-ink mb-1">Budget per gift</label>
+            <input id="bz-budget" className={input} placeholder="e.g. $25–$40" value={form.budget_per_gift} onChange={set('budget_per_gift')} />
+          </div>
+          <div>
+            <label htmlFor="bz-date" className="block text-sm font-semibold text-cgc-ink mb-1">Requested delivery date</label>
+            <input id="bz-date" type="date" className={input} value={form.delivery_date} onChange={set('delivery_date')} />
+          </div>
+          <div>
+            <span className="block text-sm font-semibold text-cgc-ink mb-1">Logo (optional)</span>
+            <label className="inline-flex items-center gap-2 rounded-lg border border-cgc-cream-deep px-4 py-2.5 text-sm font-semibold text-cgc-charcoal cursor-pointer hover:bg-cgc-cream">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
+              {form.logo_url ? 'Replace logo' : 'Upload logo'}
+              <input type="file" accept="image/*" className="sr-only"
+                onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])} />
+            </label>
+            {form.logo_url && (
+              <span className="ml-3 inline-flex items-center gap-1 text-sm text-green-700">
+                <Check className="h-4 w-4" aria-hidden /> Logo attached
+              </span>
+            )}
           </div>
           <div className="sm:col-span-2">
             <label htmlFor="bz-needs" className="block text-sm font-semibold text-cgc-ink mb-1">What are you planning?</label>

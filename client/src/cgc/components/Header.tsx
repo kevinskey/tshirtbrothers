@@ -149,6 +149,7 @@ export default function Header() {
       <nav className="hidden lg:block border-t border-cgc-cream-deep" aria-label="Primary">
         <div className="max-w-screen-2xl mx-auto px-10 flex items-center justify-center gap-1 py-1.5 text-[15px] font-semibold text-cgc-ink">
           <Link to={shopHref()} className={navLink}>Shop All</Link>
+          <Link to={p('/holiday')} className={`${navLink} text-cgc-orange`}>Holiday Gifts</Link>
           {NAV_CATEGORIES.map((c) => (
             <Link key={c.label} to={shopHref(c.category)} className={navLink}>
               {c.label}
@@ -189,6 +190,7 @@ export default function Header() {
         <nav className="lg:hidden border-t border-cgc-cream-deep bg-white px-4 py-3 space-y-1 max-h-[70vh] overflow-y-auto" aria-label="Primary">
           {[
             { label: 'Shop All', to: shopHref() },
+            { label: 'Holiday Gifts', to: p('/holiday') },
             ...NAV_CATEGORIES.map((c) => ({ label: c.label, to: shopHref(c.category) })),
           ].map((l) => (
             <Link key={l.label} to={l.to} onClick={() => setMenuOpen(false)}

@@ -68,9 +68,11 @@ export default function CartPage() {
                 </Link>
                 {item.personalization ? (
                   <p className="mt-1 text-xs text-cgc-stone">
+                    {item.personalization.design ? `${item.personalization.design} — ` : ''}
                     Personalized{item.personalization.lines.length ? `: “${item.personalization.lines.join(' / ')}”` : ''}
                     {item.personalization.font ? ` · ${item.personalization.font}` : ''}
                     {item.personalization.artUrl ? ' · artwork attached' : ''}
+                    {item.personalization.gift_message ? ' · gift message included' : ''}
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-cgc-stone">Blank (undecorated)</p>
