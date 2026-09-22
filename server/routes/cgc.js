@@ -142,26 +142,39 @@ router.get('/products/:sku', async (req, res, next) => {
 // still active — an unpublished product renders as "launching soon".
 // A selling_price_cents set in the admin overrides the catalog retail
 // for every variant (the launch price is one price, not per color).
+// Variants come from two catalogs: a JDS SKU (jds_products, priced by
+// catalog retail unless the launch selling price overrides it) or a TSB
+// Studio mockup referenced as "MOCKUP:<id>" (mockups table — the preview
+// composite is the photo, and the launch selling price IS the price,
+// since mockups have no catalog retail). A mockup variant with no
+// selling price set stays unpriced and blocks `available`.
+const MOCKUP_TOKEN = /^MOCKUP:(\d+)$/;
+
 function shapeHolidayRow(row, bySku, { admin = false } = {}) {
   const configVariants = Array.isArray(row.variants) ? row.variants : [];
   const variants = configVariants.map((v) => {
     const live = bySku.get(v.sku);
     if (!live) return admin ? { sku: v.sku, label: v.label, missing: true } : null;
+    const isMockup = MOCKUP_TOKEN.test(v.sku);
     return {
       sku: v.sku,
       label: v.label,
       name: live.name,
       image_url: live.image_url,
-      retail_price_cents: row.selling_price_cents ?? live.retail_price_cents,
+      retail_price_cents: isMockup
+        ? (row.selling_price_cents ?? null)
+        : (row.selling_price_cents ?? live.retail_price_cents),
       active: live.active,
       ...(admin ? {
-        cost_cents: live.cost_cents,
-        catalog_retail_cents: live.retail_price_cents,
+        cost_cents: live.cost_cents ?? null,
+        catalog_retail_cents: isMockup ? null : live.retail_price_cents,
         missing: false,
       } : {}),
     };
   }).filter(Boolean);
-  const prices = variants.filter((v) => !v.missing).map((v) => v.retail_price_cents);
+  const prices = variants
+    .filter((v) => !v.missing && v.retail_price_cents != null)
+    .map((v) => v.retail_price_cents);
   const shaped = {
     slug: row.slug,
     title: row.title,
@@ -172,11 +185,12 @@ function shapeHolidayRow(row, bySku, { admin = false } = {}) {
     limits: row.limits_note,
     production_note: row.production_note,
     variants,
-    image_url: variants.find((v) => !v.missing)?.image_url ?? null,
+    // Admin-uploaded image wins; otherwise the first variant's catalog photo.
+    image_url: row.image_url || (variants.find((v) => !v.missing)?.image_url ?? null),
     from_cents: prices.length ? Math.min(...prices) : null,
     available: row.published
       && variants.length === configVariants.length
-      && variants.every((v) => !v.missing && v.active),
+      && variants.every((v) => !v.missing && v.active && v.retail_price_cents != null),
   };
   if (admin) {
     Object.assign(shaped, {
@@ -187,6 +201,7 @@ function shapeHolidayRow(row, bySku, { admin = false } = {}) {
       packaging_cost_cents: row.packaging_cost_cents,
       selling_price_cents: row.selling_price_cents,
       sample_approved: row.sample_approved,
+      custom_image_url: row.image_url || null,
     });
   }
   return shaped;
@@ -198,14 +213,26 @@ async function holidayRows(where = '', params = []) {
       ORDER BY featured DESC, position ASC, id ASC`,
     params,
   );
-  const skus = rows.flatMap((r) => (Array.isArray(r.variants) ? r.variants : []).map((v) => v.sku));
-  const live = skus.length
-    ? await pool.query(
-      `SELECT ${PRODUCT_COLS}, cost_cents, active FROM jds_products WHERE sku = ANY($1)`,
-      [[...new Set(skus)]],
-    )
-    : { rows: [] };
-  return { rows, bySku: new Map(live.rows.map((r) => [r.sku, r])) };
+  const skus = [...new Set(rows.flatMap((r) => (Array.isArray(r.variants) ? r.variants : []).map((v) => v.sku)))];
+  const jdsSkus = skus.filter((s) => !MOCKUP_TOKEN.test(s));
+  const mockupIds = skus.map((s) => MOCKUP_TOKEN.exec(s)?.[1]).filter(Boolean).map(Number);
+  const [jds, mockups] = await Promise.all([
+    jdsSkus.length
+      ? pool.query(`SELECT ${PRODUCT_COLS}, cost_cents, active FROM jds_products WHERE sku = ANY($1)`, [jdsSkus])
+      : { rows: [] },
+    mockupIds.length
+      ? pool.query('SELECT id, name, product_name, preview_image_url FROM mockups WHERE id = ANY($1)', [mockupIds])
+      : { rows: [] },
+  ]);
+  const bySku = new Map(jds.rows.map((r) => [r.sku, r]));
+  for (const m of mockups.rows) {
+    bySku.set(`MOCKUP:${m.id}`, {
+      name: m.name || m.product_name || `Mockup #${m.id}`,
+      image_url: m.preview_image_url,
+      active: true,
+    });
+  }
+  return { rows, bySku };
 }
 
 router.get('/holiday', async (_req, res, next) => {
@@ -268,17 +295,41 @@ holidayAdmin.get('/', async (_req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// SKU lookup for the variant picker — validates against the same
-// published catalog everything else sells from.
+// SKU lookup for the variant picker. Accepts a JDS SKU (validated
+// against the published catalog) or "mockup:<id>" — a TSB Studio mockup
+// whose preview composite becomes the product photo. Mockup variants
+// have no catalog price: the holiday product's Selling price field
+// prices them, and publishing is blocked until it's set.
 holidayAdmin.get('/sku/:sku', async (req, res, next) => {
   try {
+    const token = String(req.params.sku).toUpperCase().trim();
+    const mockupMatch = MOCKUP_TOKEN.exec(token);
+    if (mockupMatch) {
+      const { rows } = await pool.query(
+        'SELECT id, name, product_name, preview_image_url FROM mockups WHERE id = $1',
+        [Number(mockupMatch[1])],
+      );
+      if (!rows[0]) return res.status(404).json({ error: `Mockup #${mockupMatch[1]} not found — check the id in TSB admin → Mockups` });
+      const m = rows[0];
+      return res.json({
+        product: {
+          sku: token,
+          name: m.name || m.product_name || `Mockup #${m.id}`,
+          image_url: m.preview_image_url,
+          cost_cents: null,
+          retail_price_cents: null,
+          active: true,
+          source: 'mockup',
+        },
+      });
+    }
     const { rows } = await pool.query(
       `SELECT sku, name, image_url, cost_cents, retail_price_cents, active
          FROM jds_products WHERE sku = $1`,
-      [String(req.params.sku).toUpperCase().trim()],
+      [token],
     );
-    if (!rows[0]) return res.status(404).json({ error: 'SKU not found in the published catalog — publish it via TSB admin → Blanks (JDS) first' });
-    res.json({ product: rows[0] });
+    if (!rows[0]) return res.status(404).json({ error: 'SKU not found in the published catalog — publish it via TSB admin → Blanks (JDS), or use mockup:<id> for a Studio mockup' });
+    res.json({ product: { ...rows[0], source: 'jds' } });
   } catch (err) { next(err); }
 });
 
@@ -307,6 +358,10 @@ function holidayPatchFromBody(b) {
   if ('engraving_minutes' in b) {
     const n = parseFloat(String(b.engraving_minutes));
     patch.engraving_minutes = Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  if ('image_url' in b) {
+    const url = String(b.image_url || '');
+    patch.image_url = /^https:\/\//.test(url) ? url.slice(0, 500) : null;
   }
   for (const key of ['variants', 'designs', 'fields']) {
     if (key in b) {
@@ -449,12 +504,57 @@ router.post('/checkout', async (req, res, next) => {
     if (!rawItems.length) return res.status(400).json({ error: 'items is required' });
 
     const skus = [...new Set(rawItems.map((i) => String(i?.sku || '').toUpperCase()).filter(Boolean))];
-    const { rows: products } = await pool.query(
-      `SELECT sku, name, description, image_url, retail_price_cents, weight_oz
-         FROM jds_products WHERE sku = ANY($1) AND active`,
-      [skus],
-    );
+    const jdsSkus = skus.filter((s) => !MOCKUP_TOKEN.test(s));
+    const { rows: products } = jdsSkus.length
+      ? await pool.query(
+        `SELECT sku, name, description, image_url, retail_price_cents, weight_oz
+           FROM jds_products WHERE sku = ANY($1) AND active`,
+        [jdsSkus],
+      )
+      : { rows: [] };
     const bySku = new Map(products.map((p) => [p.sku, p]));
+
+    // A published holiday product's launch selling price overrides the
+    // catalog retail for its SKUs — the PDP already shows that price, so
+    // checkout must charge it too.
+    const { rows: pricedHoliday } = await pool.query(
+      `SELECT variants, selling_price_cents FROM cgc_holiday_products
+        WHERE published AND selling_price_cents IS NOT NULL`,
+    );
+    for (const hp of pricedHoliday) {
+      for (const v of (Array.isArray(hp.variants) ? hp.variants : [])) {
+        const existing = bySku.get(v.sku);
+        if (existing) existing.retail_price_cents = hp.selling_price_cents;
+      }
+    }
+
+    // Mockup-backed holiday items (sku "MOCKUP:<id>"): sellable only while
+    // some PUBLISHED holiday product lists that mockup as a variant with a
+    // selling price set — that launch price is the price, server-side.
+    const mockupTokens = skus.filter((s) => MOCKUP_TOKEN.test(s));
+    for (const token of mockupTokens) {
+      const { rows: holders } = await pool.query(
+        `SELECT selling_price_cents FROM cgc_holiday_products
+          WHERE published AND selling_price_cents IS NOT NULL
+            AND variants @> $1::jsonb LIMIT 1`,
+        [JSON.stringify([{ sku: token }])],
+      );
+      if (!holders[0]) continue; // falls through to "not available" below
+      const id = Number(MOCKUP_TOKEN.exec(token)[1]);
+      const { rows: [m] } = await pool.query(
+        'SELECT id, name, product_name, preview_image_url FROM mockups WHERE id = $1',
+        [id],
+      );
+      if (!m) continue;
+      bySku.set(token, {
+        sku: token,
+        name: m.name || m.product_name || `Custom gift #${m.id}`,
+        description: null,
+        image_url: m.preview_image_url,
+        retail_price_cents: holders[0].selling_price_cents,
+        weight_oz: null,
+      });
+    }
 
     const lines = [];
     for (const item of rawItems) {
