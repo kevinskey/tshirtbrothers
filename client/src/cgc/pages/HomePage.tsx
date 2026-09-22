@@ -4,21 +4,23 @@ import { ArrowRight } from 'lucide-react';
 import GiftFinder from '../components/GiftFinder';
 import { useCgcPath } from '../lib/base';
 
-// All homepage imagery is real JDS product photography already snapshotted
-// into jds_products (Cloudinary URLs from the supplier feed) — the SKUs are
-// live catalog items, so every image click-through lands on a buyable PDP.
+// Homepage imagery: real JDS product photos for live catalog SKUs, with
+// the supplier's sample engraving removed (FLUX Kontext + BiRefNet cutout,
+// stored at Spaces cgc/clean/) so hero/tile/banner products read as blank.
+// PDPs still show the raw supplier photo. Regenerate via the scripts noted
+// in memory if these SKUs change.
 const HERO_ITEMS = [
-  { sku: 'LTM952', name: 'Polar Camel 14 oz. Orange Pilsner Tumbler', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669757586/products/images/large/LTM952--2228b537.png', cls: 'max-h-[55%]' },
-  { sku: 'GFT3067', name: 'Acacia Cutting Board with Black Marble Accent', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1783026571/products/images/large/GFT3067--fc604067.png', cls: 'max-h-[92%]' },
-  { sku: 'GFT246A', name: 'Black/Gold Laserable Leatherette Portfolio', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733945329/products/images/large/GFT246A--fab6b626.png', cls: 'max-h-[78%]' },
+  { sku: 'LTM952', name: 'Polar Camel 14 oz. Orange Pilsner Tumbler', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/LTM952.png?v=3', cls: 'max-h-[55%]' },
+  { sku: 'GFT3067', name: 'Acacia Cutting Board with Black Marble Accent', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/GFT3067.png?v=3', cls: 'max-h-[92%]' },
+  { sku: 'GFT246A', name: 'Black/Gold Laserable Leatherette Portfolio', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/GFT246A.png?v=3', cls: 'max-h-[78%]' },
   { sku: 'CRY89', name: 'Clear Crystal Facet Tower Award', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1684356903/products/images/large/CRY89--9841d933.png', cls: 'max-h-[70%]' },
 ];
 
 const CATEGORY_TILES = [
-  { label: 'Personalized Gifts', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1667524321/products/images/large/CE6506--cf53f06c.png' },
-  { label: 'Drinkware', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669760674/products/images/large/SM11CC--0f50495b.png' },
+  { label: 'Personalized Gifts', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/CE6506.png?v=3' },
+  { label: 'Drinkware', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/SM11CC.png?v=3' },
   { label: 'Awards & Trophies', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1684178262/products/images/large/CRY059M--f3d39835.png' },
-  { label: 'Leather & Leatherette', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733946086/products/images/large/GFT352A--90b0e5b7.png' },
+  { label: 'Leather & Leatherette', img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/GFT352A.png?v=3' },
   // Best hat-adjacent imagery in the published set (hat clip w/ ball
   // marker) — swap once real JDS hat/patch SKUs are published.
   { label: 'Hats & Patches', img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1667530343/products/images/large/GFT207--5dbedfc6.jpg' },
@@ -26,9 +28,9 @@ const CATEGORY_TILES = [
 ];
 
 const BANNER_ITEMS = [
-  { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1669756997/products/images/large/LTM7102--8d171aec.png', alt: 'Black insulated tumbler', cls: 'h-28 sm:h-40' },
-  { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1733247922/products/images/large/LZGB11--4876f29c.png', alt: 'Black gift box', cls: 'h-24 sm:h-36' },
-  { img: 'https://res.cloudinary.com/business-products/image/upload/q_auto/v1722371414/products/images/large/LTM852--8d35445c.png', alt: 'Black stemless wine tumbler', cls: 'h-20 sm:h-28' },
+  { img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/LTM7102.png?v=3', alt: 'Black insulated tumbler', cls: 'h-28 sm:h-40' },
+  { img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/LZGB11.png?v=3', alt: 'Black gift box', cls: 'h-24 sm:h-36' },
+  { img: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/cgc/clean/LTM852.png?v=3', alt: 'Black stemless wine tumbler', cls: 'h-20 sm:h-28' },
 ];
 
 export default function HomePage() {
