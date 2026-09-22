@@ -12,7 +12,7 @@ export default function Logo({ compact = false }: { compact?: boolean }) {
       <img
         src="/cgc-logo.png"
         alt="Custom Gift Club"
-        className={`${compact ? 'h-9' : 'h-12 sm:h-14'} w-auto`}
+        className={`${compact ? 'h-9' : 'h-12 sm:h-14 lg:h-[4.5rem]'} w-auto`}
       />
     </Link>
   );
