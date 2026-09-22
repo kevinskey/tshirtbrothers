@@ -152,43 +152,51 @@ router.get('/gift-finder', async (req, res, next) => {
       if (opt.category) category = opt.category;
     }
 
-    const resolved = {
-      search: searchTerms.join(' '),
-      category,
+    const budgetOnly = {
+      search: '',
+      category: '',
       min_cents: budget?.minCents ?? '',
       max_cents: budget?.maxCents ?? '',
     };
 
-    const { where, params } = buildCatalogQuery(resolved);
-    const { rows } = await pool.query(
-      `SELECT ${PRODUCT_COLS} FROM jds_products WHERE ${where}
-        ORDER BY retail_price_cents DESC LIMIT 24`,
-      params,
-    );
+    // Curated combos can over-constrain (a niche recipient × a strict
+    // occasion × a budget band easily intersects to nothing), so try
+    // progressively looser filter sets and STOP at the first non-empty
+    // one. Crucially, `resolved` in the response is the filter set that
+    // actually produced the products — the shop page re-queries with it,
+    // so returning the strict combo alongside relaxed products would put
+    // the buyer right back on an empty page.
+    const attempts = [
+      { ...budgetOnly, search: searchTerms.join(' '), category },
+      ...searchTerms.map((term) => ({ ...budgetOnly, search: term, category })),
+      ...(category ? [{ ...budgetOnly, category }] : []),
+      budgetOnly,
+    ].map((a, i) => ({ ...a, strict: i === 0 }))
+      // Dedupe identical filter sets (e.g. a single-term combo repeats).
+      .filter((a, i, arr) => arr.findIndex(
+        (b) => b.search === a.search && b.category === a.category,
+      ) === i);
 
-    // Curated combos can over-constrain (e.g. niche recipient × strict
-    // occasion). Rather than a dead end, relax to the occasion alone,
-    // then the budget alone — and say so.
-    let products = rows;
+    let products = [];
+    let resolved = attempts[0];
     let relaxed = false;
-    if (!products.length && searchTerms.length > 1) {
-      const single = buildCatalogQuery({ ...resolved, search: searchTerms[1] });
-      products = (await pool.query(
-        `SELECT ${PRODUCT_COLS} FROM jds_products WHERE ${single.where}
-          ORDER BY retail_price_cents DESC LIMIT 24`, single.params,
-      )).rows;
-      relaxed = true;
-    }
-    if (!products.length) {
-      const loose = buildCatalogQuery({ min_cents: resolved.min_cents, max_cents: resolved.max_cents });
-      products = (await pool.query(
-        `SELECT ${PRODUCT_COLS} FROM jds_products WHERE ${loose.where}
-          ORDER BY retail_price_cents DESC LIMIT 24`, loose.params,
-      )).rows;
-      relaxed = true;
+    for (const attempt of attempts) {
+      const { where, params } = buildCatalogQuery(attempt);
+      const { rows } = await pool.query(
+        `SELECT ${PRODUCT_COLS} FROM jds_products WHERE ${where}
+          ORDER BY retail_price_cents DESC LIMIT 24`,
+        params,
+      );
+      if (rows.length) {
+        products = rows;
+        resolved = attempt;
+        relaxed = !attempt.strict;
+        break;
+      }
     }
 
-    res.json({ products, resolved, relaxed });
+    const { strict: _strict, ...resolvedOut } = resolved;
+    res.json({ products, resolved: resolvedOut, relaxed });
   } catch (err) { next(err); }
 });
 

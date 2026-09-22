@@ -31,8 +31,9 @@ swap('umami',
   /\s*<!-- Umami[\s\S]*?<script defer src="\/stats-script\.js"[^>]*><\/script>/, '');
 
 // ── Favicon: orange gift mark (inline SVG, no extra asset to deploy) ─────
+// Same geometry as the header's GiftMark (client/src/cgc/components/Logo.tsx).
 const gift = encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/></svg>`,
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fb923c"/><stop offset="1" stop-color="#ea580c"/></linearGradient><mask id="m"><rect width="48" height="48" fill="white"/><rect x="21.2" y="13.5" width="5.6" height="34.5" fill="black"/><rect x="3" y="23.2" width="42" height="2.6" fill="black"/></mask></defs><g fill="url(#g)"><path d="M23 12.5 C 17.5 3.5, 7.5 6, 11.5 11 C 14 14, 20 13.5, 23 12.5 Z"/><path d="M25 12.5 C 30.5 3.5, 40.5 6, 36.5 11 C 34 14, 28 13.5, 25 12.5 Z"/><g mask="url(#m)"><rect x="6" y="14" width="36" height="10" rx="2"/><rect x="9" y="26" width="30" height="18" rx="2.5"/></g></g></svg>`,
 );
 swap('favicon',
   /<link rel="icon"[^>]*>\s*<link rel="apple-touch-icon"[^>]*>/,
