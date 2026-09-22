@@ -84,7 +84,7 @@ export default function HomePage() {
                 <Link
                   key={item.sku}
                   to={p(`/product/${item.sku}`)}
-                  className={`flex items-end justify-center h-full max-w-[26%] ${i % 2 === 1 ? 'pb-6 sm:pb-10' : ''}`}
+                  className={`flex items-end justify-center h-full max-w-[28%] ${i % 2 === 1 ? 'pb-6 sm:pb-10' : ''}`}
                   aria-label={item.name}
                 >
                   <img
@@ -153,15 +153,15 @@ export default function HomePage() {
                 Explore Business Gifting <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
             </div>
-            <div className="flex items-end justify-between gap-4">
-              <div className="flex items-end gap-3 sm:gap-5">
+            <div className="flex items-end justify-between gap-4 min-w-0">
+              <div className="flex flex-1 items-end justify-center gap-3 sm:gap-5 min-w-0">
                 {BANNER_ITEMS.map((item) => (
                   <img key={item.img} src={item.img} alt={item.alt} loading="lazy"
-                    className={`${item.cls} w-auto object-contain drop-shadow-2xl`} />
+                    className={`${item.cls} w-auto max-w-[30%] object-contain drop-shadow-2xl`} />
                 ))}
               </div>
               <span
-                className="hidden md:block text-cgc-orange text-3xl leading-snug -rotate-6 select-none"
+                className="hidden xl:block shrink-0 text-cgc-orange text-3xl leading-snug -rotate-6 select-none"
                 style={{ fontFamily: 'Caveat, cursive' }}
                 aria-hidden
               >
