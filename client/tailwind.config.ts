@@ -17,6 +17,18 @@ const config: Config = {
           dark: '#ea580c',
           light: '#fff7ed',
         },
+        // Custom Gift Club (sister brand) — same TSB orange, plus the
+        // cream/warm-neutral surfaces and charcoal ink of the approved
+        // CGC design. Scoped under cgc-* so TSB pages are untouched.
+        cgc: {
+          orange: '#f97316',
+          'orange-dark': '#ea580c',
+          cream: '#f7f1e8',
+          'cream-deep': '#efe6d8',
+          ink: '#141210',
+          charcoal: '#2b2420',
+          stone: '#6f655c',
+        },
         brand: {
           black: '#0a0a0a',
           gray: {
