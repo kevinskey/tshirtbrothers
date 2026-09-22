@@ -56,7 +56,9 @@ export default function Header() {
   const shopHref = (category?: string) =>
     category ? `${p('/shop')}?category=${encodeURIComponent(category)}` : p('/shop');
 
-  const iconLink = 'p-2 rounded-full text-cgc-ink hover:bg-cgc-cream transition-colors';
+  const iconLink = 'p-2 lg:p-2.5 rounded-full text-cgc-ink hover:bg-cgc-cream transition-colors';
+  const iconSize = 'h-5 w-5 lg:h-6 lg:w-6';
+  const navLink = 'px-4 py-2.5 rounded-full hover:bg-cgc-cream hover:text-cgc-orange transition-colors';
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-cgc-cream-deep">
@@ -66,8 +68,8 @@ export default function Header() {
       </div>
 
       {/* Main header */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6">
-        <div className="flex items-center gap-3 sm:gap-6 py-3">
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-10">
+        <div className="flex items-center gap-3 sm:gap-6 lg:gap-10 py-3 lg:py-5">
           <button
             type="button"
             className="lg:hidden p-2 -ml-2 text-cgc-ink"
@@ -81,17 +83,17 @@ export default function Header() {
           <Logo />
 
           {/* Desktop search */}
-          <form onSubmit={submitSearch} className="hidden md:flex flex-1 max-w-2xl mx-auto" role="search">
+          <form onSubmit={submitSearch} className="hidden md:flex flex-1 max-w-3xl mx-auto" role="search">
             <label htmlFor="cgc-search" className="sr-only">Search products</label>
             <div className="relative w-full">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-cgc-stone" aria-hidden />
+              <Search className="absolute left-4 lg:left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-cgc-stone" aria-hidden />
               <input
                 id="cgc-search"
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search gifts, awards, drinkware & more"
-                className="w-full rounded-full border border-cgc-cream-deep bg-white pl-11 pr-4 py-2.5 text-sm text-cgc-ink placeholder:text-cgc-stone shadow-sm focus:outline-none focus:ring-2 focus:ring-cgc-orange"
+                className="w-full rounded-full border border-cgc-cream-deep bg-cgc-cream/40 pl-11 lg:pl-12 pr-4 py-2.5 lg:py-3.5 text-sm lg:text-base text-cgc-ink placeholder:text-cgc-stone shadow-sm transition-colors focus:bg-white focus:outline-none focus:ring-2 focus:ring-cgc-orange"
               />
             </div>
           </form>
@@ -106,13 +108,13 @@ export default function Header() {
               <Search className="h-5 w-5" />
             </button>
             <Link to={p('/account')} className={`${iconLink} hidden sm:inline-flex`} aria-label="Account">
-              <User className="h-5 w-5" />
+              <User className={iconSize} />
             </Link>
             <Link to={p('/favorites')} className={`${iconLink} hidden sm:inline-flex`} aria-label="Favorites">
-              <Heart className="h-5 w-5" />
+              <Heart className={iconSize} />
             </Link>
             <Link to={p('/cart')} className={`${iconLink} relative`} aria-label={`Shopping bag, ${count} items`}>
-              <ShoppingBag className="h-5 w-5" />
+              <ShoppingBag className={iconSize} />
               {count > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 bg-cgc-orange text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center">
                   {count > 99 ? '99+' : count}
@@ -141,25 +143,29 @@ export default function Header() {
           </form>
         )}
 
-        {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center justify-center gap-8 pb-3 text-sm font-semibold text-cgc-ink" aria-label="Primary">
-          <Link to={shopHref()} className="hover:text-cgc-orange transition-colors">Shop All</Link>
+      </div>
+
+      {/* Desktop nav */}
+      <nav className="hidden lg:block border-t border-cgc-cream-deep" aria-label="Primary">
+        <div className="max-w-screen-2xl mx-auto px-10 flex items-center justify-center gap-1 py-1.5 text-[15px] font-semibold text-cgc-ink">
+          <Link to={shopHref()} className={navLink}>Shop All</Link>
           {NAV_CATEGORIES.map((c) => (
-            <Link key={c.label} to={shopHref(c.category)} className="hover:text-cgc-orange transition-colors">
+            <Link key={c.label} to={shopHref(c.category)} className={navLink}>
               {c.label}
             </Link>
           ))}
           <div className="relative" ref={occasionsRef}>
             <button
               type="button"
-              className="flex items-center gap-1 hover:text-cgc-orange transition-colors"
+              className={`${navLink} flex items-center gap-1`}
               aria-expanded={occasionsOpen}
               onClick={() => setOccasionsOpen((v) => !v)}
             >
-              Shop by Occasion <ChevronDown className="h-4 w-4" aria-hidden />
+              Shop by Occasion
+              <ChevronDown className={`h-4 w-4 transition-transform ${occasionsOpen ? 'rotate-180' : ''}`} aria-hidden />
             </button>
             {occasionsOpen && (
-              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-60 rounded-xl border border-cgc-cream-deep bg-white shadow-lg py-2">
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 rounded-xl border border-cgc-cream-deep bg-white shadow-lg py-2">
                 {OCCASION_LINKS.map((o) => (
                   <Link
                     key={o.key}
@@ -173,10 +179,10 @@ export default function Header() {
               </div>
             )}
           </div>
-          <Link to={p('/business')} className="hover:text-cgc-orange transition-colors">Business & Bulk</Link>
-          <Link to={shopHref('Blanks & Supplies')} className="hover:text-cgc-orange transition-colors">Blanks & Supplies</Link>
-        </nav>
-      </div>
+          <Link to={p('/business')} className={navLink}>Business & Bulk</Link>
+          <Link to={shopHref('Blanks & Supplies')} className={navLink}>Blanks & Supplies</Link>
+        </div>
+      </nav>
 
       {/* Mobile menu */}
       {menuOpen && (
