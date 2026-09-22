@@ -481,6 +481,21 @@ async function rebuildQuoteTotals(quoteId, client = pool) {
      WHERE q.id = $1`,
     [quoteId],
   );
+  // Keep the 50% deposit ask in step with the new total. send-price stamps
+  // deposit_amount and the payment webhook overwrites it with what was
+  // actually paid — but item edits in between left it frozen at the old
+  // total's 50%, so the admin modal showed e.g. $13.47 due on a $660 quote.
+  // Only pre-deposit stages refresh: once money has moved (accepted_at or
+  // any post-deposit status), deposit_amount is a payment record, not an ask.
+  await client.query(
+    `UPDATE quotes
+        SET deposit_amount = ROUND(estimated_price * 0.5, 2)
+      WHERE id = $1
+        AND accepted_at IS NULL
+        AND status IN ('pending', 'quoted')
+        AND estimated_price IS NOT NULL`,
+    [quoteId],
+  );
 }
 
 // POST /:id/items — add a line item.
