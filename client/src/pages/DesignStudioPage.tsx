@@ -2024,8 +2024,9 @@ export default function DesignStudioPage() {
       if (!res.ok) return { colors: [] };
       return res.json() as Promise<{ colors: ProductColor[] }>;
     },
-    // JDS items (pseudo "jds:" ids) have no S&S colorways — skip the fetch.
-    enabled: !!selectedProduct?.ss_id && !selectedProduct.ss_id.startsWith('jds:'),
+    // Non-S&S items (pseudo ids like "jds:<sku>" / "tt:<slug>") have no S&S
+    // colorways — skip the fetch; their colors JSONB is used instead.
+    enabled: !!selectedProduct?.ss_id && !selectedProduct.ss_id.includes(':'),
     staleTime: 1000 * 60 * 30, // cache 30 min
   });
 
@@ -2038,9 +2039,9 @@ export default function DesignStudioPage() {
   const selectedColorImage = productColors[selectedColorIdx]?.image || null;
   // While the colors query is in flight for an S&S product, don't paint the
   // styled shot at all — a spinner beats a model photo that blinks away.
-  // JDS items never load colors (query disabled) — without the guard the
+  // Non-S&S items never load colors (query disabled) — without the guard the
   // canvas would spin forever waiting on colorsData.
-  const colorsLoading = !!selectedProduct?.ss_id && !selectedProduct.ss_id.startsWith('jds:') && colorsData === undefined;
+  const colorsLoading = !!selectedProduct?.ss_id && !selectedProduct.ss_id.includes(':') && colorsData === undefined;
   const frontImage = selectedColorImage || selectedProduct?.image_url || null;
   const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   // S&S's flat side shot backs the sleeve view when available.
