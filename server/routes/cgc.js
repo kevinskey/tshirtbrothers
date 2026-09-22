@@ -20,6 +20,7 @@ import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { CGC_CATEGORIES } from '../lib/cgcCategories.js';
 import { CGC_RECIPIENTS, CGC_OCCASIONS, CGC_BUDGETS, findOption } from '../lib/cgcMerchandising.js';
+import { HOLIDAY_LAUNCH, findHolidayProduct } from '../lib/cgcHoliday.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 
 const router = Router();
@@ -134,6 +135,67 @@ router.get('/products/:sku', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Holiday Gifts launch collection ──────────────────────────────────────
+// Curated four-product launch set (lib/cgcHoliday.js) joined with live
+// jds_products rows. Never exposes cost_cents. `available` is true only
+// when the product is published AND every variant is still active — an
+// unpublished product renders as "launching soon", not buyable.
+async function holidayWithLiveData() {
+  const skus = HOLIDAY_LAUNCH.flatMap((p) => p.variants.map((v) => v.sku));
+  const { rows } = await pool.query(
+    `SELECT ${PRODUCT_COLS}, active FROM jds_products WHERE sku = ANY($1)`,
+    [skus],
+  );
+  const bySku = new Map(rows.map((r) => [r.sku, r]));
+  return HOLIDAY_LAUNCH.map((p) => {
+    const variants = p.variants.map((v) => {
+      const row = bySku.get(v.sku);
+      return row ? {
+        sku: v.sku,
+        label: v.label,
+        name: row.name,
+        image_url: row.image_url,
+        retail_price_cents: row.retail_price_cents,
+        active: row.active,
+      } : null;
+    }).filter(Boolean);
+    const prices = variants.map((v) => v.retail_price_cents);
+    return {
+      slug: p.slug,
+      title: p.title,
+      intro: p.intro,
+      designs: p.designs,
+      fields: p.fields,
+      limits: p.limits,
+      production_note: p.production_note,
+      variants,
+      image_url: variants[0]?.image_url ?? null,
+      from_cents: prices.length ? Math.min(...prices) : null,
+      available: p.published
+        && variants.length === p.variants.length
+        && variants.every((v) => v.active),
+    };
+  });
+}
+
+router.get('/holiday', async (_req, res, next) => {
+  try {
+    res.json({ products: await holidayWithLiveData() });
+  } catch (err) { next(err); }
+});
+
+router.get('/holiday/:slug', async (req, res, next) => {
+  try {
+    if (!findHolidayProduct(req.params.slug)) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    const products = await holidayWithLiveData();
+    const product = products.find((p) => p.slug === req.params.slug);
+    if (!product) return res.status(404).json({ error: 'Product not found' });
+    res.json({ product });
+  } catch (err) { next(err); }
+});
+
 // ── Gift finder ──────────────────────────────────────────────────────────
 // ?recipient=&occasion=&budget= (all optional, each a curated key).
 // Resolves to the same filters /products uses and returns the first page
@@ -235,8 +297,19 @@ router.post('/checkout', async (req, res, next) => {
         const font = String(p.font || '').slice(0, 60);
         const notes = String(p.notes || '').slice(0, 500);
         const artUrl = /^https:\/\//.test(String(p.artUrl || '')) ? String(p.artUrl).slice(0, 500) : '';
-        if (linesOfText.length || notes || artUrl) {
-          personalization = { lines: linesOfText, font, notes, artUrl };
+        // Holiday launch products add a chosen engraving layout and an
+        // optional (NOT engraved) gift message packed with the order.
+        const design = String(p.design || '').slice(0, 60);
+        const giftMessage = String(p.gift_message ?? p.giftMessage ?? '').slice(0, 300);
+        if (linesOfText.length || notes || artUrl || design || giftMessage) {
+          personalization = {
+            lines: linesOfText,
+            font,
+            notes,
+            artUrl,
+            ...(design ? { design } : {}),
+            ...(giftMessage ? { gift_message: giftMessage } : {}),
+          };
         }
       }
 
@@ -320,7 +393,9 @@ router.post('/checkout', async (req, res, next) => {
           product_data: {
             name: l.personalization ? `${l.product.name} (personalized)` : l.product.name,
             ...(l.personalization?.lines?.length
-              ? { description: `Personalization: ${l.personalization.lines.join(' / ')}`.slice(0, 300) }
+              ? {
+                description: `${l.personalization.design ? `${l.personalization.design} — ` : ''}Personalization: ${l.personalization.lines.join(' / ')}`.slice(0, 300),
+              }
               : l.product.description
                 ? { description: String(l.product.description).slice(0, 300) }
                 : {}),
@@ -370,7 +445,13 @@ router.post('/business-inquiry', inquiryLimiter, async (req, res, next) => {
     const noteLines = ['Custom Gift Club business gifting inquiry'];
     const needs = trim(b.needs, 2000);
     const quantity = trim(b.quantity, 120);
+    const budgetPerGift = trim(b.budget_per_gift, 120);
+    const deliveryDate = trim(b.delivery_date, 40);
+    const logoUrl = /^https:\/\//.test(String(b.logo_url || '')) ? String(b.logo_url).slice(0, 500) : '';
     if (quantity) noteLines.push(`Quantity: ${quantity}`);
+    if (budgetPerGift) noteLines.push(`Budget per gift: ${budgetPerGift}`);
+    if (deliveryDate) noteLines.push(`Requested delivery date: ${deliveryDate}`);
+    if (logoUrl) noteLines.push(`Logo: ${logoUrl}`);
     if (needs) noteLines.push(`Needs: ${needs}`);
 
     await pool.query(

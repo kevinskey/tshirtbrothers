@@ -32,6 +32,48 @@ export interface CgcPersonalization {
   font: string;
   notes: string;
   artUrl: string;
+  // Holiday launch products: chosen engraving layout + an optional gift
+  // message that ships with the package (not engraved).
+  design?: string;
+  gift_message?: string;
+}
+
+// ── Holiday Gifts launch collection ────────────────────────────────────
+export interface CgcHolidayVariant {
+  sku: string;
+  label: string;
+  name: string;
+  image_url: string | null;
+  retail_price_cents: number;
+  active: boolean;
+}
+
+export interface CgcHolidayDesign {
+  key: string;
+  label: string;
+  desc: string;
+}
+
+export interface CgcHolidayField {
+  key: string;
+  label: string;
+  max: number;
+  required: boolean;
+  help: string;
+}
+
+export interface CgcHolidayProduct {
+  slug: string;
+  title: string;
+  intro: string;
+  designs: CgcHolidayDesign[];
+  fields: CgcHolidayField[];
+  limits: string;
+  production_note: string | null;
+  variants: CgcHolidayVariant[];
+  image_url: string | null;
+  from_cents: number | null;
+  available: boolean;
 }
 
 export function money(cents: number): string {
@@ -53,6 +95,14 @@ export function fetchProducts(params: Record<string, string | number | undefined
   }
   return getJson<CgcListResponse>(`/api/cgc/products?${qs}`);
 }
+
+export const fetchHoliday = () =>
+  getJson<{ products: CgcHolidayProduct[] }>('/api/cgc/holiday');
+
+export const fetchHolidayProduct = (slug: string) =>
+  getJson<{ product: CgcHolidayProduct }>(
+    `/api/cgc/holiday/${encodeURIComponent(slug)}`,
+  );
 
 export const fetchProduct = (sku: string) =>
   getJson<{ product: CgcProduct; related: CgcProduct[] }>(
