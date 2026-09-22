@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { toast } from 'sonner';
-import { Loader2, LogOut, Package, User } from 'lucide-react';
+import { KeyRound, Loader2, LogOut, Package, User } from 'lucide-react';
 import { money } from '../lib/api';
 
 // Accounts are shared infrastructure with T-Shirt Brothers (same users
@@ -22,18 +22,30 @@ const TOKEN_KEY = 'tsb_token';
 
 export default function AccountPage() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
-  const [me, setMe] = useState<{ name: string | null; email: string } | null>(null);
+  const [me, setMe] = useState<{ name: string | null; email: string; phone?: string | null } | null>(null);
   const [orders, setOrders] = useState<CgcOrder[] | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [curPassword, setCurPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
 
   useEffect(() => {
     if (!token) { setMe(null); setOrders(null); return; }
     const headers = { Authorization: `Bearer ${token}` };
     fetch('/api/auth/me', { headers })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('expired'))))
-      .then((data) => setMe(data.user ?? data))
+      .then((data) => {
+        const u = data.user ?? data;
+        setMe(u);
+        setProfileName(u.name || '');
+        setProfilePhone(u.phone || '');
+      })
       .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); });
     fetch('/api/cgc/my-orders', { headers })
       .then((r) => (r.ok ? r.json() : { orders: [] }))
@@ -59,6 +71,47 @@ export default function AccountPage() {
       toast.error(err instanceof Error ? err.message : 'Sign in failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const saveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    try {
+      const res = await fetch('/api/auth/me', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name: profileName.trim(), phone: profilePhone.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Could not save');
+      setMe((m) => (m ? { ...m, name: data.name, phone: data.phone } : m));
+      toast.success('Account info saved');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not save');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const changePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPassword(true);
+    try {
+      const res = await fetch('/api/auth/me/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: curPassword, new_password: newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Could not change password');
+      setCurPassword('');
+      setNewPassword('');
+      toast.success('Password changed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not change password');
+    } finally {
+      setSavingPassword(false);
     }
   };
 
@@ -121,6 +174,54 @@ export default function AccountPage() {
               <LogOut className="h-4 w-4" aria-hidden /> Sign out
             </button>
           </div>
+
+          <h2 className="mt-8 mb-3 text-lg font-extrabold text-cgc-ink">Account Details</h2>
+          <form onSubmit={saveProfile} className="rounded-xl border border-cgc-cream-deep p-4 sm:p-5 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label htmlFor="ac-info-email" className="block text-sm font-semibold text-cgc-ink mb-1">Email</label>
+                <input id="ac-info-email" type="email" disabled value={me?.email || ''}
+                  className={`${input} bg-cgc-cream/40 text-cgc-stone cursor-not-allowed`} />
+                <p className="mt-1 text-xs text-cgc-stone">Your email is your sign-in and can’t be changed here.</p>
+              </div>
+              <div>
+                <label htmlFor="ac-info-name" className="block text-sm font-semibold text-cgc-ink mb-1">Name</label>
+                <input id="ac-info-name" type="text" autoComplete="name" className={input}
+                  value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="ac-info-phone" className="block text-sm font-semibold text-cgc-ink mb-1">Phone</label>
+                <input id="ac-info-phone" type="tel" autoComplete="tel" className={input}
+                  value={profilePhone} onChange={(e) => setProfilePhone(e.target.value)} />
+              </div>
+            </div>
+            <button type="submit" disabled={savingProfile}
+              className="inline-flex items-center gap-2 rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold px-6 py-2.5 disabled:opacity-60">
+              {savingProfile && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+              Save Changes
+            </button>
+          </form>
+
+          <h2 className="mt-8 mb-3 text-lg font-extrabold text-cgc-ink">Change Password</h2>
+          <form onSubmit={changePassword} className="rounded-xl border border-cgc-cream-deep p-4 sm:p-5 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="ac-pw-cur" className="block text-sm font-semibold text-cgc-ink mb-1">Current password</label>
+                <input id="ac-pw-cur" type="password" required autoComplete="current-password" className={input}
+                  value={curPassword} onChange={(e) => setCurPassword(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="ac-pw-new" className="block text-sm font-semibold text-cgc-ink mb-1">New password</label>
+                <input id="ac-pw-new" type="password" required minLength={6} autoComplete="new-password" className={input}
+                  value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+              </div>
+            </div>
+            <button type="submit" disabled={savingPassword}
+              className="inline-flex items-center gap-2 rounded-lg border border-cgc-cream-deep hover:bg-cgc-cream text-cgc-ink font-bold px-6 py-2.5 disabled:opacity-60">
+              {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <KeyRound className="h-4 w-4" aria-hidden />}
+              Update Password
+            </button>
+          </form>
 
           <h2 className="mt-8 mb-3 text-lg font-extrabold text-cgc-ink">Gift Club Orders</h2>
           {orders === null ? (
