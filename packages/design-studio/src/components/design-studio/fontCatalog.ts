@@ -83,7 +83,7 @@ const DECORATIVE = [
 // look (printed-on, sprayed-on, glitched-out).
 const DISTRESSED = [
   'Rubik Mono One', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Iso',
-  'Rubik Vinyl', 'Rubik Marker Hatched', 'Rubik Beastly',
+  'Rubik Vinyl', 'Rubik Marker Hatch', 'Rubik Beastly',
   'Rubik Spray Paint', 'Rubik Wet Paint', 'Rubik Puddles',
   'Rubik Burned', 'Rubik 80s Fade',
   'Rubik Lines', 'Rubik Maze', 'Rubik Pixels',

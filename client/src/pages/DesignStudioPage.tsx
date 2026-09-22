@@ -315,7 +315,7 @@ const FONT_OPTIONS = [
   'Rampart One', 'Codystar',
   // Rubik distressed/textured family — cut/printed-look styles
   'Rubik Mono One', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Iso',
-  'Rubik Vinyl', 'Rubik Marker Hatched', 'Rubik Beastly',
+  'Rubik Vinyl', 'Rubik Marker Hatch', 'Rubik Beastly',
   'Rubik Spray Paint', 'Rubik Wet Paint', 'Rubik Puddles',
   'Rubik Burned', 'Rubik 80s Fade',
   'Rubik Lines', 'Rubik Maze', 'Rubik Pixels',
@@ -346,7 +346,7 @@ const SYSTEM_FONTS = ['Arial', 'Georgia', 'Times New Roman', 'Courier New', 'Imp
 const SINGLE_WEIGHT_FONTS = new Set([
   'Bungee Outline', 'Bungee Inline', 'Bungee Spice', 'Bungee Shade',
   'Rubik Mono One', 'Rubik Bubbles', 'Rubik Glitch', 'Rubik Iso',
-  'Rubik Vinyl', 'Rubik Marker Hatched', 'Rubik Beastly',
+  'Rubik Vinyl', 'Rubik Marker Hatch', 'Rubik Beastly',
   'Rubik Spray Paint', 'Rubik Wet Paint', 'Rubik Puddles',
   'Rubik Burned', 'Rubik 80s Fade', 'Rubik Lines', 'Rubik Maze', 'Rubik Pixels',
   'Press Start 2P', 'VT323', 'Wallpoet', 'Codystar', 'Modak',
@@ -364,27 +364,57 @@ const SINGLE_WEIGHT_FONTS = new Set([
   'Pinyon Script', 'Indie Flower', 'Shadows Into Light', 'Rock Salt',
   'Amatic SC', 'Gloria Hallelujah', 'Covered By Your Grace',
   'UnifrakturMaguntia', 'UnifrakturCook', 'MedievalSharp',
+  'Varela Round', 'Fjalla One', 'DM Serif Display', 'Prata',
+  'Patrick Hand', 'Architects Daughter', 'DM Mono',
 ]);
 
-function googleFontUrl(fontName: string): string {
+// Fonts whose ONLY weight is 700 — a name-only URL (which defaults to 400)
+// 400s just like a wrong wght axis does.
+const BOLD_ONLY_FONTS = new Set(['UnifrakturCook']);
+
+function fontFamilySpec(fontName: string): string {
   const family = fontName.replace(/ /g, '+');
+  if (BOLD_ONLY_FONTS.has(fontName)) return `family=${family}:wght@700`;
   // Single-weight display fonts: omit the wght axis entirely so the CSS
   // API serves whatever weights the font actually has.
-  if (SINGLE_WEIGHT_FONTS.has(fontName)) {
-    return `https://fonts.googleapis.com/css2?family=${family}&display=swap`;
+  if (SINGLE_WEIGHT_FONTS.has(fontName)) return `family=${family}`;
+  return `family=${family}:wght@400;700`;
+}
+
+function googleFontUrl(fontName: string): string {
+  return `https://fonts.googleapis.com/css2?${fontFamilySpec(fontName)}&display=swap`;
+}
+
+// True when a face for this family is already registered (site fonts, or
+// custom fonts injected via @font-face by useCustomFonts). Those don't exist
+// on Google Fonts — requesting them there just 400s.
+function isFaceRegistered(fontName: string): boolean {
+  const want = fontName.toLowerCase();
+  for (const face of document.fonts) {
+    if (face.family.replace(/['"]/g, '').toLowerCase() === want) return true;
   }
-  return `https://fonts.googleapis.com/css2?family=${family}:wght@400;700&display=swap`;
+  return false;
 }
 
 function loadGoogleFont(fontName: string): Promise<void> {
   if (SYSTEM_FONTS.includes(fontName) || loadedFonts.has(fontName)) return Promise.resolve();
+  if (isFaceRegistered(fontName)) {
+    loadedFonts.add(fontName);
+    return document.fonts.load(`16px "${fontName}"`).then(() => {}, () => {});
+  }
   loadedFonts.add(fontName);
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = googleFontUrl(fontName);
-  document.head.appendChild(link);
-  // Wait for the font to actually load
-  return document.fonts.ready.then(() => {});
+  return new Promise<void>((resolve) => {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = googleFontUrl(fontName);
+    // CSS-registered faces download lazily — force the fetch so callers'
+    // "font is ready" callbacks actually mean the glyphs are renderable.
+    link.onload = () => document.fonts.load(`16px "${fontName}"`).then(() => resolve(), () => resolve());
+    // A failed stylesheet must not poison the cache — un-mark so a retry
+    // (hover or click) gets another shot.
+    link.onerror = () => { loadedFonts.delete(fontName); resolve(); };
+    document.head.appendChild(link);
+  });
 }
 
 // Preload a batch of fonts (for the font list preview)
@@ -392,18 +422,20 @@ let fontsPreloaded = false;
 function preloadAllFonts() {
   if (fontsPreloaded) return;
   fontsPreloaded = true;
-  // Load all fonts in one request using Google Fonts API. Use the per-font
-  // weight specifier so single-weight families work alongside multi-weight.
-  const googleFonts = FONT_OPTIONS.filter(f => !SYSTEM_FONTS.includes(f));
-  const families = googleFonts.map((f) => {
-    const family = f.replace(/ /g, '+');
-    return SINGLE_WEIGHT_FONTS.has(f) ? `family=${family}` : `family=${family}:wght@700`;
-  }).join('&');
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`;
-  document.head.appendChild(link);
-  googleFonts.forEach(f => loadedFonts.add(f));
+  // Google's css2 endpoint 403s very long many-family URLs, and a single
+  // invalid family 400s its whole request — chunk the catalog so one bad
+  // apple can't blank every preview, and only mark fonts as loaded once
+  // their chunk's stylesheet actually arrives.
+  const googleFonts = FONT_OPTIONS.filter(f => !SYSTEM_FONTS.includes(f) && !loadedFonts.has(f));
+  const CHUNK = 12;
+  for (let i = 0; i < googleFonts.length; i += CHUNK) {
+    const chunk = googleFonts.slice(i, i + CHUNK);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?${chunk.map(fontFamilySpec).join('&')}&display=swap`;
+    link.onload = () => chunk.forEach(f => loadedFonts.add(f));
+    document.head.appendChild(link);
+  }
 }
 
 interface ProductColor {
