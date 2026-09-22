@@ -38,7 +38,11 @@ export default function HolidayProductPage() {
   const feeCents = config?.personalization_fee_cents ?? 1000;
   const variant = product?.variants[variantIdx] ?? product?.variants[0];
   const design = product?.designs.find((d) => d.key === designKey) ?? null;
-  const unitCents = variant ? variant.retail_price_cents + feeCents : 0;
+  // Mockup-backed variants have no price until the launch selling price
+  // is set — such products are always unpublished, so the PDP just
+  // withholds the price line rather than inventing one.
+  const priced = variant != null && variant.retail_price_cents != null;
+  const unitCents = priced ? (variant!.retail_price_cents as number) + feeCents : 0;
 
   const personalization: CgcPersonalization | null = useMemo(() => {
     if (!product || !design) return null;
@@ -60,7 +64,7 @@ export default function HolidayProductPage() {
   }, [product, design, values, giftMessage]);
 
   const addToBag = () => {
-    if (!product || !variant || !product.available) return;
+    if (!product || !variant || !product.available || !priced) return;
     if (!design) { toast.error('Pick an engraving layout first.'); return; }
     const missing = product.fields.find((f) => f.required && !(values[f.key] || '').trim());
     if (missing || !personalization) {
@@ -87,7 +91,7 @@ export default function HolidayProductPage() {
       </div>
     );
   }
-  if (isError || !product || !variant) {
+  if (isError || !product) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-20 text-center">
         <p className="text-lg font-semibold text-cgc-ink">We couldn’t find that product.</p>
@@ -115,8 +119,8 @@ export default function HolidayProductPage() {
 
       <div className="grid lg:grid-cols-2 gap-8 lg:gap-12">
         <div className="rounded-2xl bg-cgc-cream p-8 flex items-center justify-center min-h-[320px] lg:min-h-[480px] self-start">
-          {variant.image_url ? (
-            <img src={variant.image_url} alt={variant.name} className="max-h-[420px] max-w-full object-contain mix-blend-multiply" />
+          {(variant?.image_url || product.image_url) ? (
+            <img src={variant?.image_url || product.image_url || ''} alt={variant?.name || product.title} className="max-h-[420px] max-w-full object-contain mix-blend-multiply" />
           ) : (
             <span className="text-cgc-stone">No image available</span>
           )}
@@ -125,12 +129,14 @@ export default function HolidayProductPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-cgc-ink">{product.title}</h1>
           <p className="mt-2 text-cgc-charcoal">{product.intro}</p>
-          <p className="mt-4 text-2xl font-extrabold text-cgc-ink">
-            {money(unitCents)}
-            <span className="ml-2 text-sm font-medium text-cgc-stone">
-              (includes {money(feeCents)} engraving)
-            </span>
-          </p>
+          {priced && (
+            <p className="mt-4 text-2xl font-extrabold text-cgc-ink">
+              {money(unitCents)}
+              <span className="ml-2 text-sm font-medium text-cgc-stone">
+                (includes {money(feeCents)} engraving)
+              </span>
+            </p>
+          )}
 
           {/* Color / variant — each option is its own supplier SKU */}
           {product.variants.length > 1 && (

@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Loader2, Plus, Star, Trash2, X,
+  ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Loader2, Plus, Star, Trash2, Upload, X,
 } from 'lucide-react';
 import {
   createHolidayProduct, deleteHolidayProduct, fetchHolidayAdmin,
@@ -68,6 +68,34 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
   const [newSku, setNewSku] = useState('');
   const [newSkuLabel, setNewSkuLabel] = useState('');
   const [checkingSku, setCheckingSku] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Image uploads save immediately (they're a URL swap, not form state).
+  const uploadImage = async (file: File) => {
+    setUploadingImage(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: dataUrl, filename: `cgc-holiday-${p.slug}-${file.name}` }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || 'Upload failed');
+      await updateHolidayProduct(p.id, { image_url: body.url });
+      toast.success('Product image updated');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   // Re-sync the form whenever a fresh server copy arrives (e.g. after a
   // toggle elsewhere) but only while the editor is closed, so open edits
@@ -115,7 +143,7 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
       const vLabel = newSkuLabel.trim() || product.name.slice(0, 40);
       set('variants', [...draft.variants, { sku, label: vLabel }]);
       setNewSku(''); setNewSkuLabel('');
-      toast.success(`${sku} — ${product.name.slice(0, 60)} · cost ${dollars(product.cost_cents)} · retail ${money(product.retail_price_cents)}${product.active ? '' : ' · INACTIVE'}`);
+      toast.success(`${sku} — ${product.name.slice(0, 60)} · cost ${dollars(product.cost_cents)} · retail ${dollars(product.retail_price_cents)}${product.active ? '' : ' · INACTIVE'}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'SKU check failed');
     } finally {
@@ -221,6 +249,37 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
 
       {open && (
         <div className="border-t border-cgc-cream-deep p-4 space-y-5">
+          {/* Product image — custom upload wins over the first SKU's
+              catalog photo. Required for products with no variants yet. */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="h-20 w-20 rounded-xl bg-cgc-cream flex items-center justify-center overflow-hidden">
+              {p.image_url
+                ? <img src={p.image_url} alt="" className="max-h-full max-w-full object-contain" />
+                : <span className="text-[10px] text-cgc-stone text-center px-1">No image yet</span>}
+            </div>
+            <div>
+              <span className={label}>Product image</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-lg border border-cgc-cream-deep px-4 py-2 text-sm font-semibold text-cgc-charcoal cursor-pointer hover:bg-cgc-cream">
+                  {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
+                  {p.custom_image_url ? 'Replace image' : 'Upload image'}
+                  <input type="file" accept="image/*" className="sr-only"
+                    onChange={(e) => e.target.files?.[0] && uploadImage(e.target.files[0])} />
+                </label>
+                {p.custom_image_url && (
+                  <button type="button" disabled={busy}
+                    onClick={() => quickPatch({ image_url: null }).then(() => toast.success('Back to the catalog photo'))}
+                    className="text-sm font-semibold text-cgc-stone hover:text-red-600">
+                    Remove — use catalog photo
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-cgc-stone">
+                Without an upload, the first SKU&rsquo;s catalog photo is used automatically.
+              </p>
+            </div>
+          </div>
+
           {/* Copy */}
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
@@ -287,8 +346,10 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
                       onChange={(e) => set('variants', draft.variants.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
                     <span className="font-mono text-xs text-cgc-charcoal">{v.sku}</span>
                     <span className="text-xs text-cgc-stone">
-                      {live?.missing ? 'NOT IN CATALOG' : live
-                        ? `cost ${dollars(live.cost_cents)} · retail ${money(live.catalog_retail_cents ?? live.retail_price_cents)}${live.active ? '' : ' · INACTIVE'}`
+                      {live?.missing ? 'NOT FOUND' : live
+                        ? v.sku.startsWith('MOCKUP:')
+                          ? 'TSB Studio mockup · priced by the Selling price field'
+                          : `cost ${dollars(live.cost_cents)} · retail ${dollars(live.catalog_retail_cents ?? live.retail_price_cents)}${live.active ? '' : ' · INACTIVE'}`
                         : 'save to check'}
                     </span>
                     <button type="button" aria-label={`Remove ${v.sku}`}
@@ -299,7 +360,7 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
               })}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input className={`${input} w-36`} placeholder="JDS SKU" value={newSku}
+              <input className={`${input} w-36`} placeholder="JDS SKU or mockup:12" value={newSku}
                 onChange={(e) => setNewSku(e.target.value)} />
               <input className={`${input} w-36`} placeholder="Color label" value={newSkuLabel}
                 onChange={(e) => setNewSkuLabel(e.target.value)} />
@@ -307,7 +368,11 @@ function ProductEditor({ p, onSaved }: { p: CgcHolidayAdminProduct; onSaved: () 
                 className="inline-flex items-center gap-1 rounded-lg bg-cgc-ink text-white text-sm font-bold px-4 py-2 disabled:opacity-50">
                 {checkingSku ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add SKU
               </button>
-              <span className="text-xs text-cgc-stone">Must already be published in TSB admin → Blanks (JDS).</span>
+              <span className="text-xs text-cgc-stone">
+                JDS SKUs must be published in TSB admin → Blanks (JDS). For a decorated TSB
+                product, use <code className="font-mono">mockup:&lt;id&gt;</code> from TSB admin → Mockups —
+                its preview becomes the photo and the Selling price field prices it.
+              </span>
             </div>
           </div>
 

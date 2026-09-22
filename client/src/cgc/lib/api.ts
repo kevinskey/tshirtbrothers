@@ -44,7 +44,8 @@ export interface CgcHolidayVariant {
   label: string;
   name: string;
   image_url: string | null;
-  retail_price_cents: number;
+  // null for mockup-backed variants until the launch selling price is set.
+  retail_price_cents: number | null;
   active: boolean;
 }
 
@@ -113,6 +114,7 @@ export interface CgcHolidayAdminProduct extends CgcHolidayProduct {
   packaging_cost_cents: number | null;
   selling_price_cents: number | null;
   sample_approved: boolean;
+  custom_image_url: string | null;
   variants: CgcHolidayAdminVariant[];
 }
 
