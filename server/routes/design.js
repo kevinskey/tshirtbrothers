@@ -477,7 +477,17 @@ router.post('/personalize-sample', personalizeSampleLimiter, async (req, res, ne
       : typeof raw?.url === 'function' ? String(raw.url()) : String(raw);
     const imgRes = await fetch(resultUrl);
     if (!imgRes.ok) throw new Error(`result fetch ${imgRes.status}`);
-    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    let buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    // Kontext fills the (transparent) background with a flat green — run
+    // the result through the background remover so the swapped photo drops
+    // onto the canvas like the original supplier cutout.
+    const cutout = await removeBackgroundReplicate(
+      `data:image/png;base64,${buffer.toString('base64')}`,
+    );
+    if (cutout) {
+      buffer = Buffer.from(String(cutout).replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    }
 
     const { createHash } = await import('node:crypto');
     const hash = createHash('sha1').update(imageUrl + '\n' + text).digest('hex').slice(0, 16);
