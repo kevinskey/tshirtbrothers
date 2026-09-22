@@ -20,6 +20,7 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { fetchJdsProducts } from '../services/jds.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
+import { categorizeCgcProduct } from '../lib/cgcCategories.js';
 
 const router = Router();
 
@@ -159,13 +160,14 @@ admin.post('/publish', async (req, res, next) => {
       .find((v) => typeof v === 'number' && Number.isFinite(v));
 
     const { rows } = await pool.query(
-      `INSERT INTO jds_products (sku, name, description, image_url, cost_cents, retail_price_cents, weight_oz, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+      `INSERT INTO jds_products (sku, name, description, image_url, cost_cents, retail_price_cents, weight_oz, cgc_category, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
        ON CONFLICT (sku) DO UPDATE SET
          name = EXCLUDED.name, description = COALESCE(EXCLUDED.description, jds_products.description),
          image_url = EXCLUDED.image_url, cost_cents = EXCLUDED.cost_cents,
          retail_price_cents = EXCLUDED.retail_price_cents,
          weight_oz = COALESCE(EXCLUDED.weight_oz, jds_products.weight_oz),
+         cgc_category = EXCLUDED.cgc_category,
          active = TRUE, updated_at = NOW()
        RETURNING *`,
       [
@@ -174,6 +176,7 @@ admin.post('/publish', async (req, res, next) => {
         oneCost != null ? Math.round(oneCost * 100) : null,
         retail,
         weight_oz != null ? Number(weight_oz) : null,
+        categorizeCgcProduct(name),
       ],
     );
     res.status(201).json(rows[0]);
@@ -227,11 +230,11 @@ admin.post('/bulk-publish', async (req, res, next) => {
       const name = jds.name || jds.description || jds.title || sku;
       const image = jds.image || jds.thumbnail || jds.quickImage || null;
       const { rows } = await pool.query(
-        `INSERT INTO jds_products (sku, name, image_url, cost_cents, retail_price_cents, active)
-         VALUES ($1, $2, $3, $4, $5, TRUE)
+        `INSERT INTO jds_products (sku, name, image_url, cost_cents, retail_price_cents, cgc_category, active)
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE)
          ON CONFLICT (sku) DO NOTHING
          RETURNING id`,
-        [sku, name, image, costCents, retail],
+        [sku, name, image, costCents, retail, categorizeCgcProduct(name)],
       );
       if (rows[0]) published.push({ sku, name, cost_cents: costCents, retail_price_cents: retail });
       else skipped.push({ sku, reason: 'already listed' });

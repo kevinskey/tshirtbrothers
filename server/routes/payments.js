@@ -656,7 +656,41 @@ async function handleCheckoutSessionCompleted(session) {
   const invoiceId = session.metadata?.invoice_id;
   const storeId = session.metadata?.store_id;
   const jdsSku = session.metadata?.jds_sku;
+  const cgcOrderId = session.metadata?.cgc_order_id;
   const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+
+  // Custom Gift Club purchase (routes/cgc.js). The pending cgc_orders row
+  // and its items were written at session creation; flip it to paid and
+  // attach customer/shipping details. The status guard keeps webhook
+  // retries idempotent.
+  if (cgcOrderId) {
+    try {
+      await pool.query(
+        `UPDATE cgc_orders SET
+           status = 'paid',
+           customer_email = COALESCE($2, customer_email),
+           customer_name = $3,
+           shipping_address = $4,
+           shipping_cents = $5,
+           total_cents = $6,
+           updated_at = NOW()
+         WHERE id = $1 AND stripe_session_id = $7 AND status = 'pending'`,
+        [
+          parseInt(cgcOrderId, 10),
+          session.customer_details?.email || null,
+          session.customer_details?.name || session.shipping_details?.name || null,
+          session.shipping_details?.address
+            ? JSON.stringify(session.shipping_details.address) : null,
+          session.total_details?.amount_shipping ?? 0,
+          session.amount_total ?? 0,
+          session.id,
+        ],
+      );
+    } catch (err) {
+      console.error('[Stripe Webhook] CGC order capture failed:', err);
+    }
+    return;
+  }
 
   // JDS gifts-store purchase (routes/jdsStore.js). Record the order for
   // manual fulfillment on jdsindustries.com; idempotent on session id so

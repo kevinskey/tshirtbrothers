@@ -45,6 +45,8 @@ import newsletterRouter from './routes/newsletter.js';
 import purchasingRouter from './routes/purchasing.js';
 import jdsRouter from './routes/jds.js';
 import jdsStoreRouter from './routes/jdsStore.js';
+import cgcRouter from './routes/cgc.js';
+import { backfillCgcCategories } from './services/cgcCatalog.js';
 import mailRouter from './routes/mail.js';
 import orderDetailRouter from './routes/orderDetail.js';
 import { startMailSync } from './services/mailbox.js';
@@ -104,6 +106,7 @@ app.use('/api/newsletter', newsletterRouter);
 app.use('/api/purchasing', purchasingRouter);
 app.use('/api/jds', jdsRouter);
 app.use('/api/jds-store', jdsStoreRouter); // JDS gifts & awards retail store (Stripe)
+app.use('/api/cgc', cgcRouter); // Custom Gift Club sister-brand storefront
 app.use('/api/mail', mailRouter);
 app.use('/api/admin/order-detail', orderDetailRouter);
 app.use('/api', sitemapRouter);
@@ -138,6 +141,8 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`T-Shirt Brothers API running on port ${PORT}`);
   runBootMigrations()
+    .then(() => backfillCgcCategories()
+      .catch((err) => console.error('[cgc] category backfill failed:', err)))
     .then(() => startMailSync())
     .catch((err) => {
       console.error('[migrations] fatal:', err);
