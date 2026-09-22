@@ -17,10 +17,9 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import pool from '../db.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, adminOnly } from '../middleware/auth.js';
 import { CGC_CATEGORIES } from '../lib/cgcCategories.js';
 import { CGC_RECIPIENTS, CGC_OCCASIONS, CGC_BUDGETS, findOption } from '../lib/cgcMerchandising.js';
-import { HOLIDAY_LAUNCH, findHolidayProduct } from '../lib/cgcHoliday.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 
 const router = Router();
@@ -136,65 +135,240 @@ router.get('/products/:sku', async (req, res, next) => {
 });
 
 // ── Holiday Gifts launch collection ──────────────────────────────────────
-// Curated four-product launch set (lib/cgcHoliday.js) joined with live
-// jds_products rows. Never exposes cost_cents. `available` is true only
-// when the product is published AND every variant is still active — an
-// unpublished product renders as "launching soon", not buyable.
-async function holidayWithLiveData() {
-  const skus = HOLIDAY_LAUNCH.flatMap((p) => p.variants.map((v) => v.sku));
-  const { rows } = await pool.query(
-    `SELECT ${PRODUCT_COLS}, active FROM jds_products WHERE sku = ANY($1)`,
-    [skus],
-  );
-  const bySku = new Map(rows.map((r) => [r.sku, r]));
-  return HOLIDAY_LAUNCH.map((p) => {
-    const variants = p.variants.map((v) => {
-      const row = bySku.get(v.sku);
-      return row ? {
-        sku: v.sku,
-        label: v.label,
-        name: row.name,
-        image_url: row.image_url,
-        retail_price_cents: row.retail_price_cents,
-        active: row.active,
-      } : null;
-    }).filter(Boolean);
-    const prices = variants.map((v) => v.retail_price_cents);
+// Rows live in cgc_holiday_products (managed from the CGC admin page at
+// /admin/holiday) joined with live jds_products data. The public shape
+// never exposes cost_cents or the launch-worksheet numbers. `available`
+// is true only when the product is published AND every variant SKU is
+// still active — an unpublished product renders as "launching soon".
+// A selling_price_cents set in the admin overrides the catalog retail
+// for every variant (the launch price is one price, not per color).
+function shapeHolidayRow(row, bySku, { admin = false } = {}) {
+  const configVariants = Array.isArray(row.variants) ? row.variants : [];
+  const variants = configVariants.map((v) => {
+    const live = bySku.get(v.sku);
+    if (!live) return admin ? { sku: v.sku, label: v.label, missing: true } : null;
     return {
-      slug: p.slug,
-      title: p.title,
-      intro: p.intro,
-      designs: p.designs,
-      fields: p.fields,
-      limits: p.limits,
-      production_note: p.production_note,
-      variants,
-      image_url: variants[0]?.image_url ?? null,
-      from_cents: prices.length ? Math.min(...prices) : null,
-      available: p.published
-        && variants.length === p.variants.length
-        && variants.every((v) => v.active),
+      sku: v.sku,
+      label: v.label,
+      name: live.name,
+      image_url: live.image_url,
+      retail_price_cents: row.selling_price_cents ?? live.retail_price_cents,
+      active: live.active,
+      ...(admin ? {
+        cost_cents: live.cost_cents,
+        catalog_retail_cents: live.retail_price_cents,
+        missing: false,
+      } : {}),
     };
-  });
+  }).filter(Boolean);
+  const prices = variants.filter((v) => !v.missing).map((v) => v.retail_price_cents);
+  const shaped = {
+    slug: row.slug,
+    title: row.title,
+    intro: row.intro,
+    featured: row.featured,
+    designs: Array.isArray(row.designs) ? row.designs : [],
+    fields: Array.isArray(row.fields) ? row.fields : [],
+    limits: row.limits_note,
+    production_note: row.production_note,
+    variants,
+    image_url: variants.find((v) => !v.missing)?.image_url ?? null,
+    from_cents: prices.length ? Math.min(...prices) : null,
+    available: row.published
+      && variants.length === configVariants.length
+      && variants.every((v) => !v.missing && v.active),
+  };
+  if (admin) {
+    Object.assign(shaped, {
+      id: row.id,
+      published: row.published,
+      position: row.position,
+      engraving_minutes: row.engraving_minutes,
+      packaging_cost_cents: row.packaging_cost_cents,
+      selling_price_cents: row.selling_price_cents,
+      sample_approved: row.sample_approved,
+    });
+  }
+  return shaped;
+}
+
+async function holidayRows(where = '', params = []) {
+  const { rows } = await pool.query(
+    `SELECT * FROM cgc_holiday_products ${where}
+      ORDER BY featured DESC, position ASC, id ASC`,
+    params,
+  );
+  const skus = rows.flatMap((r) => (Array.isArray(r.variants) ? r.variants : []).map((v) => v.sku));
+  const live = skus.length
+    ? await pool.query(
+      `SELECT ${PRODUCT_COLS}, cost_cents, active FROM jds_products WHERE sku = ANY($1)`,
+      [[...new Set(skus)]],
+    )
+    : { rows: [] };
+  return { rows, bySku: new Map(live.rows.map((r) => [r.sku, r])) };
 }
 
 router.get('/holiday', async (_req, res, next) => {
   try {
-    res.json({ products: await holidayWithLiveData() });
+    const { rows, bySku } = await holidayRows();
+    res.json({ products: rows.map((r) => shapeHolidayRow(r, bySku)) });
   } catch (err) { next(err); }
 });
 
 router.get('/holiday/:slug', async (req, res, next) => {
   try {
-    if (!findHolidayProduct(req.params.slug)) {
-      return res.status(404).json({ error: 'Product not found' });
-    }
-    const products = await holidayWithLiveData();
-    const product = products.find((p) => p.slug === req.params.slug);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json({ product });
+    const { rows, bySku } = await holidayRows('WHERE slug = $1', [String(req.params.slug)]);
+    if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
+    res.json({ product: shapeHolidayRow(rows[0], bySku) });
   } catch (err) { next(err); }
 });
+
+// ── Holiday admin (CGC page at /admin/holiday, TSB admin JWT) ────────────
+// The admin shape includes what the public one hides: JDS account cost
+// per variant, the launch-worksheet numbers, publish/featured state.
+
+const HOLIDAY_JSON_LIMITS = { variants: 30, designs: 8, fields: 8 };
+
+function sanitizeHolidayJson(key, value) {
+  if (!Array.isArray(value)) return null;
+  const items = value.slice(0, HOLIDAY_JSON_LIMITS[key]);
+  const str = (v, max) => String(v ?? '').slice(0, max);
+  if (key === 'variants') {
+    return items
+      .map((v) => ({ sku: str(v.sku, 60).toUpperCase().trim(), label: str(v.label, 60).trim() }))
+      .filter((v) => v.sku && v.label);
+  }
+  if (key === 'designs') {
+    return items
+      .map((d) => ({
+        key: str(d.key, 60).trim() || str(d.label, 60).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        label: str(d.label, 80).trim(),
+        desc: str(d.desc, 200).trim(),
+      }))
+      .filter((d) => d.label);
+  }
+  return items
+    .map((f) => ({
+      key: str(f.key, 60).trim() || str(f.label, 60).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      label: str(f.label, 80).trim(),
+      max: Math.min(Math.max(parseInt(String(f.max ?? '30'), 10) || 30, 1), 120),
+      required: Boolean(f.required),
+      help: str(f.help, 200).trim(),
+    }))
+    .filter((f) => f.label);
+}
+
+const holidayAdmin = Router();
+holidayAdmin.use(authenticate, adminOnly);
+
+holidayAdmin.get('/', async (_req, res, next) => {
+  try {
+    const { rows, bySku } = await holidayRows();
+    res.json({ products: rows.map((r) => shapeHolidayRow(r, bySku, { admin: true })) });
+  } catch (err) { next(err); }
+});
+
+// SKU lookup for the variant picker — validates against the same
+// published catalog everything else sells from.
+holidayAdmin.get('/sku/:sku', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT sku, name, image_url, cost_cents, retail_price_cents, active
+         FROM jds_products WHERE sku = $1`,
+      [String(req.params.sku).toUpperCase().trim()],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'SKU not found in the published catalog — publish it via TSB admin → Blanks (JDS) first' });
+    res.json({ product: rows[0] });
+  } catch (err) { next(err); }
+});
+
+const HOLIDAY_TEXT_FIELDS = {
+  title: 120, intro: 400, limits_note: 400, production_note: 400,
+};
+
+function holidayPatchFromBody(b) {
+  const patch = {};
+  for (const [key, max] of Object.entries(HOLIDAY_TEXT_FIELDS)) {
+    if (key in b) {
+      const v = String(b[key] ?? '').slice(0, max).trim();
+      patch[key] = key === 'production_note' ? (v || null) : v;
+    }
+  }
+  for (const key of ['published', 'featured', 'sample_approved']) {
+    if (key in b) patch[key] = Boolean(b[key]);
+  }
+  if ('position' in b) patch.position = parseInt(String(b.position), 10) || 0;
+  for (const key of ['packaging_cost_cents', 'selling_price_cents']) {
+    if (key in b) {
+      const n = parseInt(String(b[key]), 10);
+      patch[key] = Number.isInteger(n) && n >= 0 ? n : null;
+    }
+  }
+  if ('engraving_minutes' in b) {
+    const n = parseFloat(String(b.engraving_minutes));
+    patch.engraving_minutes = Number.isFinite(n) && n >= 0 ? n : null;
+  }
+  for (const key of ['variants', 'designs', 'fields']) {
+    if (key in b) {
+      const clean = sanitizeHolidayJson(key, b[key]);
+      if (clean) patch[key] = JSON.stringify(clean);
+    }
+  }
+  return patch;
+}
+
+holidayAdmin.post('/', async (req, res, next) => {
+  try {
+    const b = req.body ?? {};
+    const title = String(b.title ?? '').slice(0, 120).trim();
+    if (!title) return res.status(400).json({ error: 'title is required' });
+    const slug = String(b.slug ?? title).slice(0, 80).trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!slug) return res.status(400).json({ error: 'slug is required' });
+    const patch = holidayPatchFromBody(b);
+    // New products always start unpublished — publishing is a deliberate
+    // launch step, never a side effect of creation.
+    delete patch.published;
+    const { rows: [{ max }] } = await pool.query('SELECT COALESCE(MAX(position), 0) AS max FROM cgc_holiday_products');
+    const cols = ['slug', 'title', 'position'];
+    const vals = [slug, title, patch.position || (Number(max) + 1)];
+    delete patch.title; delete patch.position;
+    for (const [k, v] of Object.entries(patch)) { cols.push(k); vals.push(v); }
+    const { rows } = await pool.query(
+      `INSERT INTO cgc_holiday_products (${cols.join(', ')})
+       VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})
+       ON CONFLICT (slug) DO NOTHING RETURNING *`,
+      vals,
+    );
+    if (!rows[0]) return res.status(409).json({ error: `A product with slug "${slug}" already exists` });
+    res.json({ product: rows[0] });
+  } catch (err) { next(err); }
+});
+
+holidayAdmin.patch('/:id', async (req, res, next) => {
+  try {
+    const patch = holidayPatchFromBody(req.body ?? {});
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+    const sets = Object.keys(patch).map((k, i) => `${k} = $${i + 1}`);
+    const { rows } = await pool.query(
+      `UPDATE cgc_holiday_products SET ${sets.join(', ')}, updated_at = NOW()
+        WHERE id = $${sets.length + 1} RETURNING *`,
+      [...Object.values(patch), req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Not found' });
+    res.json({ product: rows[0] });
+  } catch (err) { next(err); }
+});
+
+holidayAdmin.delete('/:id', async (req, res, next) => {
+  try {
+    const { rowCount } = await pool.query('DELETE FROM cgc_holiday_products WHERE id = $1', [req.params.id]);
+    if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+router.use('/admin/holiday', holidayAdmin);
 
 // ── Gift finder ──────────────────────────────────────────────────────────
 // ?recipient=&occasion=&budget= (all optional, each a curated key).
