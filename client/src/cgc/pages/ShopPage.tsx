@@ -90,6 +90,19 @@ export default function ShopPage() {
     setParams(next);
   };
 
+  // Category/price picks replace an active gift-finder query — the finder
+  // keys pin these selects to a resolved filter set, so hand-picking a
+  // filter means "let me browse from here" rather than layering on top.
+  const setFilterParam = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    next.delete('recipient');
+    next.delete('occasion');
+    next.delete('budget');
+    if (value) next.set(key, value); else next.delete(key);
+    next.delete('page');
+    setParams(next);
+  };
+
   const finderLabels = useMemo(() => {
     if (!config) return [];
     return [
@@ -132,8 +145,9 @@ export default function ShopPage() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-6">
         <SlidersHorizontal className="h-4 w-4 text-cgc-stone" aria-hidden />
         <label className="sr-only" htmlFor="filter-category">Category</label>
-        <select id="filter-category" className={selectClass} value={finderActive ? '' : category}
-          onChange={(e) => setParam('category', e.target.value)} disabled={finderActive}>
+        <select id="filter-category" className={selectClass}
+          value={finderActive ? (finder?.resolved.category ?? '') : category}
+          onChange={(e) => setFilterParam('category', e.target.value)}>
           <option value="">All categories</option>
           {(config?.categories ?? []).map((c) => (
             <option key={c} value={c}>
@@ -143,7 +157,7 @@ export default function ShopPage() {
         </select>
         <label className="sr-only" htmlFor="filter-price">Price</label>
         <select id="filter-price" className={selectClass} value={finderActive ? '' : priceBand}
-          onChange={(e) => setParam('price', e.target.value)} disabled={finderActive}>
+          onChange={(e) => setFilterParam('price', e.target.value)}>
           {PRICE_BANDS.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
         </select>
         <label className="sr-only" htmlFor="filter-sort">Sort</label>
