@@ -1340,6 +1340,26 @@ router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next
   }
 });
 
+// DELETE /admin/:id/mockup — detach the primary mockup (front + back pair)
+// from a quote. If extra mockups exist, the first one is promoted to
+// primary so the quote keeps a face wherever previews render. The mockups
+// row itself is untouched — it stays in the Studio library.
+router.delete('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT mockup_image_url, extra_mockups FROM quotes WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Quote not found' });
+    if (!rows[0].mockup_image_url) return res.status(404).json({ error: 'This quote has no mockup attached' });
+    const extras = Array.isArray(rows[0].extra_mockups) ? rows[0].extra_mockups : [];
+    const [promoted, ...restExtras] = extras;
+    const result = await pool.query(
+      `UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2, extra_mockups = $3::jsonb
+       WHERE id = $4 RETURNING *`,
+      [promoted?.front || null, promoted?.back || null, JSON.stringify(restExtras), req.params.id],
+    );
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
 // DELETE /admin/:id/extra-mockup — remove one entry from extra_mockups by
 // its front-image URL (the stable identifier the UI has in hand).
 router.delete('/admin/:id/extra-mockup', authenticate, adminOnly, async (req, res, next) => {
