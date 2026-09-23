@@ -15,6 +15,7 @@ import {
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import { generateInvoiceNumber } from './invoices.js';
 import { recordActivity } from './events.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
@@ -37,6 +38,25 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
       },
     ];
 
+    // This helper only runs when the quote is settled in full (balance or
+    // full payment), so the invoice must show amount_paid = total, with the
+    // payment history reconstructed: the charge that just cleared, plus a
+    // deposit entry for whatever was collected before it. Recording only the
+    // final charge used to leave invoices reading "Paid $371 / Due $0" on a
+    // $788 order.
+    const chargedNow = amountPaid || total;
+    const nowIso = new Date().toISOString();
+    const historyEntries = [];
+    if (chargedNow < total) {
+      historyEntries.push({
+        amount: +(total - chargedNow).toFixed(2),
+        method: 'stripe',
+        note: 'deposit',
+        date: quote.accepted_at ? new Date(quote.accepted_at).toISOString() : nowIso,
+      });
+    }
+    historyEntries.push({ amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso });
+
     // If we already created an invoice for this quote, just mark it paid.
     const existing = await pool.query(
       'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
@@ -44,24 +64,32 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
     );
     let invoice;
     if (existing.rows.length > 0) {
+      const inv = existing.rows[0];
+      const priorPayments = Array.isArray(inv.payments)
+        ? inv.payments
+        : (typeof inv.payments === 'string' ? JSON.parse(inv.payments || '[]') : []);
+      // Keep any payments already on the invoice; only backfill the deposit
+      // entry when nothing was recorded, so we never double-list a deposit
+      // that came through applyPaymentToInvoice.
+      const newPayments = priorPayments.length > 0
+        ? [...priorPayments, { amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso }]
+        : historyEntries;
+      const invTotal = Number(inv.total) || total;
       const { rows } = await pool.query(
-        `UPDATE invoices SET amount_paid = $1, amount_due = 0, status = 'paid', updated_at = NOW()
-         WHERE id = $2 RETURNING *`,
-        [total, existing.rows[0].id],
+        `UPDATE invoices SET amount_paid = $1, amount_due = GREATEST(0, total - $1), payments = $2,
+           status = CASE WHEN total - $1 <= 0 THEN 'paid' ELSE 'partial' END, updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [Math.min(total, invTotal), JSON.stringify(newPayments), inv.id],
       );
       invoice = rows[0];
     } else {
-      // Generate next invoice number
-      const seq = await pool.query(
-        `SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM 'INV-(\\d+)') AS INTEGER)), 1000) + 1 AS next_num FROM invoices`,
-      );
-      const invoiceNumber = `INV-${seq.rows[0].next_num}`;
+      const invoiceNumber = await generateInvoiceNumber();
       const { rows } = await pool.query(
         `INSERT INTO invoices
            (invoice_number, customer_name, customer_email, customer_phone,
             items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-            quote_id, status)
-         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,0,$9,'paid')
+            payments, quote_id, status)
+         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,0,$9,$10,'paid')
          RETURNING *`,
         [
           invoiceNumber,
@@ -71,7 +99,8 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
           JSON.stringify(items),
           total,
           total,
-          amountPaid || total,
+          total,
+          JSON.stringify(historyEntries),
           quote.id,
         ],
       );

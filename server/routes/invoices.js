@@ -28,7 +28,7 @@ function formatCurrency(amount) {
 }
 
 // Generate next invoice number: INV-YYYYMMDD-001
-async function generateInvoiceNumber() {
+export async function generateInvoiceNumber() {
   const today = new Date();
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = `INV-${dateStr}-`;
@@ -624,6 +624,15 @@ router.put('/:id', async (req, res, next) => {
     const newAmountPaid = Number(inv.amount_paid);
     const newAmountDue = newTotal - newAmountPaid;
 
+    // A total change can invalidate a payment-derived status: raising the
+    // total on a 'paid' invoice reopens a balance, and lowering it on a
+    // 'partial' one can settle it. Recompute unless the caller is
+    // explicitly setting a status.
+    let newStatus = status || null;
+    if (!newStatus && newAmountPaid > 0 && ['paid', 'partial'].includes(inv.status)) {
+      newStatus = newAmountDue <= 0 ? 'paid' : 'partial';
+    }
+
     const { rows } = await pool.query(
       `UPDATE invoices SET
         customer_name = COALESCE($2, customer_name),
@@ -653,7 +662,7 @@ router.put('/:id', async (req, res, next) => {
         items ? JSON.stringify(items) : null, subtotal !== undefined ? Number(subtotal) : null,
         tax !== undefined ? Number(tax) : null, shipping !== undefined ? Number(shipping) : null,
         discount !== undefined ? Number(discount) : null, total !== undefined ? Number(total) : null,
-        newAmountDue, notes, due_date, status || null,
+        newAmountDue, notes, due_date, newStatus,
         deposit_percent !== undefined ? Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0)) : null,
         mockup_id !== undefined ? (mockup_id ? Number(mockup_id) : null) : null,
         extra_mockups !== undefined ? JSON.stringify(cleanExtraMockups(extra_mockups)) : null,
