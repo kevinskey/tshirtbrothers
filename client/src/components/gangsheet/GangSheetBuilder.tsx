@@ -328,15 +328,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artLibraryQ, mode]);
   const [quoteDesigns, setQuoteDesigns] = useState<{ id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[]>([]);
-  // Art that lives outside live quotes — invoices, per-customer assets,
-  // paid DTF-store orders. Fetched from /admin/library-art in one call.
+  // Art that lives outside live quotes — per-customer assets and paid
+  // DTF-store orders. Fetched from /admin/library-art in one call.
+  // Mockups are deliberately excluded: gang sheets take print graphics,
+  // not flattened shirt previews.
   const [extraArt, setExtraArt] = useState<{
-    invoice_graphics: { id: string; customer_name: string; url: string }[];
     customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
     dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
-  }>({ invoice_graphics: [], customer_assets: [], dtf_orders: [] });
+  }>({ customer_assets: [], dtf_orders: [] });
   // Production focus: default to art from quotes whose deposit was paid.
   const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
+  // One search box filters every Library section (customer, product,
+  // design name, category) client-side — all lists are already in memory.
+  const [librarySearch, setLibrarySearch] = useState('');
 
   // ─── Canvas Initialization ──────────────────────────────────────────────
 
@@ -2073,18 +2077,20 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
     fetch('/api/quotes', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : [])
-      .then((quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[]) => {
+      .then((quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; items?: { design_url?: string | null }[] | null; product_name: string; status: string; accepted_at?: string | null }[]) => {
         // Keep every quote with artwork available (re-prints, reorders),
         // but tag deposit-paid ones (accepted/completed = deposit taken)
         // so the panel can default to production-ready work. EVERY file
         // attached to a quote gets its own entry — primary design, extra
-        // designs, and raw source uploads — deduped by URL.
+        // designs, raw source uploads, and per-line-item art on
+        // multi-item quotes — deduped by URL.
         const entries: { id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[] = [];
         for (const q of quotes) {
           const files = [...new Set([
             q.design_url,
             ...(Array.isArray(q.extra_design_urls) ? q.extra_design_urls : []),
             ...(Array.isArray(q.source_upload_urls) ? q.source_upload_urls : []),
+            ...(Array.isArray(q.items) ? q.items.map((it) => it?.design_url) : []),
           ].filter((u): u is string => typeof u === 'string' && u.length > 0))];
           const paid = Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed';
           files.forEach((url, i) => entries.push({
@@ -2107,19 +2113,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     fetch('/api/gangsheet-store/admin/library-art', { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.ok ? r.json() : null)
       .then((d: {
-        invoice_graphics: { id: string; customer_name: string; url: string }[];
         customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
         dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
-        archived_quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[];
+        archived_quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; item_design_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[];
       } | null) => {
         if (!d) return;
-        setExtraArt({ invoice_graphics: d.invoice_graphics || [], customer_assets: d.customer_assets || [], dtf_orders: d.dtf_orders || [] });
+        setExtraArt({ customer_assets: d.customer_assets || [], dtf_orders: d.dtf_orders || [] });
         const archivedEntries: typeof quoteDesigns = [];
         for (const q of d.archived_quotes || []) {
           const files = [...new Set([
             q.design_url,
             ...(Array.isArray(q.extra_design_urls) ? q.extra_design_urls : []),
             ...(Array.isArray(q.source_upload_urls) ? q.source_upload_urls : []),
+            ...(Array.isArray(q.item_design_urls) ? q.item_design_urls : []),
           ].filter((u): u is string => typeof u === 'string' && u.length > 0))];
           const paid = Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed';
           files.forEach((url, i) => archivedEntries.push({
@@ -2639,9 +2645,16 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
             {/* Library Panel — admin-only, see tab-list comment above */}
             {activePanel === 'library' && mode === 'admin' && (() => {
+              const q = librarySearch.trim().toLowerCase();
+              const matches = (...fields: (string | null | undefined)[]) =>
+                !q || fields.some((f) => (f || '').toLowerCase().includes(q));
+              const filteredQuoteDesigns = quoteDesigns.filter((d) => matches(d.customer_name, d.product_name));
+              const filteredAssets = extraArt.customer_assets.filter((a) => matches(a.customer_name, a.name));
+              const filteredDtf = extraArt.dtf_orders.filter((o) => matches(o.customer_name, `#${o.id}`));
+              const filteredLab = libraryDesigns.filter((d) => matches(d.name, d.category));
               // Group Design Lab items by category (alphabetical; 'general'/empty last)
               const grouped: Record<string, typeof libraryDesigns> = {};
-              for (const d of libraryDesigns) {
+              for (const d of filteredLab) {
                 const cat = (d.category || 'general').toLowerCase();
                 if (!grouped[cat]) grouped[cat] = [];
                 grouped[cat].push(d);
@@ -2655,12 +2668,28 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
               return (
                 <div className="space-y-4">
+                  {/* Search across every section below */}
+                  <div className="relative">
+                    <input
+                      type="search"
+                      value={librarySearch}
+                      onChange={(e) => setLibrarySearch(e.target.value)}
+                      placeholder="Search customer, product, design…"
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 pr-8 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                    />
+                    {librarySearch && (
+                      <button type="button" aria-label="Clear search"
+                        onClick={() => setLibrarySearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-sm">✕</button>
+                    )}
+                  </div>
+
                   {/* Customer / user graphics first — defaults to quotes
                       with a paid deposit so production sheets get built
                       from committed work; toggle shows everything. */}
                   <div>
                     {(() => {
-                      const shown = paidQuotesOnly ? quoteDesigns.filter((q) => q.paid) : quoteDesigns;
+                      const shown = paidQuotesOnly ? filteredQuoteDesigns.filter((q) => q.paid) : filteredQuoteDesigns;
                       return (
                         <>
                           <div className="flex items-center justify-between mb-2">
@@ -2698,29 +2727,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                     })()}
                   </div>
 
-                  {/* Invoice-attached graphics (mockup previews + extras) */}
-                  {extraArt.invoice_graphics.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Invoice Graphics ({extraArt.invoice_graphics.length})</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {extraArt.invoice_graphics.map((g) => (
-                          <button key={g.id} onClick={async () => { await addDesignToCanvas(g.url, g.customer_name); setActivePanel('upload'); setMobilePanelOpen(false); }}
-                            className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
-                            title={g.customer_name}>
-                            <img src={g.url} alt={g.customer_name} className="w-full aspect-square object-contain" />
-                            <p className="text-[9px] text-gray-500 truncate mt-0.5">{g.customer_name}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Per-customer private asset library */}
-                  {extraArt.customer_assets.length > 0 && (
+                  {filteredAssets.length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer Assets ({extraArt.customer_assets.length})</p>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer Assets ({filteredAssets.length})</p>
                       <div className="grid grid-cols-3 gap-2">
-                        {extraArt.customer_assets.map((a) => (
+                        {filteredAssets.map((a) => (
                           <button key={a.id} onClick={async () => { await addDesignToCanvas(a.image_url, a.customer_name ? `${a.customer_name} - ${a.name}` : a.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
                             className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
                             title={`${a.customer_name || ''} ${a.name}`.trim()}>
@@ -2735,11 +2747,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   {/* Paid DTF-store orders — whole composed sheets, useful
                       for reprints. Presigned links last 7 days, so add the
                       design fresh rather than relying on an old saved sheet. */}
-                  {extraArt.dtf_orders.length > 0 && (
+                  {filteredDtf.length > 0 && (
                     <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">DTF Orders ({extraArt.dtf_orders.length})</p>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">DTF Orders ({filteredDtf.length})</p>
                       <div className="space-y-2">
-                        {extraArt.dtf_orders.map((o) => (
+                        {filteredDtf.map((o) => (
                           <button key={o.id} onClick={async () => { await addDesignToCanvas(o.file_url, `${o.customer_name} - DTF order #${o.id}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
                             className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
                             <img src={o.thumb_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0"
@@ -2756,8 +2768,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
                   {/* Design Lab grouped by category */}
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design Lab ({libraryDesigns.length})</p>
-                    {libraryDesigns.length === 0 ? (
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design Lab ({filteredLab.length})</p>
+                    {filteredLab.length === 0 ? (
                       <p className="text-xs text-gray-400 text-center py-4">No saved designs</p>
                     ) : (
                       <div className="space-y-3">
