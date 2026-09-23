@@ -1650,6 +1650,24 @@ export default function AdminPage() {
     }
   }
 
+  // Detach the primary mockup (front/back pair) from a quote. The server
+  // promotes the first extra mockup to primary if one exists; the Studio
+  // mockup row itself is kept.
+  async function removeQuotePrimaryMockup(q: Quote) {
+    try {
+      const r = await fetch(`/api/quotes/admin/${q.id}/mockup`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+      });
+      const upd = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((upd as { error?: string }).error || 'Remove failed');
+      setDetailQuote(upd as Quote);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Remove failed', 'error');
+    }
+  }
+
   // Email the customer the approval link for the quote's Studio mockup.
   // The server finds the newest quote-linked mockup and reuses the mockups
   // send flow, so this behaves exactly like Send from the Mockups grid.
@@ -7677,7 +7695,7 @@ export default function AdminPage() {
                       the admin sees here matches the customer's approval
                       page and the recent-quotes thumbnail. The raw
                       design_url is still linked through for downloads. */}
-                  {(q.mockup_image_url || q.design_url) && (
+                  {(q.mockup_image_url || q.design_url || (q.extra_design_urls?.length ?? 0) > 0) && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
                         Design
@@ -7687,32 +7705,38 @@ export default function AdminPage() {
                           </span>
                         )}
                       </p>
-                      {q.mockup_image_url && q.mockup_image_url_back ? (
-                        <div className="grid grid-cols-2 gap-2">
-                          <a href={q.mockup_image_url} target="_blank" rel="noreferrer" className="block">
-                            <img src={q.mockup_image_url} alt="Mockup front" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                            <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Front</p>
-                          </a>
-                          <a href={q.mockup_image_url_back} target="_blank" rel="noreferrer" className="block">
-                            <img src={q.mockup_image_url_back} alt="Mockup back" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                            <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Back</p>
-                          </a>
+                      {!(q.mockup_image_url || q.design_url) ? null : q.mockup_image_url && q.mockup_image_url_back ? (
+                        <div className="relative">
+                          <div className="grid grid-cols-2 gap-2">
+                            <a href={q.mockup_image_url} target="_blank" rel="noreferrer" className="block">
+                              <img src={q.mockup_image_url} alt="Mockup front" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                              <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Front</p>
+                            </a>
+                            <a href={q.mockup_image_url_back} target="_blank" rel="noreferrer" className="block">
+                              <img src={q.mockup_image_url_back} alt="Mockup back" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                              <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Back</p>
+                            </a>
+                          </div>
+                          {/* One ✕ for the pair — front + back are the same
+                              mockup, so they come off together. */}
+                          <button
+                            aria-label="Remove mockup"
+                            onClick={() => removeQuotePrimaryMockup(q as Quote)}
+                            className="absolute right-2 top-2 h-6 w-6 rounded-full bg-black/60 text-xs leading-6 text-white hover:bg-red-600"
+                          >✕</button>
                         </div>
                       ) : (
                         <div className="relative">
                           <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
                             <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                           </a>
-                          {/* The ✕ only when the card is showing an uploaded
-                              graphic — never over a Studio mockup, whose
-                              removal goes through the mockup controls. */}
-                          {!q.mockup_image_url && q.design_url && (
-                            <button
-                              aria-label="Remove uploaded graphic"
-                              onClick={() => removeQuoteGraphic(q as Quote, q.design_url!)}
-                              className="absolute right-2 top-2 h-6 w-6 rounded-full bg-black/60 text-xs leading-6 text-white hover:bg-red-600"
-                            >✕</button>
-                          )}
+                          <button
+                            aria-label={q.mockup_image_url ? 'Remove mockup' : 'Remove uploaded graphic'}
+                            onClick={() => (q.mockup_image_url
+                              ? removeQuotePrimaryMockup(q as Quote)
+                              : removeQuoteGraphic(q as Quote, q.design_url!))}
+                            className="absolute right-2 top-2 h-6 w-6 rounded-full bg-black/60 text-xs leading-6 text-white hover:bg-red-600"
+                          >✕</button>
                         </div>
                       )}
                       {q.extra_design_urls && q.extra_design_urls.length > 0 && (
@@ -7824,7 +7848,7 @@ export default function AdminPage() {
                       )}
                     </div>
                   )}
-                  {!(q.mockup_image_url || q.design_url) && (
+                  {!(q.mockup_image_url || q.design_url || (q.extra_design_urls?.length ?? 0) > 0) && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Design</p>
                       <p className="text-sm text-gray-500 italic mb-2">No design on this quote yet.</p>
