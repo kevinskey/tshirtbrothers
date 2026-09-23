@@ -1631,6 +1631,25 @@ export default function AdminPage() {
     }
   }
 
+  // Detach one uploaded graphic (primary design_url or an extra) from a
+  // quote — the undo for an accidental "Upload graphics". The file stays in
+  // Spaces; only the quote's reference is removed.
+  async function removeQuoteGraphic(q: Quote, url: string) {
+    try {
+      const r = await fetch(`/api/quotes/admin/${q.id}/design-url`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ url }),
+      });
+      const upd = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((upd as { error?: string }).error || 'Remove failed');
+      setDetailQuote(upd as Quote);
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Remove failed', 'error');
+    }
+  }
+
   // Email the customer the approval link for the quote's Studio mockup.
   // The server finds the newest quote-linked mockup and reuses the mockups
   // send flow, so this behaves exactly like Send from the Mockups grid.
@@ -7680,19 +7699,38 @@ export default function AdminPage() {
                           </a>
                         </div>
                       ) : (
-                        <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
-                          <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                        </a>
+                        <div className="relative">
+                          <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
+                            <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                          </a>
+                          {/* The ✕ only when the card is showing an uploaded
+                              graphic — never over a Studio mockup, whose
+                              removal goes through the mockup controls. */}
+                          {!q.mockup_image_url && q.design_url && (
+                            <button
+                              aria-label="Remove uploaded graphic"
+                              onClick={() => removeQuoteGraphic(q as Quote, q.design_url!)}
+                              className="absolute right-2 top-2 h-6 w-6 rounded-full bg-black/60 text-xs leading-6 text-white hover:bg-red-600"
+                            >✕</button>
+                          )}
+                        </div>
                       )}
                       {q.extra_design_urls && q.extra_design_urls.length > 0 && (
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {q.extra_design_urls.map((u, i) => {
                             const name = decodeURIComponent((u.split('/').pop() || '').replace(/-\d+\.[^.]+$/, ''));
                             return (
-                              <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" className="block">
-                                <img src={u} alt={name || `Extra design ${i + 1}`} className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50" />
-                                {name && <p className="mt-1 truncate text-[10px] text-gray-600" title={name}>{name}</p>}
-                              </a>
+                              <div key={`${u}-${i}`} className="relative">
+                                <a href={u} target="_blank" rel="noreferrer" className="block">
+                                  <img src={u} alt={name || `Extra design ${i + 1}`} className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                                  {name && <p className="mt-1 truncate text-[10px] text-gray-600" title={name}>{name}</p>}
+                                </a>
+                                <button
+                                  aria-label="Remove uploaded graphic"
+                                  onClick={() => removeQuoteGraphic(q as Quote, u)}
+                                  className="absolute right-1 top-1 h-5 w-5 rounded-full bg-black/60 text-[10px] leading-5 text-white hover:bg-red-600"
+                                >✕</button>
+                              </div>
                             );
                           })}
                         </div>

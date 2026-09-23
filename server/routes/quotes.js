@@ -1269,6 +1269,31 @@ router.patch('/admin/:id/design-url', authenticate, adminOnly, async (req, res, 
   }
 });
 
+// DELETE /admin/:id/design-url — detach one uploaded graphic from a quote,
+// identified by its URL. Removes it from extra_design_urls, or nulls the
+// primary design_url when that's the match — for graphics uploaded to the
+// wrong quote by accident. The file itself stays in Spaces (it may be
+// referenced elsewhere, e.g. the art library).
+router.delete('/admin/:id/design-url', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { url } = req.body || {};
+    if (typeof url !== 'string' || !url) return res.status(400).json({ error: 'url is required' });
+    const { rows } = await pool.query('SELECT design_url, extra_design_urls FROM quotes WHERE id = $1', [req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Quote not found' });
+    const extras = Array.isArray(rows[0].extra_design_urls) ? rows[0].extra_design_urls : [];
+    const keptExtras = extras.filter((u) => u !== url);
+    const newPrimary = rows[0].design_url === url ? null : rows[0].design_url;
+    if (newPrimary === rows[0].design_url && keptExtras.length === extras.length) {
+      return res.status(404).json({ error: 'That graphic is not on this quote' });
+    }
+    const result = await pool.query(
+      'UPDATE quotes SET design_url = $1, extra_design_urls = $2::jsonb WHERE id = $3 RETURNING *',
+      [newPrimary, JSON.stringify(keptExtras), req.params.id],
+    );
+    res.json(result.rows[0]);
+  } catch (err) { next(err); }
+});
+
 // PATCH /admin/:id/mockup — attach a Mockup Studio mockup to a quote so it
 // shows up wherever the quote design preview is rendered. Body accepts either
 // a raw mockup_image_url or a mockup_id (or both). When mockup_id is given
