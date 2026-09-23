@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus, Check,
-  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send
+  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send, Crop
 } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
 import { logActivityOnce } from '@/lib/activity';
@@ -233,6 +233,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // blank feet are paid-for film, so we offer a one-tap trim.
   const [trimSuggestFt, setTrimSuggestFt] = useState<number | null>(null);
   const [aiBusyId, setAiBusyId] = useState<string | null>(null);
+  // Manual crop modal — which design is being cropped, the crop box as
+  // fractions of the image (resolution-independent), and drag bookkeeping.
+  const [cropDesignId, setCropDesignId] = useState<string | null>(null);
+  const [cropRect, setCropRect] = useState({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 });
+  const [cropBusy, setCropBusy] = useState(false);
+  const cropImgRef = useRef<HTMLImageElement | null>(null);
+  const cropDragRef = useRef<{ mode: string; startX: number; startY: number; rect: { x: number; y: number; w: number; h: number } } | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
@@ -1022,6 +1029,49 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     void detectWhiteBackground(dataUrl).then((flag) => {
       setDesigns((prevD) => prevD.map((x) => (x.id === designId ? { ...x, whiteBg: flag } : x)));
     });
+  }
+
+  // Cut the selected crop rect out of the design at full native resolution
+  // and swap it in via the same pipeline the AI tools use (history entry,
+  // Spaces upload, fabric object replacement, DPI recalc). shrink=true so
+  // the kept region stays at its original physical print size.
+  async function applyCrop() {
+    const design = designs.find((d) => d.id === cropDesignId);
+    if (!design || cropBusy) return;
+    setCropBusy(true);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image();
+        i.crossOrigin = 'anonymous';
+        i.onload = () => resolve(i);
+        i.onerror = () => {
+          // CORS fallback: retry without crossOrigin (toDataURL will throw
+          // on a tainted canvas and we surface that below).
+          const j = new Image();
+          j.onload = () => resolve(j);
+          j.onerror = () => reject(new Error('Could not load image'));
+          j.src = design.imageUrl;
+        };
+        i.src = design.imageUrl;
+      });
+      const sx = Math.max(0, Math.round(cropRect.x * img.naturalWidth));
+      const sy = Math.max(0, Math.round(cropRect.y * img.naturalHeight));
+      const sw = Math.max(10, Math.min(img.naturalWidth - sx, Math.round(cropRect.w * img.naturalWidth)));
+      const sh = Math.max(10, Math.min(img.naturalHeight - sy, Math.round(cropRect.h * img.naturalHeight)));
+      const out = document.createElement('canvas');
+      out.width = sw;
+      out.height = sh;
+      const ctx = out.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const dataUrl = out.toDataURL('image/png');
+      setCropDesignId(null);
+      await applyProcessedImage(design.id, dataUrl, true);
+    } catch (err: any) {
+      alert(`Crop failed: ${err?.message || err}`);
+    } finally {
+      setCropBusy(false);
+    }
   }
 
   async function handleRemoveBg(designId: string) {
@@ -2291,6 +2341,96 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       {/* File > Email/Text Sheet dialog — sends a 7-day presigned link to the
           full-res 300 DPI PNG (composed server-side, same file the vendor
           send uses). */}
+      {/* Crop modal — drag the box or its corners; fractions of the image
+          so the math is resolution-independent. Apply crops at native px. */}
+      {cropDesignId && (() => {
+        const design = designs.find((d) => d.id === cropDesignId);
+        if (!design) return null;
+        const MIN = 0.03;
+        const startDrag = (mode: string) => (e: React.PointerEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          cropDragRef.current = { mode, startX: e.clientX, startY: e.clientY, rect: { ...cropRect } };
+        };
+        const onMove = (e: React.PointerEvent) => {
+          const drag = cropDragRef.current;
+          const el = cropImgRef.current;
+          if (!drag || !el || el.clientWidth === 0 || el.clientHeight === 0) return;
+          const dx = (e.clientX - drag.startX) / el.clientWidth;
+          const dy = (e.clientY - drag.startY) / el.clientHeight;
+          let { x, y, w, h } = drag.rect;
+          if (drag.mode === 'move') {
+            x = Math.min(Math.max(0, x + dx), 1 - w);
+            y = Math.min(Math.max(0, y + dy), 1 - h);
+          } else {
+            if (drag.mode.includes('w')) { const nx = Math.max(0, Math.min(x + dx, x + w - MIN)); w += x - nx; x = nx; }
+            if (drag.mode.includes('e')) { w = Math.max(MIN, Math.min(1 - x, w + dx)); }
+            if (drag.mode.includes('n')) { const ny = Math.max(0, Math.min(y + dy, y + h - MIN)); h += y - ny; y = ny; }
+            if (drag.mode.includes('s')) { h = Math.max(MIN, Math.min(1 - y, h + dy)); }
+          }
+          setCropRect({ x, y, w, h });
+        };
+        const endDrag = () => { cropDragRef.current = null; };
+        const pct = (v: number) => `${v * 100}%`;
+        const handleCls = 'absolute w-3.5 h-3.5 bg-white border-2 border-orange-500 rounded-full';
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl p-4 w-auto max-w-3xl">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-gray-900">Crop — {design.name}</h3>
+                <button onClick={() => { if (!cropBusy) setCropDesignId(null); }} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+              </div>
+              <div
+                className="relative inline-block select-none touch-none max-w-full"
+                onPointerMove={onMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              >
+                <img
+                  ref={cropImgRef}
+                  src={design.imageUrl}
+                  alt={design.name}
+                  draggable={false}
+                  className="block max-w-full max-h-[60vh] rounded"
+                  style={{ background: 'repeating-conic-gradient(#e5e7eb 0% 25%, #ffffff 0% 50%) 0 / 16px 16px' }}
+                />
+                {/* Shade everything outside the crop box */}
+                <div className="absolute bg-black/50 pointer-events-none" style={{ left: 0, top: 0, right: 0, height: pct(cropRect.y) }} />
+                <div className="absolute bg-black/50 pointer-events-none" style={{ left: 0, top: pct(cropRect.y + cropRect.h), right: 0, bottom: 0 }} />
+                <div className="absolute bg-black/50 pointer-events-none" style={{ left: 0, top: pct(cropRect.y), width: pct(cropRect.x), height: pct(cropRect.h) }} />
+                <div className="absolute bg-black/50 pointer-events-none" style={{ left: pct(cropRect.x + cropRect.w), top: pct(cropRect.y), right: 0, height: pct(cropRect.h) }} />
+                {/* Crop box */}
+                <div
+                  className="absolute border-2 border-orange-500 cursor-move"
+                  style={{ left: pct(cropRect.x), top: pct(cropRect.y), width: pct(cropRect.w), height: pct(cropRect.h) }}
+                  onPointerDown={startDrag('move')}
+                >
+                  <div className={`${handleCls} -left-2 -top-2 cursor-nwse-resize`} onPointerDown={startDrag('nw')} />
+                  <div className={`${handleCls} -right-2 -top-2 cursor-nesw-resize`} onPointerDown={startDrag('ne')} />
+                  <div className={`${handleCls} -left-2 -bottom-2 cursor-nesw-resize`} onPointerDown={startDrag('sw')} />
+                  <div className={`${handleCls} -right-2 -bottom-2 cursor-nwse-resize`} onPointerDown={startDrag('se')} />
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <p className="text-[11px] text-gray-500">
+                  {Math.round(cropRect.w * design.naturalWidth)} × {Math.round(cropRect.h * design.naturalHeight)} px
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setCropDesignId(null)} disabled={cropBusy}
+                    className="text-xs px-3 py-1.5 rounded-lg text-gray-600 hover:bg-gray-100 disabled:opacity-50">Cancel</button>
+                  <button onClick={applyCrop} disabled={cropBusy}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-orange-600 text-white font-semibold hover:bg-orange-700 disabled:opacity-50">
+                    {cropBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Crop className="w-3 h-3" />}
+                    Apply Crop
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {shareKind && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (!shareBusy) { setShareKind(null); setShareMsg(null); } }}>
           <div className="bg-white rounded-xl shadow-2xl p-5 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
@@ -2616,6 +2756,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                                 </button>
                               </>
                             )}
+                            <button
+                              onClick={() => { setCropRect({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }); setCropDesignId(d.id); }}
+                              disabled={aiBusyId === d.id}
+                              className="flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                              title="Crop the image"
+                            >
+                              <Crop className="w-3 h-3" />
+                            </button>
                             <button
                               onClick={() => rotateDesign(d.id)}
                               disabled={aiBusyId === d.id}
