@@ -328,6 +328,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [artLibraryQ, mode]);
   const [quoteDesigns, setQuoteDesigns] = useState<{ id: string; customer_name: string; design_url: string; product_name: string; paid: boolean; fileNo: number; fileCount: number }[]>([]);
+  // Art that lives outside live quotes — invoices, per-customer assets,
+  // paid DTF-store orders. Fetched from /admin/library-art in one call.
+  const [extraArt, setExtraArt] = useState<{
+    invoice_graphics: { id: string; customer_name: string; url: string }[];
+    customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
+    dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
+  }>({ invoice_graphics: [], customer_assets: [], dtf_orders: [] });
   // Production focus: default to art from quotes whose deposit was paid.
   const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
 
@@ -2090,7 +2097,42 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
             fileCount: files.length,
           }));
         }
-        setQuoteDesigns(entries);
+        setQuoteDesigns((prev) => [...entries, ...prev.filter((e) => e.id.startsWith('arch-'))]);
+      })
+      .catch(() => {});
+
+    // Art from outside live quotes: invoice graphics, customer asset
+    // library, paid DTF orders, and archived quotes' files (which
+    // /api/quotes hides). Archived entries merge into User Graphics.
+    fetch('/api/gangsheet-store/admin/library-art', { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: {
+        invoice_graphics: { id: string; customer_name: string; url: string }[];
+        customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
+        dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
+        archived_quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[];
+      } | null) => {
+        if (!d) return;
+        setExtraArt({ invoice_graphics: d.invoice_graphics || [], customer_assets: d.customer_assets || [], dtf_orders: d.dtf_orders || [] });
+        const archivedEntries: typeof quoteDesigns = [];
+        for (const q of d.archived_quotes || []) {
+          const files = [...new Set([
+            q.design_url,
+            ...(Array.isArray(q.extra_design_urls) ? q.extra_design_urls : []),
+            ...(Array.isArray(q.source_upload_urls) ? q.source_upload_urls : []),
+          ].filter((u): u is string => typeof u === 'string' && u.length > 0))];
+          const paid = Boolean(q.accepted_at) || q.status === 'accepted' || q.status === 'completed';
+          files.forEach((url, i) => archivedEntries.push({
+            id: `arch-${q.id}:${i}`,
+            customer_name: q.customer_name,
+            design_url: url,
+            product_name: `${q.product_name} (archived)`,
+            paid,
+            fileNo: i + 1,
+            fileCount: files.length,
+          }));
+        }
+        setQuoteDesigns((prev) => [...prev.filter((e) => !e.id.startsWith('arch-')), ...archivedEntries]);
       })
       .catch(() => {});
   }, [mode]);
@@ -2655,6 +2697,62 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       );
                     })()}
                   </div>
+
+                  {/* Invoice-attached graphics (mockup previews + extras) */}
+                  {extraArt.invoice_graphics.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Invoice Graphics ({extraArt.invoice_graphics.length})</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {extraArt.invoice_graphics.map((g) => (
+                          <button key={g.id} onClick={async () => { await addDesignToCanvas(g.url, g.customer_name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                            title={g.customer_name}>
+                            <img src={g.url} alt={g.customer_name} className="w-full aspect-square object-contain" />
+                            <p className="text-[9px] text-gray-500 truncate mt-0.5">{g.customer_name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Per-customer private asset library */}
+                  {extraArt.customer_assets.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Customer Assets ({extraArt.customer_assets.length})</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {extraArt.customer_assets.map((a) => (
+                          <button key={a.id} onClick={async () => { await addDesignToCanvas(a.image_url, a.customer_name ? `${a.customer_name} - ${a.name}` : a.name); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-orange-400 hover:shadow-md transition p-1"
+                            title={`${a.customer_name || ''} ${a.name}`.trim()}>
+                            <img src={a.image_url} alt={a.name} className="w-full aspect-square object-contain" />
+                            <p className="text-[9px] text-gray-500 truncate mt-0.5">{a.customer_name || a.name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Paid DTF-store orders — whole composed sheets, useful
+                      for reprints. Presigned links last 7 days, so add the
+                      design fresh rather than relying on an old saved sheet. */}
+                  {extraArt.dtf_orders.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-2">DTF Orders ({extraArt.dtf_orders.length})</p>
+                      <div className="space-y-2">
+                        {extraArt.dtf_orders.map((o) => (
+                          <button key={o.id} onClick={async () => { await addDesignToCanvas(o.file_url, `${o.customer_name} - DTF order #${o.id}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                            className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
+                            <img src={o.thumb_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0"
+                              onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{o.customer_name}</p>
+                              <p className="text-[10px] text-gray-400 truncate">DTF order #{o.id} · {o.length_ft}ft sheet</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Design Lab grouped by category */}
                   <div>

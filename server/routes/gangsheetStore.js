@@ -851,6 +851,87 @@ router.get('/admin/orders', ...adminGuard, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── Admin: extra art sources for the gang sheet builder's Library panel ────
+// The panel's User Graphics section reads /api/quotes (live quotes only).
+// Everything else an admin might want to gang up lives elsewhere; this
+// aggregates it in one call:
+//   invoice_graphics — mockup previews + extra mockups attached to invoices
+//   customer_assets  — per-customer private asset library uploads
+//   dtf_orders       — paid DTF-store gang sheet orders (whole-sheet PNGs,
+//                      private in Spaces → 7-day presigned URLs, the same
+//                      ceiling the vendor-send flow uses)
+//   archived_quotes  — artwork on archived quotes, gone from /api/quotes
+router.get('/admin/library-art', ...adminGuard, async (req, res, next) => {
+  try {
+    const [invoices, assets, orders, archived] = await Promise.all([
+      pool.query(
+        `SELECT i.id, i.customer_name, i.extra_mockups,
+                m.preview_image_url, m.preview_image_url_back
+           FROM invoices i LEFT JOIN mockups m ON m.id = i.mockup_id
+          WHERE i.mockup_id IS NOT NULL
+             OR jsonb_array_length(COALESCE(i.extra_mockups, '[]'::jsonb)) > 0
+          ORDER BY i.id DESC LIMIT 100`,
+      ),
+      pool.query(
+        `SELECT ca.id, ca.name, ca.image_url, COALESCE(u.name, u.email) AS customer_name
+           FROM customer_assets ca LEFT JOIN users u ON u.id = ca.user_id
+          ORDER BY ca.created_at DESC LIMIT 200`,
+      ),
+      pool.query(
+        `SELECT id, customer_name, customer_email, file_key, length_ft, created_at
+           FROM gang_sheet_orders
+          WHERE status NOT IN ('pending_payment', 'canceled')
+          ORDER BY id DESC LIMIT 30`,
+      ),
+      pool.query(
+        `SELECT id, customer_name, product_name, design_url, extra_design_urls,
+                source_upload_urls, status, accepted_at
+           FROM quotes
+          WHERE archived_at IS NOT NULL
+            AND (design_url IS NOT NULL
+                 OR jsonb_array_length(COALESCE(extra_design_urls, '[]'::jsonb)) > 0
+                 OR jsonb_array_length(COALESCE(source_upload_urls, '[]'::jsonb)) > 0)
+          ORDER BY id DESC LIMIT 100`,
+      ),
+    ]);
+
+    const invoice_graphics = [];
+    for (const i of invoices.rows) {
+      const urls = [
+        i.preview_image_url, i.preview_image_url_back,
+        ...(Array.isArray(i.extra_mockups) ? i.extra_mockups : []).flatMap((m) => [m?.front, m?.back]),
+      ].filter((u) => typeof u === 'string' && u.length > 0);
+      [...new Set(urls)].forEach((url, n) => invoice_graphics.push({
+        id: `${i.id}:${n}`,
+        customer_name: i.customer_name || `Invoice ${i.id}`,
+        url,
+      }));
+    }
+
+    const client = getSpacesClient();
+    const presign = (key) => getSignedUrl(
+      client,
+      new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }),
+      { expiresIn: 7 * 24 * 3600 },
+    );
+    const dtf_orders = await Promise.all(orders.rows.map(async (o) => ({
+      id: o.id,
+      customer_name: o.customer_name || o.customer_email || `Order ${o.id}`,
+      length_ft: o.length_ft,
+      created_at: o.created_at,
+      file_url: await presign(o.file_key),
+      thumb_url: await presign(thumbKeyFor(o.file_key)),
+    })));
+
+    res.json({
+      invoice_graphics,
+      customer_assets: assets.rows,
+      dtf_orders,
+      archived_quotes: archived.rows,
+    });
+  } catch (err) { next(err); }
+});
+
 // Allowed-from lists, keyed by the *target* status — i.e. ALLOWED_FROM.ready
 // is every status you're allowed to mark 'ready' starting from. There is no
 // entry for 'paid': that transition only ever happens from the Stripe
