@@ -982,9 +982,27 @@ router.post('/admin/live-cost/lines', authenticate, adminOnly, async (req, res, 
       );
       for (const r of rows) styleByToken.set(String(r.style_number).toUpperCase(), r);
     }
+    // Fallback for catalog-picker lines ("<name> (<brand>)") that carry no
+    // style number token in the description.
+    const styleByName = new Map();
+    async function styleFromName(desc) {
+      const m = String(desc || '').match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+      if (!m) return null;
+      const key = `${m[1]}|${m[2]}`.toLowerCase();
+      if (styleByName.has(key)) return styleByName.get(key);
+      const { rows } = await pool.query(
+        `SELECT ss_id, name, brand, style_number FROM products
+          WHERE LOWER(name) = LOWER($1) AND LOWER(brand) = LOWER($2) LIMIT 1`,
+        [m[1], m[2]],
+      );
+      const style = rows[0] || null;
+      styleByName.set(key, style);
+      return style;
+    }
     const out = [];
     for (let i = 0; i < lines.length; i++) {
-      const style = lineTokens[i].map((t) => styleByToken.get(t)).find(Boolean) || null;
+      let style = lineTokens[i].map((t) => styleByToken.get(t)).find(Boolean) || null;
+      if (!style) style = await styleFromName(lines[i].description);
       if (!style) { out.push({ style: null, cost: null }); continue; }
       const cached = await fetchLiveCostRows(style.ss_id);
       let cost = null;
