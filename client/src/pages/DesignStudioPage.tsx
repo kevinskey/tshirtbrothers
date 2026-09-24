@@ -74,11 +74,16 @@ interface DesignElement {
   // outline. shapeType picks which SVG primitive to render.
   type: 'image' | 'text' | 'shape';
   shapeType?: ShapeType;
-  // Optional explicit height (% of canvas height). Currently used only by
-  // shape elements so a circle / rect / etc can be sized non-square via
-  // free corner-drag. Image/text elements ignore this — their height is
-  // derived from natural aspect (image) or fontSize × lineHeight (text).
+  // Optional explicit height (% of canvas height). Shapes and images use it
+  // for free (non-uniform) corner-drag sizing; an image with height set is
+  // stretched to fill the box instead of keeping its natural aspect. Text
+  // ignores it — text height derives from fontSize × lineHeight, with
+  // vertical stretch expressed via stretchY instead.
   height?: number;
+  // Text-only vertical glyph stretch (scaleY multiplier, default 1). Set by
+  // free corner-drag so text can be squashed / stretched off its natural
+  // aspect. Applied as a CSS transform on the element wrapper.
+  stretchY?: number;
   // Which side of the garment this element belongs to. Optional for
   // backwards-compat: any saved design from before this field existed has
   // no side stored, and we treat that as 'front'.
@@ -1975,6 +1980,7 @@ export default function DesignStudioPage() {
     // Text resize scales fontSize with the drag; scaling from the drag-start
     // value avoids compounding rounding across mousemove ticks.
     startFontSize?: number;
+    startStretchY?: number;
   } | null>(null);
 
   /* ---------------------------------------------------------------- */
@@ -2344,16 +2350,14 @@ export default function DesignStudioPage() {
   // elements by the delta needed to land that center at (50, 50). Preserves
   // RELATIVE positioning between elements.
   //
-  // Per-type height for the bounding box:
-  //   - shape: el.height (explicit, set by free-resize)
-  //   - image / text: el.width (assume square — close enough for a
-  //     "center this" gesture; users tweak after if needed)
+  // Bounding-box height: el.height when free-resize has set one (shapes,
+  // stretched images), else el.width (assume square — close enough for a
+  // "center this" gesture; users tweak after if needed).
   const centerAllOnCanvas = useCallback(() => {
     setDesignElements(prev => {
       const onSide = prev.filter(e => (e.side ?? 'front') === currentView);
       if (onSide.length === 0) return prev;
-      const heightOf = (el: DesignElement) =>
-        el.type === 'shape' ? (el.height ?? el.width) : el.width;
+      const heightOf = (el: DesignElement) => el.height ?? el.width;
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       for (const el of onSide) {
         minX = Math.min(minX, el.x);
@@ -2814,6 +2818,19 @@ export default function DesignStudioPage() {
     }
     const el = designElements.find(d => d.id === elementId);
     if (!el) return;
+    // Height in canvas-% terms. Shapes (and images already free-resized)
+    // carry an explicit height. Otherwise measure the rendered wrapper —
+    // an image's natural aspect and a text block's fontSize × lines aren't
+    // knowable from state alone, and the free-resize math needs the real
+    // visual height to anchor the drag.
+    let startHeight = el.height ?? el.width;
+    if (el.height == null && canvasRef.current) {
+      const node = canvasRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
+      const c = canvasRef.current.getBoundingClientRect();
+      if (node && c.height) {
+        startHeight = (node.getBoundingClientRect().height / c.height) * 100;
+      }
+    }
     setDragState({
       elementId,
       mode,
@@ -2822,11 +2839,9 @@ export default function DesignStudioPage() {
       startX: el.x,
       startY: el.y,
       startWidth: el.width,
-      // Shape elements track height independently. Image / text default
-      // height to width — they ignore it but the resize math wants a real
-      // number to subtract from.
-      startHeight: el.height ?? el.width,
+      startHeight,
       startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
+      startStretchY: el.type === 'text' ? (el.stretchY ?? 1) : undefined,
     });
   }, [designElements]);
 
@@ -2848,7 +2863,7 @@ export default function DesignStudioPage() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
-      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize } = dragState;
+      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize, startStretchY } = dragState;
 
       if (mode === 'move') {
         const dx = ((e.clientX - startMx) / rect.width) * 100;
@@ -2875,12 +2890,12 @@ export default function DesignStudioPage() {
         setDesignElements(prev =>
           prev.map(el => {
             if (el.id !== elementId) return el;
-            // Shapes resize on both axes by default — Shift preserves the
-            // ORIGINAL aspect ratio (Photoshop convention). Non-shape
-            // elements still resize on width only; their height is derived
-            // (image: natural aspect, text: fontSize × lineHeight).
-            if (el.type === 'shape') {
-              const newW = Math.max(5, Math.min(100, startWidth + dx));
+            // Every element type free-resizes on both axes — pulling a
+            // corner changes the aspect ratio. Shift preserves the
+            // ORIGINAL aspect ratio (Photoshop convention).
+            if (el.type === 'shape' || el.type === 'image') {
+              const maxW = el.type === 'shape' ? 100 : 80;
+              const newW = Math.max(5, Math.min(maxW, startWidth + dx));
               const newH = shiftHeld
                 ? newW * (startHeight / startWidth)
                 : Math.max(5, Math.min(100, startHeight + dy));
@@ -2888,9 +2903,8 @@ export default function DesignStudioPage() {
             }
             // Text can grow well past the old 80% cap — the user decides
             // how much of the product the text covers, not the box.
-            const maxW = el.type === 'text' ? 300 : 80;
-            const newW = Math.max(5, Math.min(maxW, startWidth + dx));
-            if (el.type === 'text' && (!el.textShape || el.textShape === 'normal') && startFontSize) {
+            const newW = Math.max(5, Math.min(300, startWidth + dx));
+            if ((!el.textShape || el.textShape === 'normal') && startFontSize) {
               // Resizing text scales the glyphs with the box (it used to
               // change only the invisible box, leaving the text untouched).
               // Width is then re-measured from the scaled fontSize so boxes
@@ -2903,10 +2917,21 @@ export default function DesignStudioPage() {
                 letterSpacing: el.letterSpacing,
                 wordSpacing: el.wordSpacing,
               });
+              // Vertical drag stretches the glyphs (scaleY) so the box
+              // height tracks the corner. Natural height already grew by
+              // the fontSize scale, so divide it back out — the stretch
+              // only captures the ratio change relative to the drag start.
+              const widthScale = newFontSize / startFontSize;
+              const newH = Math.max(1, startHeight + dy);
+              const newStretch = shiftHeld
+                ? (startStretchY ?? 1)
+                : Math.max(0.25, Math.min(4,
+                    (startStretchY ?? 1) * (newH / startHeight) / widthScale));
               return {
                 ...el,
                 fontSize: newFontSize,
                 width: Number.isFinite(measured) ? measured : newW,
+                stretchY: newStretch,
               };
             }
             return { ...el, width: newW };
@@ -4645,6 +4670,7 @@ export default function DesignStudioPage() {
                   }
                 }}
                 data-el-wrapper
+                data-el-id={el.id}
                 data-blend={el.blend === 'multiply' ? 'multiply' : undefined}
                 className={`absolute cursor-move ${isSelected ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                 style={{
@@ -4652,12 +4678,21 @@ export default function DesignStudioPage() {
                   left: `${el.x}%`,
                   top: `${el.y}%`,
                   width: `${el.width}%`,
-                  // Shapes get an explicit height so they can be sized
-                  // non-square via free corner drag. Image / text leave
-                  // height unset and derive it from natural aspect /
-                  // fontSize, same as before.
-                  height: el.type === 'shape' ? `${el.height ?? el.width}%` : undefined,
-                  transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+                  // Shapes always carry an explicit height; images get one
+                  // once free corner-drag has set it (stretching them off
+                  // natural aspect). Text height stays derived from
+                  // fontSize — its ratio change rides stretchY below.
+                  height: el.type === 'shape'
+                    ? `${el.height ?? el.width}%`
+                    : el.type === 'image' && el.height != null
+                      ? `${el.height}%`
+                      : undefined,
+                  transform: [
+                    el.rotation ? `rotate(${el.rotation}deg)` : '',
+                    el.type === 'text' && el.stretchY != null && el.stretchY !== 1
+                      ? `scaleY(${el.stretchY})`
+                      : '',
+                  ].filter(Boolean).join(' ') || undefined,
                   // Without this the browser steals single-finger touches
                   // for page scrolling, so dragging an element on mobile
                   // both moved the element and scrolled the canvas.
@@ -4680,7 +4715,12 @@ export default function DesignStudioPage() {
                     // while the bake is in flight.
                     src={bakedSrcFor(el) ?? el.content}
                     alt="Design element"
-                    className={`w-full object-contain pointer-events-none ${el.blend === 'multiply' ? '' : 'drop-shadow-lg'}`}
+                    // With an explicit height the image stretches to fill the
+                    // box (free-resize ratio change); object-contain would
+                    // letterbox it back to natural aspect — and html2canvas
+                    // ignores object-fit anyway, so fill keeps studio and
+                    // capture in agreement.
+                    className={`w-full pointer-events-none ${el.height != null ? 'h-full' : 'object-contain'} ${el.blend === 'multiply' ? '' : 'drop-shadow-lg'}`}
                     draggable={false}
                     style={{
                       borderRadius: el.borderRadius ? `${el.borderRadius}%` : undefined,
