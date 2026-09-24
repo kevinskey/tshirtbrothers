@@ -1119,6 +1119,10 @@ export default function AdminPage() {
     cost: number | null; sale_expires?: string | null;
   }>>([]);
   const [invCostLoading, setInvCostLoading] = useState(false);
+  // Rows whose size/color was just edited: refill their Price from the next
+  // live-cost result even if they already had one (a size change means the
+  // old price is stale).
+  const invRepriceRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const items = invoiceForm.items;
     if (invoiceView !== 'create' || items.length === 0) { setInvLineCosts([]); return; }
@@ -1130,7 +1134,27 @@ export default function AdminPage() {
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
           body: JSON.stringify({ lines: items.map((it) => ({ description: it.description, size: it.size, color: it.color })) }),
         });
-        if (res.ok) setInvLineCosts((await res.json()).lines);
+        if (res.ok) {
+          const lines = (await res.json()).lines as Array<{
+            style: { ss_id: string; brand: string; style_number: string } | null;
+            cost: number | null; sale_expires?: string | null;
+          }>;
+          setInvLineCosts(lines);
+          // Fill Price from live cost on rows that are still $0 or were
+          // flagged for reprice. Manually priced rows are left alone.
+          setInvoiceForm((prev) => {
+            let changed = false;
+            const next = prev.items.map((it, i) => {
+              const cost = lines[i]?.cost;
+              if (cost == null || cost <= 0) return it;
+              const shouldFill = !it.unit_price || invRepriceRef.current.has(i);
+              if (shouldFill && it.unit_price !== cost) { changed = true; return { ...it, unit_price: cost }; }
+              return it;
+            });
+            invRepriceRef.current.clear();
+            return changed ? { ...prev, items: next } : prev;
+          });
+        }
       } catch { /* best effort */ }
       setInvCostLoading(false);
     }, 800);
@@ -1919,6 +1943,7 @@ export default function AdminPage() {
   }
 
   function handleInvoiceItemChange(idx: number, field: keyof InvoiceItem, value: string | number) {
+    if (field === 'size' || field === 'color') invRepriceRef.current.add(idx);
     setInvoiceForm(prev => {
       const items = [...prev.items];
       const existing = items[idx] ?? { description: '', quantity: 1, unit_price: 0 };
