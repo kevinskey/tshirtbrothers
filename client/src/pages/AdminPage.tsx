@@ -1040,7 +1040,7 @@ export default function AdminPage() {
   const [invoiceLineSearchIdx, setInvoiceLineSearchIdx] = useState<number | null>(null);
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
   const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
-  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[]; replaceIdx: number | null }>(null);
+  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[]; replaceIdx: number | null; sizeCosts: Record<string, number> | null }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState('');
@@ -1979,7 +1979,53 @@ export default function AdminPage() {
       sizes,
       colorNames,
       replaceIdx,
+      sizeCosts: null,
     });
+    loadConfiguratorSizeCosts(p, colorNames[0] ?? '');
+  }
+
+  // Live per-size S&S pricing for the configurator (extended sizes cost
+  // more; white vs colors can differ too). Best effort — the flat
+  // unitPrice remains the fallback for sizes S&S doesn't return.
+  async function loadConfiguratorSizeCosts(p: Product, color: string) {
+    const rec = p as unknown as Record<string, unknown>;
+    const styleQ = String(rec.style_number || p.name || '').trim();
+    if (styleQ.length < 2) return;
+    try {
+      const res = await fetch(
+        `/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(styleQ)}&color=${encodeURIComponent(color.trim())}`,
+        { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } },
+      );
+      if (!res.ok) return;
+      const d = await res.json();
+      const costs: Record<string, number> = {};
+      for (const [k, v] of Object.entries((d.sizes ?? {}) as Record<string, { cost: number }>)) {
+        const c = Number(v.cost);
+        if (Number.isFinite(c) && c > 0) costs[k] = c;
+      }
+      if (Object.keys(costs).length === 0) return;
+      setProductConfig((cur) => (cur && cur.product.id === p.id ? { ...cur, sizeCosts: costs } : cur));
+    } catch { /* keep flat price */ }
+  }
+
+  // Unit price for one size line. With live costs: custom_price keeps the
+  // house sell price on core sizes and adds the real S&S upcharge for
+  // extended ones; otherwise the line prefills at the size's live cost
+  // (same wholesale-prefill behavior as before, now size-aware).
+  function configPriceForSize(cfg: NonNullable<typeof productConfig>, sz: string): number {
+    if (!cfg.sizeCosts) return cfg.unitPrice;
+    const norm = (x: string) => x.toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
+    let sizeCost: number | null = null;
+    for (const [k, v] of Object.entries(cfg.sizeCosts)) {
+      if (norm(k) === norm(sz)) { sizeCost = v; break; }
+    }
+    if (sizeCost == null) return cfg.unitPrice;
+    const customP = cfg.product.custom_price ? Number(cfg.product.custom_price) : null;
+    if (customP) {
+      const base = Math.min(...Object.values(cfg.sizeCosts));
+      return +(customP + Math.max(0, sizeCost - base)).toFixed(2);
+    }
+    return +sizeCost.toFixed(2);
   }
 
   // Launches Design Studio in attach-to-invoice mode. If the invoice hasn't
@@ -5943,7 +5989,11 @@ export default function AdminPage() {
                           <label className="block text-xs text-gray-500 mb-1">Color</label>
                           <select
                             value={productConfig.color}
-                            onChange={(e) => setProductConfig((p) => p ? { ...p, color: e.target.value } : p)}
+                            onChange={(e) => {
+                              const c = e.target.value;
+                              setProductConfig((p) => p ? { ...p, color: c, sizeCosts: null } : p);
+                              loadConfiguratorSizeCosts(productConfig.product, c);
+                            }}
                             className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
                           >
                             {productConfig.colorNames.map((c) => (
@@ -5967,26 +6017,48 @@ export default function AdminPage() {
                       <div>
                         <label className="block text-xs text-gray-500 mb-2">Sizes & Quantities</label>
                         <div className="grid grid-cols-3 gap-2">
-                          {STANDARD_SIZES.map((sz) => (
-                            <label key={sz} className="flex items-center gap-2 px-2 py-1.5 border border-gray-200 rounded-lg">
-                              <span className="text-xs font-semibold text-gray-700 w-8">{sz}</span>
-                              <input
-                                type="number"
-                                min={0}
-                                value={productConfig.sizeQtys[sz] || ''}
-                                onChange={(e) => setProductConfig((p) => p ? { ...p, sizeQtys: { ...p.sizeQtys, [sz]: e.target.value } } : p)}
-                                className="flex-1 min-w-0 px-1 py-0.5 text-sm text-right border-0 focus:outline-none"
-                                placeholder="0"
-                              />
+                          {STANDARD_SIZES.map((sz) => {
+                            const szPrice = configPriceForSize(productConfig, sz);
+                            return (
+                            <label key={sz} className="px-2 py-1.5 border border-gray-200 rounded-lg">
+                              <span className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-gray-700 w-8">{sz}</span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={productConfig.sizeQtys[sz] || ''}
+                                  onChange={(e) => setProductConfig((p) => p ? { ...p, sizeQtys: { ...p.sizeQtys, [sz]: e.target.value } } : p)}
+                                  className="flex-1 min-w-0 px-1 py-0.5 text-sm text-right border-0 focus:outline-none"
+                                  placeholder="0"
+                                />
+                              </span>
+                              {productConfig.sizeCosts && (
+                                <span className={`block text-[10px] text-right ${szPrice > productConfig.unitPrice ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
+                                  ${szPrice.toFixed(2)}
+                                </span>
+                              )}
                             </label>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
 
                       <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700">
-                        Unit price <span className="font-semibold">${productConfig.unitPrice.toFixed(2)}</span> ·
-                        Total qty <span className="font-semibold">{totalQty}</span> ·
-                        Subtotal <span className="font-semibold">${(totalQty * productConfig.unitPrice).toFixed(2)}</span>
+                        {(() => {
+                          const subtotal = STANDARD_SIZES.reduce((s, sz) => {
+                            const q = parseInt(productConfig.sizeQtys[sz] || '0', 10) || 0;
+                            return s + q * configPriceForSize(productConfig, sz);
+                          }, 0);
+                          return (
+                            <>
+                              {productConfig.sizeCosts
+                                ? <>Per-size live S&amp;S pricing ·{' '}</>
+                                : <>Unit price <span className="font-semibold">${productConfig.unitPrice.toFixed(2)}</span> ·{' '}</>}
+                              Total qty <span className="font-semibold">{totalQty}</span> ·
+                              Subtotal <span className="font-semibold">${subtotal.toFixed(2)}</span>
+                            </>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex gap-3">
@@ -5994,7 +6066,7 @@ export default function AdminPage() {
                         <button
                           disabled={totalQty === 0}
                           onClick={() => {
-                            const { product, unitPrice, weightOz, color, sizeQtys, replaceIdx } = productConfig;
+                            const { product, weightOz, color, sizeQtys, replaceIdx } = productConfig;
                             // One invoice line per size that has a qty > 0
                             const newItems: InvoiceItem[] = [];
                             for (const sz of STANDARD_SIZES) {
@@ -6005,7 +6077,7 @@ export default function AdminPage() {
                                   color: color || undefined,
                                   size: sz,
                                   quantity: qty,
-                                  unit_price: unitPrice,
+                                  unit_price: configPriceForSize(productConfig, sz),
                                   ...(weightOz ? { weight_oz: weightOz } : {}),
                                 });
                               }
