@@ -1035,9 +1035,12 @@ export default function AdminPage() {
   const [invoiceDepositPercent, setInvoiceDepositPercent] = useState('50');
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
   const [invoiceProductSearch, setInvoiceProductSearch] = useState('');
+  // Which line-item row (if any) is driving catalog autocomplete from its
+  // Description cell. The row's description text doubles as the search term.
+  const [invoiceLineSearchIdx, setInvoiceLineSearchIdx] = useState<number | null>(null);
   const [invoiceShipTo, setInvoiceShipTo] = useState({ name: '', street: '', city: '', state: '', zip: '' });
   const [invoiceCustomerSuggestOpen, setInvoiceCustomerSuggestOpen] = useState(false);
-  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[] }>(null);
+  const [productConfig, setProductConfig] = useState<null | { product: Product; unitPrice: number; weightOz: number; color: string; sizeQtys: Record<string, string>; sizes: string[]; colorNames: string[]; replaceIdx: number | null }>(null);
   const [shippingRates, setShippingRates] = useState<{ id: string; carrier: string; service: string; rate: string; deliveryDays: number | null }[]>([]);
   const [loadingRates, setLoadingRates] = useState(false);
   const [ratesError, setRatesError] = useState('');
@@ -1331,10 +1334,15 @@ export default function AdminPage() {
     enabled: activeSection === 'invoices',
   });
 
+  // One shared catalog search feeds both the "Add Products from Catalog" box
+  // and the per-line Description autocomplete (whichever is active).
+  const invoiceProductSearchTerm = invoiceLineSearchIdx != null
+    ? (invoiceForm.items[invoiceLineSearchIdx]?.description || '')
+    : invoiceProductSearch;
   const invoiceProductsQuery = useQuery({
-    queryKey: ['admin', 'invoice-products', invoiceProductSearch],
-    queryFn: () => fetchAdminProducts(invoiceProductSearch),
-    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceProductSearch.length >= 2,
+    queryKey: ['admin', 'invoice-products', invoiceProductSearchTerm],
+    queryFn: () => fetchAdminProducts(invoiceProductSearchTerm),
+    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceProductSearchTerm.length >= 2,
   });
 
   const customProductsQuery = useQuery({
@@ -1931,6 +1939,47 @@ export default function AdminPage() {
       ...prev,
       items: prev.items.filter((_, i) => i !== idx),
     }));
+  }
+
+  // Shared by the "Add Products from Catalog" box and the per-line
+  // Description autocomplete: opens the size/color configurator for an S&S
+  // product. replaceIdx, when set, is the line the configured rows replace.
+  async function openProductConfigurator(p: Product, replaceIdx: number | null = null) {
+    const wholesale = p.base_price && Number(p.base_price) > 0 ? Number(p.base_price) : null;
+    const customP = p.custom_price ? Number(p.custom_price) : null;
+    const ssId = (p as unknown as Record<string, unknown>).ss_id;
+    let weightOz = 0;
+    if (ssId) {
+      try {
+        const wr = await fetch(`/api/products/weight/${ssId}`);
+        if (wr.ok) { const wd = await wr.json(); weightOz = wd.weight_oz || 0; }
+      } catch {}
+    }
+    // Sizes/colors come from the S&S catalog row (colors may be {name,hex}
+    // objects); if the row has no size run yet, pull it live from S&S
+    // (which also heals the products row).
+    const nameOf = (v: unknown) =>
+      v && typeof v === 'object' && 'name' in v ? String((v as { name: unknown }).name) : String(v ?? '');
+    const rawSizes = (p as unknown as { sizes?: unknown }).sizes;
+    let sizes = Array.isArray(rawSizes) ? rawSizes.map(nameOf).filter(Boolean) : [];
+    let colorNames = Array.isArray(p.colors) ? p.colors.map(nameOf).filter(Boolean) : [];
+    if ((sizes.length === 0 || colorNames.length === 0) && ssId) {
+      try {
+        const d = await fetchSsStyleDetail(String(ssId));
+        if (sizes.length === 0) sizes = (d.sizes ?? []).map(nameOf).filter(Boolean);
+        if (colorNames.length === 0) colorNames = (d.colors ?? []).map(nameOf).filter(Boolean);
+      } catch { /* fall back to the standard grid */ }
+    }
+    setProductConfig({
+      product: p,
+      unitPrice: customP || wholesale || 0,
+      weightOz,
+      color: colorNames[0] ?? '',
+      sizeQtys: {},
+      sizes,
+      colorNames,
+      replaceIdx,
+    });
   }
 
   // Launches Design Studio in attach-to-invoice mode. If the invoice hasn't
@@ -2708,8 +2757,8 @@ export default function AdminPage() {
   const invoices = invoicesQuery.data ?? [];
   const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
   const customProducts = customProductsQuery.data ?? [];
-  const matchingCustomProducts = invoiceProductSearch.length >= 2
-    ? customProducts.filter((cp: CustomProduct) => cp.name.toLowerCase().includes(invoiceProductSearch.toLowerCase()))
+  const matchingCustomProducts = invoiceProductSearchTerm.length >= 2
+    ? customProducts.filter((cp: CustomProduct) => cp.name.toLowerCase().includes(invoiceProductSearchTerm.toLowerCase()))
     : [];
   const customerDetail = customerDetailQuery.data ?? null;
 
@@ -5166,42 +5215,10 @@ export default function AdminPage() {
                           return (
                             <button
                               key={p.id}
-                              onClick={async () => {
-                                const ssId = (p as unknown as Record<string, unknown>).ss_id;
-                                let weightOz = 0;
-                                if (ssId) {
-                                  try {
-                                    const wr = await fetch(`/api/products/weight/${ssId}`);
-                                    if (wr.ok) { const wd = await wr.json(); weightOz = wd.weight_oz || 0; }
-                                  } catch {}
-                                }
+                              onClick={() => {
                                 // Open the size/color configurator instead of
                                 // immediately adding a single qty-1 line.
-                                // Sizes/colors come from the S&S catalog row
-                                // (colors may be {name,hex} objects); if the
-                                // row has no size run yet, pull it live from
-                                // S&S (which also heals the products row).
-                                const nameOf = (v: unknown) =>
-                                  v && typeof v === 'object' && 'name' in v ? String((v as { name: unknown }).name) : String(v ?? '');
-                                const rawSizes = (p as unknown as { sizes?: unknown }).sizes;
-                                let sizes = Array.isArray(rawSizes) ? rawSizes.map(nameOf).filter(Boolean) : [];
-                                let colorNames = Array.isArray(p.colors) ? p.colors.map(nameOf).filter(Boolean) : [];
-                                if ((sizes.length === 0 || colorNames.length === 0) && ssId) {
-                                  try {
-                                    const d = await fetchSsStyleDetail(String(ssId));
-                                    if (sizes.length === 0) sizes = (d.sizes ?? []).map(nameOf).filter(Boolean);
-                                    if (colorNames.length === 0) colorNames = (d.colors ?? []).map(nameOf).filter(Boolean);
-                                  } catch { /* fall back to the standard grid */ }
-                                }
-                                setProductConfig({
-                                  product: p,
-                                  unitPrice: customP || wholesale || 0,
-                                  weightOz,
-                                  color: colorNames[0] ?? '',
-                                  sizeQtys: {},
-                                  sizes,
-                                  colorNames,
-                                });
+                                openProductConfigurator(p);
                                 setInvoiceProductSearch('');
                               }}
                               className="w-full text-left px-3 py-2.5 hover:bg-gray-50 text-sm flex items-center gap-3"
@@ -5360,7 +5377,60 @@ export default function AdminPage() {
                             return (
                             <tr key={idx}>
                               <td className="px-3 py-2">
-                                <input type="text" value={item.description} onChange={e => handleInvoiceItemChange(idx, 'description', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="Item description" />
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    value={item.description}
+                                    onChange={e => { handleInvoiceItemChange(idx, 'description', e.target.value); setInvoiceLineSearchIdx(idx); }}
+                                    onFocus={() => setInvoiceLineSearchIdx(idx)}
+                                    onBlur={() => setInvoiceLineSearchIdx(cur => (cur === idx ? null : cur))}
+                                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
+                                    placeholder="Item description or search catalog…"
+                                  />
+                                  {invoiceLineSearchIdx === idx && (item.description || '').length >= 2 && (invoiceSearchProducts.length > 0 || matchingCustomProducts.length > 0) && (
+                                    <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                                      {matchingCustomProducts.slice(0, 5).map((cp: CustomProduct) => (
+                                        <button
+                                          key={`line-custom-${cp.id}`}
+                                          // onMouseDown (with preventDefault) so selection wins over the input's blur
+                                          onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            setInvoiceForm(p => {
+                                              const items = [...p.items];
+                                              const existing = items[idx] ?? { description: '', quantity: 1, unit_price: 0 };
+                                              items[idx] = { ...existing, description: cp.name, unit_price: Number(cp.price) || 0 };
+                                              return { ...p, items };
+                                            });
+                                            setInvoiceLineSearchIdx(null);
+                                          }}
+                                          className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center justify-between gap-2"
+                                        >
+                                          <span className="truncate">{cp.name} <span className="text-[10px] text-orange-600">Custom</span></span>
+                                          {cp.price ? <span className="text-xs font-semibold text-green-700 flex-shrink-0">${Number(cp.price).toFixed(2)}</span> : null}
+                                        </button>
+                                      ))}
+                                      {invoiceSearchProducts.slice(0, 8).map((p: Product) => {
+                                        const wholesale = p.base_price && Number(p.base_price) > 0 ? Number(p.base_price) : null;
+                                        const customP = p.custom_price ? Number(p.custom_price) : null;
+                                        const shown = customP ?? wholesale;
+                                        return (
+                                          <button
+                                            key={`line-ss-${p.id}`}
+                                            onMouseDown={(e) => {
+                                              e.preventDefault();
+                                              openProductConfigurator(p, idx);
+                                              setInvoiceLineSearchIdx(null);
+                                            }}
+                                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center justify-between gap-2"
+                                          >
+                                            <span className="truncate">{p.name} <span className="text-[10px] text-gray-400">{p.brand}</span></span>
+                                            {shown != null && <span className="text-xs font-semibold text-gray-700 flex-shrink-0">${shown.toFixed(2)}</span>}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-2 py-2 hidden md:table-cell">
                                 <input type="text" value={item.color || ''} onChange={e => handleInvoiceItemChange(idx, 'color' as keyof InvoiceItem, e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" placeholder="—" />
@@ -5924,7 +5994,7 @@ export default function AdminPage() {
                         <button
                           disabled={totalQty === 0}
                           onClick={() => {
-                            const { product, unitPrice, weightOz, color, sizeQtys } = productConfig;
+                            const { product, unitPrice, weightOz, color, sizeQtys, replaceIdx } = productConfig;
                             // One invoice line per size that has a qty > 0
                             const newItems: InvoiceItem[] = [];
                             for (const sz of STANDARD_SIZES) {
@@ -5942,6 +6012,13 @@ export default function AdminPage() {
                             }
                             if (newItems.length === 0) return;
                             setInvoiceForm((p) => {
+                              // Came from a line's Description autocomplete:
+                              // the configured rows replace that line.
+                              if (replaceIdx != null && replaceIdx < p.items.length) {
+                                const items = [...p.items];
+                                items.splice(replaceIdx, 1, ...newItems);
+                                return { ...p, items };
+                              }
                               // If the only existing item is the placeholder empty row, replace it
                               const hasPlaceholder = p.items.length === 1 && !p.items[0]!.description && (!p.items[0]!.unit_price || p.items[0]!.unit_price === 0);
                               return { ...p, items: hasPlaceholder ? newItems : [...p.items, ...newItems] };
