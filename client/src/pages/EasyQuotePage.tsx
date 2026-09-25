@@ -3,7 +3,7 @@
 // question per card, big touch targets, priced by the same server engine
 // (/api/quote/calculate|save|lock-in) as the classic calculator.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { logActivity, logActivityOnce, rememberEmail } from '@/lib/activity';
 import {
@@ -82,6 +82,32 @@ function formatPhone(v: string): string {
 const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'art', 'quote'] as const;
 type Step = typeof STEPS[number];
 
+// Router state handed over by the Design Studio's "Get Price" button
+// (DesignStudioPage handleGetPrice). The studio has already uploaded the
+// captures to Spaces; only the URLs travel here. This page took over
+// /quote from InstantQuotePage (which consumed this state) — dropping it
+// silently produced designless quotes from studio customers.
+type StudioHandoff = {
+  fromDesignStudio?: boolean;
+  product?: { name?: string } | null;
+  color?: { name?: string } | null;
+  mockupUrl?: string | null;
+  graphicUrl?: string | null;
+  mockupUrlBack?: string | null;
+  graphicUrlBack?: string | null;
+};
+
+// Map a catalog product name onto the wizard's product-type keys.
+function studioProductKey(name: string | undefined): ProductKey {
+  const n = (name ?? '').toLowerCase();
+  if (/hoodie|hooded/.test(n)) return 'hoodie';
+  if (/sweatshirt|crewneck|fleece crew/.test(n)) return 'sweatshirt';
+  if (/tank|sleeveless/.test(n)) return 'tank';
+  if (/jacket|windbreaker|softshell/.test(n)) return 'jacket';
+  if (/\bcap\b|\bhat\b|beanie|trucker/.test(n)) return 'cap';
+  return 'tshirt';
+}
+
 export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   useEffect(() => { logActivityOnce('quote_wizard_open'); }, []);
   const es = lang === 'es';
@@ -92,18 +118,36 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [step, setStep] = useState<Step>('name');
   const [settings, setSettings] = useState<Settings | null>(null);
 
+  const location = useLocation();
+  // Read once on mount — the state rides along on back/forward too, and
+  // re-deriving it per render would fight the user's own edits.
+  const [studio] = useState<StudioHandoff | null>(() => {
+    const s = location.state as StudioHandoff | null;
+    return s?.fromDesignStudio ? s : null;
+  });
+  // One art file per printed side: the transparent graphic is the print
+  // file; the mockup is the fallback when the graphic export failed.
+  // Exactly one URL per side keeps the artUrls>=2 ⇒ front&back auto-flip
+  // honest (the mockups still reach the shop via the notes line).
+  const studioArt = useMemo(() => (studio
+    ? [studio.graphicUrl || studio.mockupUrl, studio.graphicUrlBack || studio.mockupUrlBack]
+      .filter((u): u is string => Boolean(u))
+    : []), [studio]);
+
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [picked, setPicked] = useState<ProductKey[]>([]);
+  const [picked, setPicked] = useState<ProductKey[]>(
+    () => (studio ? [studioProductKey(studio.product?.name)] : []),
+  );
   const [otherAcked, setOtherAcked] = useState(false);
   const [otherText, setOtherText] = useState('');
   // qty[productKey][size] = string; custom types use the single '_qty' key
   const [qty, setQty] = useState<Record<string, Record<string, string>>>({});
-  const [color, setColor] = useState('');
+  const [color, setColor] = useState(() => studio?.color?.name ?? '');
   const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>('');
   const [needBy, setNeedBy] = useState('');
-  const [artUrls, setArtUrls] = useState<string[]>([]);
+  const [artUrls, setArtUrls] = useState<string[]>(() => studioArt);
   const [artUploading, setArtUploading] = useState(0);
   // Print locations (front only vs front & back) — drives numLocations in
   // pricing. Quote #164 shipped a front+back design priced as one side, so
@@ -318,7 +362,11 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     setError(null);
     try {
       const notes = [
-        `Easy Quote wizard`, color && `Color: ${color}`,
+        `Easy Quote wizard`,
+        studio && 'Designed in Design Studio',
+        studio?.mockupUrl && `Studio mockup (front): ${studio.mockupUrl}`,
+        studio?.mockupUrlBack && `Studio mockup (back): ${studio.mockupUrlBack}`,
+        color && `Color: ${color}`,
         quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
         `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
         needBy && `Need by: ${needBy}${isRush ? ' (RUSH)' : ''}`,
@@ -426,7 +474,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
 
       <div ref={cardRef} key={step} className="animate-[eq-in_.35s_ease]" style={{ minHeight: 320 }}>
         {step === 'name' && (
-          <Card title={tr("Hi! 👋 What's your name?", '¡Hola! 👋 ¿Cómo te llamas?')}>
+          <Card title={tr("Hi! 👋 What's your name?", '¡Hola! 👋 ¿Cómo te llamas?')}
+            sub={studio ? tr('Your design is saved & attached — a few quick questions to price it.', 'Tu diseño está guardado y adjunto — unas preguntas rápidas para cotizarlo.') : undefined}>
             <BigInput autoFocus value={name} onChange={setName} placeholder={tr('Your name', 'Tu nombre')}
               onEnter={() => canNext && go(1)} />
           </Card>
@@ -634,6 +683,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         {step === 'art' && (
           <Card title={tr('Got art? 🎨', '¿Tienes tu diseño? 🎨')}
             sub={tr('Upload your logo or design — or skip and send it later.', 'Sube tu logo o diseño — o sáltalo y envíalo después.')}>
+            {studioArt.length > 0 && studioArt.some((u) => artUrls.includes(u)) && (
+              <Note tone="green">
+                ✓ {tr('Your Design Studio artwork is already attached below — add more files if you like.',
+                  'Tu diseño del Design Studio ya está adjunto abajo — agrega más archivos si quieres.')}
+              </Note>
+            )}
             <button type="button" onClick={() => artInputRef.current?.click()}
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center hover:border-gray-500 transition-colors">
               <p className="text-3xl">📂</p>
