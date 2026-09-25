@@ -2204,6 +2204,10 @@ export default function AdminPage() {
       }
       setPreviewInvoice(null);
       setEditingInvoiceId(null);
+      // Leave the now-empty preview view, or the screen renders blank
+      // (invoiceView === 'preview' with previewInvoice === null shows nothing).
+      setInvoiceView('list');
+      resetInvoiceForm();
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
     } catch (err) {
       if (editingInvoiceId) alert(`Failed to update/send: ${err instanceof Error ? err.message : 'Unknown error'}`);
@@ -2234,6 +2238,8 @@ export default function AdminPage() {
       }
       setPreviewInvoice(null);
       setEditingInvoiceId(null);
+      setInvoiceView('list');
+      resetInvoiceForm();
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
     } catch (err) {
       if (editingInvoiceId) alert(`Failed to update/send: ${err instanceof Error ? err.message : 'Unknown error'}`);
