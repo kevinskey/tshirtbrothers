@@ -74,11 +74,12 @@ const QUOTE_STATUS_STYLE: Record<string, string> = {
   rejected: 'bg-red-100 text-red-800',
 };
 
-function Section({ title, icon: Icon, children }: { title: string; icon: typeof Mail; children: React.ReactNode }) {
+function Section({ title, icon: Icon, action, children }: { title: string; icon: typeof Mail; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white border border-gray-300 rounded-xl">
       <div className="px-4 py-3 border-b font-medium text-sm flex items-center gap-2">
         <Icon className="w-4 h-4 text-gray-500" /> {title}
+        {action && <span className="ml-auto">{action}</span>}
       </div>
       <div className="p-4">{children}</div>
     </div>
@@ -481,7 +482,18 @@ export default function AdminOrderDetailPage() {
             </Section>
 
             {/* Blanks */}
-            <Section title="Blanks (S&S purchase orders)" icon={Package}>
+            <Section
+              title="Blanks (S&S purchase orders)"
+              icon={Package}
+              action={
+                <button
+                  onClick={() => navigate(`/admin?section=purchasing&quote=${quoteId}`)}
+                  className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-lg"
+                >
+                  {purchaseOrders.some((p) => !p.is_test && p.status !== 'cancelled') ? 'Order more blanks' : 'Order blanks (S&S)'}
+                </button>
+              }
+            >
               {purchaseOrders.length === 0 ? (
                 <div className="text-sm text-gray-500">No blanks ordered for this job yet.</div>
               ) : purchaseOrders.map((po) => (
