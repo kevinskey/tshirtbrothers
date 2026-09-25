@@ -1140,16 +1140,21 @@ export default function AdminPage() {
             cost: number | null; sale_expires?: string | null;
           }>;
           setInvLineCosts(lines);
-          // Fill Price from live cost on rows that are still $0 or were
-          // flagged for reprice. Manually priced rows are left alone.
+          // Keep each row's wholesale cost current, and fill Price (sell,
+          // standard markup over cost) on rows still at $0 or flagged for
+          // reprice. Manually priced rows keep their price.
           setInvoiceForm((prev) => {
             let changed = false;
             const next = prev.items.map((it, i) => {
               const cost = lines[i]?.cost;
               if (cost == null || cost <= 0) return it;
-              const shouldFill = !it.unit_price || invRepriceRef.current.has(i);
-              if (shouldFill && it.unit_price !== cost) { changed = true; return { ...it, unit_price: cost }; }
-              return it;
+              const out = { ...it };
+              if (it.cost !== cost) { out.cost = cost; changed = true; }
+              const sell = +(cost * STANDARD_MARKUP).toFixed(2);
+              if ((!it.unit_price || invRepriceRef.current.has(i)) && it.unit_price !== sell) {
+                out.unit_price = sell; changed = true;
+              }
+              return changed ? out : it;
             });
             invRepriceRef.current.clear();
             return changed ? { ...prev, items: next } : prev;
@@ -1199,6 +1204,9 @@ export default function AdminPage() {
   const [priceTaxExempt, setPriceTaxExempt] = useState(false);
   const [priceMessage, setPriceMessage] = useState('');
   const TAX_RATE = 0.0775; // Fairburn, GA combined sales tax
+  // House rule: garments sell at 70% over wholesale unless a custom_price
+  // says otherwise. Feeds the invoice Price prefill next to the Cost column.
+  const STANDARD_MARKUP = 1.7;
   // Gang-sheet calculator inputs
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcGraphicW, setCalcGraphicW] = useState('10');
@@ -2033,24 +2041,29 @@ export default function AdminPage() {
     } catch { /* keep flat price */ }
   }
 
-  // Unit price for one size line. With live costs: custom_price keeps the
-  // house sell price on core sizes and adds the real S&S upcharge for
-  // extended ones; otherwise the line prefills at the size's live cost
-  // (same wholesale-prefill behavior as before, now size-aware).
-  function configPriceForSize(cfg: NonNullable<typeof productConfig>, sz: string): number {
+  // Wholesale blank cost for one size line (live S&S, falls back to the
+  // style-level price when the size isn't in the live rows).
+  function configCostForSize(cfg: NonNullable<typeof productConfig>, sz: string): number {
     if (!cfg.sizeCosts) return cfg.unitPrice;
     const norm = (x: string) => x.toUpperCase().replace(/^([0-9])X$/, '$1XL').trim();
-    let sizeCost: number | null = null;
     for (const [k, v] of Object.entries(cfg.sizeCosts)) {
-      if (norm(k) === norm(sz)) { sizeCost = v; break; }
+      if (norm(k) === norm(sz)) return +v.toFixed(2);
     }
-    if (sizeCost == null) return cfg.unitPrice;
+    return cfg.unitPrice;
+  }
+
+  // Sell price for one size line: the product's custom_price (house sell
+  // price) plus the real extended-size upcharge when set; otherwise the
+  // standard markup over wholesale.
+  function configSellForSize(cfg: NonNullable<typeof productConfig>, sz: string): number {
+    const cost = configCostForSize(cfg, sz);
     const customP = cfg.product.custom_price ? Number(cfg.product.custom_price) : null;
-    if (customP) {
+    if (customP && cfg.sizeCosts) {
       const base = Math.min(...Object.values(cfg.sizeCosts));
-      return +(customP + Math.max(0, sizeCost - base)).toFixed(2);
+      return +(customP + Math.max(0, cost - base)).toFixed(2);
     }
-    return +sizeCost.toFixed(2);
+    if (customP) return customP;
+    return +(cost * STANDARD_MARKUP).toFixed(2);
   }
 
   // Launches Design Studio in attach-to-invoice mode. If the invoice hasn't
@@ -5437,6 +5450,7 @@ export default function AdminPage() {
                             <th className="px-2 py-2 font-medium w-24 hidden md:table-cell">Color</th>
                             <th className="px-2 py-2 font-medium w-16 hidden md:table-cell">Size</th>
                             <th className="px-2 py-2 font-medium w-20">Qty</th>
+                            <th className="px-2 py-2 font-medium w-16 hidden md:table-cell" title="Wholesale blank cost (live S&S) — not billed">Cost</th>
                             <th className="px-2 py-2 font-medium w-20">Price</th>
                             <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Wt (oz)</th>
                             <th className="px-2 py-2 font-medium w-20 hidden md:table-cell">Ship $</th>
@@ -5515,10 +5529,13 @@ export default function AdminPage() {
                               <td className="px-2 py-2">
                                 <input type="number" min="1" value={item.quantity} onChange={e => handleInvoiceItemChange(idx, 'quantity', e.target.value)} className="w-full min-w-[3.5rem] border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
                               </td>
+                              <td className="px-2 py-2 hidden md:table-cell text-xs text-gray-500 whitespace-nowrap">
+                                {item.cost != null && item.cost > 0 ? `$${Number(item.cost).toFixed(2)}` : '—'}
+                              </td>
                               <td className="px-2 py-2">
                                 <div className="relative">
                                   <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">$</span>
-                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className="w-full pl-4 pr-1 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                                  <input type="number" step="0.01" min="0" value={item.unit_price} onChange={e => handleInvoiceItemChange(idx, 'unit_price', e.target.value)} className={`w-full pl-4 pr-1 py-1.5 border rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500 ${item.cost != null && item.cost > 0 && item.unit_price > 0 && item.unit_price <= item.cost ? 'border-red-400 bg-red-50' : 'border-gray-200'}`} />
                                 </div>
                               </td>
                               <td className="px-2 py-2 hidden md:table-cell">
@@ -5544,50 +5561,29 @@ export default function AdminPage() {
                         </tbody>
                       </table>
                     </div>
-                    {/* Live blank cost + margin — auto-detected per line from descriptions */}
-                    <div className="mt-3 bg-blue-50/60 border border-blue-100 rounded-lg p-3">
-                      <p className="text-sm font-semibold text-gray-900 mb-1">
-                        Live Blank Cost (S&amp;S) {invCostLoading && <Loader2 className="inline w-3.5 h-3.5 animate-spin text-blue-500" />}
-                      </p>
-                      {(() => {
-                        const byStyle: Record<string, { label: string; qty: number; blanks: number; margin: number }> = {};
-                        let matched = 0; let unmatched = 0; let blanks = 0; let margin = 0; let saleExp: string | null = null;
-                        invoiceForm.items.forEach((it, i) => {
-                          const lc = invLineCosts[i];
-                          if (!lc?.style || lc.cost == null) { if (it.description) unmatched++; return; }
-                          matched += it.quantity;
-                          blanks += lc.cost * it.quantity;
-                          margin += (it.unit_price - lc.cost) * it.quantity;
-                          if (lc.sale_expires) saleExp = lc.sale_expires;
-                          const k = lc.style.ss_id;
-                          if (!byStyle[k]) byStyle[k] = { label: `${lc.style.brand} ${lc.style.style_number}`, qty: 0, blanks: 0, margin: 0 };
-                          byStyle[k].qty += it.quantity;
-                          byStyle[k].blanks += lc.cost * it.quantity;
-                          byStyle[k].margin += (it.unit_price - lc.cost) * it.quantity;
-                        });
-                        if (matched === 0) {
-                          return <p className="text-[11px] text-gray-400">Include the style number in item descriptions (e.g. "Gildan 18500") and live costs appear here automatically.</p>;
-                        }
-                        const soon = saleExp && (new Date(saleExp).getTime() - Date.now()) < 4 * 86400000;
-                        return (
-                          <div className="space-y-1">
-                            {Object.values(byStyle).map((st) => (
-                              <div key={st.label} className="flex justify-between text-xs text-gray-700">
-                                <span>{st.label} × {st.qty} — blanks ${st.blanks.toFixed(2)}</span>
-                                <span className={st.margin >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>margin ${st.margin.toFixed(2)}</span>
-                              </div>
-                            ))}
-                            <div className="flex justify-between text-xs font-bold border-t border-blue-100 pt-1">
-                              <span>{matched} pcs · blanks ${blanks.toFixed(2)}</span>
-                              <span className={margin >= 0 ? 'text-green-700' : 'text-red-600'}>gross margin ${margin.toFixed(2)}</span>
-                            </div>
-                            {unmatched > 0 && <p className="text-[10px] text-gray-400">{unmatched} line(s) without a recognizable style number.</p>}
-                            {saleExp && <p className={`text-[10px] ${soon ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>{soon ? '⚠ ' : ''}Sale pricing expires {saleExp}</p>}
-                            <p className="text-[10px] text-gray-400">Live S&amp;S account pricing, matched per line by style + size + color. Margin is before print/labor.</p>
-                          </div>
-                        );
-                      })()}
-                    </div>
+                    {/* One-line blanks/margin rollup — per-line costs now live
+                        in the table's Cost column. */}
+                    {(() => {
+                      let matched = 0; let blanks = 0; let margin = 0; let saleExp: string | null = null;
+                      invoiceForm.items.forEach((it, i) => {
+                        const lc = invLineCosts[i];
+                        if (!lc?.style || lc.cost == null) return;
+                        matched += it.quantity;
+                        blanks += lc.cost * it.quantity;
+                        margin += (it.unit_price - lc.cost) * it.quantity;
+                        if (lc.sale_expires) saleExp = lc.sale_expires;
+                      });
+                      if (matched === 0 && !invCostLoading) return null;
+                      const soon = saleExp && (new Date(saleExp).getTime() - Date.now()) < 4 * 86400000;
+                      return (
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+                          {invCostLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />}
+                          <span>{matched} pcs · blanks <span className="font-semibold">${blanks.toFixed(2)}</span> (live S&amp;S)</span>
+                          <span className={margin >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>gross margin ${margin.toFixed(2)}</span>
+                          {saleExp && <span className={soon ? 'text-amber-700 font-semibold' : 'text-gray-400'}>{soon ? '⚠ ' : ''}sale pricing expires {saleExp}</span>}
+                        </div>
+                      );
+                    })()}
                     <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
                       <Plus className="w-4 h-4" /> Add Item
                     </button>
@@ -6046,7 +6042,8 @@ export default function AdminPage() {
                         <label className="block text-xs text-gray-500 mb-2">Sizes & Quantities</label>
                         <div className="grid grid-cols-3 gap-2">
                           {STANDARD_SIZES.map((sz) => {
-                            const szPrice = configPriceForSize(productConfig, sz);
+                            const szCost = configCostForSize(productConfig, sz);
+                            const szSell = configSellForSize(productConfig, sz);
                             return (
                             <label key={sz} className="px-2 py-1.5 border border-gray-200 rounded-lg">
                               <span className="flex items-center gap-2">
@@ -6061,8 +6058,8 @@ export default function AdminPage() {
                                 />
                               </span>
                               {productConfig.sizeCosts && (
-                                <span className={`block text-[10px] text-right ${szPrice > productConfig.unitPrice ? 'text-amber-700 font-semibold' : 'text-gray-400'}`}>
-                                  ${szPrice.toFixed(2)}
+                                <span className="block text-[10px] text-right text-gray-400">
+                                  cost ${szCost.toFixed(2)} · <span className="text-green-700 font-semibold">${szSell.toFixed(2)}</span>
                                 </span>
                               )}
                             </label>
@@ -6073,17 +6070,18 @@ export default function AdminPage() {
 
                       <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700">
                         {(() => {
-                          const subtotal = STANDARD_SIZES.reduce((s, sz) => {
+                          let blanks = 0; let sell = 0;
+                          for (const sz of STANDARD_SIZES) {
                             const q = parseInt(productConfig.sizeQtys[sz] || '0', 10) || 0;
-                            return s + q * configPriceForSize(productConfig, sz);
-                          }, 0);
+                            blanks += q * configCostForSize(productConfig, sz);
+                            sell += q * configSellForSize(productConfig, sz);
+                          }
                           return (
                             <>
-                              {productConfig.sizeCosts
-                                ? <>Per-size live S&amp;S pricing ·{' '}</>
-                                : <>Unit price <span className="font-semibold">${productConfig.unitPrice.toFixed(2)}</span> ·{' '}</>}
                               Total qty <span className="font-semibold">{totalQty}</span> ·
-                              Subtotal <span className="font-semibold">${subtotal.toFixed(2)}</span>
+                              Blanks <span className="font-semibold">${blanks.toFixed(2)}</span> ·
+                              Sell <span className="font-semibold text-green-700">${sell.toFixed(2)}</span>
+                              {productConfig.sizeCosts ? <span className="text-gray-400"> (live S&amp;S + standard markup)</span> : null}
                             </>
                           );
                         })()}
@@ -6105,7 +6103,8 @@ export default function AdminPage() {
                                   color: color || undefined,
                                   size: sz,
                                   quantity: qty,
-                                  unit_price: configPriceForSize(productConfig, sz),
+                                  cost: configCostForSize(productConfig, sz),
+                                  unit_price: configSellForSize(productConfig, sz),
                                   ...(weightOz ? { weight_oz: weightOz } : {}),
                                 });
                               }

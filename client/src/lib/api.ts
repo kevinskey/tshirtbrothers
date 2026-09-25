@@ -940,6 +940,8 @@ export interface InvoiceItem {
   description: string;
   quantity: number;
   unit_price: number;
+  // Wholesale blank cost (live S&S) — display/margin only, never billed.
+  cost?: number;
   weight_oz?: number;
   shipping_cost?: number;
   color?: string;
