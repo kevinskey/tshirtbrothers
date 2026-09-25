@@ -37,6 +37,7 @@ const STATIC_PAGES = [
   { path: '/webstores',           priority: '0.8', changefreq: 'monthly'},
   { path: '/webstores/business',  priority: '0.8', changefreq: 'monthly'},
   { path: '/pro',                 priority: '0.8', changefreq: 'monthly'},
+  { path: '/holiday-cards',       priority: '0.8', changefreq: 'monthly'},
 ];
 
 const SHOP_CATEGORIES = ['T-Shirts', 'Fleece', 'Headwear', 'Polos', 'Outerwear'];

@@ -31,6 +31,7 @@ import QualityTiersPage from '@/pages/QualityTiersPage';
 import WebstoresPage from '@/pages/WebstoresPage';
 import WebstoresBusinessPage from '@/pages/WebstoresBusinessPage';
 import TsbProPage from '@/pages/TsbProPage';
+import HolidayCardsPage from '@/pages/HolidayCardsPage';
 import ProLoginPage from '@/pages/ProLoginPage';
 import GiftsStorePage from '@/pages/GiftsStorePage';
 import BlogPage from '@/pages/BlogPage';
@@ -143,6 +144,7 @@ function App() {
           <Route path="/webstores/business" element={<WebstoresBusinessPage />} />
           {/* TSB Pro — B2B program landing (business web stores). */}
           <Route path="/pro" element={<TsbProPage />} />
+          <Route path="/holiday-cards" element={<HolidayCardsPage />} />
           <Route path="/gifts" element={<GiftsStorePage />} />
           {/* Custom Gift Club — sister-brand storefront (path mount). */}
           <Route path="/gift-club/*" element={<CgcRoutes base="/gift-club" />} />
