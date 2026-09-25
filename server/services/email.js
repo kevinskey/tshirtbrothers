@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { TIER_PROMISES } from '../routes/gangsheetStore.js';
+import * as theme from './emailTheme.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 // Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
@@ -54,7 +55,7 @@ function baseLayout(title, bodyHtml) {
 }
 
 function formatCurrency(amount) {
-  return `$${Number(amount).toFixed(2)}`;
+  return `$${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function detailRow(label, value) {
@@ -133,7 +134,9 @@ export async function sendQuoteRequestNotification(quote) {
 /**
  * Sends the quoted price to the customer.
  */
-export async function sendQuotePriceToCustomer(quote, priceDetails) {
+// Pure HTML builder — exported so admin previews can render it without
+// sending. sendQuotePriceToCustomer wraps it.
+export async function buildQuoteEmailHtml(quote, priceDetails) {
   const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount } = priceDetails;
   const deposit = (Number(total) * 0.5).toFixed(2);
 
@@ -171,55 +174,118 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
       <td style="padding:10px 12px;font-size:15px;color:${BRAND_ORANGE};font-weight:700;">${formatCurrency(total)}</td>
     </tr>`;
 
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Your Custom Printing Quote</h2>
-    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${quote.customer_name},</p>
-    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Thank you for your interest! Here is your personalized quote from T-Shirt Brothers.</p>
+  // 2026-09 branded redesign — same data, links, and pricing as before,
+  // rendered with the shared theme (see emailTheme.js).
+  const promo = await theme.getActivePromotion();
+  const summaryRows = [
+    { label: 'Base Price (apparel)', value: formatCurrency(basePrice) },
+    { label: 'Printing Cost', value: formatCurrency(printingCost) },
+    Number(designFee) > 0 ? { label: 'Design / Setup Fee', value: formatCurrency(designFee) } : null,
+    Number(rushFee) > 0 ? { label: 'Rush Fee', value: formatCurrency(rushFee) } : null,
+    Number(discountAmount) > 0 ? {
+      label: `${escapeHtml(discountReason || 'Discount')} (${Number(discountPct) || 0}% off)`,
+      value: `&minus;${formatCurrency(discountAmount)}`, color: '#16a34a', bold: true,
+    } : null,
+    Number(shipping) > 0 ? { label: 'Shipping', value: formatCurrency(shipping) } : null,
+    taxExempt
+      ? { label: 'Sales Tax', value: 'Exempt' }
+      : (Number(tax) > 0 ? { label: taxRate ? `Sales Tax (${(Number(taxRate) * 100).toFixed(2)}%)` : 'Sales Tax', value: formatCurrency(tax) } : null),
+  ];
+  const shipAddr = typeof quote.shipping_address === 'string'
+    ? (() => { try { return JSON.parse(quote.shipping_address); } catch { return null; } })()
+    : quote.shipping_address;
+  const shipLines = shipAddr
+    ? [shipAddr.name, shipAddr.street, [shipAddr.city, shipAddr.state, shipAddr.zip].filter(Boolean).join(', ')].filter(Boolean).map(escapeHtml)
+    : [];
+  const html = theme.emailShell({
+    title: 'Your Quote — T-Shirt Brothers',
+    headerTr: theme.docHeader({
+      metaLines: [
+        `Quote <strong style="color:${BRAND_DARK};">#TSB-${quote.id}</strong>`,
+        theme.fmtDate(quote.created_at || new Date()),
+      ],
+      pill: theme.statusPill('Quote Ready'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your Custom Apparel Quote',
+        titleAccent: 'is Ready!',
+        greeting: `Hi ${quote.customer_name || 'there'},`,
+        copy: 'Thanks for choosing T-Shirt Brothers! Your custom apparel quote is ready for review. We&rsquo;re excited about the opportunity to bring your ideas to life.',
+      }),
+      theme.bodySection(`
+        ${message ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
+          <p style="margin:0;font-size:14px;color:#166534;">${message}</p>
+        </div>` : ''}
+        ${theme.sectionTitle('Quote Details')}
+        ${theme.infoPanels([
+          { label: 'Customer', lines: [escapeHtml(quote.customer_name || ''), escapeHtml(quote.customer_email || ''), escapeHtml(quote.customer_phone || '')] },
+          { label: 'Quote Date', lines: [theme.fmtDate(quote.created_at || new Date())] },
+          quote.date_needed ? { label: 'Needed By', lines: [theme.fmtDate(quote.date_needed)] } : null,
+          { label: 'Shipping / Pickup', lines: [
+            quote.shipping_method === 'pickup' ? 'Pickup at our shop'
+            : quote.shipping_method === 'shipping' ? 'Shipping'
+            : escapeHtml(String(quote.shipping_method || 'Pickup').replace(/^./, (c) => c.toUpperCase())),
+          ] },
+          shipLines.length ? { label: 'Shipping Address', lines: shipLines } : null,
+          { label: 'Print Areas', lines: [escapeHtml(printAreasDisplay)] },
+        ].filter(Boolean))}
+      `),
+      quote.design_url ? theme.bodySection(`
+        <div style="text-align:center;">
+          <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:${BRAND_DARK};">Your Design</p>
+          <img src="${quote.design_url}" alt="Your custom design" style="max-width:280px;width:100%;border-radius:12px;border:1px solid #e5e7eb;" />
+        </div>
+      `) : '',
+      theme.bodySection(`
+        ${theme.sectionTitle('Order Items')}
+        ${theme.itemsTable([{
+          img: quote.design_url || null,
+          name: quote.product_name || 'Custom Apparel',
+          detail: quote.design_type ? `Decoration: ${quote.design_type}` : '',
+          color: quote.color || '—',
+          size: /,/.test(sizesDisplay) ? 'Multi' : sizesDisplay,
+          qty: quote.quantity,
+          // Product line = apparel + printing; fees/tax/shipping stay in the
+          // summary so nothing is double-counted or recalculated.
+          unit: Number(quote.quantity) > 0 ? (Number(basePrice) + Number(printingCost)) / Number(quote.quantity) : Number(basePrice) + Number(printingCost),
+          subtotal: Number(basePrice) + Number(printingCost),
+        }], { unitLabel: 'Unit Price' })}
+        <p style="margin:8px 0 0;font-size:12px;color:#6b7280;"><strong>Size breakdown:</strong> ${escapeHtml(sizesDisplay)}</p>
+      `),
+      theme.bodySection(`
+        ${theme.sectionTitle('Pricing Summary')}
+        ${theme.summaryTable(summaryRows, { label: 'Grand Total (USD)', value: formatCurrency(total) })}
+        <div style="background:#fef3c7;border-radius:10px;padding:14px;margin-top:14px;text-align:center;">
+          <span style="font-size:14px;font-weight:700;color:#92400e;">50% Deposit Required to Begin — due upon receipt:</span>
+          <span style="font-size:18px;font-weight:800;color:${BRAND_DARK};"> ${formatCurrency(deposit)}</span>
+        </div>
+      `),
+      promo ? theme.bodySection(theme.couponPanel(promo)) : '',
+      theme.bodySection(`
+        ${theme.buttonRow([
+          { label: '&#10003;&nbsp; Approve &amp; Pay Deposit', href: acceptUrl, style: 'primary' },
+          { label: '&#63;&nbsp; Ask a Question', href: `mailto:${theme.SHOP_EMAIL}?subject=Question%20about%20Quote%20%23TSB-${quote.id}`, style: 'outline' },
+        ])}
+        <p style="text-align:center;margin:10px 0 0;">
+          <a href="${declineUrl}" style="color:#6b7280;font-size:13px;text-decoration:underline;">Decline this quote</a>
+        </p>
+        <p style="margin:18px 0 20px;font-size:13px;color:#9ca3af;text-align:center;">This quote is valid for 30 days. We appreciate the opportunity to work with you — questions or changes? Just reply to this email. &mdash; The T-Shirt Brothers Team</p>
+      `),
+    ].filter(Boolean),
+  });
 
-    ${message ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
-      <p style="margin:0;font-size:14px;color:#166534;">${message}</p>
-    </div>` : ''}
+  return html;
+}
 
-    ${quote.design_url ? `
-    <div style="text-align:center;margin-bottom:20px;">
-      <p style="margin:0 0 8px;font-size:14px;font-weight:600;color:${BRAND_DARK};">Your Design</p>
-      <img src="${quote.design_url}" alt="Your custom design" style="max-width:280px;width:100%;border-radius:12px;border:1px solid #e5e7eb;" />
-    </div>
-    ` : ''}
-
-    <h3 style="margin:0 0 8px;font-size:16px;color:${BRAND_DARK};">Order Details</h3>
-    ${detailsTable(
-      detailRow('Product', quote.product_name || 'Custom Apparel') +
-      (quote.color ? detailRow('Color', quote.color) : '') +
-      detailRow('Quantity', quote.quantity) +
-      detailRow('Sizes', sizesDisplay) +
-      detailRow('Print Areas', printAreasDisplay) +
-      detailRow('Design Type', quote.design_type || 'N/A')
-    )}
-
-    <h3 style="margin:0 0 8px;font-size:16px;color:${BRAND_DARK};">Price Breakdown</h3>
-    ${detailsTable(priceRows)}
-
-    <div style="background:#fef3c7;border-radius:8px;padding:16px;margin:20px 0;text-align:center;">
-      <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:#92400e;">50% Deposit Required to Begin</p>
-      <p style="margin:0;font-size:22px;font-weight:700;color:${BRAND_DARK};">${formatCurrency(deposit)}</p>
-    </div>
-
-    ${primaryButton('Accept & Pay Deposit', acceptUrl)}
-
-    <p style="text-align:center;margin:0;">
-      <a href="${declineUrl}" style="color:#6b7280;font-size:13px;text-decoration:underline;">Decline this quote</a>
-    </p>
-
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">This quote is valid for 30 days. If you have questions, reply to this email or call us.</p>
-  `;
-
+export async function sendQuotePriceToCustomer(quote, priceDetails) {
+  const html = await buildQuoteEmailHtml(quote, priceDetails);
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [quote.customer_email],
       subject: 'Your Custom Printing Quote from TShirt Brothers',
-      html: baseLayout('Your Quote', body),
+      html,
     });
     console.log(`[Email] Price quote sent to ${quote.customer_email}`);
   } catch (err) {
@@ -674,53 +740,112 @@ export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, ba
   }
 }
 
-export async function sendPaidInvoiceReceipt(invoice) {
+// Pure HTML builder — exported for previews; sendPaidInvoiceReceipt wraps it.
+export async function buildPaidReceiptHtml(invoice) {
   const items = Array.isArray(invoice.items) ? invoice.items : (() => { try { return JSON.parse(invoice.items || '[]'); } catch { return []; } })();
-  const itemsHtml = items.map((it) => `
-    <tr>
-      <td style="padding:8px 12px;font-size:13px;color:#374151;">${it.description || '—'}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6b7280;text-align:center;">${it.quantity || 1}</td>
-      <td style="padding:8px 12px;font-size:13px;color:#6b7280;text-align:right;">${formatCurrency(Number(it.unit_price || 0))}</td>
-      <td style="padding:8px 12px;font-size:13px;color:${BRAND_DARK};text-align:right;font-weight:600;">${formatCurrency(Number(it.total || 0))}</td>
-    </tr>
-  `).join('');
-
   const invoiceUrl = `${DOMAIN}/invoice/view/${invoice.id}`;
-  const body = `
-    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Payment Received — Thank You!</h2>
-    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${invoice.customer_name || 'there'},</p>
-    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We've received your balance payment. Your order is paid in full and moving into production. Here's your receipt:</p>
+  const pdfUrl = `${DOMAIN}/api/invoices/${invoice.id}/pdf`;
+  const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
+  const reviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
+  const promo = await theme.getActivePromotion();
 
-    <div style="border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin:16px 0;background:#f9fafb;">
-      <p style="margin:0;font-size:13px;color:#6b7280;">Invoice</p>
-      <p style="margin:0 0 12px;font-size:18px;font-weight:700;color:${BRAND_DARK};">${invoice.invoice_number}</p>
-      <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
-        <thead>
-          <tr style="background:#f3f4f6;">
-            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:left;">Item</th>
-            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;">Qty</th>
-            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;">Unit</th>
-            <th style="padding:8px 12px;font-size:11px;text-transform:uppercase;color:#6b7280;text-align:right;">Total</th>
-          </tr>
-        </thead>
-        <tbody>${itemsHtml || `<tr><td colspan="4" style="padding:12px;text-align:center;color:#9ca3af;font-size:13px;">—</td></tr>`}</tbody>
-      </table>
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;">
-        <span style="font-size:14px;color:#6b7280;">Paid</span>
-        <span style="font-size:18px;font-weight:700;color:#16a34a;">${formatCurrency(Number(invoice.amount_paid || 0))}</span>
-      </div>
-    </div>
+  const itemRows = items.map((it) => ({
+    name: it.description || '—',
+    color: it.color || '—',
+    size: it.size || '—',
+    qty: it.quantity || 1,
+    unit: Number(it.unit_price || 0),
+    subtotal: it.total != null ? Number(it.total) : (Number(it.quantity || 1) * Number(it.unit_price || 0)),
+  }));
 
-    ${primaryButton('View / Print Invoice', invoiceUrl)}
+  // Full breakdown — the receipt must mirror the invoice's real figures.
+  const summaryRows = [
+    { label: 'Product Subtotal', value: formatCurrency(invoice.subtotal) },
+    Number(invoice.tax) > 0 ? { label: 'Tax', value: formatCurrency(invoice.tax) } : null,
+    Number(invoice.shipping) > 0 ? { label: 'Shipping', value: formatCurrency(invoice.shipping) } : null,
+    Number(invoice.discount) > 0 ? { label: 'Discount', value: `&minus;${formatCurrency(invoice.discount)}`, color: '#16a34a', bold: true } : null,
+    { label: 'Invoice Total', value: formatCurrency(invoice.total), bold: true },
+    { label: 'Payments Received', value: `&minus;${formatCurrency(invoice.amount_paid)}`, color: '#16a34a', bold: true },
+  ];
+  const balance = Math.max(0, Number(invoice.total || 0) - Number(invoice.amount_paid || 0));
 
-    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Keep this email as your receipt. Questions? Reply to this email or call (470) 622-1392.</p>
-  `;
+  const html = theme.emailShell({
+    title: `Receipt — Invoice ${invoice.invoice_number}`,
+    headerTr: theme.docHeader({
+      metaLines: [
+        `Final Invoice <strong style="color:${BRAND_DARK};">${invoice.invoice_number}</strong>`,
+        invoice.quote_id ? `Order #TSB-${invoice.quote_id}` : null,
+        `Paid ${theme.fmtDate(new Date())}`,
+      ],
+      pill: theme.statusPill('Paid in Full', 'green'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your Order Is',
+        titleAccent: 'Paid in Full!',
+        greeting: `Hi ${invoice.customer_name || 'there'}, thank you for your business!`,
+        copy: 'Your order is paid in full. We hope you and your team love your custom apparel — it means a lot to have you as part of the T-Shirt Brothers family!',
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle('Final Invoice Summary')}
+        ${theme.infoPanels([
+          { label: 'Invoice #', lines: [String(invoice.invoice_number)] },
+          invoice.quote_id ? { label: 'Order #', lines: [`TSB-${invoice.quote_id}`] } : null,
+          { label: 'Payment Status', lines: ['Paid in Full'] },
+        ].filter(Boolean))}
+      `),
+      theme.bodySection(`
+        ${theme.sectionTitle('Order Items')}
+        ${theme.itemsTable(itemRows, { unitLabel: 'Unit Price' })}
+      `),
+      theme.bodySection(`
+        ${theme.summaryTable(summaryRows, {
+          label: balance <= 0 ? 'Balance (USD)' : 'Balance Due (USD)',
+          value: formatCurrency(balance),
+          color: balance <= 0 ? '#16a34a' : undefined,
+        })}
+      `),
+      theme.bodySection(`
+        ${theme.sectionTitle("We'd Love to Hear From You!")}
+        <p style="margin:0 0 12px;font-size:14px;color:#6b7280;">Your feedback helps our small business grow and inspire others.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          ${theme.followUpCard({
+            icon: '&#11088;',
+            heading: "We'd Love Your Honest Review",
+            copy: 'Thank you for supporting T-Shirt Brothers. Share your experience on Google and help others get to know our business.',
+            button: { label: 'Leave a Google Review', href: reviewUrl },
+          })}
+          ${theme.followUpCard({
+            icon: '&#128247;',
+            heading: 'Show Us Your Look!',
+            copy: "We'd love to see you or your team wearing your custom apparel. Send us a photo by replying to this email!",
+            button: { label: 'Send Us Your Photo', href: `mailto:${theme.SHOP_EMAIL}?subject=My%20TSB%20look%20—%20Invoice%20${encodeURIComponent(invoice.invoice_number || '')}` },
+            tone: 'blue',
+          })}
+        </tr></table>
+      `),
+      promo ? theme.bodySection(theme.couponPanel(promo)) : '',
+      theme.bodySection(`
+        ${theme.buttonRow([
+          { label: '&#8681;&nbsp; Download PDF Receipt', href: pdfUrl, style: 'navy' },
+          { label: 'View Invoice Online', href: invoiceUrl, style: 'outline' },
+        ])}
+        <p style="margin:16px 0 20px;font-size:13px;color:#9ca3af;text-align:center;">Keep this email as your receipt. Questions? Reply to this email or call ${theme.SHOP_PHONE}.</p>
+      `),
+    ].filter(Boolean),
+  });
+
+  return html;
+}
+
+export async function sendPaidInvoiceReceipt(invoice) {
+  const html = await buildPaidReceiptHtml(invoice);
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [invoice.customer_email],
       subject: `Receipt - TShirt Brothers Invoice ${invoice.invoice_number}`,
-      html: baseLayout('Payment Received', body),
+      html,
     });
     console.log('[Email] Paid invoice receipt sent to ' + invoice.customer_email);
   } catch (err) {

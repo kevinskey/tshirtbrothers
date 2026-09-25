@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
+import * as theme from '../services/emailTheme.js';
 
 const router = Router();
 
@@ -24,7 +25,7 @@ function getResend() {
 }
 
 function formatCurrency(amount) {
-  return `$${Number(amount).toFixed(2)}`;
+  return `$${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // Generate next invoice number: INV-YYYYMMDD-001
@@ -121,7 +122,9 @@ async function createInvoiceCheckoutSession(invoice, owed) {
 }
 
 // Build invoice email HTML
-function buildInvoiceEmailHtml(invoice, paymentUrl) {
+// 2026-09 branded redesign — shared theme (services/emailTheme.js). Same
+// data, amounts, terms, and payment link semantics as before.
+export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
   const items = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
   const amountPaid = Number(invoice.amount_paid || 0);
   const amountDue = Number(invoice.amount_due ?? invoice.total);
@@ -135,174 +138,111 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
     : owedNow.paymentType === 'balance'
     ? `Remaining balance of ${formatCurrency(owedNow.amount)} due on delivery`
     : 'Payment due upon receipt';
+  const dueDisplay = invoice.due_date
+    ? theme.fmtDate(invoice.due_date)
+    : amountDue > 0
+    ? (owedNow.paymentType === 'balance' ? 'On delivery' : 'Upon receipt')
+    : null;
+  const promo = await theme.getActivePromotion();
+  const pdfUrl = `${DOMAIN}/api/invoices/${invoice.id}/pdf`;
 
-  const itemRows = (items || []).map((item) => {
-    const variant = [item.color, item.size].filter(Boolean).join(' · ');
-    return `
-    <tr>
-      <td style="padding:10px 12px;font-size:14px;color:${BRAND_DARK};border-bottom:1px solid #f3f4f6;">
-        ${item.description || ''}
-        ${variant ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;">${variant}</div>` : ''}
-      </td>
-      <td style="padding:10px 12px;font-size:14px;color:#6b7280;border-bottom:1px solid #f3f4f6;text-align:center;">${item.quantity || 0}</td>
-      <td style="padding:10px 12px;font-size:14px;color:#6b7280;border-bottom:1px solid #f3f4f6;text-align:right;">${formatCurrency(item.unit_price || 0)}</td>
-      <td style="padding:10px 12px;font-size:14px;color:${BRAND_DARK};border-bottom:1px solid #f3f4f6;text-align:right;font-weight:500;">${formatCurrency((item.quantity || 0) * (item.unit_price || 0))}</td>
-    </tr>
-  `;
-  }).join('');
+  const itemRows = (items || []).map((it) => ({
+    name: it.description || '\u2014',
+    color: it.color || '\u2014',
+    size: it.size || '\u2014',
+    qty: it.quantity || 0,
+    unit: Number(it.unit_price || 0),
+    subtotal: (Number(it.quantity || 0) * Number(it.unit_price || 0)),
+  }));
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice ${invoice.invoice_number}</title></head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
-<tr><td align="center">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+  const mockups = [];
+  if (invoice.mockup_preview_url) mockups.push({ src: invoice.mockup_preview_url, label: invoice.mockup_preview_url_back ? 'Front' : '' });
+  if (invoice.mockup_preview_url_back) mockups.push({ src: invoice.mockup_preview_url_back, label: 'Back' });
+  if (Array.isArray(invoice.extra_mockups)) for (const m of invoice.extra_mockups) if (m && m.front) mockups.push({ src: m.front, label: '' });
 
-  <!-- Header with logo -->
-  <tr><td style="background:${BRAND_DARK};padding:28px 32px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      <tr>
-        <td><img src="${LOGO_URL}" alt="T-Shirt Brothers" style="height:48px;" /></td>
-        <td style="text-align:right;">
-          <span style="color:#ffffff;font-size:24px;font-weight:800;letter-spacing:-0.5px;">INVOICE</span>
-        </td>
-      </tr>
-    </table>
-  </td></tr>
+  const summaryRows = [
+    { label: 'Product Subtotal', value: formatCurrency(invoice.subtotal) },
+    Number(invoice.tax) > 0 ? { label: 'Tax', value: formatCurrency(invoice.tax) } : null,
+    Number(invoice.shipping) > 0 ? { label: 'Shipping', value: formatCurrency(invoice.shipping) } : null,
+    Number(invoice.discount) > 0 ? { label: 'Discount', value: `&minus;${formatCurrency(invoice.discount)}`, color: '#16a34a', bold: true } : null,
+    { label: 'Invoice Total', value: formatCurrency(invoice.total), bold: true },
+    amountPaid > 0 ? { label: `Payments Received`, value: `&minus;${formatCurrency(amountPaid)}`, color: '#16a34a', bold: true } : null,
+    amountDue > 0 && owedNow.paymentType === 'deposit'
+      ? { label: `Balance on delivery`, value: formatCurrency(amountDue - owedNow.amount) }
+      : null,
+  ];
+  const totalBand = amountDue <= 0
+    ? { label: 'Status', value: 'PAID', color: '#16a34a' }
+    : owedNow.paymentType === 'deposit'
+    ? { label: `Due Now (${owedNow.depositPercent}% deposit)`, value: formatCurrency(owedNow.amount), color: BRAND_ORANGE }
+    : { label: 'Amount Due (USD)', value: formatCurrency(amountDue), color: BRAND_ORANGE };
 
-  <!-- Invoice details -->
-  <tr><td style="padding:32px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-      <tr>
-        <td style="vertical-align:top;width:50%;">
-          <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Bill To:</p>
-          <p style="margin:0 0 2px;font-size:15px;font-weight:600;color:${BRAND_DARK};">${invoice.customer_name}</p>
-          <p style="margin:0 0 2px;font-size:13px;color:#6b7280;">${invoice.customer_email}</p>
-          ${invoice.customer_phone ? `<p style="margin:0 0 2px;font-size:13px;color:#6b7280;">${invoice.customer_phone}</p>` : ''}
-          ${invoice.customer_address ? `<p style="margin:0;font-size:13px;color:#6b7280;">${invoice.customer_address}</p>` : ''}
-        </td>
-        <td style="vertical-align:top;width:50%;text-align:right;">
-          <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Invoice #: <strong style="color:${BRAND_DARK};">${invoice.invoice_number}</strong></p>
-          <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Date: ${new Date(invoice.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          ${invoice.due_date
-            ? `<p style="margin:0;font-size:13px;color:#6b7280;">Due: ${new Date(invoice.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`
-            : amountDue > 0
-            ? `<p style="margin:0;font-size:13px;color:#6b7280;">Due: ${owedNow.paymentType === 'balance' ? 'On delivery' : 'Upon receipt'}</p>`
-            : ''}
-        </td>
-      </tr>
-    </table>
+  const buttons = [];
+  if (paymentUrl) buttons.push({ label: '&#128179;&nbsp; Pay Invoice', href: paymentUrl, style: 'primary' });
+  buttons.push({ label: '&#8681;&nbsp; Download PDF', href: pdfUrl, style: 'outline' });
+  buttons.push({ label: '&#128172;&nbsp; Contact TSB', href: `mailto:${theme.SHOP_EMAIL}?subject=Invoice%20${encodeURIComponent(invoice.invoice_number || '')}`, style: 'navy' });
 
-    ${invoice.mockup_preview_url || invoice.mockup_preview_url_back || (Array.isArray(invoice.extra_mockups) && invoice.extra_mockups.length > 0) ? `
-    <!-- Mockup preview -->
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#f9fafb;">
-      <tr><td style="padding:14px 16px 4px;font-size:13px;color:#6b7280;font-weight:600;">Approved Mockup</td></tr>
-      <tr><td style="padding:0 16px 16px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          ${invoice.mockup_preview_url ? `<td style="text-align:center;padding:4px;${invoice.mockup_preview_url_back ? 'width:50%;' : ''}">
-            ${invoice.mockup_preview_url_back ? '<div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Front</div>' : ''}
-            <img src="${invoice.mockup_preview_url}" alt="Mockup front" style="max-width:100%;height:auto;border-radius:6px;" />
-          </td>` : ''}
-          ${invoice.mockup_preview_url_back ? `<td style="text-align:center;padding:4px;${invoice.mockup_preview_url ? 'width:50%;' : ''}">
-            <div style="font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Back</div>
-            <img src="${invoice.mockup_preview_url_back}" alt="Mockup back" style="max-width:100%;height:auto;border-radius:6px;" />
-          </td>` : ''}
-        </tr></table>
-        ${Array.isArray(invoice.extra_mockups) && invoice.extra_mockups.length > 0 ? `
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          ${invoice.extra_mockups.map((m) => `<td style="text-align:center;padding:4px;width:${Math.floor(100 / invoice.extra_mockups.length)}%;">
-            <img src="${m.front}" alt="Mockup" style="max-width:100%;height:auto;border-radius:6px;" />
+  return theme.emailShell({
+    title: `Invoice ${invoice.invoice_number}`,
+    headerTr: theme.docHeader({
+      metaLines: [
+        `Invoice # <strong style="color:${BRAND_DARK};">${invoice.invoice_number}</strong>`,
+        invoice.quote_id ? `Order # TSB-${invoice.quote_id}` : null,
+        `Invoice Date &nbsp;${theme.fmtDate(invoice.created_at)}`,
+        dueDisplay ? `Due &nbsp;${dueDisplay}` : null,
+      ],
+      pill: amountDue <= 0 ? theme.statusPill('Paid', 'green') : theme.statusPill('Payment Due'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your Invoice',
+        titleAccent: 'is Ready!',
+        greeting: `Hi ${invoice.customer_name || 'there'},`,
+        copy: 'Your invoice for your custom apparel order is ready. Thank you for choosing T-Shirt Brothers! We appreciate your business and look forward to continuing to bring your ideas to life.',
+      }),
+      theme.bodySection(theme.infoPanels([
+        { label: 'Customer Information', lines: [
+          theme.escapeHtml(invoice.customer_name || ''),
+          theme.escapeHtml(invoice.customer_email || ''),
+          theme.escapeHtml(invoice.customer_phone || ''),
+        ] },
+        invoice.customer_address ? { label: 'Billing Information', lines: [theme.escapeHtml(invoice.customer_address)] } : null,
+        { label: 'Payment Terms', lines: [
+          owedNow.paymentType === 'deposit' ? `<strong>${owedNow.depositPercent}% deposit up front</strong>` : (amountDue <= 0 ? 'Paid' : '<strong>Due upon receipt</strong>'),
+          termsLine || 'Thank you for your payment.',
+        ] },
+      ].filter(Boolean))),
+      mockups.length ? theme.bodySection(`
+        ${theme.sectionTitle('Approved Mockup')}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;"><tr>
+          ${mockups.slice(0, 3).map((m) => `<td style="text-align:center;padding:12px;">
+            ${m.label ? `<div style="font-size:10px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">${m.label}</div>` : ''}
+            <img src="${m.src}" alt="Mockup" style="max-width:100%;height:auto;border-radius:8px;" />
           </td>`).join('')}
-        </tr></table>` : ''}
-      </td></tr>
-    </table>
-    ` : ''}
-
-    <!-- Line items -->
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:24px;">
-      <thead>
-        <tr style="background:#f9fafb;">
-          <th style="padding:10px 12px;font-size:13px;color:#6b7280;text-align:left;font-weight:600;">Description</th>
-          <th style="padding:10px 12px;font-size:13px;color:#6b7280;text-align:center;font-weight:600;">Qty</th>
-          <th style="padding:10px 12px;font-size:13px;color:#6b7280;text-align:right;font-weight:600;">Unit Price</th>
-          <th style="padding:10px 12px;font-size:13px;color:#6b7280;text-align:right;font-weight:600;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${itemRows}
-      </tbody>
-    </table>
-
-    <!-- Totals -->
-    <table role="presentation" width="280" cellpadding="0" cellspacing="0" style="margin-left:auto;">
-      <tr>
-        <td style="padding:6px 0;font-size:14px;color:#6b7280;">Subtotal</td>
-        <td style="padding:6px 0;font-size:14px;color:${BRAND_DARK};text-align:right;">${formatCurrency(invoice.subtotal)}</td>
-      </tr>
-      ${Number(invoice.tax) > 0 ? `<tr>
-        <td style="padding:6px 0;font-size:14px;color:#6b7280;">Tax</td>
-        <td style="padding:6px 0;font-size:14px;color:${BRAND_DARK};text-align:right;">${formatCurrency(invoice.tax)}</td>
-      </tr>` : ''}
-      ${Number(invoice.shipping) > 0 ? `<tr>
-        <td style="padding:6px 0;font-size:14px;color:#6b7280;">Shipping</td>
-        <td style="padding:6px 0;font-size:14px;color:${BRAND_DARK};text-align:right;">${formatCurrency(invoice.shipping)}</td>
-      </tr>` : ''}
-      ${Number(invoice.discount) > 0 ? `<tr>
-        <td style="padding:6px 0;font-size:14px;color:#6b7280;">Discount</td>
-        <td style="padding:6px 0;font-size:14px;color:#16a34a;text-align:right;">-${formatCurrency(invoice.discount)}</td>
-      </tr>` : ''}
-      <tr>
-        <td style="padding:10px 0;font-size:16px;font-weight:700;color:${BRAND_DARK};border-top:2px solid #e5e7eb;">Total</td>
-        <td style="padding:10px 0;font-size:16px;font-weight:700;color:${BRAND_DARK};text-align:right;border-top:2px solid #e5e7eb;">${formatCurrency(invoice.total)}</td>
-      </tr>
-      ${amountPaid > 0 ? `<tr>
-        <td style="padding:6px 0;font-size:14px;color:#16a34a;">Paid</td>
-        <td style="padding:6px 0;font-size:14px;color:#16a34a;text-align:right;">-${formatCurrency(amountPaid)}</td>
-      </tr>` : ''}
-      ${amountDue <= 0 ? `<tr>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;">Status</td>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;text-align:right;">PAID</td>
-      </tr>` : owedNow.paymentType === 'deposit' ? `<tr>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Due Now (${owedNow.depositPercent}% deposit)</td>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(owedNow.amount)}</td>
-      </tr>
-      <tr>
-        <td style="padding:2px 0;font-size:13px;color:#6b7280;">Balance on delivery</td>
-        <td style="padding:2px 0;font-size:13px;color:#6b7280;text-align:right;">${formatCurrency(amountDue - owedNow.amount)}</td>
-      </tr>` : `<tr>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Amount Due</td>
-        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(amountDue)}</td>
-      </tr>`}
-    </table>
-
-    ${termsLine ? `<p style="margin:16px 0 0;font-size:12px;color:#6b7280;text-align:center;"><strong>Payment terms:</strong> ${termsLine}</p>` : ''}
-
-    ${invoice.notes ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;margin:24px 0;">
-      <p style="margin:0;font-size:13px;font-weight:600;color:#166534;">Notes</p>
-      <p style="margin:4px 0 0;font-size:13px;color:#166534;">${invoice.notes}</p>
-    </div>` : ''}
-
-    <!-- Pay Now button -->
-    ${paymentUrl ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto;">
-      <tr><td style="background:${BRAND_ORANGE};border-radius:8px;">
-        <a href="${paymentUrl}" target="_blank" style="display:inline-block;padding:16px 48px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;">Pay Now</a>
-      </td></tr>
-    </table>` : ''}
-  </td></tr>
-
-  <!-- Footer -->
-  <tr><td style="background:#f9fafb;padding:24px 32px;border-top:1px solid #e5e7eb;">
-    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">T-Shirt Brothers &mdash; Custom Apparel &amp; Screen Printing</p>
-    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;text-align:center;">Phone: (555) 123-4567 &bull; Email: info@tshirtbrothers.com</p>
-    <p style="margin:0;font-size:13px;color:#9ca3af;text-align:center;">123 Print Ave, Dallas TX 75001</p>
-  </td></tr>
-
-</table>
-</td></tr>
-</table>
-</body></html>`;
+        </tr></table>
+      `) : '',
+      theme.bodySection(`
+        ${theme.sectionTitle('Invoice Items')}
+        ${theme.itemsTable(itemRows, { unitLabel: 'Unit Price' })}
+      `),
+      theme.bodySection(`
+        ${theme.sectionTitle('Invoice Summary')}
+        ${theme.summaryTable(summaryRows.filter(Boolean), totalBand)}
+        ${termsLine ? `<p style="margin:12px 0 0;font-size:12px;color:#6b7280;text-align:center;"><strong>Payment terms:</strong> ${termsLine}</p>` : ''}
+      `),
+      invoice.notes ? theme.bodySection(`
+        <div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;">
+          <p style="margin:0;font-size:13px;font-weight:700;color:#166534;">Notes</p>
+          <p style="margin:4px 0 0;font-size:13px;color:#166534;">${theme.escapeHtml(invoice.notes)}</p>
+        </div>
+      `) : '',
+      promo ? theme.bodySection(theme.couponPanel(promo)) : '',
+      theme.bodySection(`
+        ${theme.buttonRow(buttons)}
+        <p style="margin:16px 0 20px;font-size:13px;color:#9ca3af;text-align:center;">Questions about this invoice? Reply to this email or call ${theme.SHOP_PHONE}.</p>
+      `),
+    ].filter(Boolean),
+  });
 }
 
 // All routes require admin auth
@@ -757,7 +697,7 @@ router.post('/:id/send', async (req, res, next) => {
       ? `Balance due — Invoice ${invoice.invoice_number} from TShirt Brothers`
       : `Invoice ${invoice.invoice_number} from TShirt Brothers`;
 
-    const html = buildInvoiceEmailHtml(invoice, paymentUrl);
+    const html = await buildInvoiceEmailHtml(invoice, paymentUrl);
 
     // Resend REPORTS send failures in the response rather than throwing them,
     // so a bare `await` reads a rejected send as a successful one and the
