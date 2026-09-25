@@ -2947,7 +2947,7 @@ export default function AdminPage() {
 
       {/* Desktop top nav (md+) — horizontal header with group dropdowns,
           replacing the old permanent sidebar. */}
-      <header className="hidden md:flex fixed top-0 left-0 right-0 z-30 h-14 items-center gap-1 bg-gray-900 px-4 text-white shadow">
+      <header className="hidden md:flex fixed top-0 left-0 right-0 z-30 h-16 items-center gap-1 bg-gray-900 px-4 text-white shadow">
         <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-7 w-7 object-contain" />
         <span className="font-display mr-3 text-lg font-bold tracking-tight">Admin</span>
         {NAV_GROUPS.map((group, gi) => {
@@ -3043,7 +3043,7 @@ export default function AdminPage() {
       {openNavGroup && <div className="fixed inset-0 z-20 hidden md:block" onClick={() => setOpenNavGroup(null)} />}
 
       {/* Main Content */}
-      <main className="p-4 pt-16 md:pt-20 lg:p-8 lg:pt-24">
+      <main className="p-4 pt-16 md:pt-20 lg:p-8 lg:pt-20">
         {/* Mobile header */}
         <div className="fixed top-0 left-0 right-0 z-20 flex items-center gap-3 bg-white border-b border-gray-200 px-4 py-3 md:hidden">
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">
