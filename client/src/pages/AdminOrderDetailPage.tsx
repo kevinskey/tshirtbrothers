@@ -101,22 +101,37 @@ export default function AdminOrderDetailPage() {
   const [offlineMethod, setOfflineMethod] = useState('cash');
   const [savingPayment, setSavingPayment] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setLoading(true);
     setError(null);
     try {
       const r = await fetch(`/api/admin/order-detail/${quoteId}`, { headers: authHeaders() });
       if (r.status === 401 || r.status === 403) { navigate('/admin'); return; }
-      if (!r.ok) { setError(`Failed to load order (HTTP ${r.status})`); return; }
+      if (!r.ok) { if (!opts.silent) setError(`Failed to load order (HTTP ${r.status})`); return; }
       setDetail(await r.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load');
+      if (!opts.silent) setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
-      setLoading(false);
+      if (!opts.silent) setLoading(false);
     }
   }, [quoteId, navigate]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Keep the page current without manual reloads: silently re-pull every
+  // 15s while visible, and immediately when the tab regains focus (e.g.
+  // after cancelling a PO over on the purchasing screen).
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState === 'visible') void load({ silent: true }); };
+    const iv = setInterval(tick, 15000);
+    window.addEventListener('focus', tick);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('focus', tick);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [load]);
 
   async function recordOfflinePayment() {
     const amount = Number(offlineAmount);
@@ -173,8 +188,15 @@ export default function AdminOrderDetailPage() {
 
   const { quote, items, invoices, purchaseOrders, vendorSends, emails, activity, notes } = detail;
 
-  const totalPaid = invoices.reduce((s, i) => s + Number(i.amount_paid || 0), 0);
-  const totalDue = invoices.reduce((s, i) => s + Number(i.amount_due || 0), 0);
+  // Money paid via invoices; quote-flow deposits (Stripe accept-and-pay,
+  // no invoice row) fall back to the quote's recorded deposit so the
+  // header doesn't show Paid $0.00 on a deposit-paid order.
+  const invoicePaid = invoices.reduce((s, i) => s + Number(i.amount_paid || 0), 0);
+  const quoteDeposit = quote.accepted_at ? Number((quote as { deposit_amount?: string | null }).deposit_amount || 0) : 0;
+  const totalPaid = invoicePaid > 0 ? invoicePaid : quoteDeposit;
+  const totalDue = invoices.length > 0
+    ? invoices.reduce((s, i) => s + Number(i.amount_due || 0), 0)
+    : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};
 
   // Doc's production flow: quote → accepted → mockup → deposit → blanks →
@@ -186,7 +208,7 @@ export default function AdminOrderDetailPage() {
     { label: 'Accepted', done: !!quote.accepted_at || ['accepted', 'completed'].includes(quote.status), when: dt(quote.accepted_at) },
     { label: 'Mockup', done: !!quote.mockup_image_url, when: null },
     { label: 'Deposit', done: totalPaid > 0, when: null },
-    { label: 'Blanks ordered', done: purchaseOrders.some((p) => !p.is_test), when: null },
+    { label: 'Blanks ordered', done: purchaseOrders.some((p) => !p.is_test && p.status !== 'cancelled'), when: null },
     { label: 'Gang sheet sent', done: vendorSends.length > 0 || !!stages.gang_sent, when: dt(stages.gang_sent), stageKey: 'gang_sent' },
     { label: 'Gang sheet picked up', done: !!stages.gang_pickup, when: dt(stages.gang_pickup), stageKey: 'gang_pickup' },
     { label: 'Pressed', done: !!stages.pressed, when: dt(stages.pressed), stageKey: 'pressed' },
