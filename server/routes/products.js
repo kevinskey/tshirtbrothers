@@ -133,12 +133,16 @@ router.get('/', async (req, res, next) => {
           paramIndex++;
           intentExcludes.forEach((c) => conditions.push(c));
         }
-        // Normalize common terms: "tshirt" → "t-shirt", "hoodie" → "hood"
+        // Normalize common terms: "tshirt" → "t-shirt", "hoodie" → "hood".
+        // Apostrophes are stripped from both the terms and (below) the
+        // compared columns so "womens" matches "Women's".
         let normalized = remaining
+          .replace(/[''’]/g, '')
           .replace(/\btshirts?\b/gi, 't-shirt')
           .replace(/\bhoodies?\b/gi, 'hood')
           .replace(/\bpolos?\b/gi, 'polo');
         const terms = normalized.split(/\s+/).filter(Boolean);
+        const nameCols = `(REPLACE(name, '''', '') || ' ' || brand || ' ' || category)`;
         // Style codes like "G500" or "g50000" are how brands abbreviate
         // their model numbers. Strip a single-letter prefix (or "PC" / "DT"
         // for non-Gildan brands) so "G500" still matches stored "5000".
@@ -160,9 +164,7 @@ router.get('/', async (req, res, next) => {
             // Use containment so "5x" matches "5XL"/"5XLT", "xl" matches
             // "XL"/"2XL"/"3XL"/etc., "s/m" matches "S/M".
             conditions.push(
-              `(name ILIKE $${paramIndex}
-                OR brand ILIKE $${paramIndex}
-                OR category ILIKE $${paramIndex}
+              `(${nameCols} ILIKE $${paramIndex}
                 OR EXISTS (
                   SELECT 1 FROM jsonb_array_elements_text(sizes) sz
                   WHERE UPPER(sz) LIKE $${paramIndex + 1}
@@ -177,9 +179,7 @@ router.get('/', async (req, res, next) => {
             const variants = styleVariants(term);
             const styleClauses = variants.map(() => `style_number ILIKE $${paramIndex++}`);
             conditions.push(
-              `(name ILIKE $${paramIndex}
-                OR brand ILIKE $${paramIndex}
-                OR category ILIKE $${paramIndex}
+              `(${nameCols} ILIKE $${paramIndex}
                 OR ${styleClauses.join(' OR ')})`
             );
             // Style codes get a wildcard so "G500" → strips to "500" →
@@ -244,12 +244,13 @@ router.get('/', async (req, res, next) => {
     // Apply filters
     if (search) {
       let normalized = search.toLowerCase().trim()
+        .replace(/[''’]/g, '')
         .replace(/\btshirts?\b/g, 't-shirt')
         .replace(/\bhoodies?\b/g, 'hood')
         .replace(/\bpolos?\b/g, 'polo');
       const terms = normalized.split(/\s+/).filter(Boolean);
       styles = styles.filter(s => {
-        const haystack = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase();
+        const haystack = `${s.name ?? ''} ${s.brand ?? ''} ${s.category ?? ''} ${s.style_number ?? ''}`.toLowerCase().replace(/[''’]/g, '');
         return terms.every(term => haystack.includes(term));
       });
     }
