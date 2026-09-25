@@ -107,11 +107,18 @@ export default function QuoteItemsEditor({
 }) {
   // A backfilled row from a no-product quote (customer uploaded a graphic
   // and went through instant-quote without picking a real product) is just
-  // clutter — even if a price snapshot is attached, it's not a fulfillable
-  // line item. Anything with no catalog product link AND no sizes counts as
-  // empty; admin-added free-form items always have at least sizes.
+  // clutter. But this filter feeds Save, which REPLACES the stored items —
+  // so anything carrying real information (a name, a price, notes, a flat
+  // quantity) must survive, or saving silently deletes it. That's how the
+  // "Ultra Hat" line on quote #177 and quote #190's item vanished: custom
+  // items have no product link and no per-size counts, got filtered on
+  // mount, and the next Save wiped them. Only rows with NOTHING on them
+  // count as empty now.
   const isEmptyItem = (d: DraftItem) =>
-    !d.product_id && d.sizes.length === 0;
+    !d.product_id && d.sizes.length === 0 &&
+    !d.product_name.trim() && !d.notes.trim() &&
+    !(parseFloat(d.unit_price) > 0) && !(parseFloat(d.line_total) > 0) &&
+    !(parseFloat(d.flat_quantity) > 0);
 
   const [drafts, setDrafts] = useState<DraftItem[]>(() =>
     (quote.items || []).map(quoteItemToDraft).filter((d) => !isEmptyItem(d)));
