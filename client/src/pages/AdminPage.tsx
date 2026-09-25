@@ -1081,6 +1081,24 @@ export default function AdminPage() {
     setAiPriceResult(null);
   }, [detailQuote?.id]);
 
+  // Hydrate the drawer with the full quote when it was opened from a slim
+  // list payload: /admin/orders rows carry no `items` (and other detail
+  // fields), which left the line-items editor showing no products at all.
+  useEffect(() => {
+    const id = detailQuote?.id;
+    if (!id) return;
+    if (Array.isArray((detailQuote as Quote).items)) return; // already full
+    let alive = true;
+    fetchQuote(String(id))
+      .then((full) => {
+        if (!alive) return;
+        setDetailQuote((prev) => (prev && 'id' in prev && prev.id === id ? { ...prev, ...full } : prev));
+      })
+      .catch(() => { /* drawer still shows the slim fields */ });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailQuote?.id]);
+
   // Reset admin notes draft when a new quote is opened
   useEffect(() => {
     if (detailQuote) {
@@ -8083,6 +8101,10 @@ export default function AdminPage() {
                       product picker hits the catalog via live search so it
                       can find any of the 5k+ products without preloading. */}
                   <QuoteItemsEditor
+                    // The editor seeds its drafts on mount, so remount when
+                    // the drawer's slim row is hydrated with the full quote
+                    // (items arriving after open) — else it stays empty.
+                    key={`qie-${(q as Quote).id}-${Array.isArray((q as Quote).items) ? 'full' : 'slim'}`}
                     quote={q as Quote}
                     onSaved={(updated) => {
                       setDetailQuote(updated as Quote);
