@@ -125,6 +125,16 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
   const items = typeof invoice.items === 'string' ? JSON.parse(invoice.items) : invoice.items;
   const amountPaid = Number(invoice.amount_paid || 0);
   const amountDue = Number(invoice.amount_due ?? invoice.total);
+  // Standing terms: any deposit is due upon receipt of the invoice; the
+  // remaining balance is due on delivery.
+  const owedNow = computeAmountOwed(invoice);
+  const termsLine = amountDue <= 0
+    ? null
+    : owedNow.paymentType === 'deposit'
+    ? `${owedNow.depositPercent}% deposit of ${formatCurrency(owedNow.amount)} due upon receipt &middot; remaining balance of ${formatCurrency(amountDue - owedNow.amount)} due on delivery`
+    : owedNow.paymentType === 'balance'
+    ? `Remaining balance of ${formatCurrency(owedNow.amount)} due on delivery`
+    : 'Payment due upon receipt';
 
   const itemRows = (items || []).map((item) => {
     const variant = [item.color, item.size].filter(Boolean).join(' · ');
@@ -176,7 +186,11 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
         <td style="vertical-align:top;width:50%;text-align:right;">
           <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Invoice #: <strong style="color:${BRAND_DARK};">${invoice.invoice_number}</strong></p>
           <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Date: ${new Date(invoice.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          ${invoice.due_date ? `<p style="margin:0;font-size:13px;color:#6b7280;">Due: ${new Date(invoice.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>` : ''}
+          ${invoice.due_date
+            ? `<p style="margin:0;font-size:13px;color:#6b7280;">Due: ${new Date(invoice.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>`
+            : amountDue > 0
+            ? `<p style="margin:0;font-size:13px;color:#6b7280;">Due: ${owedNow.paymentType === 'balance' ? 'On delivery' : 'Upon receipt'}</p>`
+            : ''}
         </td>
       </tr>
     </table>
@@ -250,11 +264,20 @@ function buildInvoiceEmailHtml(invoice, paymentUrl) {
       ${amountDue <= 0 ? `<tr>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;">Status</td>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:#16a34a;text-align:right;">PAID</td>
+      </tr>` : owedNow.paymentType === 'deposit' ? `<tr>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Due Now (${owedNow.depositPercent}% deposit)</td>
+        <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(owedNow.amount)}</td>
+      </tr>
+      <tr>
+        <td style="padding:2px 0;font-size:13px;color:#6b7280;">Balance on delivery</td>
+        <td style="padding:2px 0;font-size:13px;color:#6b7280;text-align:right;">${formatCurrency(amountDue - owedNow.amount)}</td>
       </tr>` : `<tr>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};">Amount Due</td>
         <td style="padding:10px 0;font-size:18px;font-weight:700;color:${BRAND_ORANGE};text-align:right;">${formatCurrency(amountDue)}</td>
       </tr>`}
     </table>
+
+    ${termsLine ? `<p style="margin:16px 0 0;font-size:12px;color:#6b7280;text-align:center;"><strong>Payment terms:</strong> ${termsLine}</p>` : ''}
 
     ${invoice.notes ? `<div style="background:#f0fdf4;border-left:4px solid #22c55e;padding:12px 16px;border-radius:0 8px 8px 0;margin:24px 0;">
       <p style="margin:0;font-size:13px;font-weight:600;color:#166534;">Notes</p>
@@ -395,6 +418,11 @@ router.get('/:id/pdf', async (req, res, next) => {
       doc.fontSize(8).font('Helvetica-Bold').fillColor('#9ca3af').text('DUE', 400, y + 30, { align: 'right' });
       doc.fontSize(10).font('Helvetica').fillColor(BRAND_DARK)
         .text(new Date(inv.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), 400, y + 42, { align: 'right' });
+    } else if (!isPaid) {
+      const owedPdf = computeAmountOwed(inv);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#9ca3af').text('DUE', 400, y + 30, { align: 'right' });
+      doc.fontSize(10).font('Helvetica').fillColor(BRAND_DARK)
+        .text(owedPdf.paymentType === 'balance' ? 'On delivery' : 'Upon receipt', 400, y + 42, { align: 'right' });
     }
 
     // Items table
@@ -463,6 +491,17 @@ router.get('/:id/pdf', async (req, res, next) => {
     if (inv.notes) {
       doc.fontSize(9).font('Helvetica-Bold').fillColor('#9ca3af').text('NOTES', 50, totalsY + 30);
       doc.fontSize(10).font('Helvetica').fillColor('#4b5563').text(String(inv.notes), 50, totalsY + 44, { width: 512 });
+    }
+
+    if (!isPaid) {
+      const owedTerms = computeAmountOwed(inv);
+      const terms = owedTerms.paymentType === 'deposit'
+        ? `Payment terms: ${owedTerms.depositPercent}% deposit ($${owedTerms.amount.toFixed(2)}) due upon receipt; remaining balance due on delivery.`
+        : owedTerms.paymentType === 'balance'
+        ? 'Payment terms: remaining balance due on delivery.'
+        : 'Payment terms: due upon receipt.';
+      doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
+        .text(terms, 50, 700, { align: 'center', width: 512 });
     }
 
     doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af')
