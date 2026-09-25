@@ -165,12 +165,17 @@ export default function InvoiceViewPage() {
           <div className="sm:text-right flex sm:block gap-8">
             <p className="text-xs uppercase text-gray-400 font-semibold mb-1">Date</p>
             <p className="text-gray-900">{new Date(inv.created_at).toLocaleDateString()}</p>
-            {inv.due_date && (
+            {inv.due_date ? (
               <>
                 <p className="text-xs uppercase text-gray-400 font-semibold mb-1 mt-2">Due</p>
                 <p className="text-gray-900">{new Date(inv.due_date).toLocaleDateString()}</p>
               </>
-            )}
+            ) : !isPaid ? (
+              <>
+                <p className="text-xs uppercase text-gray-400 font-semibold mb-1 mt-2">Due</p>
+                <p className="text-gray-900">{inv.payment_type === 'balance' ? 'On delivery' : 'Upon receipt'}</p>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -355,8 +360,13 @@ export default function InvoiceViewPage() {
             </button>
             {inv.payment_type === 'deposit' && (
               <p className="text-center text-xs text-gray-500 mt-2">
-                This is the {Number(inv.deposit_percent)}% deposit. The balance of $
-                {fmt(Number(inv.total) - Number(inv.amount_due_now ?? 0))} is due later.
+                This is the {Number(inv.deposit_percent)}% deposit, due upon receipt. The balance of $
+                {fmt(Number(inv.total) - Number(inv.amount_due_now ?? 0))} is due on delivery.
+              </p>
+            )}
+            {inv.payment_type === 'balance' && (
+              <p className="text-center text-xs text-gray-500 mt-2">
+                Remaining balance — due on delivery.
               </p>
             )}
             {payError && (
