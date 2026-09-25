@@ -1843,23 +1843,24 @@ export default function AdminPage() {
       const { id, ...rest } = data;
       return updateInvoice(id, rest);
     },
-    onSuccess: () => {
+    onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
-      setInvoiceView('list');
-      resetInvoiceForm();
-      setEditingInvoiceId(null);
-      alert('Invoice updated!');
+      // Stay in the editor — bouncing back to the list on every save made
+      // iterative edits painful. Refresh the stored copy so the Payments
+      // card reflects what was just saved.
+      setEditingInvoiceFull(updated);
+      toast('Invoice updated');
     },
-    onError: (err) => alert(`Failed to update: ${err instanceof Error ? err.message : 'Unknown error'}`),
+    onError: (err) => toast(`Failed to update: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error'),
   });
 
   const sendInvoiceMutation = useMutation({
     mutationFn: (id: string) => sendInvoice(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
-      alert('Invoice sent!');
+      toast('Invoice sent');
     },
-    onError: (err) => alert(`Failed to send: ${err instanceof Error ? err.message : 'Unknown error'}`),
+    onError: (err) => toast(`Failed to send: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error'),
   });
 
   // Texting doesn't change the invoice's status the way emailing it does —
@@ -1869,8 +1870,8 @@ export default function AdminPage() {
   // pending state instead of every Text button reading "Texting…" at once.
   const textInvoiceMutation = useMutation({
     mutationFn: (id: string) => sendInvoiceSms(id),
-    onSuccess: () => alert('Invoice texted!'),
-    onError: (err) => alert(`Failed to text: ${err instanceof Error ? err.message : 'Unknown error'}`),
+    onSuccess: () => toast('Invoice texted'),
+    onError: (err) => toast(`Failed to text: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error'),
   });
 
   const deleteInvoiceMutation = useMutation({
