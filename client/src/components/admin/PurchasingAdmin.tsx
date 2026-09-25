@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Loader2, Package, Plus, RefreshCw, Search, Trash2, Truck, X, FlaskConical,
+  Copy, Loader2, Package, Plus, RefreshCw, Search, Trash2, Truck, X, FlaskConical,
 } from 'lucide-react';
 
 // Blanks purchasing: build and place S&S Activewear orders, prefilled from a
@@ -795,7 +795,24 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                           <td className={`px-2 py-2 text-right ${l.stock !== null && l.stock < l.qty ? 'text-red-600 font-medium' : ''}`}>
                             {l.stock ?? '—'}
                           </td>
-                          <td className="px-2 py-2">
+                          <td className="px-2 py-2 whitespace-nowrap">
+                            <button
+                              onClick={() => setLines((prev) => {
+                                // Duplicate right below, size cleared — the
+                                // usual reason to copy is another size of the
+                                // same product/color. SKU/price re-resolve
+                                // when the new size is picked.
+                                const i = prev.findIndex((x) => x.key === l.key);
+                                const copy = { ...l, key: nextKey(), size: '', sku: null, price: null, stock: null };
+                                const next = [...prev];
+                                next.splice(i + 1, 0, copy);
+                                return next;
+                              })}
+                              title="Duplicate line (pick another size)"
+                              className="text-gray-400 hover:text-blue-600 mr-2"
+                            >
+                              <Copy className="w-4 h-4" />
+                            </button>
                             <button onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))} className="text-gray-400 hover:text-red-600">
                               <Trash2 className="w-4 h-4" />
                             </button>
