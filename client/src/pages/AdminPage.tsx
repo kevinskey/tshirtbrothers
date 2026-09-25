@@ -5426,10 +5426,13 @@ export default function AdminPage() {
                   {/* Line Items */}
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900 mb-3">Line Items</h3>
-                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* overflow must stay visible: the Description autocomplete
+                        dropdown on the last row opens past the container edge
+                        and overflow-hidden clips it out of existence. */}
+                    <div className="border border-gray-200 rounded-lg">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="bg-gray-50 text-left text-gray-500">
+                          <tr className="bg-gray-50 text-left text-gray-500 [&>th:first-child]:rounded-tl-lg [&>th:last-child]:rounded-tr-lg">
                             <th className="px-3 py-2 font-medium">Description</th>
                             <th className="px-2 py-2 font-medium w-24 hidden md:table-cell">Color</th>
                             <th className="px-2 py-2 font-medium w-16 hidden md:table-cell">Size</th>
