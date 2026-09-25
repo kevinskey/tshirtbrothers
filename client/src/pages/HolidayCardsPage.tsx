@@ -121,11 +121,11 @@ export default function HolidayCardsPage() {
               <span className="inline-flex items-center gap-2"><Star className="w-4 h-4 text-orange-400" /> Printed in Fairburn, GA</span>
             </div>
           </div>
-          <div className="hidden lg:block">
+          <div className="max-w-md mx-auto lg:max-w-none w-full">
             <img
               src={`${CDN}/1790356357187-holiday-card-two-photo-memories.jpg`}
               alt="Home for the Holidays two-photo card"
-              className="rounded-2xl shadow-2xl rotate-2 border-4 border-white/10"
+              className="w-full h-auto rounded-2xl shadow-2xl rotate-2 border-4 border-white/10"
               loading="eager"
             />
           </div>
