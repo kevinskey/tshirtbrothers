@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { toast } from 'sonner';
 import { Building2, Check, CheckCircle2, Loader2, Upload } from 'lucide-react';
@@ -8,10 +9,19 @@ import { Building2, Check, CheckCircle2, Loader2, Upload } from 'lucide-react';
 // Teams & Clients" ask: quantity, budget per gift, requested delivery
 // date, and a logo upload (same public upload endpoint the PDPs use).
 export default function BusinessPage() {
-  const [form, setForm] = useState({
-    business_name: '', contact_name: '', email: '', phone: '',
-    business_type: '', quantity: '', budget_per_gift: '', delivery_date: '',
-    logo_url: '', needs: '',
+  const [params] = useSearchParams();
+  const [form, setForm] = useState(() => {
+    // /holiday-cards hands off the chosen card template via query params
+    // so the inquiry arrives already naming the design.
+    const design = params.get('design');
+    const needs = params.get('interest') === 'holiday-cards' && design
+      ? `Holiday card order — design: ${params.get('name') || design} (${design})`
+      : '';
+    return {
+      business_name: '', contact_name: '', email: '', phone: '',
+      business_type: '', quantity: '', budget_per_gift: '', delivery_date: '',
+      logo_url: '', needs,
+    };
   });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
