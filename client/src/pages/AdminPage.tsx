@@ -5749,9 +5749,14 @@ export default function AdminPage() {
                     const editingInvoice = editingInvoiceFull
                       ?? invoices.find((i) => String(i.id) === editingInvoiceId);
                     if (!editingInvoice) return null;
-                    const total = Number(editingInvoice.total || 0);
+                    // Total/Due track the form being edited, not the stored
+                    // row — a draft saved at old prices otherwise shows a
+                    // stale total here until Update Invoice is clicked.
+                    const total = calcInvoiceTotal();
                     const paid = Number(editingInvoice.amount_paid || 0);
-                    const due = Number(editingInvoice.amount_due || 0);
+                    const due = Math.max(0, total - paid);
+                    const savedTotal = Number(editingInvoice.total || 0);
+                    const unsaved = Math.abs(total - savedTotal) >= 0.01;
                     const recordedPayments = Array.isArray(editingInvoice.payments)
                       ? editingInvoice.payments
                       : (typeof editingInvoice.payments === 'string'
@@ -5777,6 +5782,11 @@ export default function AdminPage() {
                             <p className={`font-semibold ${due <= 0 ? 'text-green-600' : 'text-red-600'}`}>${due.toFixed(2)}</p>
                           </div>
                         </div>
+                        {unsaved && (
+                          <p className="text-[11px] text-amber-700 mb-3">
+                            Reflects your unsaved edits (last saved total ${savedTotal.toFixed(2)}) — click Update Invoice to save.
+                          </p>
+                        )}
                         {recordedPayments.length > 0 && (
                           <div className="text-xs text-gray-600 space-y-1 mb-3 bg-white rounded p-2 border border-gray-100">
                             {recordedPayments.map((p: { amount: number; method: string; date: string }, idx: number) => (
