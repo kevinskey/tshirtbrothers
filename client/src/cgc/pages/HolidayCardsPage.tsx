@@ -8,6 +8,7 @@ import {
   type CardTemplate, type FilterGroup,
 } from '../lib/cardTemplates';
 import CardTemplatePreview from '../components/CardTemplatePreview';
+import { CARD_SLOTS } from '../lib/cardSlots';
 import { money } from '../lib/api';
 import { useCgcPath } from '../lib/base';
 
@@ -431,13 +432,31 @@ export default function HolidayCardsPage() {
                   </tbody>
                 </table>
                 <p className="mt-2 text-xs text-cgc-stone">Blank envelopes included. Personalization (your photos, names, and greeting) is free — we email a proof before anything prints.</p>
-                <button
-                  type="button" onClick={() => startOrder(quickView)}
-                  className="mt-5 w-full rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold py-3"
-                >
-                  Start my order with this design
-                </button>
-                <p className="mt-2 text-center text-xs text-cgc-stone">Tell us quantity + photos on the next page — no payment yet.</p>
+                {CARD_SLOTS[quickView.id] ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setQuickView(null); navigate(`${p('/holiday-cards')}/${quickView.id}/design`); }}
+                      className="mt-5 w-full rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold py-3"
+                    >
+                      Personalize with My Photos
+                    </button>
+                    <button
+                      type="button" onClick={() => startOrder(quickView)}
+                      className="mt-2 w-full rounded-lg border border-cgc-cream-deep hover:border-cgc-stone text-cgc-ink font-semibold py-2.5 text-sm"
+                    >
+                      Skip — just start my order
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button" onClick={() => startOrder(quickView)}
+                    className="mt-5 w-full rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold py-3"
+                  >
+                    Start my order with this design
+                  </button>
+                )}
+                <p className="mt-2 text-center text-xs text-cgc-stone">Free proof before anything prints — no payment yet.</p>
               </div>
             </div>
             {/* More templates like this — nearest designs by shared
