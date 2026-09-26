@@ -181,6 +181,8 @@ interface GangSheetBuilderProps {
 
 export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderProps = {}) {
   const navigate = useNavigate();
+  // One-shot guard for the ?fromQuote= canvas preload.
+  const fromQuoteConsumed = useRef(false);
   const { id: sheetId } = useParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
@@ -2154,6 +2156,21 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           }));
         }
         setQuoteDesigns((prev) => [...entries, ...prev.filter((e) => e.id.startsWith('arch-'))]);
+
+        // ?fromQuote=<id> — opened from a quote's "Price on Gang Sheet"
+        // action: drop every file attached to that quote straight onto the
+        // canvas so the admin can lay out and price the DTF job without
+        // hunting the library. One-shot per mount.
+        const fromQuote = new URLSearchParams(window.location.search).get('fromQuote');
+        if (fromQuote && !fromQuoteConsumed.current) {
+          fromQuoteConsumed.current = true;
+          const mine = entries.filter((e) => e.id.startsWith(`${fromQuote}:`));
+          (async () => {
+            for (const e of mine) {
+              await addDesignToCanvas(e.design_url, `${e.customer_name} — file ${e.fileNo}/${e.fileCount}`);
+            }
+          })();
+        }
       })
       .catch(() => {});
 
@@ -2837,7 +2854,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       from committed work; toggle shows everything. */}
                   <div>
                     {(() => {
-                      const shown = paidQuotesOnly ? filteredQuoteDesigns.filter((q) => q.paid) : filteredQuoteDesigns;
+                      // An active search means the admin is hunting a specific
+                      // job — don't let the deposit-paid default hide it
+                      // (unpaid quotes are exactly what needs pricing).
+                      const shown = paidQuotesOnly && !q ? filteredQuoteDesigns.filter((qd) => qd.paid) : filteredQuoteDesigns;
                       return (
                         <>
                           <div className="flex items-center justify-between mb-2">
