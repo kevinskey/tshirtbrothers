@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { Check, ChevronDown, Sparkles, SlidersHorizontal, Upload, X } from 'lucide-react';
 import {
-  CARD_HERO_PRICE, CARD_PRICE_TIERS, CARD_TEMPLATES, FILTER_GROUPS, FOLDED_UPCHARGE_CENTS,
+  CARD_HERO_PRICE, CARD_PRICE_TIERS, CARD_TEMPLATES, CARD_TRIM_OPTIONS,
+  FILTER_GROUPS, FOIL_UPCHARGE, FOLDED_UPCHARGE_CENTS,
   type CardTemplate, type FilterGroup,
 } from '../lib/cardTemplates';
 import CardTemplatePreview from '../components/CardTemplatePreview';
@@ -27,6 +28,8 @@ export default function HolidayCardsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<string[]>(['photos', 'color', 'greeting']);
   const [quickView, setQuickView] = useState<CardTemplate | null>(null);
+  const [trim, setTrim] = useState<typeof CARD_TRIM_OPTIONS[number]['key']>('Standard');
+  const openQuickView = (t: CardTemplate) => { setTrim('Standard'); setQuickView(t); };
 
   const selections = useMemo<Selections>(() => {
     const out = {} as Selections;
@@ -68,7 +71,8 @@ export default function HolidayCardsPage() {
 
   const startOrder = (t: CardTemplate) => {
     setQuickView(null);
-    navigate(`${p('/business')}?interest=holiday-cards&design=${encodeURIComponent(t.id)}&name=${encodeURIComponent(t.name)}`);
+    const trimQ = trim !== 'Standard' ? `&trim=${encodeURIComponent(trim)}` : '';
+    navigate(`${p('/business')}?interest=holiday-cards&design=${encodeURIComponent(t.id)}&name=${encodeURIComponent(t.name)}${trimQ}`);
   };
 
   const filterPanel = (
@@ -196,9 +200,11 @@ export default function HolidayCardsPage() {
             The perfect holiday card at the perfect price. Pick a design, send us your photos and greeting, and we handle the rest — free design proof with every order.
           </p>
           <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white border border-cgc-cream-deep px-4 py-2 text-sm font-semibold text-cgc-ink">
-            <span className="text-cgc-orange font-extrabold">{money(CARD_HERO_PRICE.cents)} each</span>
+            <span className="text-cgc-stone line-through font-normal">{money(CARD_HERO_PRICE.regular)}</span>
+            <span className="text-cgc-orange font-extrabold">{money(CARD_HERO_PRICE.sale)} each</span>
             at {CARD_HERO_PRICE.qty}+ cards · envelopes included
           </p>
+          <p className="mt-2 text-sm font-semibold text-green-700">Up to 40% off holiday cards & options</p>
         </div>
       </div>
 
@@ -241,7 +247,7 @@ export default function HolidayCardsPage() {
                 {results.map((t, i) => (
                   <Fragment key={t.id}>
                     <button
-                      type="button" onClick={() => setQuickView(t)}
+                      type="button" onClick={() => openQuickView(t)}
                       className="group block w-full self-start rounded-xl border border-cgc-cream-deep bg-white p-3 shadow-sm hover:shadow-md hover:border-cgc-stone transition-all text-left"
                     >
                       {t.image ? (
@@ -327,7 +333,29 @@ export default function HolidayCardsPage() {
                   {quickView.photos ? ` · ${quickView.photos} photo${quickView.photos > 1 ? 's' : ''}` : ' · No photos'}
                   {quickView.foil !== 'None' ? ` · ${quickView.foil}` : ''}
                 </p>
-                <table className="mt-4 w-full text-sm">
+                {/* Trim option — per-card upcharge, same 40%-off treatment
+                    as the base price (mirrors the big-box options menu). */}
+                <div className="mt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-cgc-stone">Trim</p>
+                  <div className="mt-1.5 flex gap-2">
+                    {CARD_TRIM_OPTIONS.map((o) => (
+                      <button
+                        key={o.key} type="button" onClick={() => setTrim(o.key)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${trim === o.key ? 'bg-cgc-ink text-white border-cgc-ink' : 'border-cgc-cream-deep text-cgc-ink hover:border-cgc-stone'}`}
+                      >
+                        {o.key}{o.sale > 0 && ` +${money(o.sale)}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {quickView.foil !== 'None' && (
+                  <p className="mt-3 text-xs text-cgc-charcoal">
+                    <span className="font-semibold">{quickView.foil} (raised):</span>{' '}
+                    <span className="text-cgc-stone line-through">+{money(FOIL_UPCHARGE.regular)}</span>{' '}
+                    <span className="font-semibold text-green-700">+{money(FOIL_UPCHARGE.sale)} each</span> — included in the prices below.
+                  </p>
+                )}
+                <table className="mt-3 w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs uppercase tracking-wide text-cgc-stone">
                       <th className="py-1.5 font-semibold">Quantity</th>
@@ -336,11 +364,20 @@ export default function HolidayCardsPage() {
                   </thead>
                   <tbody>
                     {CARD_PRICE_TIERS.map((tier) => {
-                      const cents = tier.cents + (quickView.fold === 'Folded' ? FOLDED_UPCHARGE_CENTS : 0);
+                      const trimOpt = CARD_TRIM_OPTIONS.find((o) => o.key === trim) ?? CARD_TRIM_OPTIONS[0];
+                      const extras = (quickView.fold === 'Folded' ? FOLDED_UPCHARGE_CENTS : 0)
+                        + (quickView.foil !== 'None' ? FOIL_UPCHARGE.sale : 0)
+                        + trimOpt.sale;
+                      const regularExtras = (quickView.fold === 'Folded' ? FOLDED_UPCHARGE_CENTS : 0)
+                        + (quickView.foil !== 'None' ? FOIL_UPCHARGE.regular : 0)
+                        + trimOpt.regular;
                       return (
                         <tr key={tier.qty} className="border-t border-cgc-cream-deep">
                           <td className="py-1.5 text-cgc-charcoal">{tier.qty}+</td>
-                          <td className="py-1.5 text-right font-semibold text-cgc-ink">{money(cents)}</td>
+                          <td className="py-1.5 text-right">
+                            <span className="text-xs text-cgc-stone line-through mr-2">{money(tier.regular + regularExtras)}</span>
+                            <span className="font-semibold text-cgc-ink">{money(tier.sale + extras)}</span>
+                          </td>
                         </tr>
                       );
                     })}
@@ -356,6 +393,42 @@ export default function HolidayCardsPage() {
                 <p className="mt-2 text-center text-xs text-cgc-stone">Tell us quantity + photos on the next page — no payment yet.</p>
               </div>
             </div>
+            {/* More templates like this — nearest designs by shared
+                style / greeting / photo count. */}
+            {(() => {
+              const related = CARD_TEMPLATES
+                .filter((t) => t.id !== quickView.id)
+                .map((t) => ({
+                  t,
+                  score: (t.style === quickView.style ? 3 : 0)
+                    + (t.greeting === quickView.greeting ? 2 : 0)
+                    + (t.photos === quickView.photos ? 1 : 0)
+                    + (t.colors.some((c) => quickView.colors.includes(c)) ? 1 : 0),
+                }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 4)
+                .map((r) => r.t);
+              return related.length > 0 && (
+                <div className="border-t border-cgc-cream-deep px-6 pb-6">
+                  <h3 className="pt-4 text-sm font-bold text-cgc-ink">More templates like this</h3>
+                  <div className="mt-3 grid grid-cols-4 gap-3">
+                    {related.map((t) => (
+                      <button
+                        key={t.id} type="button" onClick={() => openQuickView(t)}
+                        className="group text-left"
+                      >
+                        {t.image ? (
+                          <img src={t.image} alt={t.name} loading="lazy" className="w-full h-auto rounded-lg border border-cgc-cream-deep group-hover:border-cgc-stone" />
+                        ) : (
+                          <CardTemplatePreview template={t} className="w-full h-auto rounded-lg border border-cgc-cream-deep" />
+                        )}
+                        <p className="mt-1.5 text-xs font-semibold text-cgc-ink group-hover:text-cgc-orange truncate">{t.name}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

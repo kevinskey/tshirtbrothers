@@ -14,8 +14,9 @@ export default function BusinessPage() {
     // /holiday-cards hands off the chosen card template via query params
     // so the inquiry arrives already naming the design.
     const design = params.get('design');
+    const trim = params.get('trim');
     const needs = params.get('interest') === 'holiday-cards' && design
-      ? `Holiday card order — design: ${params.get('name') || design} (${design})`
+      ? `Holiday card order — design: ${params.get('name') || design} (${design})${trim ? ` · ${trim} trim` : ''}`
       : '';
     return {
       business_name: '', contact_name: '', email: '', phone: '',

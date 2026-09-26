@@ -76,18 +76,27 @@ export const CARD_TEMPLATES: CardTemplate[] = rows.map(
   }),
 );
 
-// Quantity price breaks (cents each, flat cards). Folded adds a flat
-// per-card upcharge. Tracks just under big-box print pricing.
+// Quantity price breaks (cents each, flat cards), mirroring big-box
+// (Vistaprint) pricing: a regular price with a standing ~40% holiday
+// sale shown strikethrough-style. Options are per-card upcharges that
+// carry the same discount.
 export const CARD_PRICE_TIERS = [
-  { qty: 10, cents: 249 },
-  { qty: 25, cents: 189 },
-  { qty: 50, cents: 139 },
-  { qty: 100, cents: 95 },
-  { qty: 250, cents: 79 },
+  { qty: 10, regular: 249, sale: 149 },
+  { qty: 25, regular: 199, sale: 119 },
+  { qty: 50, regular: 159, sale: 95 },
+  { qty: 100, regular: 121, sale: 73 },
+  { qty: 250, regular: 99, sale: 59 },
 ];
+// Per-card option upcharges (regular → sale), matching the big-box menu.
+export const CARD_TRIM_OPTIONS = [
+  { key: 'Standard', regular: 0, sale: 0 },
+  { key: 'Rounded', regular: 25, sale: 15 },
+  { key: 'Wavy', regular: 49, sale: 29 },
+] as const;
+export const FOIL_UPCHARGE = { regular: 151, sale: 90 };
 export const FOLDED_UPCHARGE_CENTS = 40;
-// Headline price for the hero ("under $1 each at 100+").
-export const CARD_HERO_PRICE = { qty: 100, cents: 95 };
+// Headline price for the hero.
+export const CARD_HERO_PRICE = { qty: 100, regular: 121, sale: 73 };
 
 export type FilterGroup = {
   key: 'photos' | 'color' | 'greeting' | 'recipient' | 'style' | 'orientation' | 'size' | 'fold' | 'foil';
