@@ -185,26 +185,78 @@ export default function HolidayCardsPage() {
     <div>
       <Helmet><title>Christmas Card Templates — Custom Gift Club</title></Helmet>
 
-      {/* Hero */}
-      <div className="bg-cgc-cream/60 border-b border-cgc-cream-deep">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-          <nav className="text-sm text-cgc-stone mb-3" aria-label="Breadcrumb">
-            <Link to={p('/')} className="hover:text-cgc-orange">Home</Link>
-            <span aria-hidden> / </span>
-            <Link to={p('/holiday')} className="hover:text-cgc-orange">Holiday</Link>
-            <span aria-hidden> / </span>
-            <span className="text-cgc-ink font-medium">Christmas Cards</span>
-          </nav>
-          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-cgc-ink">Christmas Card Templates</h1>
-          <p className="mt-2 max-w-2xl text-cgc-charcoal">
-            The perfect holiday card at the perfect price. Pick a design, send us your photos and greeting, and we handle the rest — free design proof with every order.
-          </p>
-          <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-white border border-cgc-cream-deep px-4 py-2 text-sm font-semibold text-cgc-ink">
-            <span className="text-cgc-stone line-through font-normal">{money(CARD_HERO_PRICE.regular)}</span>
-            <span className="text-cgc-orange font-extrabold">{money(CARD_HERO_PRICE.sale)} each</span>
-            at {CARD_HERO_PRICE.qty}+ cards · envelopes included
-          </p>
-          <p className="mt-2 text-sm font-semibold text-green-700">Up to 40% off holiday cards & options</p>
+      {/* Hero — deep evergreen with gold accents and a fanned stack of
+          real card artwork; the page opens looking like the product. */}
+      <div
+        className="relative overflow-hidden text-cgc-cream"
+        style={{
+          backgroundColor: '#122b1b',
+          backgroundImage: [
+            'radial-gradient(circle at 12% 18%, rgba(201,162,75,0.16), transparent 32%)',
+            'radial-gradient(circle at 88% 82%, rgba(201,162,75,0.12), transparent 38%)',
+            // fine gold "snow" specks
+            'radial-gradient(rgba(233,214,166,0.16) 1px, transparent 1.5px)',
+          ].join(', '),
+          backgroundSize: 'auto, auto, 26px 26px',
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:flex lg:items-center lg:gap-12">
+          <div className="lg:flex-1">
+            <nav className="text-sm text-cgc-cream/60 mb-4" aria-label="Breadcrumb">
+              <Link to={p('/')} className="hover:text-cgc-cream">Home</Link>
+              <span aria-hidden> / </span>
+              <Link to={p('/holiday')} className="hover:text-cgc-cream">Holiday</Link>
+              <span aria-hidden> / </span>
+              <span className="text-cgc-cream font-medium">Christmas Cards</span>
+            </nav>
+            <p className="text-xs font-bold uppercase tracking-[0.3em]" style={{ color: '#c9a24b' }}>
+              Holiday 2026 Collection
+            </p>
+            <h1 className="mt-3 font-display text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05]">
+              Christmas cards
+              <span className="block" style={{ color: '#e0c078' }}>worth keeping.</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-cgc-cream/75 leading-relaxed">
+              Pick a design, send us your photos and greeting, and we handle the rest —
+              a free proof lands in your inbox before anything prints.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              {/* Gift-tag price badge */}
+              <span
+                className="inline-flex items-baseline gap-2 rounded-lg px-4 py-2.5 text-cgc-ink font-semibold shadow-lg"
+                style={{ background: '#f6f1e7' }}
+              >
+                <span className="text-cgc-stone line-through text-sm font-normal">{money(CARD_HERO_PRICE.regular)}</span>
+                <span className="text-2xl font-extrabold" style={{ color: '#a02236' }}>{money(CARD_HERO_PRICE.sale)}</span>
+                <span className="text-sm">each at {CARD_HERO_PRICE.qty}+</span>
+              </span>
+              <span
+                className="inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold"
+                style={{ borderColor: 'rgba(201,162,75,0.5)', color: '#e0c078' }}
+              >
+                Up to 40% off · envelopes included
+              </span>
+            </div>
+          </div>
+
+          {/* Fanned card stack — real artwork, desktop only */}
+          <div className="hidden lg:flex items-center justify-center relative w-[26rem] h-72 shrink-0" aria-hidden>
+            {[
+              { src: '/cgc/cards/joy-crimson-trio.jpg', rot: '-9deg', x: '-7rem', z: 1 },
+              { src: '/cgc/cards/gilded-wreath.jpg', rot: '0deg', x: '0rem', z: 3, lift: true },
+              { src: '/cgc/cards/noel-navy-gold.jpg', rot: '9deg', x: '7rem', z: 2 },
+            ].map((c) => (
+              <img
+                key={c.src} src={c.src} alt=""
+                className="absolute w-44 rounded-lg shadow-2xl transition-transform duration-300 hover:scale-105"
+                style={{
+                  transform: `translateX(${c.x}) rotate(${c.rot})${c.lift ? ' translateY(-0.75rem)' : ''}`,
+                  zIndex: c.z,
+                  boxShadow: '0 24px 48px -12px rgba(0,0,0,0.55)',
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
