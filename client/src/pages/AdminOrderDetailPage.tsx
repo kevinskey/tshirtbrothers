@@ -95,6 +95,7 @@ export default function AdminOrderDetailPage() {
   const [noteText, setNoteText] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [notifying, setNotifying] = useState<'' | 'ready' | 'balance'>('');
   const [trkNumber, setTrkNumber] = useState('');
   const [trkCarrier, setTrkCarrier] = useState('');
   const [offlineFormOpen, setOfflineFormOpen] = useState(false);
@@ -228,6 +229,43 @@ export default function AdminOrderDetailPage() {
     }
   }
 
+  // Mark the order ready: PATCH the quote to 'ready', which server-side
+  // emails/texts the customer that the order is done — including a
+  // "Pay Remaining Balance" checkout button when money is still due.
+  async function markReady() {
+    if (notifying) return;
+    setNotifying('ready');
+    try {
+      const r = await fetch(`/api/quotes/${quoteId}`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ status: 'ready' }),
+      });
+      if (r.ok) {
+        await load();
+        alert(`Order marked ready — ${quote?.customer_email} was notified${totalDue > 0 ? ' with a pay-balance link' : ''}.`);
+      } else {
+        alert(`Failed to mark ready (HTTP ${r.status})`);
+      }
+    } finally {
+      setNotifying('');
+    }
+  }
+
+  // Re-send the balance-due email (with the Stripe pay link) on demand.
+  async function sendBalance() {
+    if (notifying) return;
+    setNotifying('balance');
+    try {
+      const r = await fetch('/api/quotes/admin/send-balance', {
+        method: 'POST', headers: authHeaders(), body: JSON.stringify({ quoteId }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) alert(`Balance request for ${money(data.balanceDue ?? totalDue)} sent to ${quote?.customer_email}.`);
+      else alert(data.error || `Failed to send balance request (HTTP ${r.status})`);
+    } finally {
+      setNotifying('');
+    }
+  }
+
   // Complete the order via the fulfill endpoint — sets status, stamps the
   // pickup/ship date, and fires the customer notification + review request.
   async function completeOrder(method: 'pickup' | 'ship') {
@@ -302,6 +340,39 @@ export default function AdminOrderDetailPage() {
           <div className="text-[11px] text-gray-500 mt-2">
             Gang sheet / pressed / customer-contacted circles are click-to-toggle; the rest check themselves from payments, POs, and vendor sends.
           </div>
+
+          {/* Ready + balance notifications — the "customer contacted /
+              final payment" hops. Mark Ready emails+texts that the order
+              is done (with a pay-balance button when money is due); the
+              balance request can be re-sent on its own any time. */}
+          {quote.status !== 'completed' && (
+            <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-gray-700">Notify customer:</span>
+              {quote.status !== 'ready' && (
+                <button
+                  onClick={() => void markReady()}
+                  disabled={!!notifying}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
+                >
+                  {notifying === 'ready' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Order Ready{totalDue > 0 ? ' + Request Balance' : ''}
+                </button>
+              )}
+              {totalDue > 0 && (
+                <button
+                  onClick={() => void sendBalance()}
+                  disabled={!!notifying}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-orange-600 hover:bg-orange-700 text-white disabled:opacity-50"
+                >
+                  {notifying === 'balance' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  {quote.status === 'ready' ? 'Re-send' : 'Send'} Balance Request ({money(totalDue)})
+                </button>
+              )}
+              <span className="text-[11px] text-gray-500 basis-full">
+                Emails the customer that the order is ready{totalDue > 0 ? ` — with a "Pay Remaining Balance" button for the ${money(totalDue)} due` : ''}. Texts go out too when we have their number.
+              </span>
+            </div>
+          )}
 
           {/* Complete-order controls — the only stage with no data signal
               and no toggle. Calls the fulfill endpoint: sets status to
