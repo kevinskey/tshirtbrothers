@@ -530,28 +530,64 @@ router.get('/customers/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const userResult = await pool.query(
-      "SELECT id, email, name, phone, address_street, address_city, address_state, address_zip, created_at FROM users WHERE id = $1 AND role = 'customer'",
-      [id]
-    );
+    // Guest customers (no users row) are addressed as "guest:<email>" in the
+    // list; the integer lookups below would 500 on that, which blanked the
+    // whole detail page. Synthesize the customer from their latest quote /
+    // invoice contact info and run the email-keyed queries only.
+    const isGuest = String(id).startsWith('guest:');
+    let customer;
+    let designsResult = { rows: [] };
+    let quotesResult;
+    let notesResult = { rows: [] };
 
-    if (userResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Customer not found' });
+    if (isGuest) {
+      const gEmail = String(id).slice('guest:'.length).toLowerCase();
+      if (!gEmail) return res.status(404).json({ error: 'Customer not found' });
+      const contact = await pool.query(
+        `SELECT customer_name AS name, customer_phone AS phone, created_at
+           FROM (
+             SELECT customer_name, customer_phone, created_at FROM quotes WHERE LOWER(customer_email) = $1
+             UNION ALL
+             SELECT customer_name, customer_phone, created_at FROM invoices WHERE LOWER(customer_email) = $1
+           ) c ORDER BY created_at DESC LIMIT 1`,
+        [gEmail]
+      );
+      if (contact.rows.length === 0) return res.status(404).json({ error: 'Customer not found' });
+      customer = {
+        id, guest: true, email: gEmail,
+        name: contact.rows[0].name, phone: contact.rows[0].phone,
+        address_street: null, address_city: null, address_state: null, address_zip: null,
+        created_at: contact.rows[0].created_at,
+      };
+      quotesResult = await pool.query(
+        `SELECT id, product_name, quantity, status, estimated_price, created_at
+         FROM quotes WHERE LOWER(customer_email) = $1 ORDER BY created_at DESC`,
+        [gEmail]
+      );
+    } else {
+      const userResult = await pool.query(
+        "SELECT id, email, name, phone, address_street, address_city, address_state, address_zip, created_at FROM users WHERE id = $1 AND role = 'customer'",
+        [id]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Customer not found' });
+      }
+
+      customer = userResult.rows[0];
+
+      designsResult = await pool.query(
+        `SELECT id, name, product_name, mockup_url, print_url, created_at
+         FROM saved_designs WHERE user_id = $1 ORDER BY created_at DESC`,
+        [id]
+      );
+
+      quotesResult = await pool.query(
+        `SELECT id, product_name, quantity, status, estimated_price, created_at
+         FROM quotes WHERE user_id = $1 OR LOWER(customer_email) = LOWER($2) ORDER BY created_at DESC`,
+        [id, customer.email]
+      );
     }
-
-    const customer = userResult.rows[0];
-
-    const designsResult = await pool.query(
-      `SELECT id, name, product_name, mockup_url, print_url, created_at
-       FROM saved_designs WHERE user_id = $1 ORDER BY created_at DESC`,
-      [id]
-    );
-
-    const quotesResult = await pool.query(
-      `SELECT id, product_name, quantity, status, estimated_price, created_at
-       FROM quotes WHERE user_id = $1 OR LOWER(customer_email) = LOWER($2) ORDER BY created_at DESC`,
-      [id, customer.email]
-    );
 
     // Customer 360°: also pull invoices for this customer's email so the
     // detail modal shows the full revenue picture, not just open quotes.
@@ -583,13 +619,16 @@ router.get('/customers/:id', async (req, res, next) => {
       [customer.email]
     );
 
-    // Running admin notes log (customer page).
-    const notesResult = await pool.query(
-      `SELECT n.id, n.body, n.created_at, u.name AS author
-       FROM customer_notes n LEFT JOIN users u ON u.id = n.created_by
-       WHERE n.customer_id = $1 ORDER BY n.created_at DESC`,
-      [id]
-    );
+    // Running admin notes log (customer page). Guests have no users row to
+    // hang notes on — return an empty log rather than 500ing.
+    if (!isGuest) {
+      notesResult = await pool.query(
+        `SELECT n.id, n.body, n.created_at, u.name AS author
+         FROM customer_notes n LEFT JOIN users u ON u.id = n.created_by
+         WHERE n.customer_id = $1 ORDER BY n.created_at DESC`,
+        [id]
+      );
+    }
 
     res.json({
       ...customer,
