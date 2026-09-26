@@ -200,38 +200,33 @@ export default function HolidayCardsPage() {
           backgroundSize: 'auto, auto, 26px 26px',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:flex lg:items-center lg:gap-12">
-          <div className="lg:flex-1">
-            <nav className="text-sm text-cgc-cream/60 mb-4" aria-label="Breadcrumb">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6 md:flex md:items-center md:gap-10">
+          <div className="md:flex-1">
+            <nav className="text-xs text-cgc-cream/60 mb-1.5" aria-label="Breadcrumb">
               <Link to={p('/')} className="hover:text-cgc-cream">Home</Link>
               <span aria-hidden> / </span>
               <Link to={p('/holiday')} className="hover:text-cgc-cream">Holiday</Link>
               <span aria-hidden> / </span>
               <span className="text-cgc-cream font-medium">Christmas Cards</span>
             </nav>
-            <p className="text-xs font-bold uppercase tracking-[0.3em]" style={{ color: '#c9a24b' }}>
-              Holiday 2026 Collection
-            </p>
-            <h1 className="mt-3 font-display text-4xl sm:text-5xl font-bold tracking-tight leading-[1.05]">
-              Christmas cards
-              <span className="block" style={{ color: '#e0c078' }}>worth keeping.</span>
+            <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">
+              Christmas cards <span style={{ color: '#e0c078' }}>worth keeping.</span>
             </h1>
-            <p className="mt-4 max-w-xl text-cgc-cream/75 leading-relaxed">
-              Pick a design, send us your photos and greeting, and we handle the rest —
-              a free proof lands in your inbox before anything prints.
+            <p className="mt-1.5 max-w-xl text-sm text-cgc-cream/75">
+              Pick a design, send us your photos and greeting — a free proof lands in your inbox before anything prints.
             </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2.5">
               {/* Gift-tag price badge */}
               <span
-                className="inline-flex items-baseline gap-2 rounded-lg px-4 py-2.5 text-cgc-ink font-semibold shadow-lg"
+                className="inline-flex items-baseline gap-1.5 rounded-lg px-3 py-1.5 text-cgc-ink font-semibold shadow-lg"
                 style={{ background: '#f6f1e7' }}
               >
-                <span className="text-cgc-stone line-through text-sm font-normal">{money(CARD_HERO_PRICE.regular)}</span>
-                <span className="text-2xl font-extrabold" style={{ color: '#a02236' }}>{money(CARD_HERO_PRICE.sale)}</span>
-                <span className="text-sm">each at {CARD_HERO_PRICE.qty}+</span>
+                <span className="text-cgc-stone line-through text-xs font-normal">{money(CARD_HERO_PRICE.regular)}</span>
+                <span className="text-lg font-extrabold" style={{ color: '#a02236' }}>{money(CARD_HERO_PRICE.sale)}</span>
+                <span className="text-xs">each at {CARD_HERO_PRICE.qty}+</span>
               </span>
               <span
-                className="inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold"
+                className="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold"
                 style={{ borderColor: 'rgba(201,162,75,0.5)', color: '#e0c078' }}
               >
                 Up to 40% off · envelopes included
@@ -239,20 +234,20 @@ export default function HolidayCardsPage() {
             </div>
           </div>
 
-          {/* Fanned card stack — real artwork, desktop only */}
-          <div className="hidden lg:flex items-center justify-center relative w-[26rem] h-72 shrink-0" aria-hidden>
+          {/* Fanned card stack — real artwork, md+ only */}
+          <div className="hidden md:flex items-center justify-center relative w-64 h-36 shrink-0" aria-hidden>
             {[
-              { src: '/cgc/cards/joy-crimson-trio.jpg', rot: '-9deg', x: '-7rem', z: 1 },
+              { src: '/cgc/cards/joy-crimson-trio.jpg', rot: '-10deg', x: '-4.25rem', z: 1 },
               { src: '/cgc/cards/gilded-wreath.jpg', rot: '0deg', x: '0rem', z: 3, lift: true },
-              { src: '/cgc/cards/noel-navy-gold.jpg', rot: '9deg', x: '7rem', z: 2 },
+              { src: '/cgc/cards/noel-navy-gold.jpg', rot: '10deg', x: '4.25rem', z: 2 },
             ].map((c) => (
               <img
                 key={c.src} src={c.src} alt=""
-                className="absolute w-44 rounded-lg shadow-2xl transition-transform duration-300 hover:scale-105"
+                className="absolute w-24 rounded-md shadow-2xl transition-transform duration-300 hover:scale-105"
                 style={{
-                  transform: `translateX(${c.x}) rotate(${c.rot})${c.lift ? ' translateY(-0.75rem)' : ''}`,
+                  transform: `translateX(${c.x}) rotate(${c.rot})${c.lift ? ' translateY(-0.4rem)' : ''}`,
                   zIndex: c.z,
-                  boxShadow: '0 24px 48px -12px rgba(0,0,0,0.55)',
+                  boxShadow: '0 16px 32px -10px rgba(0,0,0,0.55)',
                 }}
               />
             ))}
