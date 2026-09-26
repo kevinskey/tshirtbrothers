@@ -244,7 +244,15 @@ export default function HolidayCardsPage() {
                       type="button" onClick={() => setQuickView(t)}
                       className="group block w-full self-start rounded-xl border border-cgc-cream-deep bg-white p-3 shadow-sm hover:shadow-md hover:border-cgc-stone transition-all text-left"
                     >
-                      <CardTemplatePreview template={t} className="w-full h-auto rounded-lg" />
+                      {t.image ? (
+                        <img
+                          src={t.image} loading="lazy"
+                          alt={`${t.name} — ${t.fold.toLowerCase()} ${t.size} ${t.greeting.toLowerCase()} card template`}
+                          className="w-full h-auto rounded-lg"
+                        />
+                      ) : (
+                        <CardTemplatePreview template={t} className="w-full h-auto rounded-lg" />
+                      )}
                       <div className="mt-3 flex items-start justify-between gap-2">
                         <div>
                           <p className="font-semibold text-cgc-ink text-sm group-hover:text-cgc-orange">{t.name}</p>
@@ -302,7 +310,15 @@ export default function HolidayCardsPage() {
             </button>
             <div className="grid sm:grid-cols-2 gap-6 p-6">
               <div className="bg-cgc-cream/50 rounded-xl p-4 flex items-center justify-center">
-                <CardTemplatePreview template={quickView} className="w-full h-auto max-h-[60vh] rounded-lg shadow-md" />
+                {quickView.image ? (
+                  <img
+                    src={quickView.image}
+                    alt={`${quickView.name} card template`}
+                    className="w-full h-auto max-h-[60vh] object-contain rounded-lg shadow-md"
+                  />
+                ) : (
+                  <CardTemplatePreview template={quickView} className="w-full h-auto max-h-[60vh] rounded-lg shadow-md" />
+                )}
               </div>
               <div>
                 <h2 className="text-2xl font-extrabold tracking-tight text-cgc-ink">{quickView.name}</h2>
