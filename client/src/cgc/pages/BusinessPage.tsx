@@ -15,8 +15,12 @@ export default function BusinessPage() {
     // so the inquiry arrives already naming the design.
     const design = params.get('design');
     const trim = params.get('trim');
+    const custom = params.get('custom');
+    const family = params.get('family');
     const needs = params.get('interest') === 'holiday-cards' && design
       ? `Holiday card order — design: ${params.get('name') || design} (${design})${trim ? ` · ${trim} trim` : ''}`
+        + (family ? `\nFamily name for the card: ${family}` : '')
+        + (custom ? `\nCustomer's personalized design: ${custom}` : '')
       : '';
     return {
       business_name: '', contact_name: '', email: '', phone: '',
