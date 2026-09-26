@@ -972,6 +972,8 @@ export default function AdminPage() {
 
   // Invoice state
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all');
+  // Free-text search over the invoice list: invoice #, customer, email.
+  const [invoiceSearch, setInvoiceSearch] = useState('');
   const [invoiceView, setInvoiceView] = useState<InvoiceView>('list');
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   // Full invoice record (status / amount_paid / amount_due / payments) for the
@@ -2864,6 +2866,13 @@ export default function AdminPage() {
       : { key: k, dir: CUSTOMER_SORT_DEFAULT_DIR[k] }));
   const orders = ordersQuery.data ?? [];
   const invoices = invoicesQuery.data ?? [];
+  // List-view rows after the free-text search (invoice #, customer, email).
+  const invoiceSearchQ = invoiceSearch.trim().toLowerCase();
+  const visibleInvoices = invoiceSearchQ
+    ? invoices.filter((inv: Invoice) =>
+        [inv.invoice_number, inv.customer_name, inv.customer_email]
+          .some((v) => String(v || '').toLowerCase().includes(invoiceSearchQ)))
+    : invoices;
   const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
   const customProducts = customProductsQuery.data ?? [];
   const matchingCustomProducts = invoiceProductSearchTerm.length >= 2
@@ -5018,8 +5027,23 @@ export default function AdminPage() {
           <div className="pt-6">
             {invoiceView === 'list' && (
               <>
-                <div className="flex items-center justify-between mb-3 gap-3">
+                <div className="flex flex-wrap items-center justify-between mb-3 gap-3">
                   <h2 className="text-lg md:text-xl font-display font-bold text-gray-900">Invoices</h2>
+                  <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={invoiceSearch}
+                      onChange={(e) => setInvoiceSearch(e.target.value)}
+                      placeholder="Search orders / customers…"
+                      className="w-full pl-9 pr-8 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                    {invoiceSearch && (
+                      <button onClick={() => setInvoiceSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 overflow-x-auto">
                     {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
                       <button
@@ -5049,9 +5073,9 @@ export default function AdminPage() {
                   <div className="space-y-3 bg-gray-100 p-3 md:hidden">
                     {invoicesQuery.isLoading ? (
                       <div className="px-4 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-                    ) : invoices.length === 0 ? (
+                    ) : visibleInvoices.length === 0 ? (
                       <div className="px-4 py-12 text-center text-gray-400">No invoices found</div>
-                    ) : invoices.map((inv: Invoice) => (
+                    ) : visibleInvoices.map((inv: Invoice) => (
                       <div key={inv.id} className="rounded-xl border border-gray-200 bg-white p-4 space-y-2 shadow-sm">
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-900 text-sm">{inv.invoice_number}</span>
@@ -5106,9 +5130,9 @@ export default function AdminPage() {
                       <tbody className="divide-y divide-gray-100">
                         {invoicesQuery.isLoading ? (
                           <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
-                        ) : invoices.length === 0 ? (
+                        ) : visibleInvoices.length === 0 ? (
                           <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400">No invoices found</td></tr>
-                        ) : invoices.map((inv: Invoice) => (
+                        ) : visibleInvoices.map((inv: Invoice) => (
                           <tr key={inv.id} onClick={() => openInvoiceEditor(inv)} className="hover:bg-gray-50 cursor-pointer">
                             <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
