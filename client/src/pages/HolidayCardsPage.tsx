@@ -121,7 +121,9 @@ export default function HolidayCardsPage() {
               <span className="inline-flex items-center gap-2"><Star className="w-4 h-4 text-orange-400" /> Printed in Fairburn, GA</span>
             </div>
           </div>
-          <div className="max-w-md mx-auto lg:max-w-none w-full">
+          {/* Kept modest when the layout stacks — a full-width card here
+              made the hero enormous on narrow/zoomed viewports. */}
+          <div className="w-full max-w-[300px] mx-auto lg:max-w-md">
             <img
               src={`${CDN}/1790356357187-holiday-card-two-photo-memories.jpg`}
               alt="Home for the Holidays two-photo card"
