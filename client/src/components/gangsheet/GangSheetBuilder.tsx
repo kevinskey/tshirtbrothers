@@ -1522,6 +1522,17 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const totalHeight = Math.max(PX_PER_FOOT, maxY + spacingPx);
       const SEGMENT_PX = 5 * PX_PER_FOOT;
 
+      // The PNG is sized to the placed CONTENT, but the Length field (and
+      // the price) follow whatever was typed — letting them drift silently
+      // meant "1 ft / $11.99" in the toolbar while a 4 ft file downloaded.
+      // Sync the declared length to the content at export time and say so,
+      // so the file, the length, and the price always agree.
+      const contentFt = Math.max(MIN_SHEET_LENGTH_FT, Math.ceil(totalHeight / PX_PER_FOOT));
+      if (Math.ceil(sheetLengthFt) !== contentFt) {
+        setSheetLengthFt(contentFt);
+        alert(`Heads up: your placed designs span ${contentFt} ft (sheet length was set to ${Math.ceil(sheetLengthFt)} ft). Length and price have been updated to ${contentFt} ft to match the exported file.`);
+      }
+
       // Filenames read in print units: 22x60inches, not 6600x18000px.
       const inches = (px: number) => Math.round(px / 300);
       if (totalHeight <= SEGMENT_PX) {
