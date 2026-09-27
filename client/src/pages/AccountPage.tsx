@@ -83,6 +83,40 @@ export default function AccountPage() {
     } catch (err) { setPwMsg((err as Error).message); }
   }
 
+  const [openingDesignId, setOpeningDesignId] = useState<number | null>(null);
+  async function openDesign(d: Design) {
+    if (openingDesignId) return;
+    setOpeningDesignId(d.id);
+    try {
+      const res = await fetch(`/api/designs/${d.id}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) throw new Error('Failed to load design');
+      const full = await res.json() as {
+        id: number; name: string; product_ss_id: string | null; product_name: string | null;
+        product_image: string | null; color_index: number | null; elements: unknown;
+        thumbnail: string | null; canvas_inches: number | string | null; canvas_inches_h: number | string | null;
+      };
+      navigate(`/design?product=${full.product_ss_id || ''}`, {
+        state: {
+          loadDesign: true,
+          designId: full.id,
+          designName: full.name,
+          elements: full.elements || [],
+          productImage: full.product_image,
+          colorIndex: full.color_index || 0,
+          canvasInches: full.canvas_inches != null ? Number(full.canvas_inches) : undefined,
+          canvasInchesH: full.canvas_inches_h != null ? Number(full.canvas_inches_h) : undefined,
+          backTo: '/account',
+          // Designs saved before save-time thumbnail capture have the blank
+          // product photo stored as their thumbnail — ask the studio to
+          // quietly re-upload a real snapshot once the canvas settles.
+          refreshThumbnail: !full.thumbnail || full.thumbnail === full.product_image,
+        },
+      });
+    } catch {
+      setOpeningDesignId(null);
+    }
+  }
+
   const orders = quotes.filter(q => q.status === 'accepted' || q.status === 'completed');
   const activeQuotes = quotes.filter(q => q.status !== 'accepted' && q.status !== 'completed');
 
@@ -272,12 +306,21 @@ export default function AccountPage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {designs.map(d => (
-                  <div key={d.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition">
-                    <div className="aspect-square bg-gray-50 flex items-center justify-center">
+                  <div
+                    key={d.id}
+                    onClick={() => openDesign(d)}
+                    className="bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-md transition cursor-pointer"
+                  >
+                    <div className="aspect-square bg-gray-50 flex items-center justify-center relative">
                       {(d.thumbnail || d.mockup_url) ? (
                         <img src={d.thumbnail || d.mockup_url || ''} alt={d.name} className="w-full h-full object-contain" />
                       ) : (
                         <Palette className="w-10 h-10 text-gray-300" />
+                      )}
+                      {openingDesignId === d.id && (
+                        <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
+                        </div>
                       )}
                     </div>
                     <div className="p-3">

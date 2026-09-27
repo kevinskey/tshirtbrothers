@@ -584,7 +584,7 @@ export default function DesignStudioPage() {
   const location = useLocation();
   // `elements` widened to DesignElement[] | object — a row saved through
   // the Fabric renderer arrives as an object with `schemaVersion: 2`.
-  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string; canvasInches?: number; canvasInchesH?: number } | null;
+  const loadState = location.state as { loadDesign?: boolean; designId?: number; designName?: string; elements?: DesignElement[] | { schemaVersion?: number; [key: string]: unknown }; colorIndex?: number; backTo?: string; canvasInches?: number; canvasInchesH?: number; refreshThumbnail?: boolean } | null;
 
   // --- Core state ---
   const navigate = useNavigate();
@@ -1611,6 +1611,11 @@ export default function DesignStudioPage() {
 
       const designData = getDesignData();
 
+      // Snapshot the front mockup so the account Designs grid shows the
+      // artwork — without it the server falls back to the blank
+      // product_image as the thumbnail.
+      const thumbnail = await captureThumbnailDataUrl();
+
       // Fabric-mode save: ship the v2 (Fabric) serialized form and, on the
       // FIRST overwrite of a v1 row, the original v1 array so the server
       // can populate elements_legacy as a rollback snapshot. The server
@@ -1632,6 +1637,7 @@ export default function DesignStudioPage() {
         canvas_inches: canvasInches,
         canvas_inches_h: canvasInchesH,
       };
+      if (thumbnail) body.thumbnail = thumbnail;
       if (useFabricRenderer && originalLegacyPayload) {
         body.original_legacy_payload = originalLegacyPayload;
       }
@@ -1648,7 +1654,7 @@ export default function DesignStudioPage() {
       }
       const data = await res.json();
       if (!savedDesignId && data.id) setSavedDesignId(data.id);
-      alert('Design saved! Mockup and print-ready file generated.');
+      alert('Design saved!');
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to save design');
     } finally {
@@ -1681,6 +1687,17 @@ export default function DesignStudioPage() {
   // Fabric's internal contexts, which is why "Get Price" previously yielded
   // just the product photo.
   async function captureSideMockupAndGraphic(side: ViewName): Promise<{ mockupUrl: string | null; graphicUrl: string | null }> {
+    const { mockupDataUrl, graphicDataUrl } = await captureSideDataUrls(side);
+    const [mockupUrl, graphicUrl] = await Promise.all([
+      uploadCapturedPng(mockupDataUrl, `mockup-${side}`),
+      uploadCapturedPng(graphicDataUrl, `graphic-${side}`),
+    ]);
+    return { mockupUrl, graphicUrl };
+  }
+
+  // Capture one side as raw data URLs without uploading — shared by the
+  // Get Price flow above and the save-time thumbnail snapshot below.
+  async function captureSideDataUrls(side: ViewName): Promise<{ mockupDataUrl: string | null; graphicDataUrl: string | null }> {
     await ensureImageFiltersBaked();
     // Temporarily flip the renderer to `side` if we're not already there;
     // restore in `finally` so the user's editor view doesn't change.
@@ -1733,12 +1750,67 @@ export default function DesignStudioPage() {
       if (prevSelected) setSelectedElementId(prevSelected);
     }
 
-    const [mockupUrl, graphicUrl] = await Promise.all([
-      uploadCapturedPng(mockupDataUrl, `mockup-${side}`),
-      uploadCapturedPng(graphicDataUrl, `graphic-${side}`),
-    ]);
-    return { mockupUrl, graphicUrl };
+    return { mockupDataUrl, graphicDataUrl };
   }
+
+  // Shrink a captured PNG so the thumbnail payload stays small — full-res
+  // Fabric exports can run several MB, and the account grid renders ~400px.
+  function downscaleDataUrl(dataUrl: string, maxDim = 800): Promise<string | null> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        try { resolve(canvas.toDataURL('image/png')); } catch { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  // Front-side mockup snapshot for saved_designs.thumbnail. Null on any
+  // failure — a save must never be blocked by a cosmetic capture problem.
+  async function captureThumbnailDataUrl(): Promise<string | null> {
+    try {
+      const { mockupDataUrl } = await captureSideDataUrls('front');
+      if (!mockupDataUrl) return null;
+      return await downscaleDataUrl(mockupDataUrl);
+    } catch {
+      return null;
+    }
+  }
+
+  // One-shot thumbnail backfill. Designs saved before save-time thumbnail
+  // capture existed (Apr–Sep 2026) carry the blank product photo as their
+  // thumbnail. When the account page opens one it sets refreshThumbnail;
+  // wait for fonts/product image to settle, then quietly PUT a real
+  // snapshot (the server COALESCEs, so only the thumbnail column changes).
+  const thumbnailBackfillDone = useRef(false);
+  useEffect(() => {
+    if (!loadState?.refreshThumbnail || !savedDesignId || !isLoggedIn()) return;
+    if (thumbnailBackfillDone.current) return;
+    thumbnailBackfillDone.current = true;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        await document.fonts.ready;
+        const thumbnail = await captureThumbnailDataUrl();
+        if (!thumbnail || cancelled) return;
+        await fetch(`/api/designs/${savedDesignId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getAuthToken()}` },
+          body: JSON.stringify({ thumbnail }),
+        });
+      } catch { /* cosmetic — retries on next open */ }
+    }, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Navigate to quote with design data pre-filled. Captures front + back
   // separately when both sides have design elements so the customer sees
