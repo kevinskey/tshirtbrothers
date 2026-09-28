@@ -30,6 +30,7 @@ import HolidayCardsPage from './pages/HolidayCardsPage';
 import CardDesignerPage from './pages/CardDesignerPage';
 import HolidayProductPage from './pages/HolidayProductPage';
 import HolidayAdminPage from './pages/HolidayAdminPage';
+import QuotePage from './pages/QuotePage';
 
 export function CgcRoutes({ base }: { base: string }) {
   return (
@@ -50,6 +51,7 @@ export function CgcRoutes({ base }: { base: string }) {
               <Route path="cart" element={<CartPage />} />
               <Route path="success" element={<SuccessPage />} />
               <Route path="business" element={<BusinessPage />} />
+              <Route path="quote" element={<QuotePage />} />
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="account" element={<AccountPage />} />
               {/* The studio's "Sign in to save" prompt links to /auth (a

@@ -525,10 +525,10 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               })}
               {/* Gifts hand-off (Doc, 2026-09-28): engraved / personalized
                   gift items are Custom Gift Club's lane — that request
-                  becomes a CGC quote (business-inquiry form → prospects
-                  board), not an apparel wizard line. */}
+                  becomes a CGC gift quote (customgiftclub.com/quote, feeds
+                  the same admin Quotes pipeline), not an apparel line. */}
               <a
-                href="https://customgiftclub.com/business"
+                href="https://customgiftclub.com/quote"
                 className="rounded-2xl border-2 px-3 py-4 text-left transition-all bg-white border-gray-200 hover:border-gray-400 block"
               >
                 <span className="text-2xl">🎁</span>
