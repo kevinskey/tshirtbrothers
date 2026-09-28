@@ -3543,7 +3543,7 @@ export default function AdminPage() {
                           </button>
                           {openActionMenu === q.id && actionMenuPos && (
                             <div
-                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-44"
+                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 max-h-[70vh] overflow-y-auto"
                               style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
                             >
                               {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
@@ -3573,7 +3573,7 @@ export default function AdminPage() {
                                   </button>
                                 </>
                               )}
-                              {(q.status === 'accepted' || q.status === 'completed') && (
+                              {quotePaidStage(q) && !invoiceByQuoteId.has(Number(q.id)) && (
                                 <button
                                   onClick={() => { setOpenActionMenu(null); convertQuoteToInvoice(q); }}
                                   className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-emerald-700 font-medium"
@@ -3582,24 +3582,28 @@ export default function AdminPage() {
                                   Convert to Invoice
                                 </button>
                               )}
-                              <button
-                                onClick={() => {
-                                  setOpenActionMenu(null);
-                                  setPurchasingQuoteId(Number(q.id));
-                                  setActiveSection('purchasing');
-                                }}
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
-                              >
-                                <Package className="w-3.5 h-3.5" />
-                                Order blanks (S&S)
-                              </button>
-                              <button
-                                onClick={() => { setOpenActionMenu(null); navigate(`/admin/gangsheet?fromQuote=${q.id}`); }}
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
-                              >
-                                <GalleryHorizontal className="w-3.5 h-3.5" />
-                                Price on Gang Sheet
-                              </button>
+                              {quotePaidStage(q) && (
+                                <button
+                                  onClick={() => {
+                                    setOpenActionMenu(null);
+                                    setPurchasingQuoteId(Number(q.id));
+                                    setActiveSection('purchasing');
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                >
+                                  <Package className="w-3.5 h-3.5" />
+                                  Order blanks (S&S)
+                                </button>
+                              )}
+                              {!quotePaidStage(q) && (
+                                <button
+                                  onClick={() => { setOpenActionMenu(null); navigate(`/admin/gangsheet?fromQuote=${q.id}`); }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                >
+                                  <GalleryHorizontal className="w-3.5 h-3.5" />
+                                  Price on Gang Sheet
+                                </button>
+                              )}
                               <button
                                 onClick={() => { setOpenActionMenu(null); navigate(`/admin/order/${q.id}`); }}
                                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
@@ -3628,23 +3632,39 @@ export default function AdminPage() {
                                 <FolderOpen className="w-3.5 h-3.5" />
                                 {(q as any).archived_at ? 'Restore from archive' : 'Archive'}
                               </button>
-                              {['completed', 'rejected']
-                                .filter((s) => s !== q.status)
-                                .map((s) => (
+                              {/* Every pipeline tab is reachable from the row
+                                  (Doc, 2026-09-28): move the job between
+                                  stages without opening the detail page. */}
+                              <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                                Move to stage
+                              </p>
+                              {(quotePaidStage(q)
+                                ? ([['accepted', 'Deposit Paid'], ['awaiting_approval', 'Awaiting Approval'], ['approved', 'Approved'], ['in_production', 'In Production'], ['ready', 'Ready'], ['completed', 'Completed']] as const)
+                                : ([['pending', 'Pending'], ['quoted', 'Quoted']] as const)
+                              )
+                                .filter(([s]) => s !== q.status)
+                                .map(([s, label]) => (
                                   <button
                                     key={s}
-                                    onClick={async () => {
-                                      setOpenActionMenu(null);
-                                      if (s === 'rejected') {
-                                        if (!(await confirmDestructive(`Reject quote from ${q.customer_name || q.customerName || 'this customer'}? They will not be billed.`))) return;
-                                      }
-                                      statusMutation.mutate({ id: q.id, status: s });
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 capitalize"
+                                    onClick={() => { setOpenActionMenu(null); statusMutation.mutate({ id: q.id, status: s }); }}
+                                    className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
                                   >
-                                    {s === 'completed' ? 'Complete' : 'Reject'}
+                                    {label}
                                   </button>
                                 ))}
+                              {!quotePaidStage(q) && q.status !== 'rejected' && (
+                                <button
+                                  onClick={async () => {
+                                    setOpenActionMenu(null);
+                                    if (!(await confirmDestructive(`Reject quote from ${q.customer_name || q.customerName || 'this customer'}? They will not be billed.`))) return;
+                                    statusMutation.mutate({ id: q.id, status: 'rejected' });
+                                  }}
+                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                                >
+                                  Reject
+                                </button>
+                              )}
+                              {!quotePaidStage(q) && (
                               <div className="border-t border-gray-100 mt-1 pt-1">
                                 <button
                                   onClick={async () => {
@@ -3659,6 +3679,7 @@ export default function AdminPage() {
                                   Delete
                                 </button>
                               </div>
+                              )}
                             </div>
                           )}
                         </td>
@@ -9806,6 +9827,16 @@ function DesignThumbnail({ design, alt }: { design: CustomerDesign; alt: string 
  * silently drops them. Deduped because the first file usually appears in both
  * design_url and source_upload_urls.
  */
+// Stage gate for the quotes Actions menu (Doc, 2026-09-28): before money
+// moves the menu offers selling actions (Send Price, gang-sheet pricing,
+// Reject, Delete); once the deposit is paid it offers production actions
+// (Order blanks, Complete) and the destructive items go away.
+function quotePaidStage(q: Quote): boolean {
+  return Number((q as any).deposit_amount || 0) > 0
+    || ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed']
+      .includes(String(q.status));
+}
+
 function quoteArtwork(q: Quote): string[] {
   const urls = [
     ...(q.source_upload_urls ?? []),
