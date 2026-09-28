@@ -862,6 +862,97 @@ function escapeHtml(s) {
   ));
 }
 
+// Store-launch announcement to a group/fundraiser store's owner — the
+// "your store is live" email. Rendered with the shared 2026-09 theme so
+// it matches the rest of the order-process notifications.
+//
+// feeConfig is the store agreement's fee_config_json; the contribution
+// line is derived from the SAME keys captureStoreOrder actually pays on
+// (min_per_item_cents / percent_of_retail), so the email can never
+// promise a split the ledger won't deliver.
+export function buildStoreLaunchEmail({ store, products = [], feeConfig = {}, toEmail, toName }) {
+  const storeUrl = `${DOMAIN}/stores/${store.slug}`;
+  const adminUrl = `${DOMAIN}/stores/${store.slug}/admin`;
+  const minPerItem = Number(feeConfig.min_per_item_cents) || 0;
+  const tsbPct = Number(feeConfig.percent_of_retail);
+  const isFundraiser = !!store.is_fundraiser;
+
+  // "$12.00 from every item" (flat) or "48% of every sale" (percent).
+  let contribHtml = '';
+  if (isFundraiser) {
+    // Flat split: the org's share is retail minus TSB's per-item take.
+    const first = products[0];
+    const line = minPerItem > 0 && first
+      ? `<span style="font-size:26px;font-weight:800;color:${theme.ORANGE};">${theme.money((first.retail_price_cents - minPerItem) / 100)}</span> <span style="font-size:15px;font-weight:700;color:${theme.INK};">from every ${theme.money(first.retail_price_cents / 100)} item goes to ${theme.escapeHtml(store.name)}</span>`
+      : Number.isFinite(tsbPct) && tsbPct < 100
+      ? `<span style="font-size:26px;font-weight:800;color:${theme.ORANGE};">${100 - tsbPct}%</span> <span style="font-size:15px;font-weight:700;color:${theme.INK};">of every sale goes to ${theme.escapeHtml(store.name)}</span>`
+      : '';
+    if (line) {
+      contribHtml = `
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${theme.CREAM};border:1px solid #fed7aa;border-radius:12px;margin:16px 0;">
+        <tr><td style="padding:20px 22px;text-align:center;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:${theme.INK};">&#128176;&nbsp; YOUR FUNDRAISER</div>
+          <div style="margin-top:6px;">${line}</div>
+          <div style="font-size:13px;color:${theme.GRAY};margin-top:8px;">No inventory to buy up front, no money to collect. We print and ship every order, and pay out your share by ACH at each campaign close.</div>
+        </td></tr>
+      </table>`;
+    }
+  }
+
+  const productCards = products.slice(0, 3).map((p) => `
+    <div style="text-align:center;margin:16px 0;">
+      ${p.cover_image ? `<img src="${p.cover_image}" alt="${theme.escapeHtml(p.title)}" style="max-width:280px;width:100%;border-radius:12px;border:1px solid ${theme.LINE};" />` : ''}
+      <p style="margin:10px 0 0;font-size:15px;font-weight:800;color:${theme.INK};">${theme.escapeHtml(p.title)}</p>
+      <p style="margin:2px 0 0;font-size:14px;color:${theme.GRAY};">${theme.money(p.retail_price_cents / 100)}</p>
+    </div>`).join('');
+
+  const html = theme.emailShell({
+    title: `Your ${store.name} Store — T-Shirt Brothers`,
+    headerTr: theme.docHeader({
+      metaLines: [
+        `Store <strong style="color:${theme.INK};">${theme.escapeHtml(store.slug)}</strong>`,
+        theme.fmtDate(new Date()),
+      ],
+      pill: theme.statusPill('Store Live', 'green'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: isFundraiser ? 'Your Fundraising Store' : 'Your Online Store',
+        titleAccent: 'is Live!',
+        greeting: `Hi ${toName || 'there'},`,
+        copy: `Great news &mdash; we&rsquo;ve set up an online store for ${theme.escapeHtml(store.name)}. Share the link below with your supporters and we handle the rest: printing, shipping, and payouts.`,
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle('Your Store')}
+        <p style="margin:0 0 4px;font-size:14px;color:${theme.GRAY};">Your storefront is live right now at:</p>
+        <p style="margin:0 0 12px;font-size:15px;"><a href="${storeUrl}" style="color:${theme.ORANGE};font-weight:700;">${storeUrl.replace(/^https?:\/\//, '')}</a></p>
+        ${productCards}
+        ${contribHtml}
+      `),
+      theme.bodySection(`
+        ${theme.sectionTitle('Your Admin Dashboard')}
+        <p style="margin:0 0 12px;font-size:14px;color:${theme.GRAY};line-height:1.6;">See orders and your running ${isFundraiser ? 'fundraiser total' : 'sales total'} any time. To log in, enter your email address (${theme.escapeHtml(toEmail)}) and we&rsquo;ll send you a 6-digit code &mdash; no password needed.</p>
+        ${theme.buttonRow([
+          { label: 'View Your Store', href: storeUrl },
+          { label: 'Open Admin Dashboard', href: adminUrl, style: 'navy' },
+        ])}
+        <p style="margin:16px 0 24px;font-size:14px;color:${theme.GRAY};line-height:1.6;">Take a look and let us know if you&rsquo;d like anything adjusted &mdash; pricing, additional products or colors, anything. Happy to fine-tune it before you start sharing the link. Just reply to this email or call us at ${theme.SHOP_PHONE}.</p>
+      `),
+    ],
+  });
+
+  const subject = isFundraiser
+    ? `Your ${store.name} fundraising store is live!`
+    : `Your ${store.name} store is live!`;
+  return { subject, html };
+}
+
+export async function sendStoreLaunchEmail(opts) {
+  const { subject, html } = buildStoreLaunchEmail(opts);
+  await resend.emails.send({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
+  console.log(`[Email] Store launch email sent to ${opts.toEmail} for ${opts.store.slug}`);
+}
+
 // Every saved composite view (front, back, sleeves) stacked with labels —
 // a mockup with a back print must show the back in the email, not just the
 // front. Falls back to the live product+graphic overlay when no composite

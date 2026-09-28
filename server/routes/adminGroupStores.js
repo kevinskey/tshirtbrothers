@@ -598,6 +598,64 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── POST /:id/send-launch-email ──────────────────────────────────────────
+// Email the store owner (or an explicit recipient) the branded "your
+// store is live" announcement. Body: { to_email?, to_name? } — defaults
+// to the store's owner_email and the matching store_admins name.
+router.post('/:id/send-launch-email', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+
+    const storeRes = await pool.query(
+      `SELECT * FROM stores WHERE id = $1 AND store_type IN ('group', 'business')`, [id],
+    );
+    const store = storeRes.rows[0];
+    if (!store) return res.status(404).json({ error: 'Group store not found' });
+    if (store.status !== 'active') {
+      return res.status(400).json({ error: 'Store is not active — activate it before announcing it' });
+    }
+
+    const toEmail = (req.body?.to_email || store.owner_email || '').trim();
+    if (!toEmail) return res.status(400).json({ error: 'Store has no owner_email; pass to_email' });
+
+    let toName = req.body?.to_name || null;
+    if (!toName) {
+      const adminRow = await pool.query(
+        `SELECT name FROM store_admins WHERE store_id = $1 AND lower(email) = lower($2)`,
+        [id, toEmail],
+      );
+      toName = adminRow.rows[0]?.name || null;
+    }
+    // "Tangela Youn" → "Tangela" for the greeting.
+    if (toName) toName = toName.split(/\s+/)[0];
+
+    const productsRes = await pool.query(
+      `SELECT title, cover_image, retail_price_cents
+         FROM store_products
+        WHERE store_id = $1 AND is_active
+        ORDER BY created_at ASC`,
+      [id],
+    );
+    const agr = await pool.query(
+      `SELECT fee_config_json FROM store_agreements
+        WHERE store_id = $1 AND kind = 'store'
+        ORDER BY accepted_at DESC LIMIT 1`,
+      [id],
+    );
+
+    const { sendStoreLaunchEmail } = await import('../services/email.js');
+    await sendStoreLaunchEmail({
+      store,
+      products: productsRes.rows,
+      feeConfig: agr.rows[0]?.fee_config_json || {},
+      toEmail,
+      toName,
+    });
+    res.json({ sent: true, to: toEmail });
+  } catch (err) { next(err); }
+});
+
 // ── S&S catalog picker ───────────────────────────────────────────────────
 // GET /ss-catalog?q=hoodie&brand=Bella&limit=50
 //
