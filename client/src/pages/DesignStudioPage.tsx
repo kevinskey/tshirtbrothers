@@ -18,6 +18,7 @@ import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
 import { logActivityOnce } from '@/lib/activity';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
+import { isCgcHost } from '@/cgc/lib/brand';
 // Filter definitions, CSS previews, SVG defs, and pixel baking live in the
 // shared lib so on-canvas previews and baked print output stay in sync.
 import {
@@ -1841,6 +1842,52 @@ export default function DesignStudioPage() {
     });
   };
 
+  // Custom Gift Club mode (?store=cgc or a CGC hostname): the studio's
+  // exit is "bring this design back to the product page" for a
+  // personalized add-to-bag — not a TSB screen-print quote. Captures the
+  // front mockup + artwork, uploads them, and lands on the CGC PDP with
+  // ?design=<art>&mockup=<preview>, which preselects Personalized there.
+  const cgcMode = storeBrand?.slug === 'cgc';
+  const cgcSku = selectedProduct?.ss_id?.startsWith('jds:')
+    ? selectedProduct.ss_id.slice(4)
+    : null;
+  const [cgcBusy, setCgcBusy] = useState(false);
+  const handleCgcUseDesign = async () => {
+    if (cgcBusy) return;
+    if (!cgcSku) {
+      alert('Pick a Custom Gift Club product first — open Products and search the gift catalog.');
+      return;
+    }
+    if (designElements.length === 0) {
+      alert('Add some text or artwork first.');
+      return;
+    }
+    setCgcBusy(true);
+    try {
+      const { mockupUrl, graphicUrl } = await captureSideMockupAndGraphic('front');
+      if (!mockupUrl && !graphicUrl) {
+        alert('Could not capture the design — please try again.');
+        return;
+      }
+      // Prefer the PDP we arrived from (keeps host + path mount) when it
+      // is still the same product; otherwise build the PDP path for the
+      // current mount (CGC host at "/", TSB hosts at /gift-club).
+      const sameProductBack =
+        whitelabelBackUrl && whitelabelBackUrl.includes(`/product/${cgcSku}`);
+      const target = sameProductBack
+        ? new URL(whitelabelBackUrl, window.location.origin)
+        : new URL(
+            `${isCgcHost() ? '' : '/gift-club'}/product/${encodeURIComponent(cgcSku)}`,
+            window.location.origin,
+          );
+      if (graphicUrl) target.searchParams.set('design', graphicUrl);
+      if (mockupUrl) target.searchParams.set('mockup', mockupUrl);
+      window.location.href = target.toString();
+    } finally {
+      setCgcBusy(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (!displayImage) return;
     try {
@@ -3407,10 +3454,14 @@ export default function DesignStudioPage() {
       </button>
       <button
         type="button"
-        onClick={handleGetPrice}
-        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-600 text-white font-bold px-4 py-2 hover:bg-orange-700 transition"
+        onClick={cgcMode ? handleCgcUseDesign : handleGetPrice}
+        disabled={cgcBusy}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-orange-600 text-white font-bold px-4 py-2 hover:bg-orange-700 transition disabled:opacity-60"
       >
-        <Tag className="h-4 w-4" /> Get Price
+        {cgcBusy
+          ? <Loader2 className="h-4 w-4 animate-spin" />
+          : cgcMode ? <Sparkles className="h-4 w-4" /> : <Tag className="h-4 w-4" />}
+        {cgcMode ? 'Use This Design' : 'Get Price'}
       </button>
     </div>
   );
@@ -5098,10 +5149,14 @@ export default function DesignStudioPage() {
         </div>
         <button
           type="button"
-          onClick={handleGetPrice}
-          className="flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-700 transition"
+          onClick={cgcMode ? handleCgcUseDesign : handleGetPrice}
+          disabled={cgcBusy}
+          className="flex items-center gap-2 rounded-lg bg-orange-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-700 transition disabled:opacity-60"
         >
-          <Tag className="h-4 w-4" /> Get Price
+          {cgcBusy
+            ? <Loader2 className="h-4 w-4 animate-spin" />
+            : cgcMode ? <Sparkles className="h-4 w-4" /> : <Tag className="h-4 w-4" />}
+          {cgcMode ? 'Use This Design' : 'Get Price'}
         </button>
       </div>
     </div>

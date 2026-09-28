@@ -9,6 +9,10 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'sonner';
 
+// The full TSB Design Studio, reused as CGC's studio. It renders its own
+// full-screen chrome (rebranded via useStoreBrand → builtin "cgc"), so it
+// mounts OUTSIDE the CGC Header/Footer wrapper.
+import DesignStudioPage from '@/pages/DesignStudioPage';
 import { CgcBaseContext } from './lib/base';
 import { CgcCartProvider } from './lib/cart';
 import Header from './components/Header';
@@ -48,6 +52,10 @@ export function CgcRoutes({ base }: { base: string }) {
               <Route path="business" element={<BusinessPage />} />
               <Route path="favorites" element={<FavoritesPage />} />
               <Route path="account" element={<AccountPage />} />
+              {/* The studio's "Sign in to save" prompt links to /auth (a
+                  TSB route). On CGC, the account page carries the login
+                  form, so land there instead of the home redirect. */}
+              <Route path="auth" element={<Navigate to={`${base}/account`} replace />} />
               <Route path="*" element={<Navigate to={base || '/'} replace />} />
             </Routes>
           </main>
@@ -69,6 +77,10 @@ export default function CgcStandaloneApp() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
+            {/* Full-screen Design Studio — no CGC header/footer. On TSB
+                hosts /design is already served by the main app's route;
+                this one makes it exist on customgiftclub.com too. */}
+            <Route path="/design" element={<DesignStudioPage />} />
             <Route path="/*" element={<CgcRoutes base="" />} />
           </Routes>
         </BrowserRouter>

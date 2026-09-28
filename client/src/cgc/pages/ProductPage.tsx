@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -35,6 +35,18 @@ export default function ProductPage() {
   const [artUrl, setArtUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [added, setAdded] = useState(false);
+
+  // Returning from the Design Studio ("Use This Design"): ?design=<artwork
+  // PNG url>&mockup=<full preview url>. Preselect Personalized, attach the
+  // artwork, and show the studio mockup as the product image.
+  const [searchParams] = useSearchParams();
+  const studioDesign = searchParams.get('design') || '';
+  const studioMockup = searchParams.get('mockup') || '';
+  useEffect(() => {
+    if (!studioDesign && !studioMockup) return;
+    setPersonalize(true);
+    if (studioDesign) setArtUrl(studioDesign);
+  }, [studioDesign, studioMockup]);
 
   const product = data?.product;
   const feeCents = config?.personalization_fee_cents ?? 1000;
@@ -141,7 +153,9 @@ export default function ProductPage() {
       <div className="grid lg:grid-cols-2 gap-8 lg:gap-12">
         {/* Image + engraving preview overlay */}
         <div className="relative rounded-2xl bg-cgc-cream p-8 flex items-center justify-center min-h-[320px] lg:min-h-[480px]">
-          {product.image_url ? (
+          {studioMockup ? (
+            <img src={studioMockup} alt={`${product.name} with your design`} className="max-h-[420px] max-w-full object-contain" />
+          ) : product.image_url ? (
             <img src={product.image_url} alt={product.name} className="max-h-[420px] max-w-full object-contain mix-blend-multiply" />
           ) : (
             <span className="text-cgc-stone">No image available</span>
@@ -285,9 +299,11 @@ export default function ProductPage() {
             Want full design control?{' '}
             {/* Deep link: ?product=jds:<sku> preselects this blank (handled
                 by /api/products/by-ssid), ?store=cgc rebrands the studio
-                chrome as Custom Gift Club, ?back returns here. */}
+                chrome as Custom Gift Club, ?back returns here. Site-relative
+                so CGC hosts stay on-domain (CgcApp mounts /design) and TSB
+                hosts hit the main app's /design route. */}
             <a
-              href={`https://tshirtbrothers.com/design?product=${encodeURIComponent(`jds:${product.sku}`)}&store=cgc&back=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://customgiftclub.com')}`}
+              href={`/design?product=${encodeURIComponent(`jds:${product.sku}`)}&store=cgc&back=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://customgiftclub.com')}`}
               className="font-semibold text-cgc-orange hover:text-cgc-orange-dark"
             >
               Open this in the Design Studio

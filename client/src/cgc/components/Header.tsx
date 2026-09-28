@@ -181,6 +181,10 @@ export default function Header() {
               </div>
             )}
           </div>
+          {/* Absolute path on purpose: /design is the full-screen studio —
+              served by CgcApp on CGC hosts and by the main app elsewhere.
+              ?store=cgc keeps the chrome CGC-branded on TSB hosts. */}
+          <Link to="/design?store=cgc" className={navLink}>Design Studio</Link>
           <Link to={p('/business')} className={navLink}>Business & Bulk</Link>
           <Link to={shopHref('Blanks & Supplies')} className={navLink}>Blanks & Supplies</Link>
         </div>
@@ -209,6 +213,10 @@ export default function Header() {
               </Link>
             ))}
           </div>
+          <Link to="/design?store=cgc" onClick={() => setMenuOpen(false)}
+            className="block py-2.5 px-2 rounded-lg font-semibold text-cgc-ink hover:bg-cgc-cream">
+            Design Studio
+          </Link>
           <Link to={p('/business')} onClick={() => setMenuOpen(false)}
             className="block py-2.5 px-2 rounded-lg font-semibold text-cgc-ink hover:bg-cgc-cream">
             Business & Bulk

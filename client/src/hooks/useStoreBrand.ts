@@ -9,6 +9,7 @@
 // and callers fall back to default TSB chrome (backwards compatible).
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { isCgcHost } from '@/cgc/lib/brand';
 
 export interface StoreBrand {
   slug: string;
@@ -51,7 +52,10 @@ const BUILTIN_BRANDS: Record<string, StoreBrand> = {
 
 export function useStoreBrand(): UseStoreBrand {
   const [params] = useSearchParams();
-  const slug = params.get('store');
+  // On a Custom Gift Club hostname (customgiftclub.com/design) the studio
+  // is always CGC-branded, even without ?store=cgc on the URL — e.g. when
+  // opened from the CGC header nav.
+  const slug = params.get('store') || (isCgcHost() ? 'cgc' : null);
   const builtin = slug ? BUILTIN_BRANDS[slug] ?? null : null;
   const [brand, setBrand] = useState<StoreBrand | null>(builtin);
   const [loading, setLoading] = useState(!!slug && !builtin);
