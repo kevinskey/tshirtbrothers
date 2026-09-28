@@ -27,6 +27,7 @@ export default function AdminGroupStoreDetailPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [showMockupPicker, setShowMockupPicker] = useState(false);
   const [showAddAdmin, setShowAddAdmin] = useState(false);
+  const [sendingLaunch, setSendingLaunch] = useState(false);
   // Change-cover flow: one shared hidden file input; the row's camera
   // button records which product the next picked file belongs to.
   const coverInputRef = useRef<HTMLInputElement | null>(null);
@@ -69,7 +70,6 @@ export default function AdminGroupStoreDetailPage() {
     } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
   };
 
-  const [sendingLaunch, setSendingLaunch] = useState(false);
   const sendLaunchEmail = async () => {
     if (!window.confirm(`Email ${store.owner_email} the branded "your store is live" announcement?`)) return;
     setSendingLaunch(true);
