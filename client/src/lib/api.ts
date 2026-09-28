@@ -1346,6 +1346,13 @@ export async function createGroupStore(data: {
   });
 }
 
+/** Email the store owner the branded "your store is live" announcement. */
+export async function sendGroupStoreLaunchEmail(id: number, data?: { to_email?: string; to_name?: string }) {
+  return authRequest<{ sent: boolean; to: string }>(`/admin/group-stores/${id}/send-launch-email`, {
+    method: 'POST', body: JSON.stringify(data ?? {}),
+  });
+}
+
 export async function updateGroupStore(id: number, data: Record<string, unknown>) {
   return authRequest<GroupStoreSummary>(`/admin/group-stores/${id}`, {
     method: 'PATCH', body: JSON.stringify(data),

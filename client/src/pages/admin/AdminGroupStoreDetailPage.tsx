@@ -13,7 +13,7 @@ import {
   fetchGroupStoreCoupons, createGroupStoreCoupon, deactivateGroupStoreCoupon, type StoreCoupon,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
-  deleteGroupStore,
+  deleteGroupStore, sendGroupStoreLaunchEmail,
   type GroupStoreDetail, type SsCatalogItem, type MockupCatalogItem, type DesignDraft,
 } from '@/lib/api';
 
@@ -69,6 +69,17 @@ export default function AdminGroupStoreDetailPage() {
     } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
   };
 
+  const [sendingLaunch, setSendingLaunch] = useState(false);
+  const sendLaunchEmail = async () => {
+    if (!window.confirm(`Email ${store.owner_email} the branded "your store is live" announcement?`)) return;
+    setSendingLaunch(true);
+    try {
+      const r = await sendGroupStoreLaunchEmail(storeId);
+      toast.success(`Launch email sent to ${r.to}`);
+    } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+    finally { setSendingLaunch(false); }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200">
@@ -100,6 +111,12 @@ export default function AdminGroupStoreDetailPage() {
               )}
             </div>
           </div>
+          {store.status === 'active' && (
+            <button onClick={() => void sendLaunchEmail()} disabled={sendingLaunch}
+              className="px-3 py-1.5 text-sm rounded-md border border-orange-300 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+              {sendingLaunch ? 'Sending…' : 'Send launch email'}
+            </button>
+          )}
           <button onClick={toggleStatus}
             className={`px-3 py-1.5 text-sm rounded-md border ${
               store.status === 'active' ? 'border-yellow-300 text-yellow-700 hover:bg-yellow-50' : 'border-green-300 text-green-700 hover:bg-green-50'
