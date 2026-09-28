@@ -361,7 +361,22 @@ router.get('/:slug/orders/:id', async (req, res, next) => {
       [req.store_admin.store_id, id],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
-    res.json(rows[0]);
+    // The raw split snapshot carries TSB-internal economics (TSB's
+    // per-line take, fee config). The org only gets its own side:
+    // what sold and what it earned.
+    const { split_snapshot_json: snap, ...order } = rows[0];
+    order.lines = Array.isArray(snap?.lines)
+      ? snap.lines.map((l) => ({
+          store_product_id: l.store_product_id,
+          qty: l.qty,
+          variant: l.variant ?? null,
+          retail_cents: l.retail_cents,
+          line_retail_cents: l.line_retail_cents,
+          store_earnings_cents: l.store_earnings_cents,
+        }))
+      : [];
+    order.store_earnings_cents = order.lines.reduce((s, l) => s + (l.store_earnings_cents || 0), 0);
+    res.json(order);
   } catch (err) { next(err); }
 });
 
