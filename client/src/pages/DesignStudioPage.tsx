@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -778,10 +778,15 @@ export default function DesignStudioPage() {
   }, [isJdsProduct, productZone]);
 
   // Different product → forget the previous product's original photo.
-  useEffect(() => {
+  // Layout effect so blankHold is set BEFORE the browser paints the new
+  // product — otherwise the decorated supplier photo flashes for a frame
+  // before the cached blank swaps in.
+  useLayoutEffect(() => {
     jdsOriginalImageRef.current = null;
     setSampleSwap({ open: false, text: '', busy: false, error: '' });
     setBlankPhoto({ busy: false, error: '' });
+    setBlankHold(cgcMode && !!selectedProduct?.ss_id?.startsWith('jds:'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct?.ss_id]);
 
   // ── Blank product photos ──────────────────────────────────────────
@@ -789,6 +794,10 @@ export default function DesignStudioPage() {
   // designing their own artwork wants the blank. The server strips the
   // decoration with AI once per SKU (cached at cgc/blanks/<sku>.png).
   const [blankPhoto, setBlankPhoto] = useState({ busy: false, error: '' });
+  // Holds the canvas photo hidden while the blank cache-check is in
+  // flight (CGC mode, JDS products) so the decorated supplier shot never
+  // blinks in ahead of the blank. Set pre-paint in the layout effect above.
+  const [blankHold, setBlankHold] = useState(false);
 
   // In CGC mode, auto-apply an already-generated blank the moment a JDS
   // product loads — cache-check only, never triggers a generation.
@@ -800,12 +809,16 @@ export default function DesignStudioPage() {
     (async () => {
       try {
         const r = await fetch(`/api/design/blank-photo/${encodeURIComponent(ssid.slice(4))}`);
-        if (!r.ok || cancelled) return;
-        const { url } = await r.json();
-        if (!url || cancelled || jdsOriginalImageRef.current) return;
-        jdsOriginalImageRef.current = selectedProduct?.image_url ?? null;
-        setSelectedProduct((prev) => (prev ? { ...prev, image_url: url } : prev));
+        if (cancelled) return;
+        if (r.ok) {
+          const { url } = await r.json();
+          if (url && !cancelled && !jdsOriginalImageRef.current) {
+            jdsOriginalImageRef.current = selectedProduct?.image_url ?? null;
+            setSelectedProduct((prev) => (prev ? { ...prev, image_url: url } : prev));
+          }
+        }
       } catch { /* no blank yet — the button offers to generate one */ }
+      if (!cancelled) setBlankHold(false);
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4671,9 +4684,10 @@ export default function DesignStudioPage() {
             containerType: 'inline-size',
           }}
         >
-          {colorsLoading ? (
-            /* Colors still resolving — hold the frame rather than flashing
-               the on-model styled shot that's about to be replaced. */
+          {colorsLoading || blankHold ? (
+            /* Colors (or the CGC blank-photo check) still resolving — hold
+               the frame rather than flashing the shot that's about to be
+               replaced. */
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <Loader2 className="h-8 w-8 animate-spin text-gray-300" />
             </div>
