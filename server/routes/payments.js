@@ -17,7 +17,7 @@ import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceive
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
 import { generateInvoiceNumber } from './invoices.js';
 import { recordActivity } from './events.js';
-import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
+import { parcelOunces, tierForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 const router = Router();
@@ -581,10 +581,60 @@ router.post('/create-store-checkout', async (req, res, next) => {
     // Weight-based shipping: parcel weight from the blank's S&S weight
     // (backfilled into products.weight_oz) × qty + packaging, mapped to
     // a rate tier. Pickup-capable stores also offer a free pickup option.
+    //
+    // Faster speeds bundle a production rush surcharge priced exactly
+    // like the TSB quote engine (instant_quote_settings): each day
+    // earlier than standard_turnaround adds rush_surcharge_pct of the
+    // shirt line; same-day production charges same_day_rush_pct.
+    // Delivery estimates include production days, not just transit —
+    // the customer's clock starts at checkout, so ours must too. Rush
+    // revenue rides in the shipping amount, which captureStoreOrder
+    // routes to TSB earnings — the fundraiser split on the garment
+    // retail is untouched.
+    let rushCfg = { pct: 0.05, sameDayPct: 0.75, stdDays: 10, rushDays: 2 };
+    try {
+      const { rows: cfgRows } = await pool.query(
+        `SELECT rush_surcharge_pct, same_day_rush_pct, standard_turnaround, rush_turnaround
+           FROM instant_quote_settings WHERE id = 1`,
+      );
+      if (cfgRows[0]) {
+        rushCfg = {
+          pct: Number(cfgRows[0].rush_surcharge_pct) || 0.05,
+          sameDayPct: Number(cfgRows[0].same_day_rush_pct) || 0.75,
+          stdDays: Number(cfgRows[0].standard_turnaround) || 10,
+          rushDays: Number(cfgRows[0].rush_turnaround) || 2,
+        };
+      }
+    } catch (err) {
+      console.error('[create-store-checkout] rush settings load failed (using defaults):', err.message);
+    }
+    const upchargeCents = sizeUpchargeCents(variant && typeof variant === 'object' ? variant.size : null);
+    const lineRetailCents = (product.retail_price_cents + upchargeCents) * qty;
+    const rushPriorityCents = Math.round(lineRetailCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
+    const sameDayRushCents = Math.round(lineRetailCents * rushCfg.sameDayPct);
+
     const totalOz = parcelOunces([{ weightOz: product.weight_oz, qty }]);
+    const tier = tierForOunces(totalOz);
     const shippingOptions = [];
     if (product.fulfillment_mode !== 'pickup_only') {
-      for (const choice of shippingChoicesForOunces(totalOz)) {
+      const speeds = [
+        {
+          cents: tier.ground,
+          label: 'Standard — USPS Ground',
+          minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7,
+        },
+        {
+          cents: tier.priority + rushPriorityCents,
+          label: `Rush — prints in ${rushCfg.rushDays} business days, ships USPS Priority`,
+          minDays: rushCfg.rushDays + 2, maxDays: rushCfg.rushDays + 3,
+        },
+        {
+          cents: tier.overnight + sameDayRushCents,
+          label: 'Next Day — same-day print, UPS Next Day Air',
+          minDays: 1, maxDays: 2,
+        },
+      ];
+      for (const choice of speeds) {
         shippingOptions.push({
           shipping_rate_data: {
             type: 'fixed_amount',
@@ -622,8 +672,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
               description: `From ${product.store_name}`,
               ...(product.cover_image ? { images: [product.cover_image] } : {}),
             },
-            unit_amount: product.retail_price_cents
-              + sizeUpchargeCents(variant && typeof variant === 'object' ? variant.size : null),
+            unit_amount: product.retail_price_cents + upchargeCents,
           },
           quantity: qty,
         },
