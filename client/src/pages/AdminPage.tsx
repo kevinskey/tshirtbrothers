@@ -2803,19 +2803,34 @@ export default function AdminPage() {
   // list. Paid invoices stay only in the Invoices section. Search applies
   // here for the same reason it does for gang sheets; the status tabs are
   // quote-specific, so invoices show on 'all' only.
+  // Quote → its linked invoice (invoices.quote_id). Once the deposit is
+  // paid the server auto-creates this link; the quote row then carries the
+  // INVOICE chip and the standalone invoice row is deduped out below.
+  const invoiceByQuoteId = useMemo(() => {
+    const map = new Map<number, Invoice>();
+    for (const inv of (pipelineInvoicesQuery.data ?? []) as Invoice[]) {
+      if (inv.quote_id != null) map.set(Number(inv.quote_id), inv);
+    }
+    return map;
+  }, [pipelineInvoicesQuery.data]);
+
   const invoicePipelineRows = useMemo(() => {
     const all = pipelineInvoicesQuery.data ?? [];
     if (quoteFilter !== 'all') return [];
     const term = quoteSearch.trim().toLowerCase();
+    const quoteIds = new Set(quotes.map((q: Quote) => Number(q.id)));
     return all
       .filter((inv: Invoice) => inv.status !== 'paid' && inv.status !== 'cancelled')
+      // A quote-linked invoice shows as a chip ON the quote row, not as a
+      // second row for the same job.
+      .filter((inv: Invoice) => inv.quote_id == null || !quoteIds.has(Number(inv.quote_id)))
       .filter((inv: Invoice) => {
         if (!term) return true;
         return (inv.customer_name ?? '').toLowerCase().includes(term)
           || (inv.customer_email ?? '').toLowerCase().includes(term)
           || (inv.invoice_number ?? '').toLowerCase().includes(term);
       });
-  }, [pipelineInvoicesQuery.data, quoteFilter, quoteSearch]);
+  }, [pipelineInvoicesQuery.data, quoteFilter, quoteSearch, quotes]);
 
   // One list, newest first. Gang sheets sort by when the money arrived and
   // fall back to created_at for the rare row with no paid_at.
@@ -3487,6 +3502,24 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={q.customer_email || q.customerEmail}>{q.customer_email || q.customerEmail}</div></td>
                         <td className="px-3 py-2 text-gray-600">
+                          {invoiceByQuoteId.has(Number(q.id)) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const inv = invoiceByQuoteId.get(Number(q.id))!;
+                                setActiveSection('invoices');
+                                openInvoiceEditor(inv);
+                              }}
+                              className="flex items-center gap-1.5 mb-0.5 group"
+                              title="Open invoice"
+                            >
+                              <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Invoice</span>
+                              <span className="text-xs font-medium text-gray-900 group-hover:underline whitespace-nowrap">
+                                {invoiceByQuoteId.get(Number(q.id))!.invoice_number}
+                              </span>
+                            </button>
+                          )}
                           <div className="max-w-[180px] truncate" title={q.product_name || q.productName}>{q.product_name || q.productName}</div>
                           {q.color && <div className="text-[11px] text-gray-500 truncate">{q.color}</div>}
                         </td>

@@ -130,6 +130,74 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
   }
 }
 
+// Doc's rule (2026-09-28): a quote BECOMES an invoice the moment its
+// deposit clears — quotes are for potential customers, invoices for
+// paying ones. Creates a 'partial' invoice linked by quote_id with the
+// deposit recorded as its first payment. Idempotent: an existing linked
+// invoice just gets the deposit recorded (if nothing is recorded yet).
+// The balance/full-payment paths later flip this same invoice to 'paid'
+// via createPaidInvoiceForQuote.
+async function createDepositInvoiceForQuote(quote, depositCents) {
+  try {
+    const deposit = (depositCents || 0) / 100;
+    const total = Number(quote.estimated_price || 0) || deposit;
+    const nowIso = new Date().toISOString();
+    const depositEntry = { amount: +deposit.toFixed(2), method: 'stripe', note: 'deposit', date: nowIso };
+
+    const existing = await pool.query(
+      'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+      [quote.id],
+    );
+    if (existing.rows.length > 0) {
+      const inv = existing.rows[0];
+      if (Number(inv.amount_paid) > 0) return inv; // already tracking payments
+      const { rows } = await pool.query(
+        `UPDATE invoices SET amount_paid = $1, amount_due = GREATEST(0, total - $1), payments = $2,
+           status = CASE WHEN total - $1 <= 0 THEN 'paid' ELSE 'partial' END, updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [deposit, JSON.stringify([depositEntry]), inv.id],
+      );
+      return rows[0];
+    }
+
+    const items = [{
+      description: quote.product_name || 'Custom printing order',
+      quantity: quote.quantity || 1,
+      unit_price: quote.quantity ? total / quote.quantity : total,
+      total,
+    }];
+    const invoiceNumber = await generateInvoiceNumber();
+    const status = total - deposit <= 0 ? 'paid' : 'partial';
+    const { rows } = await pool.query(
+      `INSERT INTO invoices
+         (invoice_number, customer_name, customer_email, customer_phone,
+          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
+          payments, quote_id, status, deposit_percent)
+       VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING *`,
+      [
+        invoiceNumber,
+        quote.customer_name || '',
+        quote.customer_email || '',
+        quote.customer_phone || null,
+        JSON.stringify(items),
+        total, total,
+        deposit,
+        Math.max(0, +(total - deposit).toFixed(2)),
+        JSON.stringify([depositEntry]),
+        quote.id,
+        status,
+        total > 0 ? Math.max(0, Math.min(100, Math.round((deposit / total) * 100))) : 0,
+      ],
+    );
+    console.log(`[createDepositInvoiceForQuote] Quote #${quote.id} → ${invoiceNumber} (${status})`);
+    return rows[0];
+  } catch (err) {
+    console.error('[createDepositInvoiceForQuote] failed:', err);
+    return null;
+  }
+}
+
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('Stripe not configured');
@@ -897,6 +965,7 @@ async function handleCheckoutSessionCompleted(session) {
         if (result.rows.length > 0) {
           const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (session.amount_total / 100));
+          await createDepositInvoiceForQuote(quote, session.amount_total);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
@@ -1227,6 +1296,7 @@ router.get('/success', async (req, res, next) => {
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (stripeDetails.amount_total / 100));
+          invoiceForQuote = await createDepositInvoiceForQuote(quote, stripeDetails.amount_total);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
