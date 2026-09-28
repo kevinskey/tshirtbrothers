@@ -40,28 +40,30 @@ export default function HomePage() {
 
       {/* Hero */}
       <section className="bg-cgc-cream" aria-labelledby="hero-heading">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14 lg:py-20 grid lg:grid-cols-2 gap-10 items-center">
+        {/* Compact on purpose (Doc, 2026-09-28): the hero should tease, not
+            fill the fold — collections need to peek above it. */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 grid lg:grid-cols-2 gap-6 lg:gap-10 items-center">
           <div>
-            <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.15em] text-cgc-orange">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-cgc-orange">
               Personal gifts. Real connections.
             </p>
-            <h1 id="hero-heading" className="mt-3 text-4xl sm:text-5xl lg:text-[3.4rem] font-extrabold leading-[1.08] tracking-tight text-cgc-ink">
+            <h1 id="hero-heading" className="mt-2 text-3xl sm:text-4xl lg:text-[2.6rem] font-extrabold leading-[1.08] tracking-tight text-cgc-ink">
               Give something<br className="hidden sm:block" />{' '}
               <span className="text-cgc-orange">only you</span> could give<span className="text-cgc-orange">.</span>
             </h1>
-            <p className="mt-4 text-base sm:text-lg text-cgc-charcoal max-w-md">
+            <p className="mt-3 text-base text-cgc-charcoal max-w-md">
               Turn names, memories, and milestones into gifts worth keeping.
             </p>
-            <div className="mt-7 flex flex-wrap gap-3">
+            <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 to={p('/shop')}
-                className="inline-flex items-center gap-2 rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold px-6 py-3.5 transition-colors"
+                className="inline-flex items-center gap-2 rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold px-5 py-2.5 transition-colors"
               >
                 Find My Gift <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
               <Link
                 to={p('/shop')}
-                className="inline-flex items-center rounded-lg border-2 border-cgc-ink text-cgc-ink font-bold px-6 py-3.5 hover:bg-cgc-ink hover:text-white transition-colors"
+                className="inline-flex items-center rounded-lg border-2 border-cgc-ink text-cgc-ink font-bold px-5 py-2.5 hover:bg-cgc-ink hover:text-white transition-colors"
               >
                 Shop All Products
               </Link>
@@ -72,11 +74,11 @@ export default function HomePage() {
               the tumbler / board / journal / crystal on pedestals. The
               pictured product types are all live catalog items; the whole
               image shops the assortment. */}
-          <Link to={p('/shop')} aria-label="Shop all products">
+          <Link to={p('/shop')} aria-label="Shop all products" className="hidden lg:block justify-self-end">
             <img
               src="/cgc-hero.jpg"
               alt="Personalized gifts: orange tumbler, walnut cutting board, leather journal, and crystal award"
-              className="rounded-2xl w-full h-auto shadow-sm"
+              className="rounded-2xl w-full max-h-[340px] object-cover shadow-sm"
               fetchPriority="high"
             />
           </Link>
