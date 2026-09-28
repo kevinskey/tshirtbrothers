@@ -141,12 +141,20 @@ export default function AdminGroupStoreDetailPage() {
           />
         )}
         {store.store_type === 'group' && (
-          <CollectionsEditor
-            storeId={storeId}
-            brand={store.brand_json as Record<string, unknown>}
-            products={products}
-            onSaved={() => void load()}
-          />
+          <>
+            <SeasonalHeroEditor
+              storeId={storeId}
+              brand={store.brand_json as Record<string, unknown>}
+              products={products}
+              onSaved={() => void load()}
+            />
+            <CollectionsEditor
+              storeId={storeId}
+              brand={store.brand_json as Record<string, unknown>}
+              products={products}
+              onSaved={() => void load()}
+            />
+          </>
         )}
         <input
           ref={coverInputRef}
@@ -812,6 +820,120 @@ function PublishProductForm({ storeId, item, onClose, onAdded }: {
 }
 
 // ── Collections editor (group stores) ────────────────────────────────────
+// Edits brand_json.seasonal — the storefront's seasonal hero skin (fall
+// theme, custom copy, CTA target collection, optional auto-expiry). PATCH
+// replaces brand_json wholesale, so merge over the existing object.
+function SeasonalHeroEditor({ storeId, brand, products, onSaved }: {
+  storeId: number;
+  brand: Record<string, unknown>;
+  products: GroupStoreDetail['products'];
+  onSaved: () => void;
+}) {
+  const cfg = (brand.seasonal ?? {}) as {
+    theme?: string; headline?: string; subheadline?: string;
+    cta_text?: string; collection_key?: string; until?: string;
+  };
+  const [enabled, setEnabled] = useState(cfg.theme === 'fall');
+  const [headline, setHeadline] = useState(cfg.headline ?? '');
+  const [subheadline, setSubheadline] = useState(cfg.subheadline ?? '');
+  const [ctaText, setCtaText] = useState(cfg.cta_text ?? '');
+  const [collectionKey, setCollectionKey] = useState(cfg.collection_key ?? '');
+  const [until, setUntil] = useState(cfg.until ? cfg.until.slice(0, 10) : '');
+  const [busy, setBusy] = useState(false);
+
+  // Collection keys the CTA can target: declared shelves + tags in use.
+  const keys = [...new Set([
+    ...(Array.isArray(brand.collections) ? (brand.collections as Array<{ key: string }>).map((c) => c.key) : []),
+    ...products.map((p) => p.campaign_ref).filter((c): c is string => !!c),
+  ])].sort();
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const next: Record<string, unknown> = { ...brand };
+      if (enabled) {
+        const seasonal: Record<string, unknown> = { theme: 'fall' };
+        if (headline.trim()) seasonal.headline = headline.trim();
+        if (subheadline.trim()) seasonal.subheadline = subheadline.trim();
+        if (ctaText.trim()) seasonal.cta_text = ctaText.trim();
+        if (collectionKey) seasonal.collection_key = collectionKey;
+        if (until) seasonal.until = until;
+        next.seasonal = seasonal;
+      } else {
+        delete next.seasonal;
+      }
+      await updateGroupStore(storeId, { brand_json: next });
+      toast.success(enabled ? 'Seasonal hero saved' : 'Seasonal hero turned off');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Seasonal hero 🍂</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Reskins the storefront's top hero with a fall theme — burnt-orange accents, autumn copy, and a CTA into the collection you pick. Products join that collection via their collection tag.
+          </p>
+        </div>
+        <label className="inline-flex items-center gap-2 text-sm text-gray-700 whitespace-nowrap">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Fall theme on
+        </label>
+      </div>
+
+      {enabled && (
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Headline</label>
+            <input value={headline} onChange={(e) => setHeadline(e.target.value)}
+              placeholder="Sweater weather, fresh ink."
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Subheadline</label>
+            <input value={subheadline} onChange={(e) => setSubheadline(e.target.value)}
+              placeholder="The fall collection is here — hoodies, crewnecks & tees printed fresh for the season."
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">CTA button text</label>
+            <input value={ctaText} onChange={(e) => setCtaText(e.target.value)}
+              placeholder="Shop the Fall drop"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">CTA collection</label>
+            <select value={collectionKey} onChange={(e) => setCollectionKey(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+              <option value="">— all products —</option>
+              {keys.map((k) => (
+                <option key={k} value={k}>{k} ({products.filter((p) => p.campaign_ref === k).length} items)</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Auto-expire on</label>
+            <input type="date" value={until} onChange={(e) => setUntil(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+            <p className="mt-1 text-xs text-gray-500">Optional — the hero reverts to the store's normal look after this date, no redeploy needed.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex justify-end">
+        <button onClick={() => void save()} disabled={busy}
+          className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save seasonal hero'}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 // Edits brand_json.collections (declared shelves: display title + order on
 // the storefront) and which collection is featured. Undeclared tags that
 // products already carry (campaign_ref) are offered for one-click declare.
@@ -1457,6 +1579,7 @@ function PublishFromMockupForm({ storeId, mockup, onClose, onAdded }: {
   const [decorationDollars, setDecorationDollars] = useState('5.00');
   const [description, setDescription] = useState('');
   const [minQty, setMinQty] = useState(1);
+  const [collection, setCollection] = useState('');
   const [busy, setBusy] = useState(false);
 
   const margin = useMemo(() => {
@@ -1476,6 +1599,7 @@ function PublishFromMockupForm({ storeId, mockup, onClose, onAdded }: {
         decoration_cost_cents: Math.round(parseFloat(decorationDollars) * 100),
         min_qty: minQty,
         description: description || undefined,
+        category: collection.trim() || undefined,
       });
       toast.success('Product published from mockup');
       onAdded();
@@ -1529,6 +1653,13 @@ function PublishFromMockupForm({ storeId, mockup, onClose, onAdded }: {
             <input type="number" min={1} value={minQty}
               onChange={(e) => setMinQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Collection tag</label>
+            <input value={collection} onChange={(e) => setCollection(e.target.value)}
+              placeholder="fall"
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+            <p className="mt-1 text-xs text-gray-500">Groups the product into a storefront shelf (e.g. <code>fall</code> for the seasonal hero's collection).</p>
           </div>
           <div className="col-span-2">
             <label className="block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1">Description</label>

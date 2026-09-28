@@ -1463,6 +1463,7 @@ export async function addGroupStoreProductFromMockup(id: number, data: {
   description?: string;
   opens_at?: string;
   closes_at?: string;
+  category?: string;
 }) {
   return authRequest(`/admin/group-stores/${id}/products/from-mockup`, {
     method: 'POST', body: JSON.stringify(data),

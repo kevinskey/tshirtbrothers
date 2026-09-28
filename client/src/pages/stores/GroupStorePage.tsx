@@ -36,6 +36,18 @@ interface StoreProfile {
     // Declared collections, rendered as shelves in this order even when
     // empty (products join a shelf via matching campaign_ref).
     collections?: Array<{ key: string; title: string }>;
+    // Seasonal hero skin — retheme the top hero (colors, copy, CTA) for a
+    // limited run without touching the store's base brand. `until` (ISO
+    // date) auto-expires it; collection_key points the CTA + first hero
+    // card at a shelf (campaign_ref).
+    seasonal?: {
+      theme?: 'fall';
+      headline?: string;
+      subheadline?: string;
+      cta_text?: string;
+      collection_key?: string;
+      until?: string;
+    };
     // Business (TSB Pro) store profile fields
     business_address?: string;
     website_url?: string;
@@ -147,6 +159,27 @@ export default function GroupStorePage() {
   const primary = store.brand_json.primary_color || '#111827';
   const isEmpty = products.length === 0;
 
+  // Seasonal hero skin (currently: fall). Active only while `until` hasn't
+  // passed; expiring it is a data change, not a deploy.
+  const seasonalCfg = store.brand_json.seasonal;
+  const seasonal =
+    seasonalCfg?.theme === 'fall'
+      && (!seasonalCfg.until || new Date(seasonalCfg.until).getTime() > Date.now())
+      ? seasonalCfg
+      : null;
+  // Burnt-orange autumn accent for the hero band; the rest of the page
+  // keeps the store's own brand color.
+  const FALL = '#c2410c';
+  const heroAccent = seasonal ? FALL : primary;
+  const seasonalProducts = seasonal?.collection_key
+    ? products.filter((p) => p.campaign_ref === seasonal.collection_key)
+    : [];
+  const seasonalHref = seasonal?.collection_key && seasonalProducts.length > 0
+    ? (seasonal.collection_key === store.brand_json.featured_collection?.key
+        ? '#featured'
+        : `#collection-${seasonal.collection_key}`)
+    : '#shop';
+
   // Featured collection: brand_json names it, products opt in via campaign_ref.
   // Only feature it when at least one live product carries the tag.
   const featuredCfg = store.brand_json.featured_collection;
@@ -204,12 +237,24 @@ export default function GroupStorePage() {
   const heroImgs = (list: StoreProduct[]) =>
     list.map((p) => p.cover_image).filter((u): u is string => !!u).slice(0, 6);
   const heroCards: Array<{ title: string; href: string; images: string[]; count: number }> = [];
+  // Seasonal collection leads the hero when it has live products and isn't
+  // already the featured drop (which keeps its video/media slot).
+  if (seasonal && seasonalProducts.length > 0
+      && seasonal.collection_key !== store.brand_json.featured_collection?.key) {
+    heroCards.push({
+      title: collectionLabel(seasonal.collection_key!),
+      href: `#collection-${seasonal.collection_key}`,
+      images: heroImgs(seasonalProducts),
+      count: seasonalProducts.length,
+    });
+  }
   if (featured) {
     heroCards.push({ title: featured.title, href: '#featured', images: heroImgs(featuredProducts), count: featuredProducts.length });
   }
   for (const [key, items] of collections) {
     if (heroCards.length >= 2) break;
     if (!key || items.length === 0) continue;
+    if (heroCards.some((c) => c.href === `#collection-${key}`)) continue;
     heroCards.push({ title: collectionLabel(key), href: `#collection-${key}`, images: heroImgs(items), count: items.length });
   }
   if (heroCards.length < 2 && products.length > 0) {
@@ -218,6 +263,7 @@ export default function GroupStorePage() {
 
   // Shop promises for the hero's scrolling trust ticker.
   const trustItems = [
+    ...(seasonal ? ['🍂 The Fall drop is live'] : []),
     'Secure Stripe checkout',
     'Ships in 3–5 days',
     ...(store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both'
@@ -363,22 +409,35 @@ export default function GroupStorePage() {
           line as a full-bleed brand-color ticker at the section's foot.
           Replaces the pill badge / pill button / icon-row template look. */}
       <section
-        className="relative overflow-hidden border-b border-gray-100 bg-[#fdfcf9]"
+        className="relative overflow-hidden border-b border-gray-100"
         style={{
-          backgroundImage: `radial-gradient(${tint(primary, 0.22)} 1.2px, transparent 1.2px)`,
+          background: seasonal ? '#fdf6ec' : '#fdfcf9',
+          backgroundImage: `radial-gradient(${tint(heroAccent, 0.22)} 1.2px, transparent 1.2px)`,
           backgroundSize: '18px 18px',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14">
+        {seasonal && (
+          /* Autumn set dressing — oversized warm glow + drifting leaves.
+             Decorative only, so hidden from assistive tech. */
+          <div aria-hidden className="absolute inset-0 pointer-events-none select-none">
+            <div className="absolute -top-32 -right-24 w-[28rem] h-[28rem] rounded-full blur-3xl opacity-20"
+              style={{ background: 'radial-gradient(circle, #ea580c, #b45309 60%, transparent)' }} />
+            <span className="absolute top-8 right-[8%] text-5xl opacity-25 rotate-12">🍂</span>
+            <span className="absolute top-40 right-[24%] text-3xl opacity-20 -rotate-12 hidden md:block">🍁</span>
+            <span className="absolute bottom-24 left-[4%] text-4xl opacity-20 rotate-45">🍂</span>
+            <span className="absolute top-1/2 left-[38%] text-2xl opacity-15 -rotate-6 hidden lg:block">🍁</span>
+          </div>
+        )}
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-10 md:py-14">
           <div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <span
                 className="tsb-font-mono inline-flex items-center gap-3 text-[11px] sm:text-xs font-medium uppercase tracking-[0.22em]"
-                style={{ color: primary }}
+                style={{ color: heroAccent }}
               >
-                <span className="h-px w-10" style={{ background: primary }} />
+                <span className="h-px w-10" style={{ background: heroAccent }} />
                 {store.name}
-                {featured && <> · {featured.title} drop</>}
+                {seasonal ? <> · Fall drop 🍂</> : featured && <> · {featured.title} drop</>}
               </span>
               {isEmpty && (
                 <span
@@ -401,7 +460,11 @@ export default function GroupStorePage() {
 
             <h1 className="tsb-font-display mt-6 text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[0.95] text-gray-900">
               {isEmpty ? (
-                <>The first drop is <em style={{ color: primary }}>on the way.</em></>
+                <>The first drop is <em style={{ color: heroAccent }}>on the way.</em></>
+              ) : seasonal ? (
+                seasonal.headline
+                  ? <>{seasonal.headline}</>
+                  : <>Sweater weather, <em style={{ color: heroAccent }}>fresh ink.</em></>
               ) : featured ? (
                 <>The <em style={{ color: primary }}>{featured.title}</em> drop is live.</>
               ) : (
@@ -411,8 +474,11 @@ export default function GroupStorePage() {
             <p className="mt-6 text-lg text-gray-600 max-w-xl">
               {isEmpty
                 ? `We're printing the first collection right now. Drop your email and be the first to know when it goes live.`
-                : store.brand_json.tagline
-                  || `Official merchandise for ${store.name}. Designed and screenprinted by TShirt Brothers in Fairburn, GA.`}
+                : (seasonal && seasonal.subheadline)
+                  || (seasonal
+                    ? `The fall collection is here — hoodies, crewnecks & tees printed fresh for the season by TShirt Brothers in Fairburn, GA.`
+                    : store.brand_json.tagline
+                      || `Official merchandise for ${store.name}. Designed and screenprinted by TShirt Brothers in Fairburn, GA.`)}
             </p>
 
             <div className="mt-8 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -420,17 +486,19 @@ export default function GroupStorePage() {
                 <NotifyForm primary={primary} storeSlug={store.slug} />
               ) : (
                 <>
-                  <a href={featured ? '#featured' : '#shop'}
+                  <a href={seasonal ? seasonalHref : featured ? '#featured' : '#shop'}
                     className="inline-flex items-center justify-center gap-2 px-7 py-3.5 text-white font-bold border-2 border-gray-900 shadow-[4px_4px_0_#111827] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0_#111827] transition-all"
-                    style={{ background: primary }}
+                    style={{ background: heroAccent }}
                   >
-                    {featured ? `Shop ${featured.title}` : 'Shop the collection'} <ArrowRight className="w-4 h-4" />
+                    {seasonal
+                      ? (seasonal.cta_text || 'Shop the Fall drop')
+                      : featured ? `Shop ${featured.title}` : 'Shop the collection'} <ArrowRight className="w-4 h-4" />
                   </a>
-                  <a href={featured ? '#shop' : '#about'}
+                  <a href={(seasonal || featured) ? '#shop' : '#about'}
                     className="inline-flex items-center justify-center gap-1.5 font-semibold text-gray-900 underline underline-offset-4 decoration-2 hover:decoration-4"
-                    style={{ textDecorationColor: primary }}
+                    style={{ textDecorationColor: heroAccent }}
                   >
-                    {featured ? 'Shop everything' : 'Learn more'} <ChevronRight className="w-4 h-4" />
+                    {(seasonal || featured) ? 'Shop everything' : 'Learn more'} <ChevronRight className="w-4 h-4" />
                   </a>
                 </>
               )}
@@ -452,14 +520,14 @@ export default function GroupStorePage() {
                         ? featured.media
                         : [{ type: 'video' as const, url: featured.video_url!, poster: featured.poster_url }]
                     }
-                    primary={primary}
+                    primary={heroAccent}
                   />
                 </div>
               ) : heroCards[0] && (
-                <HeroSliderCard {...heroCards[0]} primary={primary} />
+                <HeroSliderCard {...heroCards[0]} primary={heroAccent} />
               )}
               {heroCards[1] ? (
-                <HeroSliderCard {...heroCards[1]} primary={primary} />
+                <HeroSliderCard {...heroCards[1]} primary={heroAccent} />
               ) : store.brand_json.hero_url ? (
                 <div className="rounded-2xl overflow-hidden shadow-xl aspect-[4/3]">
                   <img src={store.brand_json.hero_url} alt="" className="w-full h-full object-cover" />
@@ -497,7 +565,7 @@ export default function GroupStorePage() {
         {/* Trust ticker — full-bleed brand band, scrolls the shop promises
             like floor tape. Two identical halves so the -50% marquee loops
             seamlessly. */}
-        <div className="relative overflow-hidden border-t-2 border-gray-900 text-white" style={{ background: primary }}>
+        <div className="relative overflow-hidden border-t-2 border-gray-900 text-white" style={{ background: heroAccent }}>
           <div className="tsb-grain" />
           <div className="tsb-marquee-track flex w-max whitespace-nowrap py-2.5 tsb-font-mono text-[11px] uppercase tracking-[0.22em]">
             {[0, 1].map((half) => (
