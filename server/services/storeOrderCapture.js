@@ -52,10 +52,15 @@ async function fetchUpsellLines(session) {
 }
 
 /** Compute per-line split. Returns { tsb_earnings_cents, store_earnings_cents }. */
-export function computeLineSplit({ retail_cents, qty, fee_config }) {
+export function computeLineSplit({ retail_cents, qty, fee_config, store_product_id }) {
   const line_retail = retail_cents * qty;
-  const percent = Number(fee_config?.percent_of_retail ?? 0);
-  const min_per_item = Number(fee_config?.min_per_item_cents ?? 0);
+  // Per-product deal terms (fee_config.per_product["<store_product_id>"])
+  // override the store-wide numbers — e.g. Sensory Seasons (Doc,
+  // 2026-09-28): adult tee $25 with TSB min $13/item, youth tee $18 with
+  // TSB min $12/item so the initiative gets a clean $6 on youth sizes.
+  const override = (store_product_id != null && fee_config?.per_product?.[String(store_product_id)]) || {};
+  const percent = Number(override.percent_of_retail ?? fee_config?.percent_of_retail ?? 0);
+  const min_per_item = Number(override.min_per_item_cents ?? fee_config?.min_per_item_cents ?? 0);
 
   const percent_take = Math.round(line_retail * percent / 100);
   const min_take     = min_per_item * qty;
@@ -117,6 +122,7 @@ export async function captureStoreOrder(session) {
     retail_cents: product.retail_price_cents,
     qty,
     fee_config: product.fee_config_json,
+    store_product_id: storeProductId,
   });
 
   const lines = [
@@ -144,6 +150,7 @@ export async function captureStoreOrder(session) {
       retail_cents: upProduct.retail_price_cents,
       qty: up.qty,
       fee_config: product.fee_config_json,
+      store_product_id: upProduct.id,
     });
     lines.push({
       store_product_id: upProduct.id,
