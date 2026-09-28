@@ -13,13 +13,20 @@ export const PACKAGING_OZ = 4;
 export const DEFAULT_ITEM_OZ = 8;
 
 const TIERS = [
-  { maxOz: 8,   ground: 495,  priority: 895,  express: 2495 },
-  { maxOz: 16,  ground: 695,  priority: 995,  express: 2795 },
-  { maxOz: 32,  ground: 995,  priority: 1295, express: 3295 },
-  { maxOz: 80,  ground: 1295, priority: 1795, express: 4495 },
-  { maxOz: 160, ground: 1795, priority: 2495, express: 5995 },
+  { maxOz: 8,   ground: 495,  priority: 895,  express: 2495, overnight: 3495 },
+  { maxOz: 16,  ground: 695,  priority: 995,  express: 2795, overnight: 3795 },
+  { maxOz: 32,  ground: 995,  priority: 1295, express: 3295, overnight: 4295 },
+  { maxOz: 80,  ground: 1295, priority: 1795, express: 4495, overnight: 5495 },
+  { maxOz: 160, ground: 1795, priority: 2495, express: 5995, overnight: 6995 },
 ];
-const OVERWEIGHT = { ground: 2495, priority: 3495, express: 7995 };
+const OVERWEIGHT = { ground: 2495, priority: 3495, express: 7995, overnight: 8995 };
+
+// Raw tier row (all speeds) for callers that build their own option
+// list — e.g. the group-store checkout, which bundles TSB-style rush
+// production surcharges into the faster speeds.
+export function tierForOunces(totalOz) {
+  return TIERS.find((x) => totalOz <= x.maxOz) ?? OVERWEIGHT;
+}
 
 export function rateForOunces(totalOz) {
   const t = TIERS.find((x) => totalOz <= x.maxOz) ?? OVERWEIGHT;
