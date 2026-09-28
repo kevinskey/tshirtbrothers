@@ -149,6 +149,10 @@ export interface Quote {
   items?: QuoteItem[];
   inputs_json?: unknown | null;
   balance_paid_at?: string | null;
+  /** Production sub-stage timestamps: blanks_ordered / print_ordered /
+   *  press_in_progress / pressed, plus delivered ('pickup'|'mailed') and
+   *  delivered_at once the job leaves the shop. */
+  production_steps?: Record<string, string> | null;
 }
 
 export interface QuoteItem {
@@ -291,6 +295,19 @@ export async function updateAdminNotes(id: string, admin_notes: string) {
 
 export async function fetchAdminCounts() {
   return authRequest<{ pending_quotes: string; active_quotes: string; active_orders: string }>('/admin/stats/counts');
+}
+
+// Toggle one production sub-stage (blanks_ordered / print_ordered /
+// press_in_progress / pressed), or mark delivery ({ delivered:
+// 'pickup' | 'mailed' }) which also completes the quote.
+export async function setQuoteProductionStep(
+  id: string,
+  body: { step: string; done: boolean } | { delivered: 'pickup' | 'mailed' },
+) {
+  return authRequest<Quote>(`/quotes/${id}/production-step`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
 
 export async function updateQuoteStatus(id: string, status: string) {

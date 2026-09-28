@@ -41,11 +41,13 @@ import {
   Mail,
   MessageSquare,
   Copy,
+  Check,
 } from 'lucide-react';
 import {
   fetchQuotes,
   fetchGangSheetOrders,
   updateQuoteStatus,
+  setQuoteProductionStep,
   fetchAdminProducts,
   fetchCategories,
   createCategory,
@@ -1605,6 +1607,16 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       setOpenActionMenu(null);
+    },
+  });
+
+  // Production sub-stage toggles (blanks / print / press / delivered).
+  // Doesn't close the menu — the admin often ticks several in a row.
+  const productionStepMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Parameters<typeof setQuoteProductionStep>[1] }) =>
+      setQuoteProductionStep(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
     },
   });
 
@@ -3533,6 +3545,12 @@ export default function AdminPage() {
                         <td className="px-3 py-2 whitespace-nowrap">
                           <StatusBadge status={q.status} />
                           <div><BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} /></div>
+                          {quotePaidStage(q) && (() => {
+                            const ps = q.production_steps || {};
+                            if (ps.delivered) return <div className="text-[10px] text-gray-500 capitalize">Delivered · {ps.delivered}</div>;
+                            const done = ['blanks_ordered', 'print_ordered', 'press_in_progress', 'pressed'].filter((k) => ps[k]).length;
+                            return done > 0 ? <div className="text-[10px] text-gray-500">Production {done}/4</div> : null;
+                          })()}
                         </td>
                         <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <button
@@ -3652,6 +3670,50 @@ export default function AdminPage() {
                                     {label}
                                   </button>
                                 ))}
+                              {/* Production checklist (Doc, 2026-09-28):
+                                  "in production" = blanks ordered, print
+                                  ordered, press in progress, pressed —
+                                  then balance paid + picked up / mailed. */}
+                              {quotePaidStage(q) && (
+                                <>
+                                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">
+                                    Production
+                                  </p>
+                                  {([['blanks_ordered', 'Blanks ordered'], ['print_ordered', 'Print ordered'], ['press_in_progress', 'Press in progress'], ['pressed', 'Pressed']] as const).map(([s, label]) => {
+                                    const done = !!(q.production_steps || {})[s];
+                                    return (
+                                      <button
+                                        key={s}
+                                        onClick={() => productionStepMutation.mutate({ id: String(q.id), body: { step: s, done: !done } })}
+                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <Check className={`w-3.5 h-3.5 ${done ? 'text-green-600' : 'text-gray-300'}`} />
+                                        <span className={done ? 'text-gray-900' : 'text-gray-600'}>{label}</span>
+                                      </button>
+                                    );
+                                  })}
+                                  {(q.production_steps || {}).delivered ? (
+                                    <p className="px-4 py-1.5 text-xs text-gray-400 capitalize">
+                                      Delivered — {(q.production_steps || {}).delivered}
+                                    </p>
+                                  ) : (
+                                    <>
+                                      <button
+                                        onClick={() => { setOpenActionMenu(null); productionStepMutation.mutate({ id: String(q.id), body: { delivered: 'pickup' } }); }}
+                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
+                                      >
+                                        Picked up → Complete
+                                      </button>
+                                      <button
+                                        onClick={() => { setOpenActionMenu(null); productionStepMutation.mutate({ id: String(q.id), body: { delivered: 'mailed' } }); }}
+                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
+                                      >
+                                        Mailed → Complete
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
                               {!quotePaidStage(q) && q.status !== 'rejected' && (
                                 <button
                                   onClick={async () => {

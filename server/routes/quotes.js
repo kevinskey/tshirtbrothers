@@ -1135,6 +1135,46 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
   } catch (err) { next(err); }
 });
 
+// POST /:id/production-step — toggle one production sub-stage on a job.
+// Body: { step, done } where step is one of the checklist keys, or
+// { delivered: 'pickup' | 'mailed' } which also completes the quote.
+const PRODUCTION_STEPS = ['blanks_ordered', 'print_ordered', 'press_in_progress', 'pressed'];
+router.post('/:id/production-step', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { step, done, delivered } = req.body || {};
+
+    if (delivered !== undefined) {
+      if (!['pickup', 'mailed'].includes(delivered)) {
+        return res.status(400).json({ error: "delivered must be 'pickup' or 'mailed'" });
+      }
+      const { rows } = await pool.query(
+        `UPDATE quotes SET
+           production_steps = production_steps || jsonb_build_object('delivered', $2::text, 'delivered_at', NOW()::text),
+           status = 'completed'
+         WHERE id = $1 RETURNING *`,
+        [id, delivered],
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+      return res.json(rows[0]);
+    }
+
+    if (!PRODUCTION_STEPS.includes(step)) {
+      return res.status(400).json({ error: `step must be one of: ${PRODUCTION_STEPS.join(', ')}` });
+    }
+    const { rows } = await pool.query(
+      done === false
+        ? `UPDATE quotes SET production_steps = production_steps - $2 WHERE id = $1 RETURNING *`
+        : `UPDATE quotes SET production_steps = production_steps || jsonb_build_object($2::text, NOW()::text) WHERE id = $1 RETURNING *`,
+      [id, step],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
