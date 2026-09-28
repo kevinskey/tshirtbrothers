@@ -4003,7 +4003,7 @@ export default function DesignStudioPage() {
         <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
         <input
           type="text"
-          placeholder="Search t-shirts, hoodies, polos..."
+          placeholder={cgcMode ? 'Search mugs, tumblers, ornaments, awards...' : 'Search t-shirts, hoodies, polos...'}
           value={productSearch}
           onChange={e => setProductSearch(e.target.value)}
           className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
