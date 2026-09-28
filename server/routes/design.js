@@ -593,9 +593,10 @@ router.post('/blank-photo', blankPhotoLimiter, async (req, res, next) => {
       const cutout = await removeBackgroundReplicate(
         `data:image/png;base64,${buffer.toString('base64')}`,
       );
-      if (cutout) {
-        buffer = Buffer.from(String(cutout).replace(/^data:image\/\w+;base64,/, ''), 'base64');
-      }
+      // Never cache a failed cutout — the Kontext green backdrop would be
+      // stuck at this SKU's key forever. Fail the request instead.
+      if (!cutout) return res.status(502).json({ error: 'Cutout failed — try again' });
+      buffer = Buffer.from(String(cutout).replace(/^data:image\/\w+;base64,/, ''), 'base64');
     }
 
     const url = await uploadObject({
