@@ -31,7 +31,9 @@ const money = (n: number) => `$${Math.round(n).toLocaleString()}`;
 const money2 = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const STAGES = [
-  { key: 'quotes', label: 'Quotes', icon: FileText, bg: 'bg-gray-100', iconColor: 'text-gray-600', filter: 'pending' },
+  // 'all', not 'pending' — the Quotes chevron should land on the full
+  // list, never whatever filter tab was left selected (Doc, 2026-09-28).
+  { key: 'quotes', label: 'Quotes', icon: FileText, bg: 'bg-gray-100', iconColor: 'text-gray-600', filter: 'all' },
   { key: 'artwork', label: 'Artwork', icon: Palette, bg: 'bg-blue-50', iconColor: 'text-blue-500', filter: 'accepted' },
   { key: 'awaiting_approval', label: 'Awaiting Approval', icon: Hourglass, bg: 'bg-amber-50', iconColor: 'text-amber-500', filter: 'awaiting_approval' },
   { key: 'ready_to_produce', label: 'Ready to Produce', icon: CheckCircle2, bg: 'bg-green-50', iconColor: 'text-green-500', filter: 'approved' },
