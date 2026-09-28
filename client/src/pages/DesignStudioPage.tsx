@@ -1110,6 +1110,7 @@ export default function DesignStudioPage() {
           // captured PNG is transparent-on-nothing. For tenant submits,
           // keep it so the mockup shows the design on the shirt.
           ignoreElements: isStoreSubmit ? undefined : (el) => el === productImg,
+          onclone: isStoreSubmit ? undefined : clearSurfaceBg,
         }),
         30_000,
         'render',
@@ -1243,6 +1244,17 @@ export default function DesignStudioPage() {
   // its box — portrait on-model shots came out warped in saved mockup
   // previews. Emulate `contain` in the capture clone: size the img box to
   // the photo's fitted rect. Shared by every surface capture below.
+  // The live surface div is bg-white for the editor, and html2canvas
+  // paints that CSS background into captures — `backgroundColor: null`
+  // only affects the canvas clear color, not element backgrounds. Any
+  // design-on-TRANSPARENT capture (quote graphic, art-library asset)
+  // must blank the clone's surface background, or white designs bake
+  // into an all-white PNG (Cheryl's quote #196, 2026-09-28).
+  const clearSurfaceBg = (doc: Document) => {
+    const clone = doc.querySelector<HTMLElement>('[data-design-surface]');
+    if (clone) clone.style.background = 'transparent';
+  };
+
   const fixProductPhotoFit = (doc: Document) => {
     const live = productImgRef.current;
     const clone = doc.querySelector<HTMLImageElement>('img[data-product-photo]');
@@ -1802,6 +1814,7 @@ export default function DesignStudioPage() {
               const cvDesign = await html2canvas(surface, {
                 backgroundColor: null, useCORS: true, scale: 2, logging: false,
                 ignoreElements: (el) => el === productImg,
+                onclone: clearSurfaceBg,
               });
               graphicDataUrl = cvDesign.toDataURL('image/png');
             }
@@ -4662,6 +4675,7 @@ export default function DesignStudioPage() {
             productBgRef.current = node;
             designSurfaceRef.current = node;
           }}
+          data-design-surface
           className="relative bg-white rounded-2xl shadow-sm overflow-hidden select-none"
           style={{
             touchAction: 'pinch-zoom',

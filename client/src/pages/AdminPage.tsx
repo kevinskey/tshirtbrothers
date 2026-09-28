@@ -3467,7 +3467,7 @@ export default function AdminPage() {
                             title={`${quoteArtwork(q).length} file(s) — click to view all`}
                             className="block rounded hover:ring-2 hover:ring-red-300"
                           >
-                            <ArtThumb urls={quoteArtwork(q)} alt={`Artwork for ${q.customer_name || q.customerName}`} />
+                            <ArtThumb urls={quoteArtwork(q)} preview={q.mockup_image_url} alt={`Artwork for ${q.customer_name || q.customerName}`} />
                           </button>
                         </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
@@ -9893,12 +9893,19 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
             {urls.map((url, i) => (
               <li key={`${url}-${i}`} className="flex items-center gap-3 px-5 py-3">
                 <a href={url} target="_blank" rel="noreferrer" className="shrink-0">
-                  <img
-                    src={url}
-                    alt={`File ${i + 1}`}
-                    loading="lazy"
-                    className="w-16 h-16 rounded object-contain border border-gray-200 bg-gray-50"
-                  />
+                  {/\.pdf(\?|$)/i.test(url) ? (
+                    <div className="w-16 h-16 rounded border border-gray-200 bg-gray-50 flex items-center justify-center text-xs font-bold text-gray-500">
+                      PDF
+                    </div>
+                  ) : (
+                    <img
+                      src={url}
+                      alt={`File ${i + 1}`}
+                      loading="lazy"
+                      className="w-16 h-16 rounded object-contain border border-gray-200"
+                      style={CHECKER_BG}
+                    />
+                  )}
                 </a>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-gray-900">File {i + 1} of {urls.length}</div>
@@ -10210,18 +10217,40 @@ function paidState(q: Quote): { label: string; className: string } {
 }
 
 /** Small square preview with a count when there is more than one file. */
-function ArtThumb({ urls, alt }: { urls: string[]; alt: string }) {
-  if (urls.length === 0) {
+// Checkerboard backdrop for artwork previews — white or light designs on
+// transparency are invisible on a plain white/gray tile (Cheryl's white
+// hoodie text, 2026-09-28). Squares show through wherever the art is
+// transparent, so light art still reads.
+const CHECKER_BG: React.CSSProperties = {
+  backgroundImage:
+    'conic-gradient(#d1d5db 0 25%, #f9fafb 0 50%, #d1d5db 0 75%, #f9fafb 0)',
+  backgroundSize: '12px 12px',
+};
+
+// The tile prefers the mockup (design ON the product — always visually
+// recognizable, and quotes like Robert's #193 have ONLY a mockup) and
+// falls back to the first uploaded file. The count badge still counts
+// the customer's files, which is what the modal lists.
+function ArtThumb({ urls, preview, alt }: { urls: string[]; preview?: string | null; alt: string }) {
+  const src = preview || urls[0];
+  if (!src) {
     return <div className="w-10 h-10 rounded bg-gray-100 border border-gray-200 shrink-0" aria-hidden />;
   }
   return (
     <div className="relative w-10 h-10 shrink-0">
+      {/\.pdf(\?|$)/i.test(src) ? (
+        <div className="w-10 h-10 rounded border border-gray-200 bg-gray-50 flex items-center justify-center text-[9px] font-bold text-gray-500">
+          PDF
+        </div>
+      ) : (
       <img
-        src={urls[0]}
+        src={src}
         alt={alt}
         loading="lazy"
-        className="w-10 h-10 rounded object-cover border border-gray-200 bg-white"
+        className="w-10 h-10 rounded object-cover border border-gray-200"
+        style={CHECKER_BG}
       />
+      )}
       {urls.length > 1 && (
         <span
           className="absolute -bottom-1 -right-1 bg-gray-900 text-white text-[9px] leading-none px-1 py-0.5 rounded-full font-semibold"

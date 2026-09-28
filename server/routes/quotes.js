@@ -106,9 +106,24 @@ router.post('/upload-design', express.json({ limit: '20mb' }), async (req, res, 
     const folder = customerEmail
       ? `quote-designs/${customerEmail.replace(/[^a-zA-Z0-9]/g, '-')}`
       : 'quote-designs/anonymous';
-    const key = `${folder}/${safeName}-${Date.now()}.png`;
 
-    const url = await uploadObject({ key, body: imageBase64 });
+    // Sniff the real content type from the bytes. This endpoint used to
+    // stamp EVERYTHING `.png` + image/png, so customer PDFs/SVGs came
+    // back as "images" that no <img> tag could render — broken admin
+    // thumbnails and un-previewable files (quotes #133/#155/#17).
+    const buf = Buffer.from(String(imageBase64).replace(/^data:[^;]+;base64,/, ''), 'base64');
+    const head = buf.subarray(0, 256).toString('latin1');
+    const [ext, contentType] =
+      head.startsWith('\x89PNG') ? ['png', 'image/png']
+      : buf[0] === 0xff && buf[1] === 0xd8 ? ['jpg', 'image/jpeg']
+      : head.startsWith('RIFF') && head.slice(8, 12) === 'WEBP' ? ['webp', 'image/webp']
+      : head.startsWith('GIF8') ? ['gif', 'image/gif']
+      : head.startsWith('%PDF-') ? ['pdf', 'application/pdf']
+      : /^\s*(<\?xml|<svg)/i.test(head) ? ['svg', 'image/svg+xml']
+      : ['png', 'image/png'];
+
+    const key = `${folder}/${safeName}-${Date.now()}.${ext}`;
+    const url = await uploadObject({ key, body: buf, contentType });
     res.json({ url });
   } catch (err) {
     next(err);
