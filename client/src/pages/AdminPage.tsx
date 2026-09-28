@@ -918,6 +918,23 @@ export default function AdminPage() {
   const [productSearch, setProductSearch] = useState('');
   const [productPage, setProductPage] = useState(1);
   const [openActionMenu, setOpenActionMenu] = useState<string | null>(null);
+  // The quotes/orders tables sit in overflow-x-auto wrappers, which clip
+  // absolutely-positioned children — the row Actions menus render
+  // position:fixed at the button's screen corner instead, and close on
+  // any scroll so they never drift from their button.
+  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const toggleRowActionMenu = (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (openActionMenu === id) { setOpenActionMenu(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    setActionMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    setOpenActionMenu(id);
+  };
+  useEffect(() => {
+    if (!openActionMenu) return;
+    const close = () => setOpenActionMenu(null);
+    window.addEventListener('scroll', close, true);
+    return () => window.removeEventListener('scroll', close, true);
+  }, [openActionMenu]);
 
   // Pricing Assistant state
   const [pricingForm, setPricingForm] = useState({
@@ -3486,15 +3503,16 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() =>
-                              setOpenActionMenu(openActionMenu === q.id ? null : q.id)
-                            }
+                            onClick={(e) => toggleRowActionMenu(q.id, e)}
                             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 text-sm"
                           >
                             Actions <ChevronDown className="w-3 h-3" />
                           </button>
-                          {openActionMenu === q.id && (
-                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-44">
+                          {openActionMenu === q.id && actionMenuPos && (
+                            <div
+                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-44"
+                              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+                            >
                               {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                                 <button
                                   onClick={() => openPriceModal(q)}
@@ -4943,15 +4961,16 @@ export default function AdminPage() {
                         </td>
                         <td className="px-6 py-3 relative" onClick={(e) => e.stopPropagation()}>
                           <button
-                            onClick={() =>
-                              setOpenActionMenu(openActionMenu === o.id ? null : o.id)
-                            }
+                            onClick={(e) => toggleRowActionMenu(o.id, e)}
                             className="flex items-center gap-1 text-gray-500 hover:text-gray-700 text-sm"
                           >
                             Actions <ChevronDown className="w-3 h-3" />
                           </button>
-                          {openActionMenu === o.id && (
-                            <div className="absolute right-6 top-10 z-20 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48">
+                          {openActionMenu === o.id && actionMenuPos && (
+                            <div
+                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48"
+                              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+                            >
                               {o.estimated_price != null && o.deposit_amount != null && Number(o.estimated_price) - Number(o.deposit_amount) > 0 && (
                                 <button
                                   onClick={() => {
