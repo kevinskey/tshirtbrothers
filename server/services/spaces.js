@@ -9,7 +9,7 @@
 // resolves the endpoint once, consistently, so every uploader behaves the
 // same way.
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 
 export const SPACES_REGION = process.env.SPACES_REGION || 'atl1';
 export const SPACES_BUCKET = process.env.SPACES_BUCKET || 'tshirtbrothers';
@@ -43,6 +43,19 @@ export function getSpacesClient() {
 // the URL we hand out always matches the bucket the file actually went to.
 export function publicUrl(key) {
   return `https://${SPACES_BUCKET}.${SPACES_REGION}.cdn.digitaloceanspaces.com/${key}`;
+}
+
+// True when an object exists at the key. Uses HeadObject against the bucket
+// directly (never the CDN, which caches 404s) — cheap cache-check for
+// generate-once assets like cgc/blanks/<sku>.png.
+export async function objectExists(key) {
+  try {
+    await getSpacesClient().send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
+    return true;
+  } catch (err) {
+    if (err?.$metadata?.httpStatusCode === 404 || err?.name === 'NotFound') return false;
+    throw err;
+  }
 }
 
 // Upload a Buffer or base64 data URL to a given key under the configured

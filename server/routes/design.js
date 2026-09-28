@@ -11,7 +11,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { promisify } from 'util';
 import sharp from 'sharp';
-import { uploadObject } from '../services/spaces.js';
+import { uploadObject, objectExists, publicUrl } from '../services/spaces.js';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
@@ -493,6 +493,113 @@ router.post('/personalize-sample', personalizeSampleLimiter, async (req, res, ne
     const hash = createHash('sha1').update(imageUrl + '\n' + text).digest('hex').slice(0, 16);
     const url = await uploadObject({
       key: `cgc/personalized-previews/${hash}.png`,
+      body: buffer,
+      contentType: 'image/png',
+      cacheControl: 'public, max-age=31536000',
+    });
+    res.json({ url });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Blank product photos (Custom Gift Club) ─────────────────────────────────
+// JDS supplier photos ship decorated with sample engravings. For the Design
+// Studio, a customer designing their own artwork wants the BLANK product as
+// the canvas backdrop. FLUX Kontext strips the decoration, BiRefNet cuts the
+// result out, and the blank is cached forever at cgc/blanks/<sku>.png — one
+// ~$0.08 generation per SKU, ever.
+//
+//   GET  /blank-photo/:sku  → { url } if a cached blank exists, else 404.
+//   POST /blank-photo       → { url } — serves the cache or generates.
+
+const blankPhotoKey = (sku) => `cgc/blanks/${sku.toUpperCase()}.png`;
+
+// Kontext fills the transparent background with this flat green. BiRefNet
+// deletes transparent glass items along with the background (learned on
+// CE6506), so glass SKUs get a tight ImageMagick key on the green instead.
+const KONTEXT_GREEN = '#4C704E';
+const GLASS_BLANK_SKUS = new Set(['CE6506']);
+
+const blankPhotoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many blank generations — try again in a few minutes.' },
+});
+
+router.get('/blank-photo/:sku', async (req, res, next) => {
+  try {
+    const sku = String(req.params.sku || '').trim();
+    if (!/^[A-Za-z0-9._-]{1,40}$/.test(sku)) return res.status(400).json({ error: 'bad sku' });
+    const key = blankPhotoKey(sku);
+    if (!(await objectExists(key))) return res.status(404).json({ error: 'no blank yet' });
+    res.json({ url: publicUrl(key) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/blank-photo', blankPhotoLimiter, async (req, res, next) => {
+  try {
+    const sku = String(req.body?.sku || '').trim();
+    if (!/^[A-Za-z0-9._-]{1,40}$/.test(sku)) return res.status(400).json({ error: 'bad sku' });
+
+    const key = blankPhotoKey(sku);
+    if (await objectExists(key)) return res.json({ url: publicUrl(key), cached: true });
+
+    const { rows } = await pool.query(
+      'SELECT image_url FROM jds_products WHERE UPPER(sku) = UPPER($1) LIMIT 1',
+      [sku],
+    );
+    const imageUrl = rows[0]?.image_url;
+    if (!imageUrl) return res.status(404).json({ error: 'Unknown product' });
+    if (!process.env.REPLICATE_API_KEY && !process.env.REPLICATE_API_TOKEN) {
+      return res.status(503).json({ error: 'AI editing not configured' });
+    }
+
+    const prompt =
+      'Remove all engraving, etching, printed text, sample artwork, logos, monograms and ' +
+      'decoration from this product so it is completely blank and undecorated. Keep the ' +
+      'product shape, material, color, texture, lighting and background exactly the same. ' +
+      'Clean professional product photography of the plain blank product.';
+
+    const output = await replicate.run('black-forest-labs/flux-kontext-pro', {
+      input: { prompt, input_image: imageUrl, output_format: 'png' },
+    });
+    const raw = Array.isArray(output) ? output[0] : output;
+    const resultUrl = typeof raw === 'string' ? raw
+      : typeof raw?.url === 'function' ? String(raw.url()) : String(raw);
+    const imgRes = await fetch(resultUrl);
+    if (!imgRes.ok) throw new Error(`result fetch ${imgRes.status}`);
+    let buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    if (GLASS_BLANK_SKUS.has(sku.toUpperCase())) {
+      // ±26 RGB (~10% fuzz) key on the Kontext green — preserves the glass.
+      const tmpDir = await mkdtemp(join(tmpdir(), 'blank-photo-'));
+      try {
+        const inPath = join(tmpDir, 'in.png');
+        const outPath = join(tmpDir, 'out.png');
+        await writeFile(inPath, buffer);
+        await execFileAsync('convert', [
+          inPath, '-alpha', 'set', '-fuzz', '10%', '-transparent', KONTEXT_GREEN, outPath,
+        ]);
+        buffer = await readFile(outPath);
+      } finally {
+        try { await execFileAsync('rm', ['-rf', tmpDir]); } catch { /* ignore */ }
+      }
+    } else {
+      const cutout = await removeBackgroundReplicate(
+        `data:image/png;base64,${buffer.toString('base64')}`,
+      );
+      if (cutout) {
+        buffer = Buffer.from(String(cutout).replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      }
+    }
+
+    const url = await uploadObject({
+      key,
       body: buffer,
       contentType: 'image/png',
       cacheControl: 'public, max-age=31536000',

@@ -492,6 +492,9 @@ export default function DesignStudioPage() {
   // brand name / back-URL to match the store. Falls back to TSB chrome
   // when absent or when the brand fetch fails.
   const { brand: storeBrand } = useStoreBrand();
+  // Custom Gift Club mode (?store=cgc or a CGC hostname) — reshapes the
+  // product picker (gifts first), the default product, and the exit CTA.
+  const cgcMode = storeBrand?.slug === 'cgc';
   const storeSlugParam = searchParams.get('store') || null;
   const [storeAdminSession, setStoreAdminSession] = useState<{
     token: string;
@@ -778,7 +781,58 @@ export default function DesignStudioPage() {
   useEffect(() => {
     jdsOriginalImageRef.current = null;
     setSampleSwap({ open: false, text: '', busy: false, error: '' });
+    setBlankPhoto({ busy: false, error: '' });
   }, [selectedProduct?.ss_id]);
+
+  // ── Blank product photos ──────────────────────────────────────────
+  // JDS supplier photos come decorated with sample engravings; a customer
+  // designing their own artwork wants the blank. The server strips the
+  // decoration with AI once per SKU (cached at cgc/blanks/<sku>.png).
+  const [blankPhoto, setBlankPhoto] = useState({ busy: false, error: '' });
+
+  // In CGC mode, auto-apply an already-generated blank the moment a JDS
+  // product loads — cache-check only, never triggers a generation.
+  useEffect(() => {
+    if (!cgcMode || !isJdsProduct) return;
+    const ssid = selectedProduct?.ss_id;
+    if (!ssid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/design/blank-photo/${encodeURIComponent(ssid.slice(4))}`);
+        if (!r.ok || cancelled) return;
+        const { url } = await r.json();
+        if (!url || cancelled || jdsOriginalImageRef.current) return;
+        jdsOriginalImageRef.current = selectedProduct?.image_url ?? null;
+        setSelectedProduct((prev) => (prev ? { ...prev, image_url: url } : prev));
+      } catch { /* no blank yet — the button offers to generate one */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cgcMode, isJdsProduct, selectedProduct?.ss_id]);
+
+  const applyBlankPhoto = async () => {
+    const ssid = selectedProduct?.ss_id;
+    if (!ssid?.startsWith('jds:') || blankPhoto.busy) return;
+    setBlankPhoto({ busy: true, error: '' });
+    try {
+      const res = await fetch('/api/design/blank-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: ssid.slice(4) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Generation failed — try again');
+      if (!jdsOriginalImageRef.current) jdsOriginalImageRef.current = selectedProduct?.image_url ?? null;
+      setSelectedProduct((prev) => (prev ? { ...prev, image_url: data.url } : prev));
+      setBlankPhoto({ busy: false, error: '' });
+    } catch (err) {
+      setBlankPhoto({
+        busy: false,
+        error: err instanceof Error ? err.message : 'Generation failed — try again',
+      });
+    }
+  };
 
   const personalizeSample = async () => {
     const text = sampleSwap.text.trim();
@@ -1847,7 +1901,6 @@ export default function DesignStudioPage() {
   // personalized add-to-bag — not a TSB screen-print quote. Captures the
   // front mockup + artwork, uploads them, and lands on the CGC PDP with
   // ?design=<art>&mockup=<preview>, which preselects Personalized there.
-  const cgcMode = storeBrand?.slug === 'cgc';
   const cgcSku = selectedProduct?.ss_id?.startsWith('jds:')
     ? selectedProduct.ss_id.slice(4)
     : null;
@@ -2107,12 +2160,13 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const { data: productsData, isLoading: productsLoading } = useQuery({
-    queryKey: ['design-products', productSearch],
+    queryKey: ['design-products', productSearch, cgcMode],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: '24' });
       if (productSearch) params.set('search', productSearch);
       // S&S apparel + JDS (drinkware / awards / engraving blanks) in one
       // picker. JDS rows carry pseudo ss_id "jds:<sku>" and no colorways.
+      // In CGC mode the gift catalog leads — that's what CGC sells.
       const [ssRes, jdsRes] = await Promise.all([
         fetch(`/api/products?${params}`),
         fetch(`/api/products/jds-search?${params}`).catch(() => null),
@@ -2120,7 +2174,11 @@ export default function DesignStudioPage() {
       if (!ssRes.ok) throw new Error('Failed');
       const ss = await ssRes.json() as { products: Product[] };
       const jds = jdsRes?.ok ? await jdsRes.json() as { products: Product[] } : { products: [] };
-      return { products: [...ss.products, ...jds.products] };
+      return {
+        products: cgcMode
+          ? [...jds.products, ...ss.products]
+          : [...ss.products, ...jds.products],
+      };
     },
   });
 
@@ -2138,7 +2196,9 @@ export default function DesignStudioPage() {
   useEffect(() => {
     if (hasLoadedProduct.current) return;
     hasLoadedProduct.current = true;
-    const targetId = initialProductId || DEFAULT_PRODUCT_SSID;
+    // CGC visitors who arrive without a ?product deep link get a flagship
+    // gift (the 11oz sublimatable mug), not the default Gildan tee.
+    const targetId = initialProductId || (cgcMode ? 'jds:SM11GN' : DEFAULT_PRODUCT_SSID);
     // Catalog historically passed the SS style id, but a stale build (or a
     // sample fallback row) can pass the DB serial id instead. Try by-ssid
     // first; if that 404s, fall back to /products/:id. Either way we land
@@ -4644,13 +4704,24 @@ export default function DesignStudioPage() {
                   design idea — offer to re-render it with the customer's
                   own text. */}
               {isJdsProduct && displayImage && (
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 pointer-events-auto">
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 pointer-events-auto">
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); setSampleSwap((s) => ({ ...s, open: true, error: '' })); }}
                     className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-red-400"
                   >
                     ✨ Use this sample with your text
+                  </button>
+                  {/* AI-strip the supplier's sample decoration → blank canvas.
+                      Cached server-side per SKU, so repeats are instant. */}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); applyBlankPhoto(); }}
+                    disabled={blankPhoto.busy}
+                    className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-blue-400 disabled:opacity-60"
+                    title={blankPhoto.error || undefined}
+                  >
+                    {blankPhoto.busy ? 'Removing decoration… (~30s)' : '🧼 Start from a blank'}
                   </button>
                   {jdsOriginalImageRef.current && (
                     <button
@@ -4660,6 +4731,11 @@ export default function DesignStudioPage() {
                     >
                       Restore original
                     </button>
+                  )}
+                  {blankPhoto.error && (
+                    <span className="rounded-full bg-red-50 border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600">
+                      {blankPhoto.error}
+                    </span>
                   )}
                 </div>
               )}
