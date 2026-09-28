@@ -34,6 +34,9 @@ interface PublicMockup {
   graphic_url: string | null;
   placement: { x: number; y: number; width: number; rotation?: number } | null;
   preview_image_url: string | null;
+  preview_image_url_back: string | null;
+  preview_image_url_sleeve: string | null;
+  preview_image_url_sleeve_left: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -98,6 +101,11 @@ export default function MockupApprovalPage() {
   }
 
   const placement = mockup.placement || { x: 35, y: 30, width: 30 };
+  const extraViews = [
+    { url: mockup.preview_image_url_back, label: 'Back' },
+    { url: mockup.preview_image_url_sleeve, label: 'Right Sleeve' },
+    { url: mockup.preview_image_url_sleeve_left, label: 'Left Sleeve' },
+  ].filter((v): v is { url: string; label: string } => Boolean(v.url));
   const alreadyResponded = ['approved', 'rejected', 'converted_to_quote'].includes(mockup.status);
 
   return (
@@ -130,6 +138,19 @@ export default function MockupApprovalPage() {
                 />
               )}
             </div>
+          )}
+          {extraViews.length > 0 && (
+            <>
+              {mockup.preview_image_url && (
+                <p className="mt-2 text-center text-xs uppercase tracking-wide text-gray-400">Front</p>
+              )}
+              {extraViews.map((v) => (
+                <div key={v.label} className="mt-4">
+                  <img src={v.url} alt={`${mockup.name || 'Mockup'} - ${v.label}`} className="w-full rounded-lg" />
+                  <p className="mt-2 text-center text-xs uppercase tracking-wide text-gray-400">{v.label}</p>
+                </div>
+              ))}
+            </>
           )}
           {(mockup.preview_image_url || mockup.product_image_url) && (
             <button

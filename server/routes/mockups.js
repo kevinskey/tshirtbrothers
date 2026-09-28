@@ -522,6 +522,9 @@ router.get('/mockup/:token', async (req, res, next) => {
       graphic_url: m.graphic_url,
       placement: m.placement,
       preview_image_url: m.preview_image_url,
+      preview_image_url_back: m.preview_image_url_back,
+      preview_image_url_sleeve: m.preview_image_url_sleeve,
+      preview_image_url_sleeve_left: m.preview_image_url_sleeve_left,
       notes: m.notes,
       created_at: m.created_at,
     });

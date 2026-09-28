@@ -862,16 +862,41 @@ function escapeHtml(s) {
   ));
 }
 
-// Share a mockup with an arbitrary recipient (not necessarily the customer
-// on file). Mirrors sendMockupForApproval but parameterizes the recipient
-// and accepts an optional admin message that gets prepended to the body.
-export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {}) {
-  const { message, recipientName } = opts;
+// Every saved composite view (front, back, sleeves) stacked with labels —
+// a mockup with a back print must show the back in the email, not just the
+// front. Falls back to the live product+graphic overlay when no composite
+// was ever rendered.
+function mockupPreviewBlock(mockup, es = false) {
+  const views = [
+    [mockup.preview_image_url, es ? 'Frente' : 'Front'],
+    [mockup.preview_image_url_back, es ? 'Espalda' : 'Back'],
+    [mockup.preview_image_url_sleeve, es ? 'Manga derecha' : 'Right Sleeve'],
+    [mockup.preview_image_url_sleeve_left, es ? 'Manga izquierda' : 'Left Sleeve'],
+  ].filter(([url]) => url);
+  if (views.length) {
+    return views.map(([url, label]) => `
+      <div style="text-align:center;margin:16px 0;">
+        <img src="${url}" alt="${mockup.name || 'Mockup'} - ${label}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" />
+        ${views.length > 1 ? `<p style="margin:6px 0 0;font-size:12px;color:#9ca3af;letter-spacing:1px;text-transform:uppercase;">${label}</p>` : ''}
+      </div>`).join('');
+  }
   const productImg = mockup.product_image_url || '';
   const graphic = mockup.graphic_url || '';
   const placement = typeof mockup.placement === 'string'
     ? JSON.parse(mockup.placement)
     : (mockup.placement || { x: 35, y: 30, width: 30 });
+  return `
+    <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+      ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
+      ${graphic ? `<img src="${graphic}" alt="${es ? 'Tu diseño' : 'Your design'}" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
+    </div>`;
+}
+
+// Share a mockup with an arbitrary recipient (not necessarily the customer
+// on file). Mirrors sendMockupForApproval but parameterizes the recipient
+// and accepts an optional admin message that gets prepended to the body.
+export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {}) {
+  const { message, recipientName } = opts;
 
   const customMessageBlock = message
     ? `<div style="margin:0 0 20px;font-size:15px;color:#374151;background:#f9fafb;border-left:3px solid ${BRAND_ORANGE};padding:12px 16px;border-radius:4px;white-space:pre-wrap;">${escapeHtml(message)}</div>`
@@ -884,14 +909,7 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(greetingName)},</p>
     <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Here is the mockup of your design on the product. Take a look and let us know if it's approved, or what you'd like changed.</p>
     ${customMessageBlock}
-    ${mockup.preview_image_url
-      ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
-      : `
-        <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-          ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
-          ${graphic ? `<img src="${graphic}" alt="Your design" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
-        </div>
-      `}
+    ${mockupPreviewBlock(mockup)}
     <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
     ${mockup.notes ? `<p style="margin:0 0 16px;font-size:14px;color:#6b7280;"><strong>Notes:</strong> ${mockup.notes}</p>` : ''}
     ${primaryButton('View & Approve Mockup', approveUrl)}
@@ -908,19 +926,8 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
 }
 
 export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
-  const productImg = mockup.product_image_url || '';
-  const graphic = mockup.graphic_url || '';
-  const placement = typeof mockup.placement === 'string' ? JSON.parse(mockup.placement) : (mockup.placement || { x: 35, y: 30, width: 30 });
   const es = lang === 'es';
-
-  const previewBlock = mockup.preview_image_url
-    ? `<div style="text-align:center;margin:16px 0;"><img src="${mockup.preview_image_url}" alt="${mockup.name || 'Mockup'}" style="max-width:100%;border:1px solid #e5e7eb;border-radius:8px;" /></div>`
-    : `
-      <div style="position:relative;display:inline-block;margin:16px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">
-        ${productImg ? `<img src="${productImg}" alt="${mockup.product_name || 'Product'}" style="display:block;max-width:480px;width:100%;" />` : ''}
-        ${graphic ? `<img src="${graphic}" alt="${es ? 'Tu diseño' : 'Your design'}" style="position:absolute;left:${placement.x}%;top:${placement.y}%;width:${placement.width}%;" />` : ''}
-      </div>
-    `;
+  const previewBlock = mockupPreviewBlock(mockup, es);
 
   const body = es ? `
     <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Tu Diseño de Muestra Está Listo para Aprobar</h2>
