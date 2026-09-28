@@ -1444,7 +1444,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
       // pipeline the moment they advanced.
       pool.query(`
         SELECT id, customer_name, customer_email, product_name, quantity, status,
-               date_needed, estimated_price, created_at, order_stages,
+               date_needed, estimated_price, created_at, order_stages, production_steps,
                mockup_sent_at, mockup_approved_at, mockup_rejected_at,
                in_production_at, ready_at, deposit_amount, balance_paid_at,
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
@@ -1491,12 +1491,16 @@ router.get('/dashboard-ops', async (req, res, next) => {
     const gang = gangR.rows;
 
     // Quote sub-state → pipeline stage. Finishing = the shop-floor 'pressed'
-    // checkpoint (Order Detail stage circles) is ticked but the job hasn't
-    // been marked ready yet.
+    // checkpoint is ticked but the job hasn't been marked ready yet.
+    // 'pressed' is read from BOTH stage systems — order_stages (Order
+    // Detail circles) and production_steps (the quotes-list Production
+    // checklist, 2026-09-28) — which the toggle endpoints keep in sync.
     const stageOf = (j) => {
       if (j.ready_at) return 'pickup';
+      const pressed = (j.order_stages && j.order_stages.pressed)
+        || (j.production_steps && j.production_steps.pressed);
       if (j.in_production_at) {
-        return j.order_stages && j.order_stages.pressed ? 'finishing' : 'printing';
+        return pressed ? 'finishing' : 'printing';
       }
       if (j.mockup_sent_at && !j.mockup_approved_at && !j.mockup_rejected_at) return 'awaiting_approval';
       if (j.mockup_approved_at) return 'ready_to_produce';

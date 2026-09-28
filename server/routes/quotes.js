@@ -1169,6 +1169,17 @@ router.post('/:id/production-step', authenticate, adminOnly, async (req, res, ne
       [id, step],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    // 'pressed' is shared with the Order Detail stage circles
+    // (quotes.order_stages) — mirror it so the ops dashboard and both
+    // UIs agree no matter which one the admin ticks.
+    if (step === 'pressed') {
+      await pool.query(
+        done === false
+          ? `UPDATE quotes SET order_stages = COALESCE(order_stages, '{}'::jsonb) - 'pressed' WHERE id = $1`
+          : `UPDATE quotes SET order_stages = COALESCE(order_stages, '{}'::jsonb) || jsonb_build_object('pressed', to_jsonb(NOW())) WHERE id = $1`,
+        [id],
+      );
+    }
     res.json(rows[0]);
   } catch (err) {
     next(err);

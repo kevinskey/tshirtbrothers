@@ -103,6 +103,17 @@ router.put('/:quoteId/stages', async (req, res, next) => {
           [req.params.quoteId, key]
         );
     if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    // 'pressed' is shared with the quotes-list Production checklist
+    // (quotes.production_steps) — mirror it so the ops dashboard and both
+    // UIs agree no matter which one the admin ticks.
+    if (key === 'pressed') {
+      await pool.query(
+        done
+          ? `UPDATE quotes SET production_steps = production_steps || jsonb_build_object('pressed', NOW()::text) WHERE id = $1`
+          : `UPDATE quotes SET production_steps = production_steps - 'pressed' WHERE id = $1`,
+        [req.params.quoteId],
+      );
+    }
     res.json({ order_stages: rows[0].order_stages });
   } catch (err) {
     next(err);
