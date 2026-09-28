@@ -523,6 +523,18 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   </button>
                 );
               })}
+              {/* Gifts hand-off (Doc, 2026-09-28): engraved / personalized
+                  gift items are Custom Gift Club's lane — that request
+                  becomes a CGC quote (business-inquiry form → prospects
+                  board), not an apparel wizard line. */}
+              <a
+                href="https://customgiftclub.com/business"
+                className="rounded-2xl border-2 px-3 py-4 text-left transition-all bg-white border-gray-200 hover:border-gray-400 block"
+              >
+                <span className="text-2xl">🎁</span>
+                <span className="block mt-1 font-bold">{tr('Gifts', 'Regalos')}</span>
+                <span className="block mt-0.5 text-[11px] text-gray-500">Custom Gift Club →</span>
+              </a>
             </div>
 
             {picked.includes('dtf') && (
