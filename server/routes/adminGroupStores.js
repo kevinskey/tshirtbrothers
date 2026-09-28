@@ -93,12 +93,21 @@ router.post('/', async (req, res, next) => {
       // Every group store needs a default agreement so publishing
       // products doesn't blow up on the NOT NULL active_agreement_id.
       // Fundraiser split (if any) rides on this agreement.
-      const feeConfig = is_fundraiser && fundraiser_json?.contribution_type
-        ? {
-            contribution_type: fundraiser_json.contribution_type,
-            contribution_value: fundraiser_json.contribution_value,
-          }
-        : { contribution_type: 'percent', contribution_value: 0 };
+      //
+      // captureStoreOrder's computeLineSplit reads percent_of_retail /
+      // min_per_item_cents (TSB's take) — the contribution_* keys are
+      // display-only. A percent contribution of N to the org means TSB
+      // keeps (100 − N)% — without this translation TSB's take computes
+      // to $0 and the store gets credited the full retail.
+      const contribPct = fundraiser_json?.contribution_type === 'percent'
+        ? Math.min(100, Math.max(0, Number(fundraiser_json.contribution_value) || 0))
+        : 0;
+      const feeConfig = {
+        percent_of_retail: 100 - contribPct,
+        min_per_item_cents: 0,
+        contribution_type: fundraiser_json?.contribution_type ?? 'percent',
+        contribution_value: contribPct,
+      };
 
       await client.query(
         `INSERT INTO store_agreements
