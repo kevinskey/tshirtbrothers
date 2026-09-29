@@ -105,6 +105,7 @@ import {
   type EmbroideryJob,
   fetchMockups,
   fetchTsbDirectPublishedMockupIds,
+  updateGroupStoreProduct,
   createMockup,
   updateMockup,
   shareMockup,
@@ -1460,6 +1461,11 @@ export default function AdminPage() {
     enabled: activeSection === 'mockups',
   });
   const publishedMockupIds = new Set(publishedMockupIdsQuery.data?.mockup_ids ?? []);
+  const publishedByMockupId = new Map(
+    (publishedMockupIdsQuery.data?.products ?? []).map((p) => [p.mockup_id, p]),
+  );
+  const tsbDirectCollections = publishedMockupIdsQuery.data?.collections ?? [];
+  const tsbDirectStoreId = publishedMockupIdsQuery.data?.store_id ?? null;
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
   // Mockups grid toolbar — search matches name/customer/product; status
   // chips and sort are applied client-side (the list is already loaded).
@@ -7517,11 +7523,21 @@ export default function AdminPage() {
                               Convert to Quote
                             </button>
                             {publishedMockupIds.has(m.id) ? (
-                              <span
-                                className="text-[11px] px-2 py-1 rounded bg-green-100 text-green-700 inline-flex items-center gap-1 cursor-default"
-                                title="Already live as a TSB Direct product"
-                              >
-                                ✓ Added to TSB Direct
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="text-[11px] px-2 py-1 rounded bg-green-100 text-green-700 inline-flex items-center gap-1 cursor-default"
+                                  title="Already live as a TSB Direct product"
+                                >
+                                  ✓ Added to TSB Direct
+                                </span>
+                                {tsbDirectStoreId != null && publishedByMockupId.get(m.id) && (
+                                  <StoreProductCollectionPicker
+                                    storeId={tsbDirectStoreId}
+                                    product={publishedByMockupId.get(m.id)!}
+                                    collections={tsbDirectCollections}
+                                    onSaved={() => queryClient.invalidateQueries({ queryKey: ['admin', 'tsb-direct-mockup-ids'] })}
+                                  />
+                                )}
                               </span>
                             ) : (
                               <button
@@ -7548,6 +7564,7 @@ export default function AdminPage() {
         {storeMockupTarget && (
           <AddToStoreModal
             mockup={storeMockupTarget}
+            collections={tsbDirectCollections}
             onClose={() => setStoreMockupTarget(null)}
             onDone={(msg) => {
               setStoreMockupTarget(null);
@@ -10103,11 +10120,95 @@ function QuoteFilesModal({ quote, onClose }: { quote: Quote; onClose: () => void
  */
 /** Mockup-card preview scroller: pages through every rendered side (front,
  *  back, …) with arrows + dots. Single image renders exactly as before. */
+// Inline collection picker shown next to "✓ Added to TSB Direct" on the
+// Mockups grid — reassigns the published product's storefront collection
+// (campaign_ref) in place, including into a brand-new collection.
+function StoreProductCollectionPicker({ storeId, product, collections, onSaved }: {
+  storeId: number;
+  product: { product_id: number; campaign_ref: string | null };
+  collections: Array<{ key: string; count: number }>;
+  onSaved: () => void;
+}) {
+  const [newMode, setNewMode] = useState(false);
+  const [newKey, setNewKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+
+  const save = async (key: string | null) => {
+    setBusy(true);
+    setFailed(false);
+    try {
+      await updateGroupStoreProduct(storeId, product.product_id, { campaign_ref: key });
+      setNewMode(false);
+      setNewKey('');
+      onSaved();
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (newMode) {
+    return (
+      <span className="inline-flex items-center gap-1">
+        <input
+          autoFocus
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); if (slugify(newKey)) void save(slugify(newKey)); }
+            if (e.key === 'Escape') { setNewMode(false); setNewKey(''); }
+          }}
+          placeholder="new collection"
+          className="text-[11px] px-1.5 py-1 border border-gray-300 rounded w-28"
+        />
+        <button
+          disabled={busy || !slugify(newKey)}
+          onClick={() => void save(slugify(newKey))}
+          className="text-[11px] px-1.5 py-1 rounded bg-gray-900 text-white disabled:opacity-40"
+        >
+          {busy ? '…' : 'Set'}
+        </button>
+        <button onClick={() => { setNewMode(false); setNewKey(''); }} className="text-[11px] text-gray-400 hover:text-gray-700">✕</button>
+      </span>
+    );
+  }
+
+  return (
+    <select
+      value={product.campaign_ref ?? ''}
+      disabled={busy}
+      onChange={(e) => {
+        if (e.target.value === '__new__') { setNewMode(true); return; }
+        void save(e.target.value || null);
+      }}
+      className={`text-[11px] px-1.5 py-1 rounded border bg-white text-gray-700 max-w-[150px] ${failed ? 'border-red-400' : 'border-gray-300'}`}
+      title={failed ? 'Saving the collection failed — try again' : 'Storefront collection for this product'}
+    >
+      <option value="">no collection</option>
+      {collections.map((c) => (
+        <option key={c.key} value={c.key}>{c.key} ({c.count})</option>
+      ))}
+      {product.campaign_ref && !collections.some((c) => c.key === product.campaign_ref) && (
+        <option value={product.campaign_ref}>{product.campaign_ref}</option>
+      )}
+      <option value="__new__">+ new collection…</option>
+    </select>
+  );
+}
+
 // "Add to TSB Direct" dialog — publishes a mockup as a store product via
 // POST /api/admin/group-stores/:id/products/from-mockup. The server pulls
 // the blank (ss_id), cost, colors/sizes, and previews off the mockup; the
 // admin only sets title/slug/price and options here.
-function AddToStoreModal({ mockup, onClose, onDone }: { mockup: Mockup; onClose: () => void; onDone: (msg: string) => void }) {
+function AddToStoreModal({ mockup, collections, onClose, onDone }: {
+  mockup: Mockup;
+  collections: Array<{ key: string; count: number }>;
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) {
   const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
   const [title, setTitle] = useState(mockup.name || '');
   const [slug, setSlug] = useState(slugify(mockup.name || ''));
@@ -10222,20 +10323,24 @@ function AddToStoreModal({ mockup, onClose, onDone }: { mockup: Mockup; onClose:
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Category (optional)</label>
+            <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Collection (optional)</label>
             <input
               list="tsb-direct-categories"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              placeholder="Pick or type a category…"
+              placeholder="Pick a collection or type a new one…"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
               style={{ fontSize: '16px' }}
             />
             <datalist id="tsb-direct-categories">
-              {['T-Shirts', 'Long Sleeves', 'Hoodies & Sweatshirts', 'Hats', 'Youth', 'Holiday', 'Faith', 'Accessories'].map((c) => (
+              {(collections.length > 0
+                ? collections.map((c) => c.key)
+                : ['T-Shirts', 'Long Sleeves', 'Hoodies & Sweatshirts', 'Hats', 'Youth', 'Holiday', 'Faith', 'Accessories']
+              ).map((c) => (
                 <option key={c} value={c} />
               ))}
             </datalist>
+            <p className="text-[11px] text-gray-400 mt-0.5">Groups the product into a storefront shelf on TSB Direct (e.g. the fall hero's collection).</p>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Description (optional)</label>

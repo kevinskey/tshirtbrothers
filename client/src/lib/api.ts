@@ -836,10 +836,16 @@ export async function fetchMockups(opts: { status?: string; search?: string } = 
   return authRequest<Mockup[]>(`/admin/mockups${qs}`);
 }
 
-// Mockup ids already live as active TSB Direct store products — powers the
-// "✓ Added" state on the admin Mockups grid.
+// Mockup → TSB Direct product links + the store's live collection keys —
+// powers the "✓ Added" state and inline collection picker on the admin
+// Mockups grid.
 export async function fetchTsbDirectPublishedMockupIds() {
-  return authRequest<{ mockup_ids: number[] }>('/admin/group-stores/published-mockup-ids');
+  return authRequest<{
+    store_id: number | null;
+    mockup_ids: number[];
+    products: Array<{ mockup_id: number; product_id: number; campaign_ref: string | null }>;
+    collections: Array<{ key: string; count: number }>;
+  }>('/admin/group-stores/published-mockup-ids');
 }
 
 export interface StudioMockup {

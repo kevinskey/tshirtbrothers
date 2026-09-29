@@ -37,20 +37,44 @@ router.get('/list', async (req, res, next) => {
 });
 
 // ── GET /published-mockup-ids ────────────────────────────────────────────
-// Mockup ids already live as active TSB Direct store products (recorded in
-// variants_json.mockup_id at publish). Powers the "✓ Added" state on the
-// admin Mockups grid.
+// Mockup → TSB Direct product links (recorded in variants_json.mockup_id
+// at publish) plus the store's live collection keys. Powers the "✓ Added"
+// state and the inline collection picker on the admin Mockups grid.
 router.get('/published-mockup-ids', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT DISTINCT (sp.variants_json->>'mockup_id')::int AS mockup_id
-         FROM store_products sp
-         JOIN stores s ON s.id = sp.store_id
-        WHERE s.slug = 'tsb-direct'
-          AND sp.is_active
-          AND sp.variants_json ? 'mockup_id'`,
+    const store = await pool.query(
+      `SELECT id, brand_json FROM stores WHERE slug = 'tsb-direct' LIMIT 1`,
     );
-    res.json({ mockup_ids: rows.map((r) => r.mockup_id) });
+    if (!store.rows[0]) return res.json({ store_id: null, mockup_ids: [], products: [], collections: [] });
+    const storeId = store.rows[0].id;
+
+    const linked = await pool.query(
+      `SELECT (variants_json->>'mockup_id')::int AS mockup_id,
+              id AS product_id, campaign_ref
+         FROM store_products
+        WHERE store_id = $1 AND is_active AND variants_json ? 'mockup_id'`,
+      [storeId],
+    );
+    // Collection keys = declared shelves + tags in use, with live counts.
+    const inUse = await pool.query(
+      `SELECT campaign_ref AS key, COUNT(*)::int AS count
+         FROM store_products
+        WHERE store_id = $1 AND is_active AND campaign_ref IS NOT NULL
+        GROUP BY campaign_ref ORDER BY campaign_ref`,
+      [storeId],
+    );
+    const counts = new Map(inUse.rows.map((r) => [r.key, r.count]));
+    const declared = Array.isArray(store.rows[0].brand_json?.collections)
+      ? store.rows[0].brand_json.collections.map((c) => c?.key).filter(Boolean)
+      : [];
+    const keys = [...new Set([...declared, ...counts.keys()])].sort();
+
+    res.json({
+      store_id: storeId,
+      mockup_ids: [...new Set(linked.rows.map((r) => r.mockup_id))],
+      products: linked.rows,
+      collections: keys.map((key) => ({ key, count: counts.get(key) ?? 0 })),
+    });
   } catch (err) { next(err); }
 });
 
