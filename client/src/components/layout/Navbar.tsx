@@ -7,6 +7,11 @@ type NavLink = { label: string; href: string; desktopOnly?: boolean; highlight?:
 type NavEntry = NavLink | { label: string; children: NavLink[]; desktopOnly?: boolean };
 const isGroup = (e: NavEntry): e is { label: string; children: NavLink[]; desktopOnly?: boolean } => 'children' in e;
 
+// Menu reorganized 2026-09-28 (Doc): the flat 11-row list buried the
+// account/admin links below the fold. Three high-intent rows stay
+// standalone (Ready to Wear, Design Studio, Get a Quote); everything
+// browsable folds into Catalogue; everything B2B folds into For
+// Business. Account/admin renders ABOVE this list, not below it.
 const catalogueLinks: NavLink[] = [
   { label: 'T-Shirts', href: '/shop?category=T-Shirts' },
   { label: 'Hoodies & Fleece', href: '/shop?category=Fleece' },
@@ -14,8 +19,9 @@ const catalogueLinks: NavLink[] = [
   { label: 'Polos', href: '/shop?category=Polos' },
   { label: 'Outerwear', href: '/shop?category=Outerwear' },
   { label: 'Accessories', href: '/shop?category=Accessories' },
-  { label: 'Engraved Drinkware', href: '/gifts?search=tumbler' },
-  { label: 'Awards & Trophies', href: '/gifts?search=award' },
+  { label: 'Gifts & Awards', href: '/gifts' },
+  { label: 'DTF Transfers', href: '/dtf' },
+  { label: 'Compare Shirt Tiers', href: '/compare' },
   { label: 'All Products', href: '/shop' },
 ];
 
@@ -26,49 +32,41 @@ const catalogueLinksEs: NavLink[] = [
   { label: 'Polos', href: '/shop?category=Polos' },
   { label: 'Chaquetas', href: '/shop?category=Outerwear' },
   { label: 'Accesorios', href: '/shop?category=Accessories' },
-  { label: 'Vasos Grabados', href: '/gifts?search=tumbler' },
-  { label: 'Premios y Trofeos', href: '/gifts?search=award' },
+  { label: 'Regalos y Premios', href: '/gifts' },
+  { label: 'Transferencias DTF', href: '/dtf' },
+  { label: 'Compara Camisetas', href: '/compare' },
   { label: 'Todos los Productos', href: '/shop' },
 ];
 
-// desktopOnly entries are hidden from the sub-nav pill on mobile (they
-// still appear in the hamburger menu). Keeps the mobile pill to just the
-// three high-intent CTAs — Design Studio, Catalogue, Get a Quote — so it
-// stays one screen-width without horizontal scrolling.
 const subNavEntries: NavEntry[] = [
   // TSB Direct — the ready-to-wear storefront on its own subdomain.
-  // Top of the menu, brand orange.
   { label: 'Ready to Wear', href: 'https://shop.tshirtbrothers.com', highlight: true },
   { label: 'Design Studio', href: '/design' },
-  { label: 'Catalogue', children: catalogueLinks },
   { label: 'Get a Quote', href: '/quote' },
-  { label: 'Gifts & Awards', href: '/gifts' },
-  { label: 'DTF Transfers', href: '/dtf' },
-  { label: 'Compare Shirt Tiers', href: '/compare' },
-  { label: 'Web Stores', children: [
-    { label: 'For Organizations', href: '/webstores' },
-    { label: 'For Businesses', href: '/webstores/business' },
+  { label: 'Catalogue', children: catalogueLinks },
+  { label: 'For Business', children: [
+    { label: 'Web Stores — Organizations', href: '/webstores' },
+    { label: 'Web Stores — Businesses', href: '/webstores/business' },
+    { label: 'TSB Pro', href: '/pro' },
+    { label: 'TSB Pro Login', href: '/pro/login' },
+    { label: 'Services', href: '/services' },
   ] },
-  { label: 'TSB Pro', href: '/pro' },
-  { label: 'Services', href: '/services', desktopOnly: true },
-  { label: 'About', href: '/about', desktopOnly: true },
+  { label: 'About', href: '/about' },
 ];
 
 const subNavEntriesEs: NavEntry[] = [
   { label: 'Listo para Usar', href: 'https://shop.tshirtbrothers.com', highlight: true },
   { label: 'Estudio de Diseño', href: '/design' },
-  { label: 'Catálogo', children: catalogueLinksEs },
   { label: 'Obtener Cotización', href: '/es/cotizacion' },
-  { label: 'Regalos y Premios', href: '/gifts' },
-  { label: 'Transferencias DTF', href: '/dtf' },
-  { label: 'Compara Camisetas', href: '/compare' },
-  { label: 'Tiendas Web', children: [
-    { label: 'Para Organizaciones', href: '/webstores' },
-    { label: 'Para Negocios', href: '/webstores/business' },
+  { label: 'Catálogo', children: catalogueLinksEs },
+  { label: 'Para Negocios', children: [
+    { label: 'Tiendas Web — Organizaciones', href: '/webstores' },
+    { label: 'Tiendas Web — Negocios', href: '/webstores/business' },
+    { label: 'TSB Pro', href: '/pro' },
+    { label: 'Acceso TSB Pro', href: '/pro/login' },
+    { label: 'Servicios', href: '/services' },
   ] },
-  { label: 'TSB Pro', href: '/pro' },
-  { label: 'Servicios', href: '/services', desktopOnly: true },
-  { label: 'Nosotros', href: '/about', desktopOnly: true },
+  { label: 'Nosotros', href: '/about' },
 ];
 
 // User-visible chrome strings per language (menu labels live in the
@@ -236,6 +234,39 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         )}
       >
         <div className="px-4 py-3 space-y-1">
+          {/* Account first — Doc (2026-09-28): Admin Dashboard was at the
+              very bottom of a long list, a scroll away on every visit. */}
+          <div className="border-b border-gray-200 mb-2 pb-2">
+            {isLoggedIn ? (
+              <>
+                <Link
+                  to="/admin"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold text-orange-600 hover:bg-orange-50 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <User className="h-4 w-4" />
+                  {t.admin}
+                </Link>
+                <Link
+                  to="/account"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <User className="h-4 w-4" />
+                  {t.myAccount}
+                </Link>
+              </>
+            ) : (
+              <Link
+                to="/auth"
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50 transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                <User className="h-4 w-4" />
+                {t.signInCreate}
+              </Link>
+            )}
+          </div>
           {entries.map((entry) => {
             if (isGroup(entry)) {
               return (
@@ -296,16 +327,6 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             );
           })}
 
-          {/* TSB Pro login — mobile home for the header pill (hidden < sm) */}
-          <Link
-            to="/pro/login"
-            className="flex sm:hidden items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50 transition-colors"
-            onClick={() => setMobileOpen(false)}
-          >
-            <Briefcase className="h-4 w-4" />
-            TSB Pro Login
-          </Link>
-
           <a
             href="sms:+14706221392"
             className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
@@ -315,49 +336,22 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             {t.textUs}
           </a>
 
-          {/* Account section */}
-          <div className="border-t border-gray-200 mt-2 pt-2">
-            {isLoggedIn ? (
-              <>
-                <Link
-                  to="/account"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <User className="h-4 w-4" />
-                  {t.myAccount}
-                </Link>
-                <Link
-                  to="/admin"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50 transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <User className="h-4 w-4" />
-                  {t.admin}
-                </Link>
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('tsb_token');
-                    setMobileOpen(false);
-                    window.location.href = '/';
-                  }}
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors w-full text-left"
-                >
-                  <LogOut className="h-4 w-4" />
-                  {t.logOut}
-                </button>
-              </>
-            ) : (
-              <Link
-                to="/auth"
-                className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-orange-600 hover:bg-orange-50 transition-colors"
-                onClick={() => setMobileOpen(false)}
+          {/* Log out stays at the bottom — destructive, rarely needed. */}
+          {isLoggedIn && (
+            <div className="border-t border-gray-200 mt-2 pt-2">
+              <button
+                onClick={() => {
+                  localStorage.removeItem('tsb_token');
+                  setMobileOpen(false);
+                  window.location.href = '/';
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors w-full text-left"
               >
-                <User className="h-4 w-4" />
-                {t.signInCreate}
-              </Link>
-            )}
-          </div>
+                <LogOut className="h-4 w-4" />
+                {t.logOut}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </nav>
