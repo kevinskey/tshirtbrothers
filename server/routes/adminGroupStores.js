@@ -36,6 +36,24 @@ router.get('/list', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── GET /published-mockup-ids ────────────────────────────────────────────
+// Mockup ids already live as active TSB Direct store products (recorded in
+// variants_json.mockup_id at publish). Powers the "✓ Added" state on the
+// admin Mockups grid.
+router.get('/published-mockup-ids', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT (sp.variants_json->>'mockup_id')::int AS mockup_id
+         FROM store_products sp
+         JOIN stores s ON s.id = sp.store_id
+        WHERE s.slug = 'tsb-direct'
+          AND sp.is_active
+          AND sp.variants_json ? 'mockup_id'`,
+    );
+    res.json({ mockup_ids: rows.map((r) => r.mockup_id) });
+  } catch (err) { next(err); }
+});
+
 // ── POST / ───────────────────────────────────────────────────────────────
 // Create a new group store. Body:
 //   { slug, name, owner_email, brand_json?, fulfillment_mode?,
@@ -550,6 +568,9 @@ router.post('/:id/products/from-mockup', async (req, res, next) => {
     const variants = {
       sizes:  Array.isArray(m.sizes)  ? m.sizes  : (m.sizes  ?? []),
       colors: Array.isArray(m.colors) ? m.colors : (m.colors ?? []),
+      // Link back to the source mockup so the admin Mockups grid can show
+      // which ones are already published ("✓ Added").
+      mockup_id,
     };
     // Two-sided mockups: carry every preview so the storefront can show a
     // front/back gallery. Rides inside variants_json — no schema change.

@@ -836,6 +836,12 @@ export async function fetchMockups(opts: { status?: string; search?: string } = 
   return authRequest<Mockup[]>(`/admin/mockups${qs}`);
 }
 
+// Mockup ids already live as active TSB Direct store products — powers the
+// "✓ Added" state on the admin Mockups grid.
+export async function fetchTsbDirectPublishedMockupIds() {
+  return authRequest<{ mockup_ids: number[] }>('/admin/group-stores/published-mockup-ids');
+}
+
 export interface StudioMockup {
   id: number;
   name: string;
