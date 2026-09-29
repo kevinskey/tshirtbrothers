@@ -104,6 +104,7 @@ import {
   deleteEmbroideryJob,
   type EmbroideryJob,
   fetchMockups,
+  fetchTsbDirectPublishedMockupIds,
   createMockup,
   updateMockup,
   shareMockup,
@@ -1451,6 +1452,14 @@ export default function AdminPage() {
     queryFn: () => fetchMockups(),
     enabled: activeSection === 'mockups',
   });
+  // Which mockups are already live on TSB Direct — flips the grid button
+  // from "Add to TSB Direct" to "✓ Added".
+  const publishedMockupIdsQuery = useQuery({
+    queryKey: ['admin', 'tsb-direct-mockup-ids'],
+    queryFn: fetchTsbDirectPublishedMockupIds,
+    enabled: activeSection === 'mockups',
+  });
+  const publishedMockupIds = new Set(publishedMockupIdsQuery.data?.mockup_ids ?? []);
   const [mockupModalOpen, setMockupModalOpen] = useState(false);
   // Mockups grid toolbar — search matches name/customer/product; status
   // chips and sort are applied client-side (the list is already loaded).
@@ -7507,13 +7516,22 @@ export default function AdminPage() {
                             >
                               Convert to Quote
                             </button>
-                            <button
-                              onClick={() => setStoreMockupTarget(m)}
-                              className="text-[11px] px-2 py-1 rounded bg-orange-50 text-orange-700 hover:bg-orange-100"
-                              title="Publish this mockup as a product in the TSB Direct store"
-                            >
-                              Add to TSB Direct
-                            </button>
+                            {publishedMockupIds.has(m.id) ? (
+                              <span
+                                className="text-[11px] px-2 py-1 rounded bg-green-100 text-green-700 inline-flex items-center gap-1 cursor-default"
+                                title="Already live as a TSB Direct product"
+                              >
+                                ✓ Added to TSB Direct
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setStoreMockupTarget(m)}
+                                className="text-[11px] px-2 py-1 rounded bg-orange-50 text-orange-700 hover:bg-orange-100"
+                                title="Publish this mockup as a product in the TSB Direct store"
+                              >
+                                Add to TSB Direct
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -7531,7 +7549,11 @@ export default function AdminPage() {
           <AddToStoreModal
             mockup={storeMockupTarget}
             onClose={() => setStoreMockupTarget(null)}
-            onDone={(msg) => { setStoreMockupTarget(null); toast(msg); }}
+            onDone={(msg) => {
+              setStoreMockupTarget(null);
+              toast(msg);
+              queryClient.invalidateQueries({ queryKey: ['admin', 'tsb-direct-mockup-ids'] });
+            }}
           />
         )}
 
