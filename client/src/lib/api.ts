@@ -365,8 +365,13 @@ export async function sendCustomerSms(body: { phone: string; body: string; quote
   return authRequest<SmsMessage>('/sms/send', { method: 'POST', body: JSON.stringify(body) });
 }
 
+/** One row per phone number: newest message plus unread reply count. */
 export async function fetchSmsInbox() {
-  return authRequest<(SmsMessage & { unread: number })[]>('/sms/inbox');
+  return authRequest<(SmsMessage & { unread: number; thread_key: string })[]>('/sms/inbox');
+}
+
+export async function fetchSmsUnreadCount() {
+  return authRequest<{ unread: number }>('/sms/unread-count');
 }
 
 export async function fetchQuote(id: string) {

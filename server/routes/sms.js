@@ -120,7 +120,7 @@ router.get('/inbox', async (req, res, next) => {
     const { rows } = await pool.query(
       `SELECT DISTINCT ON (thread_key)
               thread_key, phone, body, direction, customer_name, quote_id, created_at,
-              (SELECT COUNT(*) FROM sms_messages u
+              (SELECT COUNT(*)::int FROM sms_messages u
                 WHERE u.direction = 'in' AND u.read_at IS NULL
                   AND RIGHT(regexp_replace(u.phone, '\\D', '', 'g'), 10) = m.thread_key) AS unread
          FROM (
