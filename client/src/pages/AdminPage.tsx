@@ -47,6 +47,9 @@ import {
   fetchQuotes,
   fetchGangSheetOrders,
   updateQuoteStatus,
+  updateQuoteDueDate,
+  fetchSmsThread,
+  sendCustomerSms,
   setQuoteProductionStep,
   fetchAdminProducts,
   fetchCategories,
@@ -1623,6 +1626,17 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] });
       setOpenActionMenu(null);
     },
+  });
+
+  // Due date (quotes.date_needed) straight from the list — the shop sets a
+  // deadline the moment a job comes in, without opening the quote.
+  const dueDateMutation = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string | null }) => updateQuoteDueDate(id, date),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      toast(vars.date ? 'Due date set' : 'Due date cleared');
+    },
+    onError: () => toast('Could not save the due date'),
   });
 
   // Production sub-stage toggles (blanks / print / press / delivered).
@@ -3375,11 +3389,15 @@ export default function AdminPage() {
                       ))}
                     </div>
                   )}
-                  {needed && (
-                    <div className="text-xs text-gray-600">
-                      <span className="font-medium">Needed:</span> {needed.toLocaleDateString()}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 text-xs text-gray-600" onClick={(e) => e.stopPropagation()}>
+                    <span className="font-medium">Due:</span>
+                    <DueDateCell
+                      value={q.date_needed}
+                      done={quoteIsDone(q.status)}
+                      saving={dueDateMutation.isPending && dueDateMutation.variables?.id === String(q.id)}
+                      onChange={(date) => dueDateMutation.mutate({ id: String(q.id), date })}
+                    />
+                  </div>
                   {q.notes && (
                     <div className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 line-clamp-2">
                       <span className="font-medium">Note:</span> {q.notes}
@@ -3477,6 +3495,10 @@ export default function AdminPage() {
                     <tr className="bg-gray-50 text-left text-gray-500 text-xs">
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Art</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
+                      {/* Due date, colour-coded by runway: red past due,
+                          orange today, amber inside 2 days, yellow inside a
+                          week, green beyond. Editable in place on quotes. */}
+                      <th className="px-3 py-2 font-medium whitespace-nowrap" title="Red = overdue · Orange = today · Amber = 1-2 days · Yellow = this week · Green = more than a week">Due</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Customer</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Product</th>
@@ -3514,6 +3536,14 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <DueDateCell
+                            value={q.date_needed}
+                            done={quoteIsDone(q.status)}
+                            saving={dueDateMutation.isPending && dueDateMutation.variables?.id === String(q.id)}
+                            onChange={(date) => dueDateMutation.mutate({ id: String(q.id), date })}
+                          />
                         </td>
                         <td className="px-3 py-2 text-gray-900">
                           <div className="max-w-[160px] truncate" title={q.customer_name || q.customerName}>{q.customer_name || q.customerName}</div>
@@ -3764,7 +3794,7 @@ export default function AdminPage() {
                     ); })())}
                     {dashboardRows.length === 0 && !quotesQuery.isLoading && (
                       <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-gray-400">
+                        <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
                           No quotes found
                         </td>
                       </tr>
@@ -8074,11 +8104,18 @@ export default function AdminPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={q.status} />
                     <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
-                    {q.date_needed && (
-                      <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded">
-                        Needed by {new Date(q.date_needed).toLocaleDateString()}
-                      </span>
-                    )}
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                      Due
+                      <DueDateCell
+                        value={q.date_needed}
+                        done={quoteIsDone(q.status)}
+                        saving={dueDateMutation.isPending && dueDateMutation.variables?.id === String(q.id)}
+                        onChange={(date) => {
+                          dueDateMutation.mutate({ id: String(q.id), date });
+                          setDetailQuote({ ...(q as Quote), date_needed: date } as Quote);
+                        }}
+                      />
+                    </span>
                     {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'rush' ? 'bg-red-600 text-white' :
@@ -8552,6 +8589,13 @@ export default function AdminPage() {
 
                   {/* Actions */}
                   <div className="pt-2 space-y-2">
+                    {/* Text the customer and read what they text back, in
+                        the job the conversation is about. */}
+                    <QuoteSmsPanel
+                      quoteId={q.id}
+                      phone={(q as Quote).customer_phone || (q as Quote).customerPhone || ''}
+                      customerName={(q as Quote).customer_name || (q as Quote).customerName || ''}
+                    />
                     {!(q as any).design_url && !['completed', 'rejected'].includes(q.status || '') && (
                       <button
                         onClick={async () => {
@@ -10469,6 +10513,250 @@ function paidState(q: Quote): { label: string; className: string } {
   return { label: 'Unpaid', className: 'text-gray-400' };
 }
 
+// ── Due dates ────────────────────────────────────────────────────────
+// A DATE column comes back from pg as a timestamp (local midnight on the
+// server, serialized as UTC), so `new Date(value)` lands on the previous
+// day for anyone west of the server. Read the calendar date off the front
+// of the string instead and rebuild it in local time.
+function parseDueDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+  if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]));
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** YYYY-MM-DD in local time — what an <input type="date"> wants. */
+function toDateInputValue(value?: string | null): string {
+  const d = parseDueDate(value);
+  if (!d) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// How much runway is left, as a colour the shop reads at a glance:
+//   red    = past due        orange = due today
+//   amber  = 1-2 days out    yellow = 3-7 days out
+//   green  = more than a week    gray = delivered, or no date set
+export type DueMeta = {
+  date: Date;
+  days: number;
+  label: string;      // "Oct 5"
+  chip: string;       // "2 days" / "OVERDUE 3d"
+  chipClass: string;
+  textClass: string;
+};
+
+function dueMeta(value?: string | null, done = false): DueMeta | null {
+  const date = parseDueDate(value);
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((date.getTime() - today.getTime()) / 86400000);
+  const label = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (done) {
+    return { date, days, label, chip: 'Done', chipClass: 'bg-gray-100 text-gray-500', textClass: 'text-gray-500' };
+  }
+  if (days < 0) {
+    return { date, days, label, chip: `Overdue ${Math.abs(days)}d`, chipClass: 'bg-red-600 text-white', textClass: 'text-red-700 font-semibold' };
+  }
+  if (days === 0) {
+    return { date, days, label, chip: 'Due today', chipClass: 'bg-orange-500 text-white', textClass: 'text-orange-700 font-semibold' };
+  }
+  if (days <= 2) {
+    return { date, days, label, chip: `${days} day${days === 1 ? '' : 's'}`, chipClass: 'bg-amber-100 text-amber-800', textClass: 'text-amber-800 font-medium' };
+  }
+  if (days <= 7) {
+    return { date, days, label, chip: `${days} days`, chipClass: 'bg-yellow-50 text-yellow-800 border border-yellow-200', textClass: 'text-gray-700' };
+  }
+  return { date, days, label, chip: `${days} days`, chipClass: 'bg-green-50 text-green-700', textClass: 'text-gray-600' };
+}
+
+// Gang sheets are sold by turnaround tier, so the tier IS the deadline —
+// same arithmetic the ops dashboard uses (hot rush same day, rush next day,
+// standard two days from payment).
+const GANG_TIER_DAYS: Record<string, number> = { standard: 2, rush: 1, hot_rush: 0 };
+
+function gangSheetDue(order: GangSheetOrder): string | null {
+  if (!order.paid_at) return null;
+  const d = new Date(order.paid_at);
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + (GANG_TIER_DAYS[order.tier || 'standard'] ?? 2));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A job is off the clock once it is handed over — a completed order should
+ *  not sit in the list glowing red forever. */
+function quoteIsDone(status?: string | null): boolean {
+  return status === 'completed' || status === 'rejected';
+}
+
+/** Read-only due date + colour chip, for rows whose date is owned
+ *  elsewhere (invoice editor, DTF tier deadline). */
+function DueBadge({ value, done, hint }: { value?: string | null; done?: boolean; hint?: string }) {
+  const meta = dueMeta(value, done);
+  if (!meta) return <span className="text-gray-300">—</span>;
+  return (
+    <div title={hint || `Due ${meta.date.toLocaleDateString()}`}>
+      <div className={`text-[13px] ${meta.textClass}`}>{meta.label}</div>
+      <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${meta.chipClass}`}>
+        {meta.chip}
+      </span>
+    </div>
+  );
+}
+
+/** Editable due date for a quote row. The native picker is the control —
+ *  the chip under it is the colour code. */
+function DueDateCell({
+  value,
+  done,
+  onChange,
+  saving,
+}: {
+  value?: string | null;
+  done?: boolean;
+  onChange: (next: string | null) => void;
+  saving?: boolean;
+}) {
+  const meta = dueMeta(value, done);
+  const input = toDateInputValue(value);
+  return (
+    <div className="w-[104px]">
+      <input
+        type="date"
+        value={input}
+        disabled={saving}
+        onChange={(e) => onChange(e.target.value || null)}
+        aria-label="Due date"
+        className={`w-full bg-transparent border rounded px-1 py-0.5 text-[12px] cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400 ${
+          meta ? `border-gray-200 ${meta.textClass}` : 'border-dashed border-gray-300 text-gray-400'
+        } ${saving ? 'opacity-50' : ''}`}
+      />
+      {meta ? (
+        <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${meta.chipClass}`}>
+          {meta.chip}
+        </span>
+      ) : (
+        <span className="inline-block mt-0.5 text-[10px] text-gray-400">No due date</span>
+      )}
+    </div>
+  );
+}
+
+// ── Customer texting ─────────────────────────────────────────────────
+// "Text Customer" opens the conversation with this phone number: every
+// message we've sent plus every reply Twilio has posted to
+// /api/sms/inbound. Replies are keyed by phone, so a customer with two
+// quotes shows the same thread in both — which is how texting works.
+function QuoteSmsPanel({ quoteId, phone, customerName }: { quoteId: string | number; phone: string; customerName: string }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const queryClient = useQueryClient();
+
+  const threadQuery = useQuery({
+    queryKey: ['admin', 'sms-thread', phone],
+    queryFn: () => fetchSmsThread(phone),
+    enabled: open && Boolean(phone),
+    refetchInterval: open ? 20000 : false,
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: (body: string) => sendCustomerSms({ phone, body, quote_id: quoteId }),
+    onSuccess: () => {
+      setDraft('');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-thread', phone] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-inbox'] });
+    },
+  });
+
+  if (!phone) {
+    return (
+      <div className="w-full py-3 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg">
+        No phone number on this quote — nothing to text
+      </div>
+    );
+  }
+
+  const messages = threadQuery.data || [];
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full py-3 bg-sky-600 text-white font-semibold hover:bg-sky-700 flex items-center justify-center gap-2"
+      >
+        <MessageSquare className="w-4 h-4" />
+        {open ? 'Hide Texts' : 'Text Customer'}
+      </button>
+      {open && (
+        <div className="p-3 space-y-3 bg-gray-50">
+          <div className="text-[11px] text-gray-500">
+            Texting {customerName || 'customer'} at {phone}. Their replies land here.
+          </div>
+          <div className="max-h-64 overflow-y-auto space-y-2 bg-white rounded-lg border border-gray-200 p-2">
+            {threadQuery.isLoading ? (
+              <div className="py-6 text-center text-gray-400"><Loader2 className="w-5 h-5 animate-spin mx-auto" /></div>
+            ) : messages.length === 0 ? (
+              <div className="py-6 text-center text-xs text-gray-400">No texts yet</div>
+            ) : (
+              messages.map((m) => (
+                <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                      m.direction === 'out' ? 'bg-sky-600 text-white rounded-br-sm' : 'bg-gray-100 text-gray-900 rounded-bl-sm'
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                    {/* MMS media sits behind Twilio's auth, so it is a link
+                        rather than an inline preview. */}
+                    {m.media?.map((att, i) => (
+                      <a
+                        key={i}
+                        href={att.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block text-[10px] underline mt-1 opacity-80"
+                      >
+                        attachment {i + 1}
+                      </a>
+                    ))}
+                    <div className={`text-[10px] mt-0.5 ${m.direction === 'out' ? 'text-sky-100' : 'text-gray-400'}`}>
+                      {new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={3}
+            maxLength={1200}
+            placeholder={`Hi ${customerName ? customerName.split(' ')[0] : 'there'} — quick update on your order...`}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-gray-400">{draft.length}/1200</span>
+            <button
+              onClick={() => draft.trim() && sendMutation.mutate(draft.trim())}
+              disabled={!draft.trim() || sendMutation.isPending}
+              className="px-4 py-2 bg-sky-600 text-white text-sm font-semibold rounded-lg hover:bg-sky-700 disabled:opacity-50"
+            >
+              {sendMutation.isPending ? 'Sending…' : 'Send Text'}
+            </button>
+          </div>
+          {sendMutation.isError && (
+            <div className="text-xs text-red-600">{(sendMutation.error as Error).message}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Small square preview with a count when there is more than one file. */
 // Checkerboard backdrop for artwork previews — white or light designs on
 // transparency are invisible on a plain white/gray tile (Cheryl's white
@@ -10592,6 +10880,11 @@ function InvoicePipelineRow({ inv, onOpen, onArchived }: { inv: Invoice; onOpen:
         )}
       </td>
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
+      {/* An invoice's due date is owned by the invoice editor, so it reads
+          here and is edited there (row click opens it). */}
+      <td className="px-3 py-2 whitespace-nowrap">
+        <DueBadge value={inv.due_date} done={inv.status === 'paid' || inv.status === 'cancelled'} hint="Invoice due date — edit in the invoice" />
+      </td>
       <td className="px-3 py-2 text-gray-900">
         <div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div>
         {inv.customer_phone && (
@@ -10737,6 +11030,15 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
       </td>
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
         {new Date(when).toLocaleDateString()}
+      </td>
+      {/* A gang sheet has no customer-entered date — its deadline is the
+          turnaround tier it was bought under, counted from payment. */}
+      <td className="px-3 py-2 whitespace-nowrap">
+        <DueBadge
+          value={gangSheetDue(order)}
+          done={order.status === 'ready' || order.status === 'completed' || order.status === 'shipped'}
+          hint={`${order.tier === 'hot_rush' ? 'Hot rush' : order.tier === 'rush' ? 'Rush' : 'Standard'} turnaround from payment`}
+        />
       </td>
       <td className="px-3 py-2 text-gray-900">
         <div className="max-w-[160px] truncate" title={order.customer_name ?? ''}>{order.customer_name || '—'}</div>

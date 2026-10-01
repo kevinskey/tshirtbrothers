@@ -331,6 +331,44 @@ export async function updateQuoteCustomer(id: string, patch: {
   });
 }
 
+// Due date for a job (quotes.date_needed). Pass null to clear it. Sending
+// only this field never trips the status-change emails — the server fires
+// those off `status`, which this request omits.
+export async function updateQuoteDueDate(id: string, date_needed: string | null) {
+  return authRequest<Quote>(`/quotes/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ date_needed }),
+  });
+}
+
+// ── Customer SMS ─────────────────────────────────────────────────────
+export interface SmsMessage {
+  id: number;
+  direction: 'in' | 'out';
+  phone: string;
+  body: string;
+  quote_id: number | null;
+  customer_name: string | null;
+  num_media: number;
+  media: { url: string; content_type: string | null }[];
+  read_at: string | null;
+  created_at: string;
+}
+
+/** Whole conversation with one number, oldest first. Fetching it marks the
+ *  customer's replies as read. */
+export async function fetchSmsThread(phone: string) {
+  return authRequest<SmsMessage[]>(`/sms/thread?phone=${encodeURIComponent(phone)}`);
+}
+
+export async function sendCustomerSms(body: { phone: string; body: string; quote_id?: number | string | null }) {
+  return authRequest<SmsMessage>('/sms/send', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function fetchSmsInbox() {
+  return authRequest<(SmsMessage & { unread: number })[]>('/sms/inbox');
+}
+
 export async function fetchQuote(id: string) {
   return authRequest<Quote>(`/quotes/${id}`);
 }

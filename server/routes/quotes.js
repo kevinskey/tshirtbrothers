@@ -1189,7 +1189,7 @@ router.post('/:id/production-step', authenticate, adminOnly, async (req, res, ne
 router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, notes, customer_email, customer_name, customer_phone } = req.body;
+    const { status, notes, customer_email, customer_name, customer_phone, date_needed } = req.body;
 
     // Status is optional now — this endpoint accepts partial updates
     // covering status / notes / customer contact info. At least one
@@ -1242,6 +1242,17 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (customer_email !== undefined) push('customer_email', customer_email);
     if (customer_name  !== undefined) push('customer_name',  customer_name);
     if (customer_phone !== undefined) push('customer_phone', customer_phone);
+    // Due date. '' and null both clear it; anything else must be a plain
+    // YYYY-MM-DD so a DATE column never gets a timezone-shifted timestamp.
+    if (date_needed !== undefined) {
+      if (date_needed === null || date_needed === '') {
+        push('date_needed', null);
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(date_needed))) {
+        push('date_needed', String(date_needed));
+      } else {
+        return res.status(400).json({ error: 'date_needed must be YYYY-MM-DD or null' });
+      }
+    }
     if (patches.length === 0) {
       return res.status(400).json({ error: 'no fields to update' });
     }

@@ -48,6 +48,7 @@ import jdsStoreRouter from './routes/jdsStore.js';
 import cgcRouter from './routes/cgc.js';
 import { backfillCgcCategories, backfillCgcSports } from './services/cgcCatalog.js';
 import mailRouter from './routes/mail.js';
+import smsRouter, { publicRouter as smsInboundRouter } from './routes/sms.js';
 import orderDetailRouter from './routes/orderDetail.js';
 import { startMailSync } from './services/mailbox.js';
 import sitemapRouter from './routes/sitemap.js';
@@ -108,6 +109,8 @@ app.use('/api/jds', jdsRouter);
 app.use('/api/jds-store', jdsStoreRouter); // JDS gifts & awards retail store (Stripe)
 app.use('/api/cgc', cgcRouter); // Custom Gift Club sister-brand storefront
 app.use('/api/mail', mailRouter);
+app.use('/api/sms', smsInboundRouter); // Twilio webhook (signature-checked, no JWT)
+app.use('/api/sms', smsRouter);        // admin thread / inbox / send
 app.use('/api/admin/order-detail', orderDetailRouter);
 app.use('/api', sitemapRouter);
 app.use('/api/client-errors', clientErrorsRouter);
