@@ -33,6 +33,7 @@ export default function ShopPage() {
   const sort = params.get('sort') ?? 'name';
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
   const priceBand = params.get('price') ?? '';
+  const sport = params.get('sport') ?? '';
   const recipient = params.get('recipient') ?? '';
   const occasion = params.get('occasion') ?? '';
   const budget = params.get('budget') ?? '';
@@ -65,6 +66,7 @@ export default function ShopPage() {
     : {
       search,
       category,
+      sport,
       min_cents: bandMin || '',
       max_cents: bandMax || '',
     };
@@ -74,6 +76,8 @@ export default function ShopPage() {
     queryFn: () => fetchProducts({
       search: effective.search,
       category: effective.category,
+      // the gift finder's resolved set carries no sport of its own
+      sport: 'sport' in effective ? effective.sport : '',
       min_cents: effective.min_cents,
       max_cents: effective.max_cents,
       sort,
@@ -102,6 +106,15 @@ export default function ShopPage() {
     next.delete('page');
     setParams(next);
   };
+
+  // Only offer sports that exist under the current filters — most of the
+  // catalog has no sport, so an always-on list would be mostly dead ends.
+  const sportOptions = useMemo(
+    () => Object.entries(data?.sports ?? {})
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    [data?.sports],
+  );
 
   const finderLabels = useMemo(() => {
     if (!config) return [];
@@ -155,6 +168,18 @@ export default function ShopPage() {
             </option>
           ))}
         </select>
+        {sportOptions.length > 0 && (
+          <>
+            <label className="sr-only" htmlFor="filter-sport">Sport</label>
+            <select id="filter-sport" className={selectClass} value={finderActive ? '' : sport}
+              onChange={(e) => setFilterParam('sport', e.target.value)}>
+              <option value="">All sports</option>
+              {sportOptions.map(([name, n]) => (
+                <option key={name} value={name}>{name} ({n})</option>
+              ))}
+            </select>
+          </>
+        )}
         <label className="sr-only" htmlFor="filter-price">Price</label>
         <select id="filter-price" className={selectClass} value={finderActive ? '' : priceBand}
           onChange={(e) => setFilterParam('price', e.target.value)}>

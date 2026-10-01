@@ -46,7 +46,7 @@ import purchasingRouter from './routes/purchasing.js';
 import jdsRouter from './routes/jds.js';
 import jdsStoreRouter from './routes/jdsStore.js';
 import cgcRouter from './routes/cgc.js';
-import { backfillCgcCategories } from './services/cgcCatalog.js';
+import { backfillCgcCategories, backfillCgcSports } from './services/cgcCatalog.js';
 import mailRouter from './routes/mail.js';
 import orderDetailRouter from './routes/orderDetail.js';
 import { startMailSync } from './services/mailbox.js';
@@ -143,6 +143,8 @@ app.listen(PORT, () => {
   runBootMigrations()
     .then(() => backfillCgcCategories()
       .catch((err) => console.error('[cgc] category backfill failed:', err)))
+    .then(() => backfillCgcSports()
+      .catch((err) => console.error('[cgc] sport backfill failed:', err)))
     .then(() => startMailSync())
     .catch((err) => {
       console.error('[migrations] fatal:', err);
