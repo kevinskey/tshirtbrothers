@@ -19,6 +19,7 @@ import Stripe from 'stripe';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { CGC_CATEGORIES } from '../lib/cgcCategories.js';
+import { CGC_SPORTS } from '../lib/cgcSports.js';
 import { CGC_RECIPIENTS, CGC_OCCASIONS, CGC_BUDGETS, findOption } from '../lib/cgcMerchandising.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 
@@ -30,12 +31,13 @@ const PERSONALIZATION_FEE_CENTS =
   parseInt(process.env.CGC_PERSONALIZATION_FEE_CENTS || '', 10) || 1000;
 
 const PRODUCT_COLS =
-  `id, sku, name, description, image_url, retail_price_cents, cgc_category, weight_oz`;
+  `id, sku, name, description, image_url, retail_price_cents, cgc_category, cgc_sport, weight_oz`;
 
 // ── Config ───────────────────────────────────────────────────────────────
 router.get('/config', (_req, res) => {
   res.json({
     categories: CGC_CATEGORIES,
+    sports: CGC_SPORTS,
     recipients: CGC_RECIPIENTS.map(({ key, label }) => ({ key, label })),
     occasions: CGC_OCCASIONS.map(({ key, label }) => ({ key, label })),
     budgets: CGC_BUDGETS.map(({ key, label }) => ({ key, label })),
@@ -49,7 +51,10 @@ router.get('/config', (_req, res) => {
 // collection. ?min_cents/?max_cents price bounds. ?sort=name|price_asc|
 // price_desc|newest. ?page/?limit (default 24, max 96). Returns facet
 // counts for the category rail alongside the page.
-function buildCatalogQuery(query) {
+// includeSport=false builds the same filter minus the sport clause, so the sport
+// facet can count every sport still reachable under the other filters instead of
+// collapsing to just the one already selected.
+function buildCatalogQuery(query, { includeSport = true } = {}) {
   const conditions = ['active'];
   const params = [];
   const push = (sql, val) => { params.push(val); conditions.push(sql.replace('?', `$${params.length}`)); };
@@ -68,6 +73,9 @@ function buildCatalogQuery(query) {
 
   const category = String(query.category ?? '').trim();
   if (category && CGC_CATEGORIES.includes(category)) push('cgc_category = ?', category);
+
+  const sport = String(query.sport ?? '').trim();
+  if (includeSport && sport && CGC_SPORTS.includes(sport)) push('? = ANY(cgc_sport)', sport);
 
   const min = parseInt(String(query.min_cents ?? ''), 10);
   if (Number.isInteger(min) && min > 0) push('retail_price_cents >= ?', min);
@@ -92,8 +100,15 @@ router.get('/products', async (req, res, next) => {
     const orderBy = SORTS[String(req.query.sort ?? 'name')] || SORTS.name;
 
     const facetSql = `SELECT cgc_category, COUNT(*)::int AS n FROM jds_products WHERE ${where} GROUP BY cgc_category`;
-    const [facets, count] = await Promise.all([
+    // Sport counts ignore any selected sport (see buildCatalogQuery) and the
+    // lateral unnest drops rows with no sport, which is exactly the set we want.
+    const sportBase = buildCatalogQuery(req.query, { includeSport: false });
+    const sportFacetSql = `SELECT s AS sport, COUNT(*)::int AS n
+      FROM jds_products, unnest(cgc_sport) AS s
+      WHERE ${sportBase.where} GROUP BY s ORDER BY s`;
+    const [facets, sportFacets, count] = await Promise.all([
       pool.query(facetSql, params),
+      pool.query(sportFacetSql, sportBase.params),
       pool.query(`SELECT COUNT(*) FROM jds_products WHERE ${where}`, params),
     ]);
 
@@ -112,6 +127,7 @@ router.get('/products', async (req, res, next) => {
       page,
       totalPages: Math.max(1, Math.ceil(total / limit)),
       categories: Object.fromEntries(facets.rows.map((r) => [r.cgc_category ?? 'Uncategorized', r.n])),
+      sports: Object.fromEntries(sportFacets.rows.map((r) => [r.sport, r.n])),
     });
   } catch (err) { next(err); }
 });

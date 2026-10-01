@@ -8,6 +8,7 @@ export interface CgcProduct {
   image_url: string | null;
   retail_price_cents: number;
   cgc_category: string | null;
+  cgc_sport: string[] | null;
   weight_oz: string | null;
 }
 
@@ -17,10 +18,12 @@ export interface CgcListResponse {
   page: number;
   totalPages: number;
   categories: Record<string, number>;
+  sports: Record<string, number>;
 }
 
 export interface CgcConfig {
   categories: string[];
+  sports: string[];
   recipients: { key: string; label: string }[];
   occasions: { key: string; label: string }[];
   budgets: { key: string; label: string }[];

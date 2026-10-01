@@ -6,6 +6,7 @@
 
 import pool from '../db.js';
 import { categorizeCgcProduct } from '../lib/cgcCategories.js';
+import { sportsForCgcProduct } from '../lib/cgcSports.js';
 
 export async function backfillCgcCategories() {
   const { rows } = await pool.query(
@@ -27,5 +28,34 @@ export async function backfillCgcCategories() {
     );
   }
   console.log(`[cgc] categorized ${rows.length} products into ${byCategory.size} collections`);
+  return rows.length;
+}
+
+// Sport is optional, so "no sport" is a legitimate answer and NULL can't mean
+// "unscanned" the way it does for category — cgc_sport_scanned carries that.
+export async function backfillCgcSports() {
+  const { rows } = await pool.query(
+    `SELECT id, name FROM jds_products WHERE NOT cgc_sport_scanned`,
+  );
+  if (!rows.length) return 0;
+
+  // Group ids by the exact sport set so the whole catalog updates in a handful
+  // of statements rather than one per row.
+  const bySports = new Map();
+  for (const row of rows) {
+    const sports = sportsForCgcProduct(row.name);
+    const key = sports.join('|');
+    if (!bySports.has(key)) bySports.set(key, { sports, ids: [] });
+    bySports.get(key).ids.push(row.id);
+  }
+  let tagged = 0;
+  for (const { sports, ids } of bySports.values()) {
+    await pool.query(
+      `UPDATE jds_products SET cgc_sport = $1, cgc_sport_scanned = TRUE WHERE id = ANY($2)`,
+      [sports.length ? sports : null, ids],
+    );
+    if (sports.length) tagged += ids.length;
+  }
+  console.log(`[cgc] scanned ${rows.length} products for sport, tagged ${tagged}`);
   return rows.length;
 }
