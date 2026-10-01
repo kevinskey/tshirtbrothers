@@ -49,6 +49,8 @@ import {
   updateQuoteStatus,
   updateQuoteDueDate,
   fetchSmsThread,
+  fetchSmsInbox,
+  fetchSmsUnreadCount,
   sendCustomerSms,
   setQuoteProductionStep,
   fetchAdminProducts,
@@ -154,7 +156,7 @@ import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected' | 'archived';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -219,6 +221,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'quotes',    label: 'Quotes',       icon: ClipboardList },
     { key: 'invoices',  label: 'Invoices',     icon: Receipt },
     { key: 'mail',      label: 'Mail',         icon: Mail },
+    { key: 'texts',     label: 'Texts',        icon: MessageSquare },
     { key: 'customers', label: 'Customers',    icon: Users },
     { key: 'group-stores', label: 'Web Stores', icon: Store, to: '/admin/group-stores' },
   ]},
@@ -847,7 +850,7 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'settings'];
+    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
     if (section && validSections.includes(section as Section)) {
       // 'dashboard' is a real section again (stats overview); 'quotes' is
       // the pipeline list — deep links go exactly where they say.
@@ -1316,6 +1319,15 @@ export default function AdminPage() {
     queryFn: fetchAdminCounts,
     refetchInterval: 30000, // refresh every 30s
   });
+
+  // Unread customer texts — drives the Texts nav badge. Polls on the same
+  // cadence as the pipeline counts so a reply surfaces without a reload.
+  const smsUnreadQuery = useQuery({
+    queryKey: ['admin', 'sms-unread'],
+    queryFn: fetchSmsUnreadCount,
+    refetchInterval: 30000,
+  });
+  const unreadTexts = Number(smsUnreadQuery.data?.unread || 0);
 
   const quotesQuery = useQuery({
     queryKey: ['admin', 'quotes', quoteFilter, quoteSearch, quoteSort],
@@ -3004,7 +3016,8 @@ export default function AdminPage() {
                 // orders, since Orders is now a status filter inside Pipeline.
                 const pendingCount = key === 'quotes' ? Number(countsQuery.data?.pending_quotes || 0) : 0;
                 const activeOrdersCount = key === 'quotes' ? Number(countsQuery.data?.active_orders || 0) : 0;
-                const badgeCount = pendingCount + activeOrdersCount;
+                // Texts carries its own badge: unread customer replies.
+                const badgeCount = pendingCount + activeOrdersCount + (key === 'texts' ? unreadTexts : 0);
                 return (
                   <button
                     key={key}
@@ -3057,9 +3070,13 @@ export default function AdminPage() {
         <img src="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" alt="TSB" className="h-7 w-7 object-contain" />
         <span className="font-display mr-3 text-lg font-bold tracking-tight">Admin</span>
         {NAV_GROUPS.map((group, gi) => {
-          const badgeCount = group.items.some((i) => i.key === 'quotes')
-            ? Number(countsQuery.data?.pending_quotes || 0) + Number(countsQuery.data?.active_orders || 0)
-            : 0;
+          // Per-item badges, summed onto the group button so an unread text
+          // is visible with the Workflow menu closed.
+          const itemBadgeFor = (key: string) =>
+            key === 'quotes'
+              ? Number(countsQuery.data?.pending_quotes || 0) + Number(countsQuery.data?.active_orders || 0)
+              : key === 'texts' ? unreadTexts : 0;
+          const badgeCount = group.items.reduce((sum, i) => sum + itemBadgeFor(i.key), 0);
           // The trailing label-less group is just Settings — render its
           // items as direct buttons instead of a one-item dropdown.
           if (!group.label) {
@@ -3108,7 +3125,7 @@ export default function AdminPage() {
                         </Link>
                       );
                     }
-                    const itemBadge = key === 'quotes' ? badgeCount : 0;
+                    const itemBadge = itemBadgeFor(key);
                     return (
                       <button
                         key={key}
@@ -7875,6 +7892,15 @@ export default function AdminPage() {
 
         {activeSection === 'prospects' && <ProspectsAdmin />}
         {activeSection === 'mail' && <MailAdmin />}
+        {activeSection === 'texts' && (
+          <TextsAdmin
+            onOpenQuote={(quoteId) => {
+              setActiveSection('quotes');
+              setQuoteFilter('all');
+              setHighlightedQuoteId(String(quoteId));
+            }}
+          />
+        )}
         {activeSection === 'purchasing' && (
           <PurchasingAdmin
             prefillQuoteId={purchasingQuoteId}
@@ -10645,6 +10671,198 @@ function DueDateCell({
   );
 }
 
+// ── Texts inbox ──────────────────────────────────────────────────────
+// Every conversation in one place: threads down the left (newest activity
+// first, unread replies badged), the selected conversation on the right.
+// Threads are keyed by phone number, so a customer with three jobs is one
+// conversation — the quote link just points at the job their last message
+// was attributed to.
+function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void }) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const queryClient = useQueryClient();
+
+  const inboxQuery = useQuery({
+    queryKey: ['admin', 'sms-inbox'],
+    queryFn: fetchSmsInbox,
+    refetchInterval: 30000,
+  });
+  const threads = inboxQuery.data || [];
+  const activePhone = selected || threads[0]?.phone || null;
+
+  const threadQuery = useQuery({
+    queryKey: ['admin', 'sms-thread', activePhone],
+    queryFn: () => fetchSmsThread(activePhone as string),
+    enabled: Boolean(activePhone),
+    refetchInterval: 20000,
+  });
+  const messages = threadQuery.data || [];
+  const header = threads.find((t) => t.phone === activePhone);
+
+  const sendMutation = useMutation({
+    mutationFn: (body: string) => sendCustomerSms({ phone: activePhone as string, body, quote_id: header?.quote_id ?? null }),
+    onSuccess: () => {
+      setDraft('');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-thread', activePhone] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-inbox'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-unread'] });
+    },
+  });
+
+  // Reading a thread clears its unread badge server-side, so refresh the
+  // counts once the messages land.
+  useEffect(() => {
+    if (threadQuery.data) {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-unread'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-inbox'] });
+    }
+    // Only when a different thread's messages arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadQuery.dataUpdatedAt]);
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold text-gray-900">Texts</h2>
+          <p className="hidden text-xs text-gray-500 sm:block">
+            Conversations with customers. Replies arrive here from the shop phone number.
+          </p>
+        </div>
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (newPhone.trim()) { setSelected(newPhone.trim()); setNewPhone(''); } }}
+          className="flex items-center gap-2"
+        >
+          <input
+            value={newPhone}
+            onChange={(e) => setNewPhone(e.target.value)}
+            placeholder="Start a text: 404-555-1234"
+            className="w-56 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+          />
+          <button type="submit" className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800">
+            Open
+          </button>
+        </form>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        {/* Thread list */}
+        <div className="max-h-[70vh] overflow-y-auto rounded-xl border border-gray-200 bg-white">
+          {inboxQuery.isLoading ? (
+            <div className="py-12 text-center text-gray-400"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></div>
+          ) : threads.length === 0 ? (
+            <div className="px-4 py-12 text-center text-sm text-gray-400">
+              No conversations yet. Text a customer from a quote, or start one above.
+            </div>
+          ) : (
+            threads.map((t) => (
+              <button
+                key={t.phone}
+                onClick={() => setSelected(t.phone)}
+                className={`flex w-full items-start gap-2 border-b border-gray-100 px-4 py-3 text-left hover:bg-gray-50 ${
+                  t.phone === activePhone ? 'bg-sky-50' : ''
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-semibold text-gray-900">{t.customer_name || t.phone}</span>
+                    {t.unread > 0 && (
+                      <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">{t.unread}</span>
+                    )}
+                  </div>
+                  <div className="truncate text-xs text-gray-500">
+                    {t.direction === 'out' ? 'You: ' : ''}{t.body}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[10px] text-gray-400">
+                  {new Date(t.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+
+        {/* Conversation */}
+        <div className="flex max-h-[70vh] flex-col rounded-xl border border-gray-200 bg-white">
+          {!activePhone ? (
+            <div className="grid flex-1 place-items-center px-4 py-16 text-sm text-gray-400">
+              Pick a conversation
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2 border-b border-gray-200 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold text-gray-900">{header?.customer_name || activePhone}</div>
+                  <div className="text-xs text-gray-500">{activePhone}</div>
+                </div>
+                {header?.quote_id && (
+                  <button
+                    onClick={() => onOpenQuote(header.quote_id as number)}
+                    className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-200"
+                  >
+                    Quote #{header.quote_id}
+                  </button>
+                )}
+              </div>
+              <div className="flex-1 space-y-2 overflow-y-auto p-4">
+                {threadQuery.isLoading ? (
+                  <div className="py-12 text-center text-gray-400"><Loader2 className="mx-auto h-6 w-6 animate-spin" /></div>
+                ) : messages.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-gray-400">No texts yet — send the first one.</div>
+                ) : (
+                  messages.map((m) => (
+                    <div key={m.id} className={`flex ${m.direction === 'out' ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                          m.direction === 'out' ? 'rounded-br-sm bg-sky-600 text-white' : 'rounded-bl-sm bg-gray-100 text-gray-900'
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                        {m.media?.map((att, i) => (
+                          <a key={i} href={att.url} target="_blank" rel="noreferrer" className="mt-1 block text-[10px] underline opacity-80">
+                            attachment {i + 1}
+                          </a>
+                        ))}
+                        <div className={`mt-0.5 text-[10px] ${m.direction === 'out' ? 'text-sky-100' : 'text-gray-400'}`}>
+                          {new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="border-t border-gray-200 p-3">
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  rows={2}
+                  maxLength={1200}
+                  placeholder="Type a text…"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-[11px] text-gray-400">{draft.length}/1200</span>
+                  <button
+                    onClick={() => draft.trim() && sendMutation.mutate(draft.trim())}
+                    disabled={!draft.trim() || sendMutation.isPending}
+                    className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
+                  >
+                    {sendMutation.isPending ? 'Sending…' : 'Send Text'}
+                  </button>
+                </div>
+                {sendMutation.isError && (
+                  <div className="mt-1 text-xs text-red-600">{(sendMutation.error as Error).message}</div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Customer texting ─────────────────────────────────────────────────
 // "Text Customer" opens the conversation with this phone number: every
 // message we've sent plus every reply Twilio has posted to
@@ -10668,6 +10886,7 @@ function QuoteSmsPanel({ quoteId, phone, customerName }: { quoteId: string | num
       setDraft('');
       queryClient.invalidateQueries({ queryKey: ['admin', 'sms-thread', phone] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'sms-inbox'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'sms-unread'] });
     },
   });
 
