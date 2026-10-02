@@ -49,9 +49,6 @@ import {
   fetchGangSheetOrders,
   updateQuoteStatus,
   updateQuoteDueDate,
-  fetchAdminStoreOrders,
-  updateStoreOrderStatus,
-  type AdminStoreOrder,
   fetchSmsThread,
   fetchSmsInbox,
   fetchSmsUnreadCount,
@@ -139,10 +136,7 @@ import {
 type DashboardRow =
   | { kind: 'quote'; at: number; quote: Quote }
   | { kind: 'gangsheet'; at: number; order: GangSheetOrder }
-  | { kind: 'invoice'; at: number; invoice: Invoice }
-  // A storefront sale. Paid, designed, and nobody's job until it appears
-  // here — store_orders used to live outside every working view.
-  | { kind: 'storeorder'; at: number; order: AdminStoreOrder };
+  | { kind: 'invoice'; at: number; invoice: Invoice };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
@@ -1367,26 +1361,6 @@ export default function AdminPage() {
   // a separate admin page, which is exactly why a paid one could not be found
   // here: the dashboard promises "quotes, accepted orders, and completed jobs
   // in one list" and was showing only quotes.
-  // Storefront orders join the same pipeline list. Open only: a fulfilled
-  // store order is history, like a completed quote.
-  const storeOrdersQuery = useQuery({
-    queryKey: ['admin', 'store-orders'],
-    queryFn: () => fetchAdminStoreOrders('open'),
-    enabled: activeSection === 'dashboard' || activeSection === 'quotes',
-    staleTime: 10000,
-  });
-
-  const storeOrderStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: AdminStoreOrder['status'] }) =>
-      updateStoreOrderStatus(id, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'store-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard-ops'] });
-      toast('Store order updated');
-    },
-    onError: () => toast('Could not update the store order'),
-  });
-
   const gangSheetOrdersQuery = useQuery({
     queryKey: ['admin', 'gang-sheet-orders'],
     queryFn: fetchGangSheetOrders,
@@ -2915,26 +2889,6 @@ export default function AdminPage() {
       });
   }, [pipelineInvoicesQuery.data, quoteFilter, quoteSearch, quotes]);
 
-  // Storefront sales, filtered the same way as gang sheets: they are bought
-  // outright, so they answer to the 'accepted' and 'completed' tabs only.
-  const storeOrderRows = useMemo(() => {
-    const all = storeOrdersQuery.data?.orders ?? [];
-    const term = quoteSearch.trim().toLowerCase();
-    return all
-      .filter((o) => {
-        if (quoteFilter === 'all') return true;
-        if (quoteFilter === 'accepted') return ['paid', 'in_production', 'ready'].includes(o.status);
-        if (quoteFilter === 'completed') return o.status === 'fulfilled';
-        return false;
-      })
-      .filter((o) => {
-        if (!term) return true;
-        return (o.buyer_email ?? '').toLowerCase().includes(term)
-          || (o.store_name ?? '').toLowerCase().includes(term)
-          || (o.lines ?? []).some((l) => (l.title ?? '').toLowerCase().includes(term));
-      });
-  }, [storeOrdersQuery.data, quoteFilter, quoteSearch]);
-
   // One list, newest first. Gang sheets sort by when the money arrived and
   // fall back to created_at for the rare row with no paid_at.
   const dashboardRows = useMemo(() => {
@@ -2954,14 +2908,9 @@ export default function AdminPage() {
         at: new Date(inv.created_at).getTime(),
         invoice: inv,
       })),
-      ...storeOrderRows.map((o) => ({
-        kind: 'storeorder' as const,
-        at: new Date(o.created_at).getTime(),
-        order: o,
-      })),
     ];
     return rows.sort((a, b) => b.at - a.at);
-  }, [quotes, gangSheetRows, invoicePipelineRows, storeOrderRows]);
+  }, [quotes, gangSheetRows, invoicePipelineRows]);
 
   // When deep-linked to a specific quote (?id=X), scroll the row into view
   // and clear the highlight after a few seconds so it doesn't stick forever.
@@ -3392,15 +3341,6 @@ export default function AdminPage() {
               ) : dashboardRows.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">No quotes found</div>
               ) : dashboardRows.map((row) => {
-                if (row.kind === 'storeorder') {
-                  return (
-                    <StoreOrderCard
-                      key={`so-${row.order.id}`}
-                      order={row.order}
-                      onAdvance={(status) => storeOrderStatusMutation.mutate({ id: row.order.id, status })}
-                    />
-                  );
-                }
                 if (row.kind === 'gangsheet') {
                   return <GangSheetCard key={`gs-${row.order.id}`} order={row.order} />;
                 }
@@ -3590,14 +3530,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {dashboardRows.map((row) => row.kind === 'storeorder' ? (
-                      <StoreOrderRow
-                        key={`so-${row.order.id}`}
-                        order={row.order}
-                        saving={storeOrderStatusMutation.isPending && storeOrderStatusMutation.variables?.id === row.order.id}
-                        onAdvance={(status) => storeOrderStatusMutation.mutate({ id: row.order.id, status })}
-                      />
-                    ) : row.kind === 'gangsheet' ? (
+                    {dashboardRows.map((row) => row.kind === 'gangsheet' ? (
                       <GangSheetRow key={`gs-${row.order.id}`} order={row.order} />
                     ) : row.kind === 'invoice' ? (
                       <InvoicePipelineRow
@@ -10594,183 +10527,6 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
             ))}
           </div>
         </>
-      )}
-    </div>
-  );
-}
-
-// ── Storefront orders in the pipeline ───────────────────────────────
-// A store sale arrives paid and already designed, so it skips the quote
-// ladder entirely: paid → in_production → ready → fulfilled. The row
-// carries the next step as a button, because the shop's question looking
-// at this list is always "what do I do with it now".
-const STORE_ORDER_NEXT: Record<string, { next: AdminStoreOrder['status']; label: string } | undefined> = {
-  paid: { next: 'in_production', label: 'Start printing' },
-  in_production: { next: 'ready', label: 'Mark ready' },
-  ready: { next: 'fulfilled', label: 'Mark fulfilled' },
-};
-
-function storeOrderSummary(order: AdminStoreOrder): { title: string; detail: string; qty: number } {
-  const lines = order.lines ?? [];
-  const qty = lines.reduce((n, l) => n + (Number(l.qty) || 0), 0);
-  const title = lines.length === 0
-    ? 'Store order'
-    : lines.length === 1
-    ? (lines[0]?.title ?? 'Store order')
-    : `${lines[0]?.title ?? 'Store order'} +${lines.length - 1} more`;
-  const detail = lines
-    .map((l) => [l.variant?.size, l.variant?.color].filter(Boolean).join(' '))
-    .filter(Boolean)
-    .join(' · ');
-  return { title, detail, qty };
-}
-
-function StoreOrderRow({ order, saving, onAdvance }: {
-  order: AdminStoreOrder;
-  saving?: boolean;
-  onAdvance: (status: AdminStoreOrder['status']) => void;
-}) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const { title, detail, qty } = storeOrderSummary(order);
-  const step = STORE_ORDER_NEXT[order.status];
-  const cover = (order.lines ?? [])[0]?.cover_image ?? null;
-  return (
-    <tr
-      className="hover:bg-gray-50 cursor-pointer"
-      onClick={() => { window.location.href = `/admin/store-order/${order.id}`; }}
-    >
-      <td className="px-3 py-2">
-        {cover ? (
-          <img src={cover} alt="" className="w-10 h-10 rounded object-cover border border-gray-200 bg-white" />
-        ) : (
-          <div className="w-10 h-10 rounded bg-emerald-50 border border-emerald-200 shrink-0 grid place-items-center text-[9px] text-emerald-600 font-semibold">
-            STORE
-          </div>
-        )}
-      </td>
-      <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{new Date(order.created_at).toLocaleDateString()}</td>
-      {/* Storefront orders carry the shop's standard turnaround, counted
-          from the day the buyer paid. */}
-      <td className="px-3 py-2 whitespace-nowrap">
-        <DueBadge
-          value={new Date(new Date(order.created_at).getTime() + 10 * 86400000).toISOString().slice(0, 10)}
-          done={order.status === 'ready' || order.status === 'fulfilled'}
-          hint="Standard turnaround from the day it was paid"
-        />
-      </td>
-      <td className="px-3 py-2 text-gray-900">
-        <div className="max-w-[160px] truncate" title={order.store_name}>{order.store_name}</div>
-        <div className="text-[11px] text-gray-500">store order #{order.id}</div>
-      </td>
-      <td className="px-3 py-2 text-gray-600">
-        <div className="max-w-[200px] truncate" title={order.buyer_email}>{order.buyer_email}</div>
-      </td>
-      <td className="px-3 py-2 text-gray-600">
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Store</span>
-          <span className="font-medium text-gray-900 truncate max-w-[150px]" title={title}>{title}</span>
-        </div>
-        <div className="text-[11px] text-gray-500 truncate max-w-[180px]">
-          {[detail, order.fulfillment_type === 'pickup' ? 'pickup' : 'ship'].filter(Boolean).join(' · ')}
-        </div>
-      </td>
-      <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{qty || '—'}</td>
-      <td className="px-3 py-2 text-right whitespace-nowrap">
-        <div className="text-gray-900">${(order.gross_total_cents / 100).toFixed(2)}</div>
-        <div className="text-[11px] text-green-700">Paid in full</div>
-      </td>
-      <td className="px-3 py-2 whitespace-nowrap">
-        <StatusBadge status={order.status} />
-        {order.store_earnings_cents > 0 && (
-          <div className="text-[10px] text-gray-500">
-            ${(order.store_earnings_cents / 100).toFixed(2)} to {order.store_name}
-          </div>
-        )}
-      </td>
-      <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-        {step ? (
-          <button
-            onClick={() => onAdvance(step.next)}
-            disabled={saving}
-            className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg hover:bg-emerald-100 disabled:opacity-50"
-          >
-            {saving ? '…' : step.label}
-          </button>
-        ) : (
-          <span className="text-xs text-gray-400">—</span>
-        )}
-        <button onClick={() => setMenuOpen((v) => !v)} className="ml-2 text-gray-400 hover:text-gray-700">
-          <ChevronDown className="w-3.5 h-3.5 inline" />
-        </button>
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-            <div className="absolute right-2 top-9 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-              <Link
-                to={`/stores/${order.store_slug}`}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
-              >
-                <Store className="w-3.5 h-3.5" /> View storefront
-              </Link>
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(order.buyer_email)}&composeSubject=${encodeURIComponent(`Your ${order.store_name} order`)}`;
-                }}
-                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
-              >
-                <Mail className="w-3.5 h-3.5" /> Email buyer
-              </button>
-              {order.status !== 'paid' && (
-                <button
-                  onClick={() => { setMenuOpen(false); onAdvance('paid'); }}
-                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-500"
-                >
-                  Back to paid
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </td>
-    </tr>
-  );
-}
-
-function StoreOrderCard({ order, onAdvance }: {
-  order: AdminStoreOrder;
-  onAdvance: (status: AdminStoreOrder['status']) => void;
-}) {
-  const { title, detail, qty } = storeOrderSummary(order);
-  const step = STORE_ORDER_NEXT[order.status];
-  return (
-    <div
-      className="bg-white rounded-xl border border-gray-200 p-4 space-y-3 cursor-pointer active:bg-gray-50"
-      onClick={() => { window.location.href = `/admin/store-order/${order.id}`; }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-gray-900 truncate">{order.store_name}</div>
-          <div className="text-xs text-gray-500 truncate">{order.buyer_email}</div>
-        </div>
-        <StatusBadge status={order.status} />
-      </div>
-      <div className="text-sm text-gray-700">
-        <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-semibold uppercase mr-1.5">Store</span>
-        <span className="font-medium">{qty}×</span> {title}
-        {detail && <span className="text-gray-500"> · {detail}</span>}
-      </div>
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <span>{new Date(order.created_at).toLocaleDateString()}</span>
-        <span className="font-semibold text-gray-900">${(order.gross_total_cents / 100).toFixed(2)}</span>
-      </div>
-      {step && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onAdvance(step.next); }}
-          className="w-full py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold"
-        >
-          {step.label}
-        </button>
       )}
     </div>
   );
