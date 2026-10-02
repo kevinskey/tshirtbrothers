@@ -947,6 +947,76 @@ export function buildStoreLaunchEmail({ store, products = [], feeConfig = {}, to
   return { subject, html };
 }
 
+// Remittance advice — sent when TSB marks a store payout paid. The money
+// itself moves out of band (bill-pay ACH or a check from the business
+// account), so without this the organization only learns they were paid
+// by logging in and noticing a status change. It doubles as the receipt
+// their bookkeeper needs: amount, date, method, reference, period.
+export function buildPayoutRemittanceEmail({ store, payout, toEmail, toName }) {
+  const adminUrl = `${DOMAIN}/stores/${store.slug}/admin`;
+  const method = String(payout.method || 'ach').toLowerCase();
+  const methodLabel = method === 'ach' ? 'ACH transfer'
+    : method === 'check' ? 'Check'
+    : method.toUpperCase();
+  const paidAt = payout.paid_at ? new Date(payout.paid_at) : new Date();
+  // Period bounds are stored as timestamptz; theme.fmtDate renders in the
+  // server's local zone, which shows a UTC midnight boundary as the day
+  // before. On a financial document that reads as a wrong period, so these
+  // two dates are formatted in UTC.
+  const utcDate = (d) => (d
+    ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+    : '');
+
+  const html = theme.emailShell({
+    title: `Payout sent — ${store.name}`,
+    headerTr: theme.docHeader({
+      metaLines: [
+        `Payout <strong style="color:${theme.INK};">#${payout.id}</strong>`,
+        theme.fmtDate(paidAt),
+      ],
+      pill: theme.statusPill('Payment Sent', 'green'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your Payout',
+        titleAccent: 'is on the way',
+        greeting: `Hi ${toName || 'there'},`,
+        copy: `We&rsquo;ve sent ${theme.escapeHtml(store.name)} its share of store sales. Details are below &mdash; keep this for your records.`,
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle('Payment Details')}
+        ${theme.summaryTable([
+          { label: 'Sales period', value: `${utcDate(payout.period_start)} &ndash; ${utcDate(payout.period_end)}` },
+          { label: 'Sent via', value: methodLabel },
+          { label: method === 'check' ? 'Check number' : 'Reference', value: theme.escapeHtml(payout.reference || '—') },
+          { label: 'Date sent', value: theme.fmtDate(paidAt) },
+        ], { label: 'Amount', value: theme.money(payout.amount_cents / 100) })}
+        <p style="margin:16px 0 0;font-size:13px;color:${theme.GRAY};line-height:1.6;">
+          ACH transfers usually land in 1&ndash;3 business days. Every order behind this
+          payout is listed in your dashboard.
+        </p>
+        ${theme.buttonRow([
+          { label: 'View Orders', href: adminUrl, style: 'navy' },
+        ])}
+        <p style="margin:16px 0 24px;font-size:14px;color:${theme.GRAY};line-height:1.6;">
+          Questions about this payment? Just reply to this email or call ${theme.SHOP_PHONE}.
+        </p>
+      `),
+    ],
+  });
+
+  return {
+    subject: `${theme.money(payout.amount_cents / 100)} payout sent — ${store.name}`,
+    html,
+  };
+}
+
+export async function sendPayoutRemittanceEmail(opts) {
+  const { subject, html } = buildPayoutRemittanceEmail(opts);
+  await resend.emails.send({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
+  console.log(`[Email] Payout remittance sent to ${opts.toEmail} for payout ${opts.payout.id}`);
+}
+
 export async function sendStoreLaunchEmail(opts) {
   const { subject, html } = buildStoreLaunchEmail(opts);
   await resend.emails.send({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });

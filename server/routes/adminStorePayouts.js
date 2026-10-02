@@ -15,6 +15,7 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { dispatchStoreEvent } from '../services/storeWebhookDispatcher.js';
 import { createStorePayout } from '../services/storePayoutJob.js';
+import { sendPayoutRemittanceEmail } from '../services/email.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -148,6 +149,38 @@ router.post('/:id/mark-paid', async (req, res, next) => {
       period_start: payout.period_start,
       period_end: payout.period_end,
     }).catch((err) => console.error('[adminStorePayouts.mark-paid] webhook error:', err));
+
+    // Remittance advice to the store's owners. The money moves out of band
+    // (bill-pay / check), so this is the only thing that tells them it was
+    // sent — and it is the receipt their bookkeeper files. Fire-and-forget:
+    // the payout is already recorded, a mail failure must not undo it.
+    (async () => {
+      try {
+        const { rows: storeRows } = await pool.query(
+          `SELECT id, slug, name FROM stores WHERE id = $1`, [payout.store_id],
+        );
+        const store = storeRows[0];
+        if (!store) return;
+        const { rows: owners } = await pool.query(
+          `SELECT email, name FROM store_admins
+            WHERE store_id = $1 AND role = 'owner' AND email IS NOT NULL`,
+          [payout.store_id],
+        );
+        if (owners.length === 0) {
+          console.warn(`[adminStorePayouts.mark-paid] store ${store.slug} has no owner admin to notify`);
+          return;
+        }
+        for (const owner of owners) {
+          await sendPayoutRemittanceEmail({
+            store, payout, toEmail: owner.email, toName: owner.name,
+          }).catch((err) => console.error(
+            `[adminStorePayouts.mark-paid] remittance to ${owner.email} failed:`, err.message,
+          ));
+        }
+      } catch (err) {
+        console.error('[adminStorePayouts.mark-paid] remittance lookup failed:', err.message);
+      }
+    })();
 
     res.json(payout);
   } catch (err) { next(err); }
