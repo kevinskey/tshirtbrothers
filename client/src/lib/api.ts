@@ -1402,6 +1402,51 @@ export async function fetchGroupStore(id: number) {
   return authRequest<GroupStoreDetail>(`/admin/group-stores/${id}`);
 }
 
+// ── Store payouts (what TSB owes a fundraiser/group store) ───────────
+export interface StorePayout {
+  id: number;
+  period_start: string;
+  period_end: string;
+  amount_cents: number;
+  method: string;
+  status: 'pending' | 'sent' | 'paid' | 'failed';
+  reference: string | null;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface StorePayoutSummary {
+  balance_cents: number;
+  payout_terms: { cadence?: string; method?: string; min_threshold_cents?: number } | null;
+  payouts: StorePayout[];
+}
+
+export async function fetchStorePayouts(storeId: number) {
+  return authRequest<StorePayoutSummary>(`/admin/store-payouts/store/${storeId}`);
+}
+
+/** Cut a payout for the current balance now, whatever the cadence says. */
+export async function payStoreNow(storeId: number, method?: string) {
+  return authRequest<{ payout_id: number; amount_cents: number; method: string }>(
+    `/admin/store-payouts/store/${storeId}/pay-now`,
+    { method: 'POST', body: JSON.stringify(method ? { method } : {}) },
+  );
+}
+
+export async function markStorePayoutPaid(payoutId: number, reference: string) {
+  return authRequest<StorePayout>(`/admin/store-payouts/${payoutId}/mark-paid`, {
+    method: 'POST',
+    body: JSON.stringify({ reference }),
+  });
+}
+
+export async function markStorePayoutFailed(payoutId: number, reason: string) {
+  return authRequest<StorePayout>(`/admin/store-payouts/${payoutId}/mark-failed`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
 export async function createGroupStore(data: {
   slug: string; name: string; owner_email: string;
   store_type?: 'group' | 'business';

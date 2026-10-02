@@ -14,6 +14,7 @@ import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { dispatchStoreEvent } from '../services/storeWebhookDispatcher.js';
+import { createStorePayout } from '../services/storePayoutJob.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -41,6 +42,73 @@ router.get('/', async (req, res, next) => {
       params,
     );
     res.json({ payouts: rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/store-payouts/store/:storeId
+// Balance owed right now + this store's payout history, for the store
+// detail page's payout panel.
+router.get('/store/:storeId', async (req, res, next) => {
+  try {
+    const storeId = parseInt(req.params.storeId, 10);
+    if (!Number.isInteger(storeId)) return res.status(400).json({ error: 'invalid store id' });
+    const [{ rows: balRows }, { rows: payouts }, { rows: termRows }] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(SUM(amount_cents), 0)::int AS balance_cents
+           FROM store_ledger WHERE store_id = $1`,
+        [storeId],
+      ),
+      pool.query(
+        `SELECT id, period_start, period_end, amount_cents, method, status, reference, created_at, paid_at
+           FROM store_payouts WHERE store_id = $1 ORDER BY created_at DESC LIMIT 50`,
+        [storeId],
+      ),
+      pool.query(
+        `SELECT payout_terms_json FROM store_agreements
+          WHERE store_id = $1 AND kind = 'store'
+          ORDER BY id DESC LIMIT 1`,
+        [storeId],
+      ),
+    ]);
+    res.json({
+      balance_cents: balRows[0]?.balance_cents ?? 0,
+      payout_terms: termRows[0]?.payout_terms_json ?? null,
+      payouts,
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/store-payouts/store/:storeId/pay-now
+// Body: { method?: 'ach' | 'check' | ... }
+//
+// Creates a payout for whatever the store is owed right now, ignoring
+// cadence and threshold. This is the trigger the 'per_campaign_close'
+// cadence always implied and never had: isDueToday() returns false for
+// it, so the cron can never pay those stores — before this endpoint there
+// was NO way to produce a payout for them at all.
+router.post('/store/:storeId/pay-now', async (req, res, next) => {
+  try {
+    const storeId = parseInt(req.params.storeId, 10);
+    if (!Number.isInteger(storeId)) return res.status(400).json({ error: 'invalid store id' });
+
+    const { rows } = await pool.query(
+      `SELECT s.id, s.slug, s.created_at AS store_created_at,
+              (SELECT sa.payout_terms_json FROM store_agreements sa
+                WHERE sa.store_id = s.id AND sa.kind = 'store'
+                ORDER BY sa.id DESC LIMIT 1) AS payout_terms_json
+         FROM stores s WHERE s.id = $1`,
+      [storeId],
+    );
+    const store = rows[0];
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    const method = String(
+      req.body?.method || store.payout_terms_json?.method || 'ach',
+    ).toLowerCase();
+
+    const result = await createStorePayout({ store, method });
+    if (result.skipped) return res.status(409).json({ error: result.skipped });
+    res.json(result);
   } catch (err) { next(err); }
 });
 
