@@ -11,6 +11,7 @@ import {
   setGroupStoreProductActive, deleteGroupStoreProduct,
   uploadGroupStoreMockup, updateGroupStoreProduct,
   fetchGroupStoreCoupons, createGroupStoreCoupon, deactivateGroupStoreCoupon, type StoreCoupon,
+  fetchStorePayouts, payStoreNow, markStorePayoutPaid, markStorePayoutFailed, type StorePayoutSummary,
   fetchGroupStoreMockups, addGroupStoreProductFromMockup,
   fetchGroupStoreDesignDrafts, approveGroupStoreDesignDraft, rejectGroupStoreDesignDraft,
   deleteGroupStore, sendGroupStoreLaunchEmail,
@@ -348,6 +349,8 @@ export default function AdminGroupStoreDetailPage() {
             )}
           </div>
         </section>
+
+        <PayoutsSection storeId={storeId} />
 
         <CouponsSection storeId={storeId} />
 
@@ -1178,6 +1181,148 @@ function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => voi
 // ── Coupons ──────────────────────────────────────────────────────────────
 // Stripe promotion codes scoped to this store. Buyers enter the code on
 // the Stripe checkout page ("Add promotion code" link).
+// What TSB owes this store, and the button that cuts it loose.
+//
+// The nightly job only fires on a cadence ('monthly' = the 1st,
+// 'weekly' = Friday) and never for 'per_campaign_close' — which is the
+// default every group store is created with. Pay now is the manual
+// trigger those stores never had: it creates the payout for the current
+// balance and debits the ledger, exactly like the cron does.
+function PayoutsSection({ storeId }: { storeId: number }) {
+  const [data, setData] = useState<StorePayoutSummary | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    try {
+      setData(await fetchStorePayouts(storeId));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+  useEffect(() => { void load(); }, [storeId]);
+
+  const payNow = async () => {
+    if (!data || data.balance_cents <= 0) return;
+    if (!window.confirm(
+      `Create a ${usd(data.balance_cents)} payout for this store?\n\n`
+      + 'This records what you owe and zeroes the balance. Send the money '
+      + 'separately, then mark it paid with the ACH trace or check number.',
+    )) return;
+    setBusy(true);
+    try {
+      const r = await payStoreNow(storeId);
+      toast.success(`Payout #${r.payout_id} created for ${usd(r.amount_cents)}`);
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  const markPaid = async (id: number) => {
+    const reference = window.prompt('ACH trace / check number for this payout:');
+    if (!reference || !reference.trim()) return;
+    try {
+      await markStorePayoutPaid(id, reference.trim());
+      toast.success('Marked paid');
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const markFailed = async (id: number) => {
+    const reason = window.prompt('What went wrong? (the amount goes back on the balance)');
+    if (!reason || !reason.trim()) return;
+    try {
+      await markStorePayoutFailed(id, reason.trim());
+      toast.success('Marked failed — balance restored');
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  if (!data) return null;
+  const cadence = data.payout_terms?.cadence || 'monthly';
+  const neverAutoPays = cadence === 'per_campaign_close';
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-gray-900">Fundraiser payouts</h2>
+        <button
+          onClick={payNow}
+          disabled={busy || data.balance_cents <= 0}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold text-white bg-gray-900 hover:bg-black disabled:opacity-40"
+        >
+          {busy ? 'Creating…' : `Pay now · ${usd(data.balance_cents)}`}
+        </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
+          <span className="text-gray-500">Owed right now</span>
+          <span className="text-2xl font-bold text-gray-900">{usd(data.balance_cents)}</span>
+          <span className="text-gray-500">
+            Schedule: <span className="font-medium text-gray-700">{cadence}</span>
+            {' · '}via <span className="font-medium text-gray-700">{data.payout_terms?.method || 'ach'}</span>
+          </span>
+        </div>
+        {neverAutoPays && (
+          <p className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">
+            <strong>per_campaign_close never fires automatically.</strong> This store only gets
+            paid when you press Pay now.
+          </p>
+        )}
+
+        {data.payouts.length === 0 ? (
+          <p className="text-sm text-gray-400">No payouts yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="text-xs text-gray-500 border-b border-gray-100">
+              <tr>
+                <th className="text-left py-1.5 font-medium">Created</th>
+                <th className="text-right py-1.5 font-medium">Amount</th>
+                <th className="text-left py-1.5 pl-4 font-medium">Status</th>
+                <th className="text-left py-1.5 font-medium">Reference</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.payouts.map((p) => (
+                <tr key={p.id}>
+                  <td className="py-2 text-gray-600 whitespace-nowrap">{new Date(p.created_at).toLocaleDateString()}</td>
+                  <td className="py-2 text-right font-medium text-gray-900">{usd(p.amount_cents)}</td>
+                  <td className="py-2 pl-4">
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      p.status === 'paid' ? 'bg-green-100 text-green-800'
+                        : p.status === 'failed' ? 'bg-red-100 text-red-700'
+                        : 'bg-amber-100 text-amber-800'
+                    }`}>{p.status}</span>
+                  </td>
+                  <td className="py-2 text-gray-500 truncate max-w-[180px]">{p.reference || '—'}</td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {(p.status === 'pending' || p.status === 'sent') && (
+                      <>
+                        <button onClick={() => markPaid(p.id)} className="text-xs font-medium text-green-700 hover:underline">
+                          Mark paid
+                        </button>
+                        <button onClick={() => markFailed(p.id)} className="ml-3 text-xs font-medium text-gray-500 hover:underline">
+                          Failed
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function CouponsSection({ storeId }: { storeId: number }) {
   const [coupons, setCoupons] = useState<StoreCoupon[]>([]);
   const [loading, setLoading] = useState(true);

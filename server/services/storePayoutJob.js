@@ -63,6 +63,37 @@ export async function processStorePayout(store) {
       return { skipped: `no balance to pay out` };
     }
 
+    return createStorePayout({ store, method, balance });
+  } catch (err) {
+    console.error(`[payoutJob] store ${store?.slug || store?.id}: failed:`, err);
+    return { skipped: `error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+/** Create a payout for a store's current ledger balance, with no cadence
+ *  or threshold check. The cron calls this after deciding it's due; the
+ *  admin "Pay now" endpoint calls it directly when a campaign wraps on a
+ *  date no calendar rule knows about (which is every fundraiser — the
+ *  'per_campaign_close' cadence had no trigger at all before this).
+ *
+ *  @param {object}  opts.store    { id, slug, store_created_at }
+ *  @param {string}  opts.method   'ach' | 'check' | ...
+ *  @param {number} [opts.balance] skip the balance read when the caller has it
+ *  @returns {Promise<{ payout_id?: number, amount_cents?: number, skipped?: string }>}
+ */
+export async function createStorePayout({ store, method = 'ach', balance: knownBalance }) {
+  try {
+    let balance = knownBalance;
+    if (balance == null) {
+      const balanceRes = await pool.query(
+        `SELECT COALESCE(SUM(amount_cents), 0)::bigint AS balance
+           FROM store_ledger WHERE store_id = $1`,
+        [store.id],
+      );
+      balance = Number(balanceRes.rows[0].balance);
+    }
+    if (balance <= 0) return { skipped: 'no balance to pay out' };
+
     // period_start = last previous payout's period_end (any status), or
     // the store's created_at as the genesis. period_end = now.
     const prev = await pool.query(
@@ -110,7 +141,7 @@ export async function processStorePayout(store) {
       console.log(
         `[payoutJob] store ${store.slug}: payout ${payout.id} for ${balance}¢ (${method})`,
       );
-      return { payout_id: payout.id };
+      return { payout_id: payout.id, amount_cents: balance, method, period_start: payout.period_start, period_end: payout.period_end };
     } catch (err) {
       await client.query('ROLLBACK').catch(() => {});
       throw err;
@@ -118,8 +149,8 @@ export async function processStorePayout(store) {
       client.release();
     }
   } catch (err) {
-    console.error(`[payoutJob] store ${store?.slug || store?.id}: failed:`, err);
-    return { skipped: `error: ${err instanceof Error ? err.message : String(err)}` };
+    console.error(`[payoutJob] store ${store?.slug || store?.id}: createStorePayout failed:`, err);
+    throw err;
   }
 }
 
