@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
-import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin } from 'lucide-react';
+import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin, Check } from 'lucide-react';
+import { useStoreCart } from '@/lib/storeCart';
 import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
 import Layout from '@/components/layout/Layout';
 
@@ -59,6 +60,8 @@ export default function GroupStoreProductPage() {
   const [checkingOut, setCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [galleryIdx, setGalleryIdx] = useState(0);
+  const cart = useStoreCart(slug);
+  const [added, setAdded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +108,30 @@ export default function GroupStoreProductPage() {
     if (qty < 1) return false;
     return true;
   }, [product, size, color, qty]);
+
+  // Add to cart keeps the shopper on the store instead of bouncing them
+  // to Stripe one shirt at a time — the whole reason a family order used
+  // to cost three checkouts and three shipping charges.
+  const addToCart = () => {
+    if (!product || !canCheckout) return;
+    const ok = cart.add({
+      product_slug: productSlug,
+      title: product.title,
+      image: product.cover_image,
+      unit_cents: product.retail_price_cents,
+      size: size || null,
+      color: color || null,
+      fulfillment,
+      qty,
+    });
+    if (!ok) {
+      setError(`A cart holds up to ${cart.maxLines} different items — check out, then start another order.`);
+      return;
+    }
+    setError(null);
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 2500);
+  };
 
   const checkout = async () => {
     if (!product || !canCheckout || checkingOut) return;
@@ -346,12 +373,31 @@ export default function GroupStoreProductPage() {
             ) : (
               <>
                 <button
+                  onClick={addToCart}
+                  disabled={!canCheckout}
+                  className="mt-6 w-full py-3 rounded-md font-semibold border-2 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                  style={{ borderColor: primary, color: primary }}
+                >
+                  {added
+                    ? <><Check className="w-4 h-4" /> Added to cart</>
+                    : <><ShoppingBag className="w-4 h-4" /> Add to cart</>}
+                </button>
+                {cart.count > 0 && (
+                  <Link
+                    to={storeLink(slug, '/cart')}
+                    className="mt-2 block text-center text-sm font-medium underline"
+                    style={{ color: primary }}
+                  >
+                    View cart ({cart.count}) & check out
+                  </Link>
+                )}
+                <button
                   onClick={checkout}
                   disabled={!canCheckout || checkingOut}
-                  className="mt-6 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="mt-3 w-full py-3 rounded-md text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundColor: primary }}
                 >
-                  {checkingOut ? 'Redirecting to checkout…' : `Buy for $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
+                  {checkingOut ? 'Redirecting to checkout…' : `Buy this now — $${(((product.retail_price_cents + sizeUpchargeCents(size)) * qty) / 100).toFixed(2)}`}
                 </button>
 
                 <p className="mt-3 text-xs text-gray-500 text-center">
