@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
+import { useStoreCart } from '@/lib/storeCart';
 import {
   Loader2, ShoppingBag, Truck, ShieldCheck, ArrowRight,
   Bell, Target, ChevronRight, Star, Package, ExternalLink, Menu, X,
@@ -96,6 +97,7 @@ function tint(hex: string, alpha = 0.08) {
 
 export default function GroupStorePage() {
   const slug = useStoreSlug();
+  const { count: cartCount } = useStoreCart(slug);
   const [store, setStore]       = useState<StoreProfile | null>(null);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -361,14 +363,17 @@ export default function GroupStorePage() {
             className="hidden sm:inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-black">
             <Package className="w-4 h-4" /> Admin
           </Link>
-          <button
+          {/* Real cart: this button rendered a hardcoded 0 and did nothing
+              until the cart shipped (2026-10-02). */}
+          <Link
+            to={storeLink(slug, '/cart')}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-white text-sm font-semibold shadow-sm hover:opacity-90"
             style={{ background: primary }}
           >
             <ShoppingBag className="w-4 h-4" />
             <span className="hidden sm:inline">Cart</span>
-            <span className="ml-1 bg-white/20 rounded-full px-1.5 py-0.5 text-xs">0</span>
-          </button>
+            <span className="ml-1 bg-white/20 rounded-full px-1.5 py-0.5 text-xs">{cartCount}</span>
+          </Link>
           {/* Mobile menu toggle — the inline nav is desktop-only */}
           <button type="button" aria-label="Menu"
             onClick={() => setMobileNavOpen((v) => !v)}

@@ -64,6 +64,7 @@ import StoreSuccessPage from '@/pages/StoreSuccessPage';
 import StoresDirectoryPage from '@/pages/stores/StoresDirectoryPage';
 import GroupStorePage from '@/pages/stores/GroupStorePage';
 import GroupStoreProductPage from '@/pages/stores/GroupStoreProductPage';
+import GroupStoreCartPage from '@/pages/stores/GroupStoreCartPage';
 import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
 import AdminGroupStoresPage from '@/pages/admin/AdminGroupStoresPage';
 import AdminGroupStoreDetailPage from '@/pages/admin/AdminGroupStoreDetailPage';
@@ -99,6 +100,7 @@ function SubdomainApp() {
         <Routes>
           <Route path="/" element={<GroupStorePage />} />
           <Route path="/product/:productSlug" element={<GroupStoreProductPage />} />
+          <Route path="/cart" element={<GroupStoreCartPage />} />
           <Route path="/success" element={<StoreSuccessPage />} />
           <Route path="/admin" element={<GroupStoreAdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
@@ -192,6 +194,7 @@ function App() {
           <Route path="/stores" element={<StoresDirectoryPage />} />
           <Route path="/stores/:slug" element={<GroupStorePage />} />
           <Route path="/stores/:slug/product/:productSlug" element={<GroupStoreProductPage />} />
+          <Route path="/stores/:slug/cart" element={<GroupStoreCartPage />} />
           <Route path="/stores/:slug/success" element={<StoreSuccessPage />} />
           <Route path="/stores/:slug/admin" element={<GroupStoreAdminPage />} />
           {/* TSB internal admin for group stores */}

@@ -118,15 +118,61 @@ export async function captureStoreOrder(session) {
     return;
   }
 
-  const split = computeLineSplit({
-    retail_cents: product.retail_price_cents,
-    qty,
-    fee_config: product.fee_config_json,
-    store_product_id: storeProductId,
-  });
-
-  const lines = [
-    {
+  // Cart checkout (create-store-cart-checkout) puts every line in
+  // metadata.items as [{p: store_product_id, q: qty, v: variant}]. Each
+  // line is priced from its OWN product row and split under the same
+  // frozen agreement, so a youth tee and an adult tee in one order credit
+  // the fundraiser the per-product amount each is owed. Falls back to the
+  // single-product metadata when `items` is absent.
+  const cartItems = session.metadata?.items ? tryParseJson(session.metadata.items) : null;
+  const lines = [];
+  // Fee terms recorded on the order snapshot — taken from the first line,
+  // which is where the single-product path always read them.
+  let headlineSplit = null;
+  if (Array.isArray(cartItems) && cartItems.length > 0) {
+    for (const ci of cartItems) {
+      const pid = parseInt(ci?.p, 10);
+      const lineQty = Math.max(1, parseInt(ci?.q ?? '1', 10) || 1);
+      if (!pid) continue;
+      // The first line is already loaded; others need their own retail.
+      const lineRes = pid === storeProductId
+        ? { rows: [{ id: storeProductId, retail_price_cents: product.retail_price_cents }] }
+        : await pool.query(
+            `SELECT id, retail_price_cents FROM store_products WHERE id = $1 AND store_id = $2`,
+            [pid, storeId],
+          );
+      const lineProduct = lineRes.rows[0];
+      if (!lineProduct) {
+        console.error(`[captureStoreOrder] cart line product ${pid} not in store ${storeId}`);
+        continue;
+      }
+      const lineSplit = computeLineSplit({
+        retail_cents: lineProduct.retail_price_cents,
+        qty: lineQty,
+        fee_config: product.fee_config_json,
+        store_product_id: lineProduct.id,
+      });
+      if (!headlineSplit) headlineSplit = lineSplit;
+      lines.push({
+        store_product_id: lineProduct.id,
+        qty: lineQty,
+        variant: ci?.v ?? null,
+        retail_cents: lineProduct.retail_price_cents,
+        line_retail_cents: lineProduct.retail_price_cents * lineQty,
+        store_earnings_cents: lineSplit.store_earnings_cents,
+        tsb_earnings_cents: lineSplit.tsb_earnings_cents,
+      });
+    }
+  }
+  if (lines.length === 0) {
+    const split = computeLineSplit({
+      retail_cents: product.retail_price_cents,
+      qty,
+      fee_config: product.fee_config_json,
+      store_product_id: storeProductId,
+    });
+    headlineSplit = split;
+    lines.push({
       store_product_id: storeProductId,
       qty,
       variant: variantRaw ? tryParseJson(variantRaw) : null,
@@ -134,8 +180,8 @@ export async function captureStoreOrder(session) {
       line_retail_cents: product.retail_price_cents * qty,
       store_earnings_cents: split.store_earnings_cents,
       tsb_earnings_cents: split.tsb_earnings_cents,
-    },
-  ];
+    });
+  }
 
   // Checkout upsells the buyer added on the Stripe page. Same frozen
   // agreement (same store) applies.
@@ -172,8 +218,8 @@ export async function captureStoreOrder(session) {
 
   const split_snapshot = {
     agreement_id: product.agreement_id,
-    fee_percent: split.fee_percent,
-    fee_min_per_item_cents: split.fee_min_per_item_cents,
+    fee_percent: headlineSplit?.fee_percent ?? 0,
+    fee_min_per_item_cents: headlineSplit?.fee_min_per_item_cents ?? 0,
     lines,
     // Shipping + tax land in TSB's earnings — TSB collects and remits.
     shipping_cents,

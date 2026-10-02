@@ -794,6 +794,191 @@ router.post('/create-store-checkout', async (req, res, next) => {
   }
 });
 
+// POST /create-store-cart-checkout — multi-item buyer checkout.
+//
+// The single-product sibling above sells exactly one line, so a parent
+// buying a youth tee AND an adult tee checked out twice and paid shipping
+// twice (Sensory Seasons, 2026-10-02). This takes the whole cart, prices
+// every line server-side, charges ONE weight-based shipping rate for the
+// combined parcel, and writes the lines into metadata for the webhook.
+//
+// Body: {
+//   store_slug: string,
+//   items: [{ product_slug, qty, variant? }],   // 1..10 lines
+//   buyer_email?, success_url?, cancel_url?
+// }
+router.post('/create-store-cart-checkout', async (req, res, next) => {
+  try {
+    const { store_slug, items, buyer_email, success_url, cancel_url } = req.body ?? {};
+    if (!store_slug || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'store_slug + items required' });
+    }
+    // 10 lines keeps metadata.items inside Stripe's 500-char value cap.
+    if (items.length > 10) {
+      return res.status(400).json({ error: 'Too many different items — please check out in two orders.' });
+    }
+
+    const { rows: storeRows } = await pool.query(
+      `SELECT id, name, slug, brand_json, fulfillment_mode
+         FROM stores
+        WHERE status = 'active' AND (slug = $1 OR lower(subdomain) = lower($1))`,
+      [store_slug],
+    );
+    const store = storeRows[0];
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+    if (store.brand_json?.demo) {
+      return res.status(410).json({ error: 'This is a sample store — contact us to launch one for your organization.' });
+    }
+
+    const now = new Date();
+    const priced = [];
+    for (const raw of items) {
+      const productSlug = String(raw?.product_slug ?? '');
+      if (!productSlug) return res.status(400).json({ error: 'Each item needs a product_slug' });
+      const qty = Math.min(Math.max(parseInt(String(raw?.qty ?? '1'), 10) || 1, 1), 100);
+      const variant = raw?.variant && typeof raw.variant === 'object' ? raw.variant : null;
+
+      const { rows } = await pool.query(
+        `SELECT sp.id AS product_id, sp.title, sp.slug, sp.cover_image,
+                sp.retail_price_cents, sp.is_active, sp.opens_at, sp.closes_at,
+                p.weight_oz
+           FROM store_products sp
+           LEFT JOIN products p ON p.ss_id = sp.tsb_blank_ss_id
+          WHERE sp.store_id = $1 AND sp.slug = $2`,
+        [store.id, productSlug],
+      );
+      const product = rows[0];
+      if (!product) return res.status(404).json({ error: `Product not found: ${productSlug}` });
+      if (!product.is_active) return res.status(410).json({ error: `${product.title} is not currently for sale` });
+      if (product.opens_at && now < new Date(product.opens_at)) {
+        return res.status(410).json({ error: `${product.title} is not yet on sale` });
+      }
+      if (product.closes_at && now >= new Date(product.closes_at)) {
+        return res.status(410).json({ error: `${product.title} has closed` });
+      }
+      priced.push({ product, qty, variant, upcharge: sizeUpchargeCents(variant?.size ?? null) });
+    }
+
+    // One parcel, one shipping charge — the whole point of a cart.
+    const subtotalCents = priced.reduce(
+      (s, l) => s + (l.product.retail_price_cents + l.upcharge) * l.qty, 0,
+    );
+    let rushCfg = { pct: 0.05, sameDayPct: 0.75, stdDays: 10, rushDays: 2 };
+    try {
+      const { rows: cfgRows } = await pool.query(
+        `SELECT rush_surcharge_pct, same_day_rush_pct, standard_turnaround, rush_turnaround
+           FROM instant_quote_settings WHERE id = 1`,
+      );
+      if (cfgRows[0]) {
+        rushCfg = {
+          pct: Number(cfgRows[0].rush_surcharge_pct) || 0.05,
+          sameDayPct: Number(cfgRows[0].same_day_rush_pct) || 0.75,
+          stdDays: Number(cfgRows[0].standard_turnaround) || 10,
+          rushDays: Number(cfgRows[0].rush_turnaround) || 2,
+        };
+      }
+    } catch (err) {
+      console.error('[create-store-cart-checkout] rush settings load failed (using defaults):', err.message);
+    }
+    const rushPriorityCents = Math.round(subtotalCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
+    const sameDayRushCents = Math.round(subtotalCents * rushCfg.sameDayPct);
+
+    const totalOz = parcelOunces(priced.map((l) => ({ weightOz: l.product.weight_oz, qty: l.qty })));
+    const tier = tierForOunces(totalOz);
+    const shippingOptions = [];
+    if (store.fulfillment_mode !== 'pickup_only') {
+      const speeds = [
+        { cents: tier.ground, label: 'Standard — USPS Ground', minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7 },
+        {
+          cents: tier.priority + rushPriorityCents,
+          label: `Rush — prints in ${rushCfg.rushDays} business days, ships USPS Priority`,
+          minDays: rushCfg.rushDays + 2, maxDays: rushCfg.rushDays + 3,
+        },
+        { cents: tier.overnight + sameDayRushCents, label: 'Next Day — same-day print, UPS Next Day Air', minDays: 1, maxDays: 2 },
+      ];
+      for (const choice of speeds) {
+        shippingOptions.push({
+          shipping_rate_data: {
+            type: 'fixed_amount',
+            fixed_amount: { amount: choice.cents, currency: 'usd' },
+            display_name: choice.label,
+            delivery_estimate: {
+              minimum: { unit: 'business_day', value: choice.minDays },
+              maximum: { unit: 'business_day', value: choice.maxDays },
+            },
+          },
+        });
+      }
+    }
+    if (store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both') {
+      shippingOptions.push({
+        shipping_rate_data: {
+          type: 'fixed_amount',
+          fixed_amount: { amount: 0, currency: 'usd' },
+          display_name: 'Free local pickup (Fairburn, GA)',
+        },
+      });
+    }
+
+    // Compact so 10 lines fit the 500-char metadata value: p=product id,
+    // q=qty, v=variant. captureStoreOrder reads this shape.
+    const metaItems = JSON.stringify(priced.map((l) => ({
+      p: l.product.product_id,
+      q: l.qty,
+      ...(l.variant ? { v: l.variant } : {}),
+    })));
+    if (metaItems.length > 490) {
+      return res.status(400).json({ error: 'Too many different items — please check out in two orders.' });
+    }
+
+    const stripe = getStripe();
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      allow_promotion_codes: true,
+      shipping_address_collection: { allowed_countries: ['US'] },
+      shipping_options: shippingOptions,
+      line_items: priced.map((l) => {
+        const variantSummary = l.variant
+          ? Object.entries(l.variant).filter(([k]) => k !== 'fulfillment').map(([k, v]) => `${k}: ${v}`).join(', ')
+          : '';
+        return {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: `${l.product.title}${variantSummary ? ` (${variantSummary})` : ''}`,
+              description: `From ${store.name}`,
+              ...(l.product.cover_image ? { images: [l.product.cover_image] } : {}),
+            },
+            unit_amount: l.product.retail_price_cents + l.upcharge,
+          },
+          quantity: l.qty,
+        };
+      }),
+      mode: 'payment',
+      customer_email: buyer_email || undefined,
+      success_url: success_url
+        ? `${success_url}${success_url.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`
+        : `${domain}/stores/${store.slug}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancel_url || `${domain}/stores/${store.slug}/cart`,
+      metadata: {
+        store_id: String(store.id),
+        store_slug: store.slug,
+        // The webhook routes on store_id; `items` is what makes it a cart.
+        items: metaItems,
+        // First line doubles as the legacy single-product fields so any
+        // older consumer of this metadata still sees a valid order.
+        store_product_id: String(priced[0].product.product_id),
+        qty: String(priced[0].qty),
+      },
+    });
+
+    res.json({ checkoutUrl: session.url, sessionId: session.id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Process a checkout.session.completed event: update the quote/invoice and
 // fire off receipts. Runs after we've already 200'd Stripe so a slow Resend or
 // Twilio call can't blow the webhook's HTTP timeout.
