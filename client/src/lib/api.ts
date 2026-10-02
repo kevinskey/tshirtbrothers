@@ -1445,6 +1445,7 @@ export interface Shipment {
   weight_oz: string | null;
   status: string;
   refund_status: string | null;
+  reference: string | null;
   created_at: string;
 }
 
@@ -1465,7 +1466,8 @@ export async function verifyShipAddress(address: PostOfficeAddress) {
 }
 
 export async function fetchShipRates(body: {
-  subject_type?: string; subject_id?: number; address?: PostOfficeAddress; weight_oz?: number;
+  subject_type?: string; subject_id?: number; address?: PostOfficeAddress;
+  weight_oz?: number; length?: number; width?: number; height?: number;
 }) {
   return authRequest<{ shipmentId: string; weight_oz: number; to: PostOfficeAddress; rates: ShippingRate[] }>(
     '/admin/post-office/rates', { method: 'POST', body: JSON.stringify(body) },
@@ -1473,7 +1475,8 @@ export async function fetchShipRates(body: {
 }
 
 export async function buyShipLabel(body: {
-  shipmentId: string; rateId: string; subject_type?: string; subject_id?: number; insurance?: number;
+  shipmentId: string; rateId: string; subject_type?: string; subject_id?: number;
+  insurance?: number; reference?: string;
 }) {
   return authRequest<Shipment>('/admin/post-office/buy', { method: 'POST', body: JSON.stringify(body) });
 }
