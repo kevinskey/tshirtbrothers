@@ -87,6 +87,26 @@ export async function captureStoreOrder(session) {
   const qty            = parseInt(session.metadata?.qty || '1', 10);
   const variantRaw     = session.metadata?.variant || null;
   const buyerEmail     = session.customer_details?.email || session.customer_email || 'unknown';
+  // Ship-to. Newer Stripe API versions moved shipping_details under
+  // collected_information; older ones keep it top-level. Fall back to the
+  // billing address so a pickup order still has something to call a
+  // contact address.
+  const shipDetails = session.collected_information?.shipping_details
+    || session.shipping_details
+    || null;
+  const addr = shipDetails?.address || session.customer_details?.address || null;
+  const buyerName = shipDetails?.name || session.customer_details?.name || null;
+  const buyerPhone = shipDetails?.phone || session.customer_details?.phone || null;
+  const shippingAddress = addr ? {
+    name: buyerName,
+    phone: buyerPhone,
+    line1: addr.line1 ?? null,
+    line2: addr.line2 ?? null,
+    city: addr.city ?? null,
+    state: addr.state ?? null,
+    postal_code: addr.postal_code ?? null,
+    country: addr.country ?? null,
+  } : null;
 
   if (!storeId || !storeProductId) {
     console.error('[captureStoreOrder] missing store_id / store_product_id in metadata', session.id);
@@ -236,14 +256,17 @@ export async function captureStoreOrder(session) {
       `INSERT INTO store_orders
          (store_id, tsb_order_ref, buyer_email,
           subtotal_cents, shipping_cents, tax_cents, gross_total_cents,
-          split_snapshot_json, store_earnings_cents, tsb_earnings_cents, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid')
+          split_snapshot_json, store_earnings_cents, tsb_earnings_cents, status,
+          buyer_name, buyer_phone, shipping_address)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13::jsonb)
        RETURNING id, created_at`,
       [
         storeId, session.id, buyerEmail,
         subtotal_cents, shipping_cents, tax_cents, gross_total,
         split_snapshot, store_earnings_total,
         tsb_earnings_total + shipping_cents + tax_cents,
+        buyerName, buyerPhone,
+        shippingAddress ? JSON.stringify(shippingAddress) : null,
       ],
     );
     const orderId = orderRes.rows[0].id;
