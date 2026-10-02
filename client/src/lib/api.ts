@@ -1402,6 +1402,44 @@ export async function fetchGroupStore(id: number) {
   return authRequest<GroupStoreDetail>(`/admin/group-stores/${id}`);
 }
 
+// ── Storefront orders (group / fundraiser store sales) ───────────────
+export interface AdminStoreOrder {
+  id: number;
+  store_id: number;
+  store_name: string;
+  store_slug: string;
+  buyer_email: string;
+  status: 'paid' | 'in_production' | 'ready' | 'fulfilled' | 'cancelled';
+  fulfillment_type: string | null;
+  is_bulk: boolean;
+  subtotal_cents: number;
+  shipping_cents: number;
+  gross_total_cents: number;
+  store_earnings_cents: number;
+  tsb_earnings_cents: number;
+  tsb_order_ref: string | null;
+  created_at: string;
+  lines: Array<{
+    store_product_id: number;
+    title: string;
+    cover_image: string | null;
+    qty: number;
+    variant: Record<string, string> | null;
+  }> | null;
+}
+
+/** status: 'open' (default — paid/in_production/ready), 'all', or one status. */
+export async function fetchAdminStoreOrders(status = 'open') {
+  return authRequest<{ orders: AdminStoreOrder[] }>(`/admin/store-orders?status=${encodeURIComponent(status)}`);
+}
+
+export async function updateStoreOrderStatus(id: number, status: AdminStoreOrder['status']) {
+  return authRequest<{ id: number; status: string }>(`/admin/store-orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  });
+}
+
 // ── Store payouts (what TSB owes a fundraiser/group store) ───────────
 export interface StorePayout {
   id: number;
