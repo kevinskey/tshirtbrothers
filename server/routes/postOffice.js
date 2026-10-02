@@ -202,8 +202,12 @@ router.post('/verify-address', async (req, res, next) => {
 });
 
 // ── Rates ────────────────────────────────────────────────────────────
-// Either for a queue item (address + weight from our own data) or for a
-// free-typed address, for the one-off labels a shop always needs.
+// Three ways in, all the same endpoint:
+//   1. a queue item — address and weight from our own data;
+//   2. a queue item PLUS weight_oz/length/width/height — the scale and
+//      the box on the bench beat anything derived from a blank's spec;
+//   3. a free-typed address — the one-off labels a shop always needs,
+//      with no order behind them.
 router.post('/rates', async (req, res, next) => {
   try {
     const { subject_type, subject_id, address, weight_oz, length, width, height } = req.body ?? {};
@@ -247,7 +251,7 @@ router.post('/rates', async (req, res, next) => {
 });
 
 /** Buy one label and record it. Shared by /buy and /buy-cheapest. */
-async function purchase({ shipmentId, rateId, subjectType, subjectId, insuranceDollars, userId, subject }) {
+async function purchase({ shipmentId, rateId, subjectType, subjectId, insuranceDollars, userId, subject, reference }) {
   const client = getClient();
   const bought = await client.Shipment.buy(shipmentId, rateId);
 
@@ -265,8 +269,8 @@ async function purchase({ shipmentId, rateId, subjectType, subjectId, insuranceD
     `INSERT INTO shipments
        (subject_type, subject_id, easypost_shipment_id, tracking_code, carrier, service,
         rate_cents, insurance_cents, label_url, tracker_id, tracking_status,
-        est_delivery_date, to_name, to_address, weight_oz, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
+        est_delivery_date, to_name, to_address, weight_oz, created_by, reference)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17)
      ON CONFLICT (easypost_shipment_id) DO UPDATE SET updated_at = NOW()
      RETURNING *`,
     [
@@ -279,6 +283,7 @@ async function purchase({ shipmentId, rateId, subjectType, subjectId, insuranceD
       bought.to_address?.name ?? subject?.customer ?? null,
       JSON.stringify(bought.to_address ?? subject?.address ?? {}),
       bought.parcel?.weight ?? null, userId ?? null,
+      reference || subject?.label || null,
     ],
   );
   if (subjectType && subjectId) {
@@ -293,7 +298,7 @@ async function purchase({ shipmentId, rateId, subjectType, subjectId, insuranceD
 // POST /buy { shipmentId, rateId, subject_type?, subject_id?, insurance? }
 router.post('/buy', async (req, res, next) => {
   try {
-    const { shipmentId, rateId, subject_type, subject_id, insurance } = req.body ?? {};
+    const { shipmentId, rateId, subject_type, subject_id, insurance, reference } = req.body ?? {};
     if (!shipmentId || !rateId) return res.status(400).json({ error: 'shipmentId and rateId required' });
     const subject = subject_type && subject_id ? await loadSubject(subject_type, Number(subject_id)) : null;
     const shipment = await purchase({
@@ -302,6 +307,7 @@ router.post('/buy', async (req, res, next) => {
       subjectId: subject_id ? Number(subject_id) : null,
       insuranceDollars: Number(insurance) || 0,
       userId: req.user?.id, subject,
+      reference: reference ? String(reference).slice(0, 200) : null,
     });
     res.json(shipment);
   } catch (err) { next(err); }

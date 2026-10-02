@@ -19,6 +19,67 @@ import {
 } from '@/lib/api';
 
 const usd = (cents: number | null | undefined) => (cents == null ? '—' : `$${(cents / 100).toFixed(2)}`);
+
+// What TSB actually ships in. Dimensions are inches; a carrier prices a
+// parcel on weight AND size, so guessing the box is guessing the price.
+const PARCELS = [
+  { key: 'poly_sm',  name: 'Poly mailer — small (1–2 shirts)', length: 12, width: 10, height: 2 },
+  { key: 'poly_lg',  name: 'Poly mailer — large (3–6 shirts)', length: 16, width: 12, height: 4 },
+  { key: 'box_sm',   name: 'Box — small (up to 8 shirts)',     length: 12, width: 10, height: 6 },
+  { key: 'box_md',   name: 'Box — medium (up to 20 shirts)',   length: 16, width: 12, height: 10 },
+  { key: 'box_lg',   name: 'Box — large (case / bulk)',        length: 20, width: 16, height: 14 },
+  { key: 'tube',     name: 'Tube (banners, transfers)',        length: 26, width: 6,  height: 6 },
+  { key: 'custom',   name: 'Custom…',                          length: 12, width: 10, height: 2 },
+];
+
+/** lb + oz boxes, because that's what a shop scale reads. */
+function WeightInput({ oz, onChange }: { oz: number; onChange: (oz: number) => void }) {
+  const lb = Math.floor(oz / 16);
+  const rem = +(oz - lb * 16).toFixed(1);
+  return (
+    <div className="flex items-center gap-1">
+      <input type="number" min={0} value={lb}
+        onChange={(e) => onChange(Math.max(0, (Number(e.target.value) || 0) * 16 + rem))}
+        className="w-16 border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
+      <span className="text-xs text-gray-500">lb</span>
+      <input type="number" min={0} max={15.9} step={0.1} value={rem}
+        onChange={(e) => onChange(Math.max(0, lb * 16 + (Number(e.target.value) || 0)))}
+        className="w-16 border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
+      <span className="text-xs text-gray-500">oz</span>
+    </div>
+  );
+}
+
+/** Parcel picker shared by the queue rows and the one-off label form. */
+function ParcelPicker({ value, onChange }: {
+  value: { preset: string; length: number; width: number; height: number };
+  onChange: (v: { preset: string; length: number; width: number; height: number }) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={value.preset}
+        onChange={(e) => {
+          const p = PARCELS.find((x) => x.key === e.target.value) ?? PARCELS[0]!;
+          onChange({ preset: p.key, length: p.length, width: p.width, height: p.height });
+        }}
+        className="border border-gray-300 rounded-md px-2 py-1.5 text-sm max-w-[260px]"
+      >
+        {PARCELS.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+      </select>
+      {value.preset === 'custom' && (
+        <div className="flex items-center gap-1">
+          {(['length', 'width', 'height'] as const).map((dim) => (
+            <input key={dim} type="number" min={1} value={value[dim]} aria-label={dim}
+              onChange={(e) => onChange({ ...value, [dim]: Number(e.target.value) || 1 })}
+              className="w-14 border border-gray-300 rounded-md px-2 py-1.5 text-sm" />
+          ))}
+          <span className="text-xs text-gray-500">in (L×W×H)</span>
+        </div>
+      )}
+    </div>
+  );
+}
 const keyOf = (i: { subject_type: string; subject_id: number }) => `${i.subject_type}:${i.subject_id}`;
 
 function addressLine(a: PostOfficeQueueItem['address']): string {
@@ -39,7 +100,7 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 export default function PostOfficePage() {
-  const [tab, setTab] = useState<'queue' | 'labels' | 'tracking'>('queue');
+  const [tab, setTab] = useState<'queue' | 'newlabel' | 'labels' | 'tracking'>('queue');
 
   // Queue
   const [queue, setQueue] = useState<PostOfficeQueueItem[]>([]);
@@ -48,6 +109,17 @@ export default function PostOfficePage() {
   const [rateFor, setRateFor] = useState<string | null>(null);
   const [rates, setRates] = useState<{ shipmentId: string; weight_oz: number; rates: ShippingRate[] } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Per-row parcel override: the scale and the box on the bench beat
+  // anything derived from a blank's spec sheet.
+  const [parcel, setParcel] = useState({ preset: 'poly_sm', length: 12, width: 10, height: 2 });
+  const [weightOverride, setWeightOverride] = useState<number | null>(null);
+
+  // One-off label (no order behind it)
+  const [manualTo, setManualTo] = useState({ name: '', street1: '', street2: '', city: '', state: '', zip: '', phone: '' });
+  const [manualParcel, setManualParcel] = useState({ preset: 'poly_sm', length: 12, width: 10, height: 2 });
+  const [manualWeight, setManualWeight] = useState(12);
+  const [manualRef, setManualRef] = useState('');
+  const [manualRates, setManualRates] = useState<{ shipmentId: string; rates: ShippingRate[] } | null>(null);
 
   // Labels + tracking
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -91,12 +163,18 @@ export default function PostOfficePage() {
     return next;
   });
 
-  const openRates = async (item: PostOfficeQueueItem) => {
+  const openRates = async (item: PostOfficeQueueItem, override = false) => {
     setRateFor(keyOf(item));
     setRates(null);
     try {
-      const r = await fetchShipRates({ subject_type: item.subject_type, subject_id: item.subject_id });
+      const r = await fetchShipRates({
+        subject_type: item.subject_type,
+        subject_id: item.subject_id,
+        ...(override && weightOverride ? { weight_oz: weightOverride } : {}),
+        ...(override ? { length: parcel.length, width: parcel.width, height: parcel.height } : {}),
+      });
       setRates({ shipmentId: r.shipmentId, weight_oz: r.weight_oz, rates: r.rates });
+      if (weightOverride == null) setWeightOverride(r.weight_oz);
       if (r.rates.length === 0) toast.error('No rates for that address');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -183,7 +261,7 @@ export default function PostOfficePage() {
         </div>
 
         <div className="flex gap-1 mb-4 bg-white border border-gray-200 rounded-xl p-1 w-fit">
-          {([['queue', `Ready to ship (${queue.length})`], ['labels', `Labels (${live.length})`], ['tracking', 'Tracking']] as const).map(([k, label]) => (
+          {([['queue', `Ready to ship (${queue.length})`], ['newlabel', 'New label'], ['labels', `Labels (${live.length})`], ['tracking', 'Tracking']] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === k ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
               {label}
@@ -255,7 +333,21 @@ export default function PostOfficePage() {
                     </div>
 
                     {open && (
-                      <div className="px-4 pb-4 pl-11">
+                      <div className="px-4 pb-4 pl-11 space-y-3">
+                        <div className="flex flex-wrap items-end gap-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                          <div>
+                            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Parcel</div>
+                            <ParcelPicker value={parcel} onChange={setParcel} />
+                          </div>
+                          <div>
+                            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1">Weight</div>
+                            <WeightInput oz={weightOverride ?? 0} onChange={setWeightOverride} />
+                          </div>
+                          <button onClick={() => openRates(item, true)}
+                            className="px-3 py-1.5 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50">
+                            Re-rate
+                          </button>
+                        </div>
                         {!rates ? (
                           <div className="py-4 text-sm text-gray-400 inline-flex items-center gap-2">
                             <Loader2 className="w-4 h-4 animate-spin" /> Getting live rates…
@@ -288,6 +380,151 @@ export default function PostOfficePage() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ── NEW LABEL (no order behind it) ────────────────────────── */}
+        {tab === 'newlabel' && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+              <div>
+                <h2 className="font-semibold text-gray-900">Ship anything</h2>
+                <p className="text-sm text-gray-500">
+                  A sample, a replacement, a vendor return — no order required. It lands in
+                  the postage ledger like any other label.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">What is it?</label>
+                <input value={manualRef} onChange={(e) => setManualRef(e.target.value)}
+                  placeholder="Replacement hoodie — Cheryl"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">Ship to</label>
+                <input value={manualTo.name} onChange={(e) => setManualTo({ ...manualTo, name: e.target.value })}
+                  placeholder="Name" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                <input value={manualTo.street1} onChange={(e) => setManualTo({ ...manualTo, street1: e.target.value })}
+                  placeholder="Street address" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                <input value={manualTo.street2} onChange={(e) => setManualTo({ ...manualTo, street2: e.target.value })}
+                  placeholder="Apt / suite (optional)" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                <div className="grid grid-cols-6 gap-2">
+                  <input value={manualTo.city} onChange={(e) => setManualTo({ ...manualTo, city: e.target.value })}
+                    placeholder="City" className="col-span-3 border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                  <input value={manualTo.state} onChange={(e) => setManualTo({ ...manualTo, state: e.target.value.toUpperCase().slice(0, 2) })}
+                    placeholder="GA" className="col-span-1 border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                  <input value={manualTo.zip} onChange={(e) => setManualTo({ ...manualTo, zip: e.target.value })}
+                    placeholder="ZIP" className="col-span-2 border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                </div>
+                <input value={manualTo.phone} onChange={(e) => setManualTo({ ...manualTo, phone: e.target.value })}
+                  placeholder="Phone (optional — some carriers want it)" className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" />
+                <button
+                  onClick={async () => {
+                    if (!manualTo.street1) return toast.error('Street address first');
+                    try {
+                      const r = await verifyShipAddress(manualTo);
+                      if (r.success && r.verified) {
+                        setManualTo({ ...manualTo, ...r.verified, street2: r.verified.street2 || manualTo.street2 });
+                        toast.success('Address verified and corrected');
+                      } else {
+                        toast.error(`Not deliverable: ${r.messages.join('; ') || 'USPS could not match it'}`);
+                      }
+                    } catch (err) {
+                      toast.error(err instanceof Error ? err.message : String(err));
+                    }
+                  }}
+                  className="text-xs font-medium text-gray-600 hover:text-black inline-flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" /> Verify with USPS
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Parcel</label>
+                  <ParcelPicker value={manualParcel} onChange={setManualParcel} />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Weight</label>
+                  <WeightInput oz={manualWeight} onChange={setManualWeight} />
+                </div>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (!manualTo.street1 || !manualTo.city || !manualTo.state || !manualTo.zip) {
+                    return toast.error('Street, city, state and ZIP are required');
+                  }
+                  if (!manualWeight) return toast.error('Weigh it first — carriers price on weight');
+                  setBusy(true);
+                  setManualRates(null);
+                  try {
+                    const r = await fetchShipRates({
+                      address: manualTo,
+                      weight_oz: manualWeight,
+                      length: manualParcel.length, width: manualParcel.width, height: manualParcel.height,
+                    });
+                    setManualRates({ shipmentId: r.shipmentId, rates: r.rates });
+                    if (r.rates.length === 0) toast.error('No rates for that address and parcel');
+                  } catch (err) {
+                    toast.error(err instanceof Error ? err.message : String(err));
+                  } finally { setBusy(false); }
+                }}
+                disabled={busy}
+                className="w-full py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black disabled:opacity-50">
+                {busy ? 'Getting rates…' : 'Get rates'}
+              </button>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl p-5">
+              <h2 className="font-semibold text-gray-900 mb-3">Rates</h2>
+              {!manualRates ? (
+                <p className="text-sm text-gray-400 py-8 text-center">
+                  Fill in the address and parcel, then get rates.
+                </p>
+              ) : (
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-[420px] overflow-y-auto">
+                  {manualRates.rates.map((r) => (
+                    <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <span className="font-medium text-gray-900">{r.carrier}</span>{' '}
+                        <span className="text-gray-600">{r.service}</span>
+                        {r.deliveryDays ? <span className="text-gray-400"> · {r.deliveryDays}d</span> : null}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-semibold">${r.rate.toFixed(2)}</span>
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Buy ${r.carrier} ${r.service} for $${r.rate.toFixed(2)}?`)) return;
+                            setBusy(true);
+                            try {
+                              const sh = await buyShipLabel({
+                                shipmentId: manualRates.shipmentId, rateId: r.id,
+                                subject_type: 'manual',
+                                reference: manualRef || undefined,
+                              });
+                              toast.success('Label bought');
+                              if (sh.label_url) window.open(sh.label_url, '_blank');
+                              setManualRates(null);
+                              setManualRef('');
+                              setManualTo({ name: '', street1: '', street2: '', city: '', state: '', zip: '', phone: '' });
+                              await loadShipments();
+                              setTab('labels');
+                            } catch (err) {
+                              toast.error(err instanceof Error ? err.message : String(err));
+                            } finally { setBusy(false); }
+                          }}
+                          disabled={busy}
+                          className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-gray-900 hover:bg-black disabled:opacity-50">
+                          Buy
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -370,7 +607,12 @@ export default function PostOfficePage() {
                         )}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600">{new Date(s.created_at).toLocaleDateString()}</td>
-                      <td className="px-3 py-2 text-gray-900">{s.subject_label || '—'}</td>
+                      <td className="px-3 py-2 text-gray-900">
+                        {s.subject_label || '—'}
+                        {s.reference && s.reference !== s.subject_label && (
+                          <div className="text-[11px] text-gray-500 truncate max-w-[200px]">{s.reference}</div>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-gray-600 truncate max-w-[180px]">{s.to_name || s.to_address?.name || '—'}</td>
                       <td className="px-3 py-2 text-gray-600">{s.carrier} {s.service}</td>
                       <td className="px-3 py-2 text-right">{usd(s.rate_cents)}</td>
