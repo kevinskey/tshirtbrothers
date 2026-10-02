@@ -21,6 +21,7 @@
 import Stripe from 'stripe';
 import pool from '../db.js';
 import { dispatchStoreEvent } from './storeWebhookDispatcher.js';
+import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 let _stripe = null;
 function stripeClient() {
@@ -49,6 +50,21 @@ async function fetchUpsellLines(session) {
     console.error('[captureStoreOrder] listLineItems failed (capturing main line only):', err.message);
     return [];
   }
+}
+
+// Extended-size upcharges (2XL +$2, 3XL +$4, 4XL+ +$6) go to TSB, not
+// into the fundraiser split (Kevin, 2026-10-02): the upcharge exists to
+// cover what a bigger blank costs TSB, so splitting it would hand the org
+// money that paid for cotton. The org's share is computed on base retail
+// and is identical whether a shirt goes out in S or 4XL.
+//
+// This was already the arithmetic, but only by accident — the upcharge
+// was collected by Stripe and then dropped on the floor, so an order's
+// subtotal + shipping no longer equalled what the buyer paid. It is now
+// explicit, counted into TSB's earnings, and recorded per line.
+function lineUpchargeCents(variant, qty) {
+  const size = variant && typeof variant === 'object' ? variant.size : null;
+  return sizeUpchargeCents(size) * qty;
 }
 
 /** Compute per-line split. Returns { tsb_earnings_cents, store_earnings_cents }. */
@@ -173,14 +189,16 @@ export async function captureStoreOrder(session) {
         store_product_id: lineProduct.id,
       });
       if (!headlineSplit) headlineSplit = lineSplit;
+      const upcharge = lineUpchargeCents(ci?.v ?? null, lineQty);
       lines.push({
         store_product_id: lineProduct.id,
         qty: lineQty,
         variant: ci?.v ?? null,
         retail_cents: lineProduct.retail_price_cents,
         line_retail_cents: lineProduct.retail_price_cents * lineQty,
+        size_upcharge_cents: upcharge,
         store_earnings_cents: lineSplit.store_earnings_cents,
-        tsb_earnings_cents: lineSplit.tsb_earnings_cents,
+        tsb_earnings_cents: lineSplit.tsb_earnings_cents + upcharge,
       });
     }
   }
@@ -192,14 +210,17 @@ export async function captureStoreOrder(session) {
       store_product_id: storeProductId,
     });
     headlineSplit = split;
+    const variant = variantRaw ? tryParseJson(variantRaw) : null;
+    const upcharge = lineUpchargeCents(variant, qty);
     lines.push({
       store_product_id: storeProductId,
       qty,
-      variant: variantRaw ? tryParseJson(variantRaw) : null,
+      variant,
       retail_cents: product.retail_price_cents,
       line_retail_cents: product.retail_price_cents * qty,
+      size_upcharge_cents: upcharge,
       store_earnings_cents: split.store_earnings_cents,
-      tsb_earnings_cents: split.tsb_earnings_cents,
+      tsb_earnings_cents: split.tsb_earnings_cents + upcharge,
     });
   }
 
@@ -229,7 +250,11 @@ export async function captureStoreOrder(session) {
     });
   }
 
-  const subtotal_cents  = lines.reduce((s, l) => s + l.line_retail_cents, 0);
+  // Subtotal is what the buyer was actually charged for goods — base
+  // retail plus any extended-size upcharge — so subtotal + shipping + tax
+  // equals the Stripe total instead of leaving an unexplained gap.
+  const upcharge_total  = lines.reduce((s, l) => s + (l.size_upcharge_cents || 0), 0);
+  const subtotal_cents  = lines.reduce((s, l) => s + l.line_retail_cents + (l.size_upcharge_cents || 0), 0);
   const store_earnings_total = lines.reduce((s, l) => s + l.store_earnings_cents, 0);
   const tsb_earnings_total   = lines.reduce((s, l) => s + l.tsb_earnings_cents, 0);
   const shipping_cents  = session.shipping_cost?.amount_total || 0;
@@ -241,6 +266,9 @@ export async function captureStoreOrder(session) {
     fee_percent: headlineSplit?.fee_percent ?? 0,
     fee_min_per_item_cents: headlineSplit?.fee_min_per_item_cents ?? 0,
     lines,
+    // Extended-size upcharges are TSB's: they cover the bigger blank.
+    size_upcharge_cents: upcharge_total,
+    upcharge_to_tsb: upcharge_total,
     // Shipping + tax land in TSB's earnings — TSB collects and remits.
     shipping_cents,
     tax_cents,
