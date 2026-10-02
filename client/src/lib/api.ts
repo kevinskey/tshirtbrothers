@@ -1558,6 +1558,9 @@ export interface AdminStoreOrder {
 export interface AdminStoreOrderDetail extends AdminStoreOrder {
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
   pickup_location_json: { name?: string; address_line1?: string; city?: string; state?: string; zip?: string } | null;
+  brand_json: { logo_url?: string; primary_color?: string; footer_note?: string } | null;
+  is_fundraiser: boolean;
+  fundraiser_json: { headline?: string; description?: string } | null;
   shipping_label: string | null;
   tracking_number: string | null;
   tracking_carrier: string | null;
