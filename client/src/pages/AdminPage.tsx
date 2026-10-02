@@ -10633,7 +10633,10 @@ function StoreOrderRow({ order, saving, onAdvance }: {
   const step = STORE_ORDER_NEXT[order.status];
   const cover = (order.lines ?? [])[0]?.cover_image ?? null;
   return (
-    <tr className="hover:bg-gray-50">
+    <tr
+      className="hover:bg-gray-50 cursor-pointer"
+      onClick={() => { window.location.href = `/admin/store-order/${order.id}`; }}
+    >
       <td className="px-3 py-2">
         {cover ? (
           <img src={cover} alt="" className="w-10 h-10 rounded object-cover border border-gray-200 bg-white" />
@@ -10682,7 +10685,7 @@ function StoreOrderRow({ order, saving, onAdvance }: {
           </div>
         )}
       </td>
-      <td className="px-3 py-2 relative whitespace-nowrap">
+      <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
         {step ? (
           <button
             onClick={() => onAdvance(step.next)}
@@ -10739,7 +10742,10 @@ function StoreOrderCard({ order, onAdvance }: {
   const { title, detail, qty } = storeOrderSummary(order);
   const step = STORE_ORDER_NEXT[order.status];
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+    <div
+      className="bg-white rounded-xl border border-gray-200 p-4 space-y-3 cursor-pointer active:bg-gray-50"
+      onClick={() => { window.location.href = `/admin/store-order/${order.id}`; }}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-gray-900 truncate">{order.store_name}</div>
@@ -10758,7 +10764,7 @@ function StoreOrderCard({ order, onAdvance }: {
       </div>
       {step && (
         <button
-          onClick={() => onAdvance(step.next)}
+          onClick={(e) => { e.stopPropagation(); onAdvance(step.next); }}
           className="w-full py-2 rounded-lg bg-emerald-50 text-emerald-700 text-sm font-semibold"
         >
           {step.label}

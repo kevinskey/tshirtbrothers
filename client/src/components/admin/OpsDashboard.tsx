@@ -18,7 +18,7 @@ type OpsData = {
   kpis: { orders_due_today: number; orders_due_week: number; new_quotes_today: number; new_quotes_yesterday: number; unpaid_balance: number; jobs_at_risk: number };
   pipeline: Record<string, number>;
   methods: Record<string, number>;
-  schedule: Array<{ kind: 'quote' | 'gangsheet'; id: number; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
+  schedule: Array<{ kind: 'quote' | 'gangsheet' | 'storeorder'; id: number; store?: string; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
   blanks: Array<{ id: number; po_number: string; status: string; will_call: boolean; total: number | null; expected: string | null; for_customer: string | null; quote_id: number | null }>;
   overdue_invoices: Array<{ id: string; invoice_number: string; customer_name: string; customer_email: string; amount_due: number; due_date: string }>;
   attention: { proofs_waiting: number; quotes_unanswered_24h: number; orders_overdue: number; awaiting_payment: number; ready_for_pickup: number };
@@ -253,7 +253,12 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
                     const late = row.overdue || (row.days_open !== null && row.days_open > 10 && !row.due);
                     return (
                       <tr key={`${row.kind}-${row.id}`}
-                        onClick={() => (row.kind === 'quote' ? navigate(`/admin/order/${row.id}`) : navigate('/admin/dtf-orders'))}
+                        onClick={() => navigate(
+                          row.kind === 'quote' ? `/admin/order/${row.id}`
+                            : row.kind === 'storeorder' ? `/admin/store-order/${row.id}`
+                            // Everything else in this feed is a gang sheet.
+                            : '/admin/dtf-orders',
+                        )}
                         className={`cursor-pointer hover:bg-gray-50 ${late ? 'bg-red-50/50' : ''}`}>
                         <td className="max-w-[140px] truncate py-2.5 pr-3 font-medium text-gray-900">{row.customer}</td>
                         <td className="max-w-[150px] truncate py-2.5 pr-3 text-gray-700">{row.job}</td>

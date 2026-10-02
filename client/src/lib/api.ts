@@ -1419,6 +1419,14 @@ export interface AdminStoreOrder {
   tsb_earnings_cents: number;
   tsb_order_ref: string | null;
   created_at: string;
+  buyer_name?: string | null;
+  buyer_phone?: string | null;
+  shipping_address?: {
+    name?: string | null; phone?: string | null;
+    line1?: string | null; line2?: string | null;
+    city?: string | null; state?: string | null;
+    postal_code?: string | null; country?: string | null;
+  } | null;
   lines: Array<{
     store_product_id: number;
     title: string;
@@ -1426,6 +1434,27 @@ export interface AdminStoreOrder {
     qty: number;
     variant: Record<string, string> | null;
   }> | null;
+}
+
+export interface AdminStoreOrderDetail extends AdminStoreOrder {
+  fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
+  pickup_location_json: { name?: string; address_line1?: string; city?: string; state?: string; zip?: string } | null;
+  shipping_label: string | null;
+  buyer_name: string | null;
+  buyer_phone: string | null;
+  lines: Array<{
+    store_product_id: number;
+    title: string;
+    cover_image: string | null;
+    qty: number;
+    variant: Record<string, string> | null;
+    retail_cents: number;
+    store_earnings_cents: number;
+  }> | null;
+}
+
+export async function fetchAdminStoreOrder(id: number) {
+  return authRequest<AdminStoreOrderDetail>(`/admin/store-orders/${id}`);
 }
 
 /** status: 'open' (default — paid/in_production/ready), 'all', or one status. */

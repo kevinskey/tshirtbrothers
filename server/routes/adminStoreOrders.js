@@ -43,6 +43,7 @@ router.get('/', async (req, res, next) => {
               o.subtotal_cents, o.shipping_cents, o.gross_total_cents,
               o.store_earnings_cents, o.tsb_earnings_cents,
               o.split_snapshot_json, o.tsb_order_ref, o.created_at, o.updated_at,
+              o.buyer_name, o.buyer_phone, o.shipping_address,
               -- Line titles for the pipeline row: the buyer bought named
               -- products, not an abstract "store order".
               (SELECT json_agg(json_build_object(
@@ -62,6 +63,35 @@ router.get('/', async (req, res, next) => {
       params,
     );
     res.json({ orders: rows });
+  } catch (err) { next(err); }
+});
+
+// GET /api/admin/store-orders/:id — everything needed to pack and mail it.
+router.get('/:id', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id)) return next();
+    const { rows } = await pool.query(
+      `SELECT o.*, s.name AS store_name, s.slug AS store_slug,
+              s.fulfillment_mode, s.pickup_location_json,
+              (SELECT json_agg(json_build_object(
+                        'store_product_id', sp.id,
+                        'title', sp.title,
+                        'cover_image', sp.cover_image,
+                        'qty', (l->>'qty')::int,
+                        'variant', l->'variant',
+                        'retail_cents', (l->>'retail_cents')::int,
+                        'store_earnings_cents', (l->>'store_earnings_cents')::int))
+                 FROM jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines', '[]'::jsonb)) l
+                 JOIN store_products sp ON sp.id = (l->>'store_product_id')::int
+              ) AS lines
+         FROM store_orders o
+         JOIN stores s ON s.id = o.store_id
+        WHERE o.id = $1`,
+      [id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Store order not found' });
+    res.json(rows[0]);
   } catch (err) { next(err); }
 });
 
