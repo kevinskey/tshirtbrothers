@@ -844,6 +844,32 @@ export default function AdminPage() {
     }
   }
 
+  // Keep the address bar honest about which section you're looking at.
+  //
+  // ?section= was read on mount but never written, so a single arrival from
+  // a notification email ("/admin?section=quotes&id=123") pinned that param
+  // in the URL forever: clicking Dashboard changed the screen but not the
+  // address, and the next refresh re-read the stale param and dropped you
+  // back on Quotes (Kevin, 2026-10-02). Writing it on every change also
+  // makes every admin screen bookmarkable and refresh-stable.
+  //
+  // replace: true — moving between sections is not browser history, and
+  // the Dashboard is the default so it carries no param at all.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const current = params.get('section');
+    if (activeSection === 'dashboard') {
+      if (!current) return;
+      params.delete('section');
+    } else {
+      if (current === activeSection) return;
+      params.set('section', activeSection);
+    }
+    // A deep link's one-shot row highlight shouldn't survive a section change.
+    params.delete('id');
+    setSearchParams(params, { replace: true });
+  }, [activeSection, setSearchParams]);
+
   // Deep-link from notification emails: /admin?section=quotes&id=123 lands on
   // the Quotes section so the admin doesn't have to navigate from Dashboard.
   // The matching row is scrolled into view + briefly highlighted via the
