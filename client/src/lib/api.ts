@@ -1528,7 +1528,7 @@ export interface AdminStoreOrder {
   store_name: string;
   store_slug: string;
   buyer_email: string;
-  status: 'paid' | 'in_production' | 'ready' | 'fulfilled' | 'cancelled';
+  status: 'paid' | 'printing' | 'shipped' | 'delivered' | 'refunded' | 'cancelled';
   fulfillment_type: string | null;
   is_bulk: boolean;
   subtotal_cents: number;
@@ -1581,7 +1581,7 @@ export async function fetchAdminStoreOrder(id: number) {
   return authRequest<AdminStoreOrderDetail>(`/admin/store-orders/${id}`);
 }
 
-/** status: 'open' (default — paid/in_production/ready), 'all', or one status. */
+/** status: 'open' (default — paid/printing), 'all', or one status. */
 export async function fetchAdminStoreOrders(status = 'open') {
   return authRequest<{ orders: AdminStoreOrder[] }>(`/admin/store-orders?status=${encodeURIComponent(status)}`);
 }

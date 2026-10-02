@@ -17,10 +17,11 @@ import {
 
 const usd = (cents: number | null | undefined) => (cents == null ? '—' : `$${(cents / 100).toFixed(2)}`);
 
+// These four are the only values store_orders_status_check allows.
 const NEXT_STEP: Record<string, { next: AdminStoreOrderDetail['status']; label: string } | undefined> = {
-  paid: { next: 'in_production', label: 'Start printing' },
-  in_production: { next: 'ready', label: 'Mark ready' },
-  ready: { next: 'fulfilled', label: 'Mark fulfilled' },
+  paid: { next: 'printing', label: 'Start printing' },
+  printing: { next: 'shipped', label: 'Mark shipped' },
+  shipped: { next: 'delivered', label: 'Mark delivered' },
 };
 
 function addressLines(a: AdminStoreOrderDetail['shipping_address']): string[] {
@@ -191,10 +192,10 @@ export default function AdminStoreOrderPage() {
                         <Printer className="w-4 h-4" /> Print label <ExternalLink className="w-3 h-3 opacity-60" />
                       </a>
                     )}
-                    {order.status !== 'fulfilled' && (
-                      <button onClick={() => advance('fulfilled')} disabled={busy}
+                    {order.status !== 'shipped' && order.status !== 'delivered' && (
+                      <button onClick={() => advance('shipped')} disabled={busy}
                         className="px-3 py-1.5 rounded-md text-sm font-semibold text-white bg-gray-900 hover:bg-black disabled:opacity-50">
-                        {busy ? 'Saving…' : 'Mark fulfilled & email buyer'}
+                        {busy ? 'Saving…' : 'Mark shipped & email buyer'}
                       </button>
                     )}
                   </div>
