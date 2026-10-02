@@ -5,13 +5,15 @@ import pool from '../db.js';
 
 const router = Router();
 
-function getClient() {
+// Exported so other admin routes (store orders) buy labels through the
+// same account and ship-from address instead of standing up a second one.
+export function getClient() {
   const key = process.env.EASYPOST_API_KEY;
   if (!key) throw new Error('EasyPost not configured');
   return new EasyPostClient(key);
 }
 
-const FROM_ADDRESS = {
+export const FROM_ADDRESS = {
   name: 'TShirt Brothers',
   street1: '6010 Renaissance Parkway',
   city: 'Fairburn',
@@ -71,7 +73,7 @@ router.post('/rates', async (req, res, next) => {
 // POST /buy - Buy a shipping label (admin only)
 router.post('/buy', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { shipmentId, rateId, quoteId } = req.body;
+    const { shipmentId, rateId, quoteId, storeOrderId } = req.body;
 
     if (!shipmentId || !rateId) {
       return res.status(400).json({ error: 'shipmentId and rateId are required' });
@@ -98,6 +100,16 @@ router.post('/buy', authenticate, adminOnly, async (req, res, next) => {
       await pool.query(
         `UPDATE quotes SET tracking_number = $1, tracking_carrier = $2 WHERE id = $3`,
         [result.trackingNumber, result.carrier || null, quoteId]
+      );
+    }
+    // Same deal for a storefront order — record the label, leave the status
+    // to PATCH /api/admin/store-orders/:id, which emails the buyer.
+    if (storeOrderId) {
+      await pool.query(
+        `UPDATE store_orders
+            SET tracking_number = $1, tracking_carrier = $2, label_url = $3
+          WHERE id = $4`,
+        [result.trackingNumber, result.carrier || null, result.labelUrl || null, storeOrderId],
       );
     }
 

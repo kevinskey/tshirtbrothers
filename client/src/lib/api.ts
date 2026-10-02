@@ -1440,6 +1440,11 @@ export interface AdminStoreOrderDetail extends AdminStoreOrder {
   fulfillment_mode: 'ship_only' | 'pickup_only' | 'both';
   pickup_location_json: { name?: string; address_line1?: string; city?: string; state?: string; zip?: string } | null;
   shipping_label: string | null;
+  tracking_number: string | null;
+  tracking_carrier: string | null;
+  label_url: string | null;
+  shipped_at: string | null;
+  shipped_email_sent_at: string | null;
   buyer_name: string | null;
   buyer_phone: string | null;
   lines: Array<{
@@ -1467,6 +1472,30 @@ export async function updateStoreOrderStatus(id: number, status: AdminStoreOrder
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
+}
+
+export async function setStoreOrderTracking(id: number, tracking_number: string, tracking_carrier?: string) {
+  return authRequest<{ id: number; tracking_number: string | null }>(`/admin/store-orders/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ tracking_number, tracking_carrier }),
+  });
+}
+
+export interface ShippingRate {
+  id: string; carrier: string; service: string; rate: number; deliveryDays: number | null;
+}
+
+/** Live EasyPost rates for a store order, priced off its saved address. */
+export async function fetchStoreOrderRates(id: number) {
+  return authRequest<{ shipmentId: string; weight_oz: number; rates: ShippingRate[] }>(
+    `/admin/store-orders/${id}/rates`, { method: 'POST', body: '{}' },
+  );
+}
+
+export async function buyStoreOrderLabel(args: { shipmentId: string; rateId: string; storeOrderId: number }) {
+  return authRequest<{ trackingNumber: string; trackingUrl: string; labelUrl: string; carrier: string; service: string; rate: string }>(
+    '/shipping/buy', { method: 'POST', body: JSON.stringify(args) },
+  );
 }
 
 // ── Store payouts (what TSB owes a fundraiser/group store) ───────────

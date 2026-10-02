@@ -1388,6 +1388,40 @@ export async function sendBalancePaidToAdmin(quote, amount) {
 }
 
 /** Order went in the mail — tracking email to the customer. */
+// Storefront order shipped. Same shape as the quote version, but the
+// buyer bought from a store they know by name, not from a TSB quote —
+// so the store leads and the items are listed by size.
+export async function sendStoreOrderShippedEmail(order) {
+  if (!order.buyer_email) return;
+  const url = trackingUrl(order.tracking_carrier, order.tracking_number);
+  const items = (order.lines || []).map((l) => {
+    const variant = [l.variant?.size, l.variant?.color].filter(Boolean).join(' · ');
+    return `<li style="margin:0 0 4px;font-size:14px;color:#374151;">${l.qty}× ${escapeHtml(l.title)}${variant ? ` <span style="color:#9ca3af;">(${escapeHtml(variant)})</span>` : ''}</li>`;
+  }).join('');
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">📦 Your order is on its way!</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.shipping_address?.name || order.buyer_name || 'there')}, your ${escapeHtml(order.store_name)} order just shipped.</p>
+    ${items ? `<ul style="margin:0 0 16px;padding-left:18px;">${items}</ul>` : ''}
+    ${detailsTable(
+      detailRow('Carrier', escapeHtml(order.tracking_carrier || '—')) +
+      detailRow('Tracking number', escapeHtml(order.tracking_number || '—'))
+    )}
+    ${url ? primaryButton('Track My Package', url) : ''}
+    <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
+  `;
+  try {
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: [order.buyer_email],
+      subject: `Your ${order.store_name} order has shipped 📦`,
+      html: baseLayout('Order shipped', body),
+    });
+    console.log(`[Email] Store order ${order.id} shipped notice sent to ${order.buyer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send store-order shipped email:', err);
+  }
+}
+
 export async function sendOrderShippedToCustomer(quote, { carrier, trackingNumber } = {}, lang = 'en') {
   if (!quote.customer_email) return;
   const es = lang === 'es';
