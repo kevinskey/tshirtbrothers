@@ -17,8 +17,10 @@
 // Cadence semantics (MVP):
 //   'monthly'              — fires on day 1 of the UTC month
 //   'weekly'               — fires on Friday (UTC)
-//   'per_campaign_close'   — reserved; fires from the campaign-close
-//                            handler in the future, not from this cron
+//   'per_campaign_close'   — manual only; never fires from this cron. The
+//                            trigger is POST /api/admin/store-payouts/
+//                            store/:id/pay-now (the "Pay now" button on the
+//                            group store detail page).
 // Anything else is treated as monthly.
 
 import pool from '../db.js';
@@ -30,7 +32,7 @@ export function isDueToday(cadence, now = new Date()) {
   const c = String(cadence || 'monthly').toLowerCase();
   if (c === 'monthly') return now.getUTCDate() === 1;
   if (c === 'weekly')  return now.getUTCDay() === 5;    // Friday
-  if (c === 'per_campaign_close') return false;         // out-of-band
+  if (c === 'per_campaign_close') return false;         // manual: Pay now
   return now.getUTCDate() === 1;                        // default: monthly
 }
 

@@ -146,7 +146,11 @@ router.post('/provision-store', async (req, res, next) => {
         [
           store.id,
           feeConfig,
-          { cadence: 'per_campaign_close', method: 'ach' },
+          // monthly, not per_campaign_close: isDueToday() returns false for
+          // that value, so a store created with it can only ever be paid by
+          // the admin Pay now button. Monthly pays on the 1st and Pay now
+          // still works whenever a campaign wraps early.
+          { cadence: 'monthly', method: 'ach' },
           owner_email,
         ],
       );
