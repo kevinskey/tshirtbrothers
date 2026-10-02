@@ -1402,6 +1402,122 @@ export async function fetchGroupStore(id: number) {
   return authRequest<GroupStoreDetail>(`/admin/group-stores/${id}`);
 }
 
+// ── Post Office (EasyPost shipping desk) ─────────────────────────────
+export interface PostOfficeAddress {
+  name?: string; street1?: string; street2?: string;
+  city?: string; state?: string; zip?: string; country?: string; phone?: string;
+}
+
+export interface PostOfficeQueueItem {
+  subject_type: 'store_order' | 'quote';
+  subject_id: number;
+  created_at: string;
+  label: string;
+  items: string;
+  customer: string | null;
+  email: string | null;
+  qty: number;
+  status: string;
+  address: PostOfficeAddress | null;
+  due: string | null;
+}
+
+export interface Shipment {
+  id: number;
+  subject_type: string;
+  subject_id: number | null;
+  subject_label: string | null;
+  easypost_shipment_id: string;
+  tracking_code: string | null;
+  carrier: string | null;
+  service: string | null;
+  rate_cents: number | null;
+  insurance_cents: number;
+  label_url: string | null;
+  tracking_status: string | null;
+  tracking_detail: string | null;
+  est_delivery_date: string | null;
+  delivered_at: string | null;
+  scan_form_id: string | null;
+  scan_form_url: string | null;
+  to_name: string | null;
+  to_address: PostOfficeAddress | null;
+  weight_oz: string | null;
+  status: string;
+  refund_status: string | null;
+  created_at: string;
+}
+
+export interface Pickup {
+  id: number; carrier: string | null; service: string | null; rate_cents: number | null;
+  min_datetime: string; max_datetime: string; status: string | null;
+  confirmation: string | null; shipment_ids: number[]; created_at: string;
+}
+
+export async function fetchShipQueue() {
+  return authRequest<{ items: PostOfficeQueueItem[] }>('/admin/post-office/queue');
+}
+
+export async function verifyShipAddress(address: PostOfficeAddress) {
+  return authRequest<{ verified: PostOfficeAddress | null; success: boolean | null; messages: string[] }>(
+    '/admin/post-office/verify-address', { method: 'POST', body: JSON.stringify({ address }) },
+  );
+}
+
+export async function fetchShipRates(body: {
+  subject_type?: string; subject_id?: number; address?: PostOfficeAddress; weight_oz?: number;
+}) {
+  return authRequest<{ shipmentId: string; weight_oz: number; to: PostOfficeAddress; rates: ShippingRate[] }>(
+    '/admin/post-office/rates', { method: 'POST', body: JSON.stringify(body) },
+  );
+}
+
+export async function buyShipLabel(body: {
+  shipmentId: string; rateId: string; subject_type?: string; subject_id?: number; insurance?: number;
+}) {
+  return authRequest<Shipment>('/admin/post-office/buy', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function buyCheapestLabels(items: Array<{ subject_type: string; subject_id: number }>, carrier?: string) {
+  return authRequest<{ bought: number; failed: number; results: Array<{ subject_id: number; ok: boolean; error?: string }> }>(
+    '/admin/post-office/buy-cheapest', { method: 'POST', body: JSON.stringify({ items, carrier }) },
+  );
+}
+
+export async function fetchShipments(status = 'open') {
+  return authRequest<{ shipments: Shipment[]; month: { spent_cents: number; live: number; refunded: number } }>(
+    `/admin/post-office/shipments?status=${encodeURIComponent(status)}`,
+  );
+}
+
+export async function refundShipment(id: number) {
+  return authRequest<Shipment>(`/admin/post-office/shipments/${id}/refund`, { method: 'POST', body: '{}' });
+}
+
+export async function refreshTracking() {
+  return authRequest<{ checked: number; updated: number }>('/admin/post-office/refresh-tracking', { method: 'POST', body: '{}' });
+}
+
+export async function createScanForm(shipment_ids: number[]) {
+  return authRequest<{ id: string; url: string | null; shipments: number }>(
+    '/admin/post-office/scan-form', { method: 'POST', body: JSON.stringify({ shipment_ids }) },
+  );
+}
+
+export async function fetchPickups() {
+  return authRequest<{ pickups: Pickup[] }>('/admin/post-office/pickups');
+}
+
+export async function schedulePickup(body: {
+  shipment_ids: number[]; min_datetime: string; max_datetime: string; instructions?: string;
+}) {
+  return authRequest<Pickup>('/admin/post-office/pickups', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export async function cancelPickup(id: number) {
+  return authRequest<Pickup>(`/admin/post-office/pickups/${id}/cancel`, { method: 'POST', body: '{}' });
+}
+
 // ── Storefront orders (group / fundraiser store sales) ───────────────
 export interface AdminStoreOrder {
   id: number;

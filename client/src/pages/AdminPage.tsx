@@ -36,6 +36,7 @@ import {
   Edit3,
   Upload,
   GalleryHorizontal,
+  Truck,
   Store,
   Target,
   Mail,
@@ -244,6 +245,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     // One entry for the vendor file sender — the dedicated page also links
     // to the DTF order queue, so the queue doesn't need its own nav row.
     { key: 'vendor-send', label: 'File Sender', icon: Send, to: '/admin/vendor-send' },
+    { key: 'post-office', label: 'Post Office', icon: Truck, to: '/admin/post-office' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
     { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
