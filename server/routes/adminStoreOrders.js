@@ -78,7 +78,8 @@ router.get('/:id', async (req, res, next) => {
     if (!Number.isInteger(id)) return next();
     const { rows } = await pool.query(
       `SELECT o.*, s.name AS store_name, s.slug AS store_slug,
-              s.fulfillment_mode, s.pickup_location_json,
+              s.fulfillment_mode, s.pickup_location_json, s.brand_json,
+              s.is_fundraiser, s.fundraiser_json,
               (SELECT json_agg(json_build_object(
                         'store_product_id', sp.id,
                         'title', sp.title,
