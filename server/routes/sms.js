@@ -21,6 +21,50 @@ function toE164(value) {
 }
 
 // ── Public: Twilio inbound webhook ───────────────────────────────────
+// The shop's Twilio number is shared with GleeWorld, whose
+// receive-sms-notifications edge function turns a text from an authorized
+// choir admin into member notifications ("@exec: ...", "@s1: ..."). Twilio
+// only allows ONE inbound webhook per number, so this endpoint owns it and
+// forwards a verbatim copy there — both systems keep working.
+//
+// Two rules fall out of that:
+//   - A GleeWorld broadcast ("@exec: ...") is not a TSB customer message,
+//     so it is forwarded but never logged into the Texts inbox.
+//   - GleeWorld answers unauthorized senders with "❌ Unauthorized: your
+//     number is not registered" — which is what every TSB customer is. We
+//     swallow that reply and pass back only its real broadcast receipts.
+const GLEEWORLD_SMS_URL = process.env.GLEEWORLD_SMS_FORWARD_URL
+  || 'https://oopmlreysjzuxzylyheb.supabase.co/functions/v1/receive-sms-notifications';
+const GLEEWORLD_BROADCAST_RE = /^@(exec|admin|s1|s2|a1|a2|pr):/i;
+
+/** Forward the raw Twilio payload to GleeWorld. Returns its TwiML when that
+ *  reply should reach the sender, else null. Never throws. */
+async function forwardToGleeWorld(body) {
+  if (!GLEEWORLD_SMS_URL) return null;
+  try {
+    const form = new URLSearchParams();
+    for (const [k, v] of Object.entries(body || {})) form.append(k, String(v));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(GLEEWORLD_SMS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const text = await res.text();
+    // Only a real broadcast receipt goes back to the sender. The
+    // unauthorized bounce is GleeWorld telling a TSB customer they are not
+    // a choir member — never send that to someone asking about shirts.
+    if (res.ok && text.includes('<Message>') && !/Unauthorized/i.test(text)) return text;
+    return null;
+  } catch (err) {
+    console.error('[sms] forward to GleeWorld failed:', err.message);
+    return null;
+  }
+}
+
 export const publicRouter = Router();
 
 publicRouter.post('/inbound', async (req, res) => {
@@ -37,9 +81,17 @@ publicRouter.post('/inbound', async (req, res) => {
     }
   }
 
+  // Hand GleeWorld its copy first so a slow TSB query can't cost it the
+  // message; the await is bounded at 8s, well inside Twilio's timeout.
+  const gleeworldReply = await forwardToGleeWorld(req.body);
+
   try {
     const from = toE164(req.body?.From);
     const body = String(req.body?.Body ?? '');
+    // A choir broadcast command is not a customer conversation.
+    if (GLEEWORLD_BROADCAST_RE.test(body.trim())) {
+      return res.type('text/xml').send(gleeworldReply || '<Response/>');
+    }
     const sid = req.body?.MessageSid || null;
     const numMedia = Number(req.body?.NumMedia || 0) || 0;
     const media = [];
@@ -78,9 +130,10 @@ publicRouter.post('/inbound', async (req, res) => {
     console.error('[sms] inbound failed:', err.message);
   }
 
-  // Always 200 with empty TwiML: a retry storm helps nobody, and the
-  // customer should not get an auto-reply.
-  res.type('text/xml').send('<Response/>');
+  // Always 200: a retry storm helps nobody. Empty TwiML unless GleeWorld
+  // produced a broadcast receipt worth passing back — a TSB customer never
+  // gets an auto-reply.
+  res.type('text/xml').send(gleeworldReply || '<Response/>');
 });
 
 // ── Admin ────────────────────────────────────────────────────────────
