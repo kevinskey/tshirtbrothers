@@ -1471,7 +1471,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
                   JOIN store_products sp ON sp.id = (l->>'store_product_id')::int) AS job
           FROM store_orders o
           JOIN stores s ON s.id = o.store_id
-         WHERE o.status IN ('paid', 'in_production', 'ready')
+         WHERE o.status IN ('paid', 'printing')
          ORDER BY o.created_at ASC LIMIT 50`),
       pool.query(`
         SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
@@ -1533,8 +1533,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
     // already paid and already designed, so it starts at ready_to_produce.
     for (const o of storeOrders) {
       if (o.status === 'paid') pipeline.ready_to_produce += 1;
-      else if (o.status === 'in_production') pipeline.printing += 1;
-      else if (o.status === 'ready') pipeline.pickup += 1;
+      else if (o.status === 'printing') pipeline.printing += 1;
     }
 
     const methods = { DTF: 0, Embroidery: 0, HTV: 0, 'Screen Print': 0, Other: 0 };
@@ -1576,7 +1575,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
         if (due >= today && due < new Date(today.getTime() + 86400000)) dueToday += 1;
         if (due >= today && due <= in7) dueWeek += 1;
       }
-      const storeStage = (st) => (st === 'paid' ? 'ready_to_produce' : st === 'in_production' ? 'printing' : 'pickup');
+      const storeStage = (st) => (st === 'paid' ? 'ready_to_produce' : st === 'printing' ? 'printing' : 'pickup');
       schedule.push({
         kind: isStore ? 'storeorder' : isGang ? 'gangsheet' : 'quote',
         id: row.id,

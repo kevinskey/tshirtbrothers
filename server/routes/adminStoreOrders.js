@@ -10,9 +10,11 @@
 //   GET   /api/admin/store-orders?status=open|all
 //   PATCH /api/admin/store-orders/:id   { status }
 //
-// Status ladder, deliberately shorter than the quote ladder — there is no
-// mockup round trip on a store order, the design is already published:
-//   paid → in_production → ready → fulfilled   (or cancelled)
+// Status ladder. These are the ONLY values store_orders_status_check
+// permits — inventing in_production/ready/fulfilled here (2026-10-02)
+// made every "Start printing" click fail against the constraint. The
+// column is the contract:
+//   paid → printing → shipped → delivered   (or refunded / cancelled)
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
@@ -23,9 +25,9 @@ import { sendStoreOrderShippedEmail } from '../services/email.js';
 const router = Router();
 router.use(authenticate, adminOnly);
 
-export const STORE_ORDER_STATUSES = ['paid', 'in_production', 'ready', 'fulfilled', 'cancelled'];
+export const STORE_ORDER_STATUSES = ['paid', 'printing', 'shipped', 'delivered', 'refunded', 'cancelled'];
 /** Statuses that still need work from the shop. */
-export const OPEN_STORE_ORDER_STATUSES = ['paid', 'in_production', 'ready'];
+export const OPEN_STORE_ORDER_STATUSES = ['paid', 'printing'];
 
 // GET /api/admin/store-orders?status=open (default) | all | <status>
 router.get('/', async (req, res, next) => {
@@ -173,8 +175,11 @@ router.patch('/:id', async (req, res, next) => {
     if (status !== undefined) push('status', status);
     if (tracking_number !== undefined) push('tracking_number', tracking_number || null);
     if (tracking_carrier !== undefined) push('tracking_carrier', tracking_carrier || null);
-    // Fulfilled is the moment it left the building.
-    if (status === 'fulfilled') sets.push('shipped_at = COALESCE(shipped_at, NOW())');
+    // Shipped is the moment it left the building; a pickup order jumps
+    // straight to delivered when the customer collects it.
+    if (status === 'shipped' || status === 'delivered') {
+      sets.push('shipped_at = COALESCE(shipped_at, NOW())');
+    }
     if (sets.length === 0) return res.status(400).json({ error: 'nothing to update' });
     sets.push('updated_at = NOW()');
     params.push(id);
@@ -192,7 +197,7 @@ router.patch('/:id', async (req, res, next) => {
     // Tell the buyer their order shipped — once. Deduped on
     // shipped_email_sent_at so re-marking fulfilled can't re-send, and
     // skipped entirely for a pickup order or one with no tracking yet.
-    if (status === 'fulfilled' && order.tracking_number && !order.shipped_email_sent_at) {
+    if (status === 'shipped' && order.tracking_number && !order.shipped_email_sent_at) {
       (async () => {
         try {
           const { rows: full } = await pool.query(

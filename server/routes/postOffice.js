@@ -129,7 +129,7 @@ router.get('/queue', async (req, res, next) => {
                    FROM jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines','[]'::jsonb)) l
                    JOIN store_products sp ON sp.id = (l->>'store_product_id')::int) AS items
            FROM store_orders o JOIN stores s ON s.id = o.store_id
-          WHERE o.status IN ('paid', 'in_production', 'ready')
+          WHERE o.status IN ('paid', 'printing')
             AND COALESCE(o.fulfillment_type, 'ship') <> 'pickup'
             AND o.tracking_number IS NULL
           ORDER BY o.created_at ASC`,
