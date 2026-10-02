@@ -1368,7 +1368,7 @@ router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
 // the only row-level fetch is the bounded open-jobs list for the schedule.
 router.get('/dashboard-ops', async (req, res, next) => {
   try {
-    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, methodsR, blanksR, overdueR] = await Promise.all([
+    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, storeOrdersR, methodsR, blanksR, overdueR] = await Promise.all([
       // Money movement by period: invoice payment entries + gang sheet paid.
       pool.query(`
         WITH pays AS (
@@ -1458,6 +1458,21 @@ router.get('/dashboard-ops', async (req, res, next) => {
           FROM gang_sheet_orders
          WHERE status IN ('paid', 'in_production', 'ready')
          ORDER BY paid_at ASC LIMIT 50`),
+      // Storefront sales. Captured into store_orders by the Stripe webhook
+      // and, until 2026-10-02, shown nowhere in the shop's working views —
+      // paid shirts with no production trail.
+      pool.query(`
+        SELECT o.id, s.name AS store_name, o.buyer_email, o.status,
+               o.fulfillment_type, o.created_at, o.gross_total_cents,
+               COALESCE((SELECT SUM((l->>'qty')::int)
+                           FROM jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines','[]'::jsonb)) l), 0) AS qty,
+               (SELECT string_agg(sp.title, ' + ')
+                  FROM jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines','[]'::jsonb)) l
+                  JOIN store_products sp ON sp.id = (l->>'store_product_id')::int) AS job
+          FROM store_orders o
+          JOIN stores s ON s.id = o.store_id
+         WHERE o.status IN ('paid', 'in_production', 'ready')
+         ORDER BY o.created_at ASC LIMIT 50`),
       pool.query(`
         SELECT COALESCE(inputs_json->'items'->0->'inputs'->>'methodName', 'Other') AS method, COUNT(*)::int AS n
           FROM quotes WHERE archived_at IS NULL
@@ -1489,6 +1504,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
     const inv = invoiceAggR.rows[0];
     const jobs = jobsR.rows;
     const gang = gangR.rows;
+    const storeOrders = storeOrdersR.rows;
 
     // Quote sub-state → pipeline stage. Finishing = the shop-floor 'pressed'
     // checkpoint is ticked but the job hasn't been marked ready yet.
@@ -1513,6 +1529,13 @@ router.get('/dashboard-ops', async (req, res, next) => {
       else if (g.status === 'in_production') pipeline.printing += 1;
       else if (g.status === 'ready') pipeline.pickup += 1;
     }
+    // Store orders ride the same three stages — a storefront sale arrives
+    // already paid and already designed, so it starts at ready_to_produce.
+    for (const o of storeOrders) {
+      if (o.status === 'paid') pipeline.ready_to_produce += 1;
+      else if (o.status === 'in_production') pipeline.printing += 1;
+      else if (o.status === 'ready') pipeline.pickup += 1;
+    }
 
     const methods = { DTF: 0, Embroidery: 0, HTV: 0, 'Screen Print': 0, Other: 0 };
     for (const r of methodsR.rows) {
@@ -1520,40 +1543,56 @@ router.get('/dashboard-ops', async (req, res, next) => {
       methods[key] += r.n;
     }
     methods.DTF += gang.length;
+    methods.DTF += storeOrders.length;   // storefront shirts print DTF
 
     // Due / at-risk from date_needed (quotes) + tier deadline (gang sheets).
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const in7 = new Date(today); in7.setDate(in7.getDate() + 7);
     const TIER_DAYS = { standard: 2, rush: 1, hot_rush: 0 };
+    // A storefront order has no customer-entered deadline, so its clock is
+    // the standard print turnaround from the day it was paid.
+    const STORE_ORDER_TURNAROUND_DAYS = 10;
     const dueDateOf = (row) => {
       if (row.date_needed) { const d = new Date(row.date_needed); return isNaN(d) ? null : d; }
       if (row.tier && row.paid_at) {
         const d = new Date(row.paid_at); d.setDate(d.getDate() + (TIER_DAYS[row.tier] ?? 2)); return d;
       }
+      if (row.store_name && row.created_at) {
+        const d = new Date(row.created_at);
+        d.setDate(d.getDate() + STORE_ORDER_TURNAROUND_DAYS);
+        return d;
+      }
       return null;
     };
     let dueToday = 0, dueWeek = 0, atRisk = 0;
     const schedule = [];
-    for (const row of [...jobs, ...gang]) {
+    for (const row of [...jobs, ...gang, ...storeOrders]) {
       const done = row.ready_at || row.status === 'ready';
       const due = dueDateOf(row);
       const isGang = row.tier !== undefined;
+      const isStore = row.store_name !== undefined;
       if (due) {
         if (!done && due < today) atRisk += 1;
         if (due >= today && due < new Date(today.getTime() + 86400000)) dueToday += 1;
         if (due >= today && due <= in7) dueWeek += 1;
       }
+      const storeStage = (st) => (st === 'paid' ? 'ready_to_produce' : st === 'in_production' ? 'printing' : 'pickup');
       schedule.push({
-        kind: isGang ? 'gangsheet' : 'quote',
+        kind: isStore ? 'storeorder' : isGang ? 'gangsheet' : 'quote',
         id: row.id,
-        customer: row.customer_name || '(no name)',
-        email: row.customer_email || null,
-        job: isGang ? `DTF Gang Sheet ${row.length_ft} ft` : (row.product_name || 'Custom order'),
-        qty: isGang ? 1 : (row.quantity || 0),
-        price: isGang ? null : (Number(row.estimated_price) || null),
+        customer: isStore ? (row.buyer_email || '(store buyer)') : (row.customer_name || '(no name)'),
+        email: isStore ? row.buyer_email : (row.customer_email || null),
+        store: isStore ? row.store_name : undefined,
+        job: isStore
+          ? (row.job || `${row.store_name} order`)
+          : isGang ? `DTF Gang Sheet ${row.length_ft} ft` : (row.product_name || 'Custom order'),
+        qty: isStore ? (Number(row.qty) || 0) : isGang ? 1 : (row.quantity || 0),
+        price: isStore ? (Number(row.gross_total_cents) || 0) / 100 : isGang ? null : (Number(row.estimated_price) || null),
         days_open: row.created_at ? Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000) : null,
-        method: isGang ? 'DTF' : (row.method || 'Other'),
-        stage: isGang
+        method: isStore ? 'DTF' : isGang ? 'DTF' : (row.method || 'Other'),
+        stage: isStore
+          ? storeStage(row.status)
+          : isGang
           ? (row.status === 'paid' ? 'ready_to_produce' : row.status === 'in_production' ? 'printing' : 'pickup')
           : stageOf(row),
         due: due ? due.toISOString().slice(0, 10) : null,
