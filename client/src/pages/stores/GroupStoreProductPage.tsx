@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { Loader2, ArrowLeft, ShoppingBag, Truck, MapPin, Check } from 'lucide-react';
 import { useStoreCart } from '@/lib/storeCart';
 import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
@@ -196,7 +198,7 @@ export default function GroupStoreProductPage() {
   const galleryImage = gallery[galleryIdx] ?? gallery[0] ?? null;
 
   const page = (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Seo
         title={`${product.title} · ${store.name}`}
         description={product.description || `${product.title} — ${store.name}. Designed and fulfilled by TShirt Brothers.`}
@@ -206,9 +208,7 @@ export default function GroupStoreProductPage() {
 
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          {store.brand_json.logo_url && (
-            <img src={store.brand_json.logo_url} alt="" className={isBusiness ? 'h-8 w-8 object-contain' : 'h-10 w-10 object-contain'} />
-          )}
+          <StoreMark name={store.name} logoUrl={store.brand_json.logo_url} color={primary} size={isBusiness ? 'sm' : 'md'} />
           <Link to={storeLink(slug, "/")} className="flex-1 min-w-0">
             <h1 className={`font-bold truncate ${isBusiness ? 'text-base' : 'text-lg'}`} style={{ color: primary }}>{store.name}</h1>
           </Link>
@@ -218,7 +218,7 @@ export default function GroupStoreProductPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 w-full flex-1">
         <Link to={storeLink(slug, "/")} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-6">
           <ArrowLeft className="w-4 h-4" /> Back to store
         </Link>
@@ -408,6 +408,8 @@ export default function GroupStoreProductPage() {
           </div>
         </div>
       </main>
+      <PoweredByFooter storeName={store.name} logoUrl={store.brand_json.logo_url} color={primary}
+        note={store.brand_json.footer_note} />
     </div>
   );
 

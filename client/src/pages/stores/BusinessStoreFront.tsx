@@ -10,6 +10,8 @@
 import { Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { storeLink } from '@/lib/storeSubdomain';
 import { MapPin, ExternalLink, ShoppingBag, PenTool, ArrowRight } from 'lucide-react';
 
@@ -64,20 +66,8 @@ export default function BusinessStoreFront({
       <section className="border-b border-gray-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
           <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-            {brand.logo_url ? (
-              <img
-                src={brand.logo_url}
-                alt={`${store.name} logo`}
-                className="h-20 w-20 sm:h-24 sm:w-24 object-contain rounded-xl border border-gray-100 bg-white shadow-sm p-2"
-              />
-            ) : (
-              <div
-                className="h-20 w-20 sm:h-24 sm:w-24 rounded-xl flex items-center justify-center text-white text-2xl font-black shadow-sm"
-                style={{ backgroundColor: primary }}
-              >
-                {store.name.split(' ').map((w) => w[0]).slice(0, 2).join('')}
-              </div>
-            )}
+            <StoreMark name={store.name} logoUrl={brand.logo_url} color={primary} size="lg"
+              className={brand.logo_url ? 'border border-gray-100 shadow-sm p-2' : 'shadow-sm'} />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-bold uppercase tracking-widest text-orange-600">
                 TSB Pro Business Store
@@ -188,11 +178,9 @@ export default function BusinessStoreFront({
               <PenTool className="w-4 h-4" /> Create a New Design
             </Link>
           </div>
-          {brand.footer_note && (
-            <p className="mt-6 text-center text-xs text-gray-400">{brand.footer_note}</p>
-          )}
         </div>
       </section>
+      <PoweredByFooter storeName={store.name} logoUrl={brand.logo_url} color={primary} note={brand.footer_note} />
     </Layout>
   );
 }

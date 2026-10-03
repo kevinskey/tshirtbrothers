@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import { useStoreCart } from '@/lib/storeCart';
 import {
@@ -311,9 +313,7 @@ export default function GroupStorePage() {
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center gap-4">
           <Link to={storeLink(slug, '/')} className="flex items-center gap-2 min-w-0">
-            {store.brand_json.logo_url && (
-              <img src={store.brand_json.logo_url} alt="" className="h-9 w-9 object-contain" />
-            )}
+            <StoreMark name={store.name} logoUrl={store.brand_json.logo_url} color={primary} size="sm" />
             <span className="font-bold text-lg truncate" style={{ color: primary }}>{store.name}</span>
           </Link>
           <nav className="hidden md:flex items-center gap-6 ml-6 text-sm font-medium text-gray-700">
@@ -760,8 +760,8 @@ export default function GroupStorePage() {
       <footer className="bg-white border-t border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-10 grid grid-cols-1 md:grid-cols-3 gap-8">
           <div>
-            <div className="flex items-center gap-2">
-              {store.brand_json.logo_url && <img src={store.brand_json.logo_url} alt="" className="h-8 w-8 object-contain" />}
+            <div className="flex items-center gap-3">
+              <StoreMark name={store.name} logoUrl={store.brand_json.logo_url} color={primary} size="md" />
               <span className="font-bold text-lg" style={{ color: primary }}>{store.name}</span>
             </div>
             <p className="mt-3 text-sm text-gray-600">
@@ -789,10 +789,8 @@ export default function GroupStorePage() {
             </p>
           </div>
         </div>
-        <div className="border-t border-gray-100 py-4 text-center text-xs text-gray-400">
-          © {new Date().getFullYear()} {store.name} · Store powered by TShirt Brothers
-        </div>
       </footer>
+      <PoweredByFooter storeName={store.name} logoUrl={store.brand_json.logo_url} color={primary} />
     </div>
   );
 }
