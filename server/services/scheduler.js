@@ -10,6 +10,7 @@ import pool from '../db.js';
 import { sendAbandonedQuoteFollowUp } from './email.js';
 import { runPayoutJob } from './storePayoutJob.js';
 import { runNewsletterSchedules } from './newsletterBlast.js';
+import { refreshTracking } from './trackingRefresh.js';
 import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
@@ -189,5 +190,27 @@ export function startScheduler() {
       .then((m) => m.refreshOpenPurchaseOrders())
       .catch((err) => console.error('[scheduler] PO refresh failed:', err.message));
   });
+
+  // Parcel tracking, every 20 minutes. staleOnly skips anything already
+  // checked within the hour, so a parcel costs ~1 EasyPost call an hour
+  // rather than one per run, and a quiet week costs almost nothing.
+  // Carriers scan a few times a day; 20 minutes is about the shop asking
+  // "has it moved" rather than about the carrier's cadence.
+  cron.schedule('*/20 * * * *', () => {
+    refreshTracking({ staleOnly: true, limit: 60 })
+      .then((r) => {
+        if (r.updated > 0) {
+          console.log(`[scheduler] tracking: ${r.updated}/${r.checked} updated` +
+            (r.delivered ? `, ${r.delivered} newly delivered` : ''));
+        }
+      })
+      .catch((err) => console.error('[scheduler] tracking refresh failed:', err.message));
+  });
+  // Once shortly after boot, so a redeploy doesn't leave the board stale
+  // for up to 20 minutes.
+  setTimeout(() => {
+    refreshTracking({ staleOnly: true, limit: 60 })
+      .catch((err) => console.error('[scheduler] boot tracking refresh failed:', err.message));
+  }, 45_000);
   console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, non-responsive quote archive daily @ 06:45 UTC, newsletter schedules every 5 min, S&S PO refresh @ 07:15/15:15 UTC)');
 }
