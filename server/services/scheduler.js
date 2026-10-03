@@ -212,5 +212,5 @@ export function startScheduler() {
     refreshTracking({ staleOnly: true, limit: 60 })
       .catch((err) => console.error('[scheduler] boot tracking refresh failed:', err.message));
   }, 45_000);
-  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, non-responsive quote archive daily @ 06:45 UTC, newsletter schedules every 5 min, S&S PO refresh @ 07:15/15:15 UTC)');
+  console.log('[scheduler] started (abandoned-quote follow-up hourly @ :05, franchise payouts daily @ 06:00 UTC, abandoned gang-sheet checkout purge daily @ 06:30 UTC, non-responsive quote archive daily @ 06:45 UTC, newsletter schedules every 5 min, S&S PO refresh @ 07:15/15:15 UTC, parcel tracking every 20 min)');
 }
