@@ -242,6 +242,10 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
         {stage === 'code' && (
           <form onSubmit={verifyCode} className="mt-6 space-y-4">
             <p className="text-sm text-gray-600">Sent to <strong>{email}</strong>. Check your inbox.</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Codes only go to addresses TShirt Brothers has listed as admins for this store. Nothing arriving? Try the
+              email your organization signed up with, or ask TSB to add this one.
+            </p>
             <input
               type="text" inputMode="numeric" pattern="\d*" maxLength={6} required autoFocus
               value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
