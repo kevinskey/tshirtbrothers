@@ -9,6 +9,8 @@ import { useStoreSlug, storeLink, getStoreSubdomain } from '@/lib/storeSubdomain
 import { useStoreCart } from '@/lib/storeCart';
 import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { Loader2, ArrowLeft, ShoppingBag, Trash2, Minus, Plus } from 'lucide-react';
 
 interface StoreProfile {
@@ -84,14 +86,24 @@ export default function GroupStoreCartPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Seo
         title={`Cart — ${store?.name || 'Store'}`}
         description="Your cart"
         path={getStoreSubdomain() ? '/cart' : `/stores/${slug}/cart`}
         noindex
       />
-      <div className="max-w-3xl mx-auto px-4 py-8">
+      {store && (
+        <header className="bg-white border-b border-gray-200">
+          <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
+            <StoreMark name={store.name} logoUrl={store.brand_json?.logo_url} color={primary} size="sm" />
+            <Link to={storeLink(slug, '/')} className="font-bold text-lg truncate" style={{ color: primary }}>
+              {store.name}
+            </Link>
+          </div>
+        </header>
+      )}
+      <div className="max-w-3xl mx-auto px-4 py-8 w-full flex-1">
         <Link to={storeLink(slug, '/')} className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-black mb-6">
           <ArrowLeft className="w-4 h-4" /> Keep shopping
         </Link>
@@ -211,6 +223,7 @@ export default function GroupStoreCartPage() {
           </>
         )}
       </div>
+      <PoweredByFooter storeName={store?.name} logoUrl={store?.brand_json?.logo_url} color={primary} />
     </div>
   );
 }

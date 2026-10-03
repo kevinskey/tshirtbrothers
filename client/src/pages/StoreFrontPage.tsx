@@ -8,6 +8,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { Loader2, ShoppingBag } from 'lucide-react';
 
 interface StoreProfile {
@@ -90,7 +92,7 @@ export default function StoreFrontPage() {
   const primary = store.brand_json.primary_color || '#111827';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Seo
         title={`${store.name} · Store`}
         description={`Merchandise for ${store.name}. Fulfilled by TShirt Brothers.`}
@@ -100,9 +102,7 @@ export default function StoreFrontPage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          {store.brand_json.logo_url && (
-            <img src={store.brand_json.logo_url} alt="" className="h-10 w-10 object-contain" />
-          )}
+          <StoreMark name={store.name} logoUrl={store.brand_json.logo_url} color={primary} size="md" />
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-bold truncate" style={{ color: primary }}>{store.name}</h1>
             <p className="text-xs text-gray-500">Fulfilled by TShirt Brothers</p>
@@ -116,7 +116,7 @@ export default function StoreFrontPage() {
       </header>
 
       {/* Product grid */}
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="max-w-6xl mx-auto px-4 py-8 w-full flex-1">
         {/* Category chips — only when the store's products actually carry
             categories (rides in variants_json; older products have none). */}
         {(() => {
@@ -179,11 +179,8 @@ export default function StoreFrontPage() {
         )}
       </main>
 
-      {store.brand_json.footer_note && (
-        <footer className="max-w-6xl mx-auto px-4 py-8 text-center text-xs text-gray-500">
-          {store.brand_json.footer_note}
-        </footer>
-      )}
+      <PoweredByFooter storeName={store.name} logoUrl={store.brand_json.logo_url} color={primary}
+        note={store.brand_json.footer_note} />
     </div>
   );
 }

@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Seo from '@/components/Seo';
+import StoreMark from '@/components/stores/StoreMark';
+import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { Loader2, ArrowLeft, ShoppingBag } from 'lucide-react';
 import { sizeUpchargeCents } from '@/lib/sizeUpcharges';
 
@@ -137,7 +139,7 @@ export default function StoreProductPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Seo
         title={`${product.title} · ${store.name}`}
         description={product.description || `${product.title} — ${store.name}. Fulfilled by TShirt Brothers.`}
@@ -147,9 +149,7 @@ export default function StoreProductPage() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200">
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          {store.brand_json.logo_url && (
-            <img src={store.brand_json.logo_url} alt="" className="h-10 w-10 object-contain" />
-          )}
+          <StoreMark name={store.name} logoUrl={store.brand_json.logo_url} color={primary} size="md" />
           <Link to={`/store/${slug}`} className="flex-1 min-w-0">
             <h1 className="text-lg font-bold truncate" style={{ color: primary }}>{store.name}</h1>
           </Link>
@@ -157,7 +157,7 @@ export default function StoreProductPage() {
       </header>
 
       {/* Detail */}
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-4 py-8 w-full flex-1">
         <Link to={`/store/${slug}`} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900 mb-6">
           <ArrowLeft className="w-4 h-4" /> Back to store
         </Link>
@@ -264,6 +264,8 @@ export default function StoreProductPage() {
           </div>
         </div>
       </main>
+      <PoweredByFooter storeName={store.name} logoUrl={store.brand_json.logo_url} color={primary}
+        note={store.brand_json.footer_note} />
     </div>
   );
 }

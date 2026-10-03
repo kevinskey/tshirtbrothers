@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangle } from 'lucide-react';
+import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangle, Upload } from 'lucide-react';
+import StoreMark from '@/components/stores/StoreMark';
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
@@ -133,6 +134,13 @@ export default function AdminGroupStoreDetailPage() {
           productCount={products.length}
           onRetire={() => void setStatus('off')}
           onReactivate={() => void setStatus('active')}
+        />
+        <BrandingEditor
+          storeId={storeId}
+          storeSlug={store.slug}
+          storeName={store.name}
+          brand={store.brand_json as Record<string, unknown>}
+          onSaved={() => void load()}
         />
         {store.store_type === 'business' && (
           <BusinessProfileCard
@@ -1080,6 +1088,189 @@ function CollectionsEditor({ storeId, brand, products, onSaved }: {
 // ── Business profile (TSB Pro stores) ────────────────────────────────────
 // Edits the business-facing identity fields stored in brand_json. PATCH
 // replaces brand_json wholesale, so merge over the existing object.
+function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
+  storeId: number;
+  storeSlug: string;
+  storeName: string;
+  brand: Record<string, unknown>;
+  onSaved: () => void;
+}) {
+  const str = (k: string) => (typeof brand[k] === 'string' ? (brand[k] as string) : '');
+  const [logoUrl, setLogoUrl] = useState(str('logo_url'));
+  const [heroUrl, setHeroUrl] = useState(str('hero_url'));
+  const [color, setColor] = useState(str('primary_color') || '#111827');
+  const [tagline, setTagline] = useState(str('tagline'));
+  const [footerNote, setFooterNote] = useState(str('footer_note'));
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState<'logo' | 'hero' | null>(null);
+  const logoInput = useRef<HTMLInputElement | null>(null);
+  const heroInput = useRef<HTMLInputElement | null>(null);
+
+  const hexOk = /^#[0-9a-f]{6}$/i.test(color);
+  const previewColor = hexOk ? color : '#111827';
+  const dirty =
+    logoUrl !== str('logo_url') || heroUrl !== str('hero_url') || tagline !== str('tagline')
+    || footerNote !== str('footer_note') || color !== (str('primary_color') || '#111827');
+
+  // Uploads reuse the store-mockup bucket path: public-read, immutable,
+  // namespaced per store — exactly what a logo or banner needs.
+  const upload = async (kind: 'logo' | 'hero', file: File | undefined) => {
+    if (!file) return;
+    setUploading(kind);
+    try {
+      const url = await uploadGroupStoreMockup(file, storeSlug);
+      if (kind === 'logo') setLogoUrl(url); else setHeroUrl(url);
+      toast.success(`${kind === 'logo' ? 'Logo' : 'Banner'} uploaded — save branding to publish it`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setUploading(null); }
+  };
+
+  const save = async () => {
+    if (!hexOk) { toast.error('Brand color must be a 6-digit hex like #1d4ed8'); return; }
+    setBusy(true);
+    try {
+      const next: Record<string, unknown> = { ...brand };
+      const put = (k: string, v: string) => { if (v.trim()) next[k] = v.trim(); else delete next[k]; };
+      put('logo_url', logoUrl);
+      put('hero_url', heroUrl);
+      put('tagline', tagline);
+      put('footer_note', footerNote);
+      next.primary_color = color.toLowerCase();
+      await updateGroupStore(storeId, { brand_json: next });
+      toast.success('Branding saved');
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally { setBusy(false); }
+  };
+
+  const field = 'w-full border border-gray-300 rounded-md px-3 py-2 text-sm';
+  const label = 'block text-xs font-medium text-gray-700 uppercase tracking-wider mb-1';
+
+  return (
+    <section className="bg-white border border-gray-200 rounded-lg p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Branding</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Logo, banner graphic and brand color used across the storefront, product pages, cart and
+            receipt. Every page closes with the orange "Powered by TShirt Brothers" band.
+          </p>
+        </div>
+      </div>
+
+      {/* Live preview: how the header and footer will read */}
+      <div className="mt-4 rounded-lg border border-gray-200 overflow-hidden">
+        <div className="px-4 py-3 flex items-center gap-3 bg-white">
+          <StoreMark name={storeName} logoUrl={logoUrl || null} color={previewColor} size="sm" />
+          <span className="font-bold text-lg truncate" style={{ color: previewColor }}>{storeName}</span>
+          {tagline && <span className="hidden sm:inline text-sm text-gray-500 truncate">— {tagline}</span>}
+          <span className="ml-auto inline-flex items-center px-3 py-1.5 rounded-full text-white text-xs font-semibold"
+            style={{ background: previewColor }}>Cart</span>
+        </div>
+        {heroUrl && (
+          <div className="aspect-[5/1] bg-gray-100">
+            <img src={heroUrl} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
+        <div className="bg-orange-500 text-white px-4 py-2 flex items-center justify-between">
+          <span className="text-xs font-semibold">{storeName}</span>
+          <span className="text-[11px]">Powered by <span className="font-black uppercase tracking-wider">TShirt Brothers</span></span>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Logo */}
+        <div>
+          <label className={label}>Logo</label>
+          <div className="flex items-center gap-3">
+            <StoreMark name={storeName} logoUrl={logoUrl || null} color={previewColor} size="lg"
+              className="border border-gray-200" />
+            <div className="flex-1 min-w-0 space-y-2">
+              <button type="button" onClick={() => logoInput.current?.click()} disabled={uploading != null}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 disabled:opacity-50">
+                {uploading === 'logo' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                {logoUrl ? 'Replace logo' : 'Upload logo'}
+              </button>
+              <input value={logoUrl} onChange={(e) => setLogoUrl(e.target.value)} placeholder="https://…/logo.png"
+                className={field} />
+              <p className="text-[11px] text-gray-500">PNG or SVG with a transparent background works best. Square or near-square.</p>
+            </div>
+          </div>
+          <input ref={logoInput} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { void upload('logo', e.target.files?.[0]); e.target.value = ''; }} />
+        </div>
+
+        {/* Banner / hero graphic */}
+        <div>
+          <label className={label}>Banner graphic</label>
+          <div className="aspect-[16/7] rounded-lg border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center">
+            {heroUrl
+              ? <img src={heroUrl} alt="" className="w-full h-full object-cover" />
+              : <span className="text-xs text-gray-400">No banner — the hero uses product photos</span>}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={() => heroInput.current?.click()} disabled={uploading != null}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50 disabled:opacity-50">
+              {uploading === 'hero' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {heroUrl ? 'Replace banner' : 'Upload banner'}
+            </button>
+            {heroUrl && (
+              <button type="button" onClick={() => setHeroUrl('')} className="text-xs text-gray-500 hover:text-red-600">Remove</button>
+            )}
+          </div>
+          <input value={heroUrl} onChange={(e) => setHeroUrl(e.target.value)} placeholder="https://…/banner.jpg"
+            className={`${field} mt-2`} />
+          <input ref={heroInput} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { void upload('hero', e.target.files?.[0]); e.target.value = ''; }} />
+        </div>
+
+        {/* Color */}
+        <div>
+          <label className={label}>Brand color</label>
+          <div className="flex items-center gap-2">
+            <input type="color" value={previewColor} onChange={(e) => setColor(e.target.value)}
+              className="h-9 w-12 p-0.5 border border-gray-300 rounded-md bg-white cursor-pointer" />
+            <input value={color} onChange={(e) => setColor(e.target.value)} placeholder="#1d4ed8"
+              className={`${field} font-mono ${hexOk ? '' : 'border-red-400'}`} />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {['#111827', '#1d4ed8', '#047857', '#b91c1c', '#7c3aed', '#c2410c', '#0f766e', '#be185d'].map((c) => (
+              <button key={c} type="button" onClick={() => setColor(c)} title={c}
+                className={`h-6 w-6 rounded-full border-2 ${color.toLowerCase() === c ? 'border-gray-900' : 'border-white shadow'}`}
+                style={{ background: c }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Copy */}
+        <div className="space-y-3">
+          <div>
+            <label className={label}>Tagline</label>
+            <input value={tagline} onChange={(e) => setTagline(e.target.value)}
+              placeholder="Official gear for the 2026 season" className={field} />
+          </div>
+          <div>
+            <label className={label}>Footer note</label>
+            <input value={footerNote} onChange={(e) => setFooterNote(e.target.value)}
+              placeholder="Proceeds support the Sensory Seasons program" className={field} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-end gap-3">
+        {dirty && <span className="text-xs text-amber-700">Unsaved changes</span>}
+        <button onClick={save} disabled={busy || uploading != null}
+          className="px-4 py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+          {busy ? 'Saving…' : 'Save branding'}
+        </button>
+      </div>
+    </section>
+  );
+
+}
+
 function BusinessProfileCard({ storeId, brand, onSaved }: {
   storeId: number;
   brand: Record<string, unknown>;
