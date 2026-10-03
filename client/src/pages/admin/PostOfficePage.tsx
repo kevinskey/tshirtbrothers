@@ -82,6 +82,47 @@ function ParcelPicker({ value, onChange }: {
 }
 const keyOf = (i: { subject_type: string; subject_id: number }) => `${i.subject_type}:${i.subject_id}`;
 
+// EasyPost carrier account names (UPSDAP, FedExDefault…) aren't what a
+// human scans for in a rate list. Map to the shipper's own name and
+// colors so the carrier jumps out before the price does — the post office
+// won't take a UPS label, so which shipper you're buying is the one thing
+// that must be unmistakable.
+function carrierName(raw: string | null | undefined): string {
+  const c = (raw || '').toLowerCase();
+  if (c.startsWith('ups')) return 'UPS';
+  if (c.startsWith('usps')) return 'USPS';
+  if (c.startsWith('fedex')) return 'FedEx';
+  if (c.startsWith('dhl')) return 'DHL';
+  return raw || '—';
+}
+
+const CARRIER_STYLE: Record<string, string> = {
+  UPS:   'bg-[#351c15] text-[#ffb500]',
+  USPS:  'bg-[#004b87] text-white',
+  FedEx: 'bg-[#4d148c] text-white',
+  DHL:   'bg-[#ffcc00] text-[#d40511]',
+};
+
+function CarrierBadge({ carrier }: { carrier: string | null | undefined }) {
+  const name = carrierName(carrier);
+  const style = CARRIER_STYLE[name] || 'bg-gray-800 text-white';
+  return (
+    <span title={carrier || undefined}
+      className={`inline-block align-middle rounded px-1.5 py-0.5 text-[11px] font-black uppercase tracking-wider ${style}`}>
+      {name}
+    </span>
+  );
+}
+
+// Where the parcel has to go once the label is on it. USPS labels can be
+// dropped at any post office; everything else has to reach that carrier.
+function DropoffHint({ carrier }: { carrier: string | null | undefined }) {
+  const name = carrierName(carrier);
+  if (name === 'USPS') return <span className="text-[11px] text-emerald-700"> · post office OK</span>;
+  if (name === '—') return null;
+  return <span className="text-[11px] text-amber-700"> · {name} drop-off only</span>;
+}
+
 function addressLine(a: PostOfficeQueueItem['address']): string {
   if (!a) return 'No address';
   return [a.street1, a.street2, [a.city, a.state, a.zip].filter(Boolean).join(', ')]
@@ -234,7 +275,7 @@ export default function PostOfficePage() {
   const unformed = live.filter((s) => !s.scan_form_id);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 border-t-4 border-orange-500">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
@@ -242,7 +283,7 @@ export default function PostOfficePage() {
               <ArrowLeft className="w-4 h-4" /> Admin
             </Link>
             <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Truck className="w-6 h-6" /> Post Office
+              <Truck className="w-6 h-6 text-orange-500" /> Post Office
             </h1>
             <p className="text-sm text-gray-500">Rates, labels, tracking, pickups — every order TSB mails.</p>
           </div>
@@ -250,11 +291,11 @@ export default function PostOfficePage() {
             <div className="flex gap-4 text-right">
               <div>
                 <div className="text-xs text-gray-500">Postage this month</div>
-                <div className="text-xl font-bold text-gray-900">{usd(month.spent_cents)}</div>
+                <div className="text-xl font-bold text-orange-600">{usd(month.spent_cents)}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500">In the mail</div>
-                <div className="text-xl font-bold text-gray-900">{month.live}</div>
+                <div className="text-xl font-bold text-orange-600">{month.live}</div>
               </div>
             </div>
           )}
@@ -263,7 +304,7 @@ export default function PostOfficePage() {
         <div className="flex gap-1 mb-4 bg-white border border-gray-200 rounded-xl p-1 w-fit">
           {([['queue', `Ready to ship (${queue.length})`], ['newlabel', 'New label'], ['labels', `Labels (${live.length})`], ['tracking', 'Tracking']] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === k ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === k ? 'bg-orange-500 text-white' : 'text-gray-600 hover:bg-orange-50 hover:text-orange-700'}`}>
               {label}
             </button>
           ))}
@@ -280,12 +321,12 @@ export default function PostOfficePage() {
             )}
 
             {selectedItems.length > 0 && (
-              <div className="sticky top-2 z-10 flex items-center justify-between gap-3 bg-gray-900 text-white rounded-xl px-4 py-3 shadow-lg">
+              <div className="sticky top-2 z-10 flex items-center justify-between gap-3 bg-orange-500 text-white rounded-xl px-4 py-3 shadow-lg">
                 <span className="text-sm font-semibold">{selectedItems.length} selected</span>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setPicked(new Set())} className="text-xs text-gray-300 hover:text-white">Clear</button>
+                  <button onClick={() => setPicked(new Set())} className="text-xs text-orange-100 hover:text-white">Clear</button>
                   <button onClick={buyAllCheapest} disabled={busy}
-                    className="px-3 py-1.5 rounded-lg bg-white text-gray-900 text-sm font-semibold disabled:opacity-50">
+                    className="px-3 py-1.5 rounded-lg bg-white text-orange-700 text-sm font-semibold hover:bg-orange-50 disabled:opacity-50">
                     {busy ? 'Buying…' : 'Buy cheapest labels'}
                   </button>
                 </div>
@@ -359,14 +400,15 @@ export default function PostOfficePage() {
                               {rates.rates.map((r) => (
                                 <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                                   <div className="min-w-0">
-                                    <span className="font-medium text-gray-900">{r.carrier}</span>{' '}
-                                    <span className="text-gray-600">{r.service}</span>
+                                    <CarrierBadge carrier={r.carrier} />{' '}
+                                    <span className="font-medium text-gray-800">{r.service}</span>
                                     {r.deliveryDays ? <span className="text-gray-400"> · {r.deliveryDays}d</span> : null}
+                                    <DropoffHint carrier={r.carrier} />
                                   </div>
                                   <div className="flex items-center gap-3 shrink-0">
                                     <span className="font-semibold">${r.rate.toFixed(2)}</span>
                                     <button onClick={() => buy(item, r)} disabled={busy}
-                                      className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-gray-900 hover:bg-black disabled:opacity-50">
+                                      className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-gray-900 hover:bg-orange-600 disabled:opacity-50">
                                       Buy
                                     </button>
                                   </div>
@@ -473,7 +515,7 @@ export default function PostOfficePage() {
                   } finally { setBusy(false); }
                 }}
                 disabled={busy}
-                className="w-full py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-black disabled:opacity-50">
+                className="w-full py-2.5 rounded-lg bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 disabled:opacity-50">
                 {busy ? 'Getting rates…' : 'Get rates'}
               </button>
             </div>
@@ -489,9 +531,10 @@ export default function PostOfficePage() {
                   {manualRates.rates.map((r) => (
                     <div key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                       <div className="min-w-0">
-                        <span className="font-medium text-gray-900">{r.carrier}</span>{' '}
-                        <span className="text-gray-600">{r.service}</span>
+                        <CarrierBadge carrier={r.carrier} />{' '}
+                        <span className="font-medium text-gray-800">{r.service}</span>
                         {r.deliveryDays ? <span className="text-gray-400"> · {r.deliveryDays}d</span> : null}
+                        <DropoffHint carrier={r.carrier} />
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="font-semibold">${r.rate.toFixed(2)}</span>
@@ -517,7 +560,7 @@ export default function PostOfficePage() {
                             } finally { setBusy(false); }
                           }}
                           disabled={busy}
-                          className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-gray-900 hover:bg-black disabled:opacity-50">
+                          className="px-2.5 py-1 rounded-md text-xs font-semibold text-white bg-gray-900 hover:bg-orange-600 disabled:opacity-50">
                           Buy
                         </button>
                       </div>
@@ -614,7 +657,7 @@ export default function PostOfficePage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-gray-600 truncate max-w-[180px]">{s.to_name || s.to_address?.name || '—'}</td>
-                      <td className="px-3 py-2 text-gray-600">{s.carrier} {s.service}</td>
+                      <td className="px-3 py-2 text-gray-600 whitespace-nowrap"><CarrierBadge carrier={s.carrier} /> {s.service}</td>
                       <td className="px-3 py-2 text-right">{usd(s.rate_cents)}</td>
                       <td className="px-3 py-2">
                         <span className="font-mono text-xs">{s.tracking_code || '—'}</span>
@@ -707,7 +750,7 @@ export default function PostOfficePage() {
                       </span>
                     </div>
                     <div className="text-xs text-gray-500">
-                      {s.to_name} · {s.carrier} {s.service} · <span className="font-mono">{s.tracking_code}</span>
+                      {s.to_name} · <CarrierBadge carrier={s.carrier} /> {s.service} · <span className="font-mono">{s.tracking_code}</span>
                     </div>
                     {s.tracking_detail && <div className="text-xs text-gray-400 mt-0.5">{s.tracking_detail}</div>}
                   </div>
