@@ -22,6 +22,7 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { getClient, FROM_ADDRESS } from './shipping.js';
 import { parcelOunces, DEFAULT_ITEM_OZ } from '../lib/shippingRates.js';
+import { refreshTracking } from '../services/trackingRefresh.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -418,40 +419,11 @@ router.post('/shipments/:id/refund', async (req, res, next) => {
 });
 
 // POST /refresh-tracking — pull current status for every live parcel.
+// The same work the cron does every 20 minutes; this is the "I want to
+// know now" button, so it ignores the staleness guard.
 router.post('/refresh-tracking', async (req, res, next) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT id, tracker_id, tracking_code FROM shipments
-        WHERE status = 'purchased' AND COALESCE(tracking_status,'') <> 'delivered'
-        ORDER BY created_at DESC LIMIT 100`,
-    );
-    const client = getClient();
-    let updated = 0;
-    for (const s of rows) {
-      try {
-        const tracker = s.tracker_id
-          ? await client.Tracker.retrieve(s.tracker_id)
-          : await client.Tracker.create({ tracking_code: s.tracking_code });
-        const detail = tracker.tracking_details?.[tracker.tracking_details.length - 1];
-        await pool.query(
-          `UPDATE shipments
-              SET tracker_id = COALESCE(tracker_id, $2),
-                  tracking_status = $3,
-                  tracking_detail = $4,
-                  est_delivery_date = COALESCE($5, est_delivery_date),
-                  delivered_at = CASE WHEN $3 = 'delivered' THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END,
-                  updated_at = NOW()
-            WHERE id = $1`,
-          [s.id, tracker.id, tracker.status || null,
-           detail ? `${detail.message || ''}${detail.tracking_location?.city ? ` — ${detail.tracking_location.city}, ${detail.tracking_location.state}` : ''}` : null,
-           tracker.est_delivery_date || null],
-        );
-        updated += 1;
-      } catch (err) {
-        console.error(`[postOffice] tracker ${s.tracking_code} failed:`, err.message);
-      }
-    }
-    res.json({ checked: rows.length, updated });
+    res.json(await refreshTracking({ staleOnly: false }));
   } catch (err) { next(err); }
 });
 
