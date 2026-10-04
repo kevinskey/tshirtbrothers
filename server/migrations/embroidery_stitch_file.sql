@@ -8,3 +8,7 @@
 ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS stitch_file_url TEXT;
 ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS stitch_file_name TEXT;
 ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS needs_digitizing BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- A stitch-file-only request has no artwork image; the stitch file IS the
+-- artwork. (The API enforces at-least-one-of artwork/stitch file.)
+ALTER TABLE embroidery_requests ALTER COLUMN artwork_url DROP NOT NULL;
