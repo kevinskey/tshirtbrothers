@@ -43,11 +43,18 @@ function money(cents: number) {
 
 function QuoteForm({ request }: { request: EmbroideryRequest }) {
   const qc = useQueryClient();
+  const reqItems = request.items ?? [];
+  const multiGarment = request.garment_mode === 'tsb' && reqItems.length > 0;
+
   const [stitches, setStitches] = useState('');
   const [qty, setQty] = useState(String(request.quantity || 1));
   const [garment, setGarment] = useState('');
+  // Multi-garment: one retail $/pc per catalog item, keyed by index.
+  const [itemPrices, setItemPrices] = useState<string[]>(() => reqItems.map(() => ''));
   const [rush, setRush] = useState('standard');
-  const [isCap, setIsCap] = useState(request.placement === 'hat_front');
+  const [isCap, setIsCap] = useState(
+    request.placement === 'hat_front' || reqItems.some((it) => it.placement === 'hat_front'),
+  );
   const [capBack, setCapBack] = useState(false);
   const [preview, setPreview] = useState<{ lines: EmbroideryPriceLine[]; totalCents: number; costCents: number } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -58,13 +65,25 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     ? 0
     : Math.round((parseFloat(garment) || 0) * 100);
 
+  // Every catalog item must be priced before the quote can go out — an
+  // unpriced garment silently becoming free is exactly the kind of mistake
+  // this preview exists to prevent.
+  const garments = multiGarment
+    ? reqItems.map((it, i) => ({
+        label: `${it.product_name ?? 'Garment'}${it.style_number ? ` (${it.style_number})` : ''}`,
+        centsPerPiece: Math.round((parseFloat(itemPrices[i] ?? '') || 0) * 100),
+        quantity: it.quantity,
+      }))
+    : undefined;
+  const garmentsReady = !multiGarment || garments!.every((g) => g.centsPerPiece > 0);
+
   const input: EmbroideryQuoteInput = {
-    stitchCount, quantity, garmentCentsPerPiece, rush, isCap, capBack,
+    stitchCount, quantity, garmentCentsPerPiece, garments, rush, isCap, capBack,
   };
 
   // Debounced server-side preview — the engine lives in exactly one place.
   useEffect(() => {
-    if (stitchCount <= 0 || quantity <= 0) { setPreview(null); setPreviewError(null); return; }
+    if (stitchCount <= 0 || quantity <= 0 || !garmentsReady) { setPreview(null); setPreviewError(null); return; }
     const t = setTimeout(async () => {
       try {
         const p = await previewEmbroideryQuote(request.id, input);
@@ -77,7 +96,7 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stitchCount, quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id]);
+  }, [stitchCount, quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id, JSON.stringify(garments)]);
 
   const send = useMutation({
     mutationFn: () => sendEmbroideryQuote(request.id, input),
@@ -99,7 +118,7 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
           <input type="text" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)}
             className={`${field} w-16`} />
         </label>
-        {request.garment_mode === 'tsb' ? (
+        {multiGarment ? null : request.garment_mode === 'tsb' ? (
           <label className="text-xs font-medium text-gray-700">
             Garment $/pc (retail)
             <input type="text" inputMode="decimal" value={garment} onChange={(e) => setGarment(e.target.value)}
@@ -121,6 +140,29 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
           <input type="checkbox" checked={capBack} onChange={(e) => setCapBack(e.target.checked)} /> Cap back
         </label>
       </div>
+
+      {multiGarment && (
+        <div className="mt-3 space-y-1.5">
+          {reqItems.map((it, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs">
+              {it.image_url && <img src={it.image_url} alt="" className="h-7 w-7 rounded bg-gray-100 object-contain" />}
+              <span className="min-w-0 flex-1 truncate text-gray-700">
+                {it.product_name}{it.style_number ? ` (${it.style_number})` : ''} × {it.quantity} · {it.placement.replace(/_/g, ' ')} · {it.desired_size}
+              </span>
+              <label className="flex items-center gap-1 font-medium text-gray-600">
+                $/pc
+                <input
+                  type="text" inputMode="decimal" value={itemPrices[i] ?? ''}
+                  onChange={(e) => setItemPrices((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
+                  placeholder="0.00"
+                  className="w-20 rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+            </div>
+          ))}
+          {!garmentsReady && <p className="text-[11px] text-amber-600">Price every garment before the preview appears.</p>}
+        </div>
+      )}
 
       {previewError && <p className="mt-2 text-xs text-red-600">{previewError}</p>}
       {preview && (

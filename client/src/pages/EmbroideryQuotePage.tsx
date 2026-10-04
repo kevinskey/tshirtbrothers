@@ -2,37 +2,118 @@
 //
 // Embroidery cannot be instant-quoted the way screen printing can: price is
 // driven by STITCH COUNT, and stitch count only exists after the artwork is
-// digitized. So this page collects the request (artwork, size, placement,
-// garment) and gates on the $25 digitization fee via Stripe Checkout. The
-// quote itself is a human reply after digitizing: stitches x rate + garment.
-// That economic reality is stated plainly on the page — a customer who
-// understands WHY there's a fee pays it; one who hits a surprise charge
-// bounces.
-import { useRef, useState } from 'react';
+// digitized. So this page collects the request and gates on the $25
+// digitization fee via Stripe Checkout; the quote is a human reply after
+// digitizing, priced off the Lighthouse sheet x house markup server-side.
+//
+// Garments: "get them from us" opens a live picker over the real catalog
+// (/api/products) — multiple products per request, and EACH product carries
+// its own placement, stitch size and quantity (Kevin: "let user choose
+// multiple products if they want and each product could have different
+// placement"). "I'll bring my own" collapses to a single placement block.
+//
+// Branding mirrors EasyQuotePage's Shell: warm gradient, tsb-splat watermark
+// and logo, display font, orange accents — this is a front-door page, not an
+// internal form.
+import { useEffect, useRef, useState } from 'react';
 import Seo from '@/components/Seo';
-import { Loader2, Shirt, Upload, Check, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, Upload, Check, AlertTriangle, X, Plus } from 'lucide-react';
 
 const PLACEMENTS = [
-  { key: 'left_chest',  label: 'Left chest',  blurb: 'Classic logo spot — polos, work shirts' },
-  { key: 'right_chest', label: 'Right chest', blurb: 'Names, titles, opposite the logo' },
-  { key: 'full_back',   label: 'Full back',   blurb: 'Big statement — jackets, work wear' },
-  { key: 'hat_front',   label: 'Hat front',   blurb: 'Caps and beanies' },
-  { key: 'sleeve',      label: 'Sleeve',      blurb: 'Left or right sleeve accent' },
-  { key: 'other',       label: 'Somewhere else', blurb: 'Tell us where below' },
+  { key: 'left_chest',  label: 'Left chest' },
+  { key: 'right_chest', label: 'Right chest' },
+  { key: 'full_back',   label: 'Full back' },
+  { key: 'hat_front',   label: 'Hat front' },
+  { key: 'sleeve',      label: 'Sleeve' },
+  { key: 'other',       label: 'Somewhere else' },
 ] as const;
 type PlacementKey = typeof PLACEMENTS[number]['key'];
+
+interface CatalogProduct {
+  id: number;
+  name: string;
+  style_number: string | null;
+  image_url: string | null;
+}
+
+interface GarmentItem {
+  productId: number | null;
+  productName: string | null;
+  styleNumber: string | null;
+  imageUrl: string | null;
+  placement: PlacementKey;
+  placementNote: string;
+  desiredSize: string;
+  quantity: string; // kept as text for friendly editing; parsed on submit
+}
+
+const SIZE_HINT: Record<PlacementKey, string> = {
+  left_chest: '3.5" wide is typical',
+  right_chest: '3.5" wide is typical',
+  full_back: '10–12" wide is typical',
+  hat_front: '2.25" tall is typical',
+  sleeve: '2–3" wide is typical',
+  other: 'tell us the size',
+};
+
+function newItem(p?: CatalogProduct): GarmentItem {
+  return {
+    productId: p?.id ?? null,
+    productName: p?.name ?? null,
+    styleNumber: p?.style_number ?? null,
+    imageUrl: p?.image_url ?? null,
+    placement: 'left_chest',
+    placementNote: '',
+    desiredSize: '',
+    quantity: '1',
+  };
+}
 
 export default function EmbroideryQuotePage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [desiredSize, setDesiredSize] = useState('');
-  const [placement, setPlacement] = useState<PlacementKey | null>(null);
-  const [placementNote, setPlacementNote] = useState('');
   const [garmentMode, setGarmentMode] = useState<'tsb' | 'own' | null>(null);
-  const [garmentChoice, setGarmentChoice] = useState('');
+  const [items, setItems] = useState<GarmentItem[]>([]);
   const [notes, setNotes] = useState('');
-  const [quantity, setQuantity] = useState('1');
+
+  // Catalog picker.
+  const [productQuery, setProductQuery] = useState('');
+  const [productResults, setProductResults] = useState<CatalogProduct[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchSeq = useRef(0);
+  useEffect(() => {
+    const q = productQuery.trim();
+    if (garmentMode !== 'tsb' || q.length < 2) { setProductResults([]); setSearching(false); return; }
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+        const data = await res.json();
+        if (seq !== searchSeq.current) return;
+        setProductResults(data.products ?? []);
+      } catch { if (seq === searchSeq.current) setProductResults([]); }
+      finally { if (seq === searchSeq.current) setSearching(false); }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [productQuery, garmentMode]);
+
+  const addProduct = (p: CatalogProduct) => {
+    setItems((prev) => [...prev, newItem(p)]);
+    setProductQuery('');
+    setProductResults([]);
+  };
+  const updateItem = (i: number, patch: Partial<GarmentItem>) =>
+    setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  const removeItem = (i: number) => setItems((prev) => prev.filter((_, j) => j !== i));
+
+  const pickMode = (mode: 'tsb' | 'own') => {
+    setGarmentMode(mode);
+    // Own-garment requests are one placement block; from-us starts empty
+    // until a product is picked.
+    setItems(mode === 'own' ? [newItem()] : []);
+  };
 
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
@@ -56,11 +137,14 @@ export default function EmbroideryQuotePage() {
     reader.readAsDataURL(f);
   };
 
+  const itemsValid = items.length > 0 && items.every((it) =>
+    (parseInt(it.quantity, 10) || 0) >= 1
+    && it.desiredSize.trim()
+    && (it.placement !== 'other' || it.placementNote.trim())
+    && (garmentMode !== 'tsb' || it.productName));
+
   const canSubmit =
-    name.trim() && /\S+@\S+\.\S+/.test(email) && imageBase64 && desiredSize.trim()
-    && placement && (placement !== 'other' || placementNote.trim())
-    && garmentMode && (garmentMode !== 'tsb' || garmentChoice.trim())
-    && (parseInt(quantity, 10) || 0) >= 1;
+    name.trim() && /\S+@\S+\.\S+/.test(email) && imageBase64 && garmentMode && itemsValid;
 
   const submit = async () => {
     if (!canSubmit || submitting) return;
@@ -73,15 +157,19 @@ export default function EmbroideryQuotePage() {
         body: JSON.stringify({
           name: name.trim(), email: email.trim(), phone: phone.trim() || undefined,
           imageBase64, filename: fileName || undefined,
-          desiredSize: desiredSize.trim(), placement, placementNote: placementNote.trim() || undefined,
-          garmentMode, garmentChoice: garmentChoice.trim() || undefined,
-          quantity: parseInt(quantity, 10) || 1,
+          garmentMode,
+          items: items.map((it) => ({
+            productId: it.productId, productName: it.productName,
+            styleNumber: it.styleNumber, imageUrl: it.imageUrl,
+            placement: it.placement, placementNote: it.placementNote.trim() || undefined,
+            desiredSize: it.desiredSize.trim(),
+            quantity: parseInt(it.quantity, 10) || 1,
+          })),
           notes: notes.trim() || undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
-      // Straight to Stripe — the whole flow hinges on the fee clearing.
       window.location.href = data.checkoutUrl;
     } catch (e) {
       setError((e as Error).message);
@@ -89,188 +177,268 @@ export default function EmbroideryQuotePage() {
     }
   };
 
-  const inputCls = 'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/60';
-  const labelCls = 'block text-sm font-semibold text-gray-800 mb-1.5';
+  const inputCls = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/60 focus:border-orange-400';
+  const labelCls = 'block text-sm font-bold text-gray-900 mb-1.5';
+  const totalPieces = items.reduce((s, it) => s + (parseInt(it.quantity, 10) || 0), 0);
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
+    <div
+      className="relative min-h-screen overflow-hidden"
+      style={{ background: 'linear-gradient(180deg,#fff7ed 0%,#f7f4ee 100%)' }}
+    >
       <Seo
         path="/embroidery"
         title="Embroidery Quote — T-Shirt Brothers"
         description="Upload your logo for custom embroidery. $25 digitization, then a stitch-count quote on polos, hats, jackets and more."
       />
+      {/* Faint oversized splat watermark — same device as the quote wizard. */}
+      <img
+        src="/tsb-splat.png" alt="" aria-hidden
+        className="pointer-events-none select-none absolute -right-40 -bottom-40 w-[42rem] max-w-none opacity-[0.05] rotate-12 hidden sm:block"
+      />
 
-      <div className="mb-6 text-center">
-        <Shirt className="mx-auto mb-2 h-8 w-8" aria-hidden />
-        <h1 className="text-2xl font-bold">Embroidery Quote</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Embroidery is priced by <strong>stitch count</strong>, and we only know the
-          stitch count after your artwork is <strong>digitized</strong> — converted
-          into a stitch file a machine can sew. Digitization is a one-time{' '}
-          <strong>$25</strong>. Pay it here, we digitize, and your quote lands in
-          your inbox: stitching + your garment. The stitch file is yours to keep.
-        </p>
-      </div>
+      <div className="relative mx-auto max-w-2xl px-4 py-8">
+        <div className="mb-6 flex flex-col items-center text-center">
+          <img src="/tsb-splat.png" alt="T-Shirt Brothers" className="w-36 sm:w-44" />
+          <h1 className="tsb-font-display mt-3 text-3xl font-black text-gray-900">Embroidery Quote</h1>
+          <p className="mt-1 text-xs font-medium text-gray-500">
+            Atlanta&rsquo;s custom t-shirt shop · (470) 622-1392
+          </p>
+          <p className="mt-3 text-sm leading-relaxed text-gray-600">
+            Embroidery is priced by <strong>stitch count</strong>, and we only know the
+            stitch count after your artwork is <strong>digitized</strong> — converted
+            into a stitch file a machine can sew. Digitization is a one-time{' '}
+            <strong className="text-orange-600">$25</strong>. Pay it here, we digitize,
+            and your quote lands in your inbox: stitching + your garments. The stitch
+            file is yours to keep.
+          </p>
+        </div>
 
-      <div className="space-y-6">
-        {/* Artwork */}
-        <section>
-          <label className={labelCls}>1. Your artwork</label>
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-gray-300 px-4 py-6 text-sm text-gray-600 hover:border-gray-400"
-          >
-            {preview ? (
-              <>
-                <img src={preview} alt="Your artwork" className="h-16 w-16 rounded object-contain bg-gray-50" />
-                <span className="min-w-0 truncate">{fileName} — tap to change</span>
-                <Check className="h-4 w-4 shrink-0 text-green-600" aria-hidden />
-              </>
-            ) : (
-              <>
-                <Upload className="h-5 w-5" aria-hidden />
-                Upload your logo or design (PNG/JPG, up to 20 MB)
-              </>
-            )}
-          </button>
-          <input
-            ref={fileRef} type="file" accept="image/*" className="hidden"
-            onChange={(e) => onFile(e.target.files?.[0])}
-          />
-        </section>
+        <div className="space-y-6 sm:rounded-3xl sm:border sm:border-orange-100 sm:bg-white sm:p-8 sm:shadow-2xl">
+          {/* Artwork */}
+          <section>
+            <label className={labelCls}>1. Your artwork</label>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-sm text-gray-600 transition-colors hover:border-orange-400"
+            >
+              {preview ? (
+                <>
+                  <img src={preview} alt="Your artwork" className="h-16 w-16 rounded bg-white object-contain" />
+                  <span className="min-w-0 truncate">{fileName} — tap to change</span>
+                  <Check className="h-4 w-4 shrink-0 text-green-600" aria-hidden />
+                </>
+              ) : (
+                <>
+                  <Upload className="h-5 w-5 text-orange-500" aria-hidden />
+                  Upload your logo or design (PNG/JPG, up to 20 MB)
+                </>
+              )}
+            </button>
+            <input
+              ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => onFile(e.target.files?.[0])}
+            />
+          </section>
 
-        {/* Size */}
-        <section>
-          <label htmlFor="emb-size" className={labelCls}>2. How big should it stitch?</label>
-          <input
-            id="emb-size" type="text" value={desiredSize}
-            onChange={(e) => setDesiredSize(e.target.value)}
-            placeholder={'e.g. 3.5" wide (typical left chest) or 10" wide (full back)'}
-            className={inputCls}
-          />
-        </section>
-
-        {/* Placement */}
-        <section>
-          <span className={labelCls}>3. Where does it go?</span>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {PLACEMENTS.map((p) => (
+          {/* Garment mode */}
+          <section>
+            <span className={labelCls}>2. The garments</span>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
-                key={p.key} type="button" onClick={() => setPlacement(p.key)}
-                className={`rounded-lg border px-3 py-2.5 text-left text-sm transition-colors ${
-                  placement === p.key ? 'border-black bg-black text-white' : 'border-gray-300 hover:border-gray-400'
+                type="button" onClick={() => pickMode('tsb')}
+                className={`rounded-xl border-2 px-3 py-3 text-left text-sm transition-all ${
+                  garmentMode === 'tsb' ? 'border-orange-500 bg-orange-50 text-orange-900' : 'border-gray-200 bg-white hover:border-gray-400'
                 }`}
               >
-                <span className="block font-medium">{p.label}</span>
-                <span className={`block text-xs ${placement === p.key ? 'text-gray-300' : 'text-gray-500'}`}>{p.blurb}</span>
+                <span className="block font-bold">Get them from us</span>
+                <span className="block text-xs text-gray-500">
+                  Pick from our catalog — polos, hats, jackets, hoodies
+                </span>
               </button>
-            ))}
-          </div>
-          {placement === 'other' && (
-            <input
-              type="text" value={placementNote} onChange={(e) => setPlacementNote(e.target.value)}
-              placeholder="Describe the placement" className={`${inputCls} mt-2`}
-            />
-          )}
-        </section>
+              <button
+                type="button" onClick={() => pickMode('own')}
+                className={`rounded-xl border-2 px-3 py-3 text-left text-sm transition-all ${
+                  garmentMode === 'own' ? 'border-orange-500 bg-orange-50 text-orange-900' : 'border-gray-200 bg-white hover:border-gray-400'
+                }`}
+              >
+                <span className="block font-bold">I&rsquo;ll bring my own</span>
+                <span className="block text-xs text-gray-500">
+                  You supply the garments, we stitch them
+                </span>
+              </button>
+            </div>
 
-        {/* Garment */}
-        <section>
-          <span className={labelCls}>4. The garment</span>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <button
-              type="button" onClick={() => setGarmentMode('tsb')}
-              className={`rounded-lg border px-3 py-3 text-left text-sm ${
-                garmentMode === 'tsb' ? 'border-black bg-black text-white' : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <span className="block font-medium">Get it from us</span>
-              <span className={`block text-xs ${garmentMode === 'tsb' ? 'text-gray-300' : 'text-gray-500'}`}>
-                Polos, hats, jackets, hoodies — we&rsquo;ll price it into your quote
+            {/* Catalog picker — tsb mode */}
+            {garmentMode === 'tsb' && (
+              <div className="mt-3">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
+                  <input
+                    type="text" value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    placeholder="Search our catalog — Gildan, polo, beanie, 18500…"
+                    className={`${inputCls} pl-9`}
+                    aria-label="Search products"
+                  />
+                  {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" aria-hidden />}
+                </div>
+                {productResults.length > 0 && (
+                  <ul className="mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+                    {productResults.map((p) => (
+                      <li key={p.id}>
+                        <button
+                          type="button" onClick={() => addProduct(p)}
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-orange-50"
+                        >
+                          {p.image_url
+                            ? <img src={p.image_url} alt="" className="h-9 w-9 rounded object-contain bg-gray-50" />
+                            : <span className="h-9 w-9 rounded bg-gray-100" />}
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{p.name}</span>
+                            {p.style_number && <span className="block text-xs text-gray-500">Style {p.style_number}</span>}
+                          </span>
+                          <Plus className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Per-item configuration */}
+          {items.length > 0 && (
+            <section className="space-y-3">
+              <span className={labelCls}>
+                3. {garmentMode === 'own' ? 'Where does it go?' : 'Your picks — placement for each'}
               </span>
-            </button>
-            <button
-              type="button" onClick={() => { setGarmentMode('own'); setGarmentChoice(''); }}
-              className={`rounded-lg border px-3 py-3 text-left text-sm ${
-                garmentMode === 'own' ? 'border-black bg-black text-white' : 'border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              <span className="block font-medium">I&rsquo;ll bring my own</span>
-              <span className={`block text-xs ${garmentMode === 'own' ? 'text-gray-300' : 'text-gray-500'}`}>
-                You supply the garment, we stitch it
-              </span>
-            </button>
-          </div>
-          {garmentMode === 'tsb' && (
-            <input
-              type="text" value={garmentChoice} onChange={(e) => setGarmentChoice(e.target.value)}
-              placeholder={'What would you like? e.g. "Navy polo, mens L, qty 12"'}
-              className={`${inputCls} mt-2`}
-            />
+              {items.map((it, i) => (
+                <div key={i} className="rounded-xl border border-gray-200 bg-white p-3">
+                  <div className="flex items-start gap-3">
+                    {garmentMode === 'tsb' && (
+                      it.imageUrl
+                        ? <img src={it.imageUrl} alt="" className="h-12 w-12 shrink-0 rounded object-contain bg-gray-50" />
+                        : <span className="h-12 w-12 shrink-0 rounded bg-gray-100" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      {garmentMode === 'tsb' && (
+                        <p className="truncate text-sm font-semibold">
+                          {it.productName}
+                          {it.styleNumber && <span className="ml-1 font-normal text-gray-500">· {it.styleNumber}</span>}
+                        </p>
+                      )}
+                      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <label className="text-xs font-medium text-gray-600">
+                          Placement
+                          <select
+                            value={it.placement}
+                            onChange={(e) => updateItem(i, { placement: e.target.value as PlacementKey })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          >
+                            {PLACEMENTS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                          </select>
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          Stitch size
+                          <input
+                            type="text" value={it.desiredSize}
+                            onChange={(e) => updateItem(i, { desiredSize: e.target.value })}
+                            placeholder={SIZE_HINT[it.placement]}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </label>
+                        <label className="text-xs font-medium text-gray-600">
+                          Qty
+                          <input
+                            type="number" min={1} max={999} value={it.quantity}
+                            onChange={(e) => updateItem(i, { quantity: e.target.value })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </label>
+                        {it.placement === 'other' && (
+                          <label className="col-span-2 text-xs font-medium text-gray-600 sm:col-span-1">
+                            Where?
+                            <input
+                              type="text" value={it.placementNote}
+                              onChange={(e) => updateItem(i, { placementNote: e.target.value })}
+                              className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                    {garmentMode === 'tsb' && (
+                      <button
+                        type="button" onClick={() => removeItem(i)}
+                        aria-label={`Remove ${it.productName ?? 'item'}`}
+                        className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                      >
+                        <X className="h-4 w-4" aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {garmentMode === 'tsb' && (
+                <p className="text-xs text-gray-500">
+                  {totalPieces} piece{totalPieces === 1 ? '' : 's'} total — pricing drops at 2, 6, 24, 72, 144 and 500. Over 1,000, call us.
+                </p>
+              )}
+            </section>
           )}
-        </section>
 
-        {/* Quantity */}
-        <section>
-          <label htmlFor="emb-qty" className={labelCls}>5. How many pieces?</label>
-          <input
-            id="emb-qty" type="number" min={1} max={999} value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            className={`${inputCls} max-w-[8rem]`}
-          />
-          <p className="mt-1 text-xs text-gray-500">Pricing drops at 2, 6, 24, 72, 144 and 500 pieces. Over 1,000 — call us.</p>
-        </section>
+          {/* Contact */}
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label htmlFor="emb-name" className={labelCls}>Name</label>
+              <input id="emb-name" type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} autoComplete="name" />
+            </div>
+            <div>
+              <label htmlFor="emb-email" className={labelCls}>Email</label>
+              <input id="emb-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
+            </div>
+            <div>
+              <label htmlFor="emb-phone" className={labelCls}>Phone (optional)</label>
+              <input id="emb-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} autoComplete="tel" />
+            </div>
+          </section>
 
-        {/* Contact */}
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="sm:col-span-1">
-            <label htmlFor="emb-name" className={labelCls}>Name</label>
-            <input id="emb-name" type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} autoComplete="name" />
-          </div>
-          <div className="sm:col-span-1">
-            <label htmlFor="emb-email" className={labelCls}>Email</label>
-            <input id="emb-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
-          </div>
-          <div className="sm:col-span-1">
-            <label htmlFor="emb-phone" className={labelCls}>Phone (optional)</label>
-            <input id="emb-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} autoComplete="tel" />
-          </div>
-        </section>
+          <section>
+            <label htmlFor="emb-notes" className={labelCls}>Anything else? (optional)</label>
+            <textarea
+              id="emb-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+              rows={2} className={inputCls} placeholder="Thread colors, deadline, names to monogram…"
+            />
+          </section>
 
-        <section>
-          <label htmlFor="emb-notes" className={labelCls}>Anything else? (optional)</label>
-          <textarea
-            id="emb-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
-            rows={2} className={inputCls} placeholder="Thread colors, deadline, quantity…"
-          />
-        </section>
+          {error && (
+            <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+              <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden /> {error}
+            </p>
+          )}
 
-        {error && (
-          <p className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden /> {error}
+          <button
+            type="button" onClick={submit} disabled={!canSubmit || submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white shadow-lg transition-colors hover:bg-orange-700 disabled:opacity-40"
+          >
+            {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
+            {submitting ? 'Heading to checkout…' : 'Pay $25 digitization & get my quote'}
+          </button>
+          <p className="text-center text-xs text-gray-500">
+            Secure checkout by Stripe. After payment we digitize your art and email
+            your quote — no stitching happens until you approve it.
           </p>
-        )}
 
-        <button
-          type="button" onClick={submit} disabled={!canSubmit || submitting}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-black px-6 py-4 text-base font-semibold text-white disabled:opacity-40"
-        >
-          {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
-          {submitting ? 'Heading to checkout…' : 'Pay $25 digitization & get my quote'}
-        </button>
-        <p className="text-center text-xs text-gray-500">
-          Secure checkout by Stripe. After payment we digitize your art and email
-          your quote — no stitching happens until you approve it.
-        </p>
-
-        {/* The fine print — mirrors our production terms so nobody is
-            surprised later. Spoilage language comes with the territory of
-            customer-supplied goods. */}
-        <div className="rounded-lg bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">
-          <p><strong>Turnaround:</strong> standard production is 5–7 business days. Rush available — 4 days +25%, 2–3 days +50%, next day +75%, same day +100% (subject to availability).</p>
-          <p className="mt-1"><strong>Your own garments:</strong> you assume liability for workmanship on supplied goods; please allow up to 2% for spoilage. Spoilage beyond 2% is credited.</p>
-          <p className="mt-1"><strong>Artwork:</strong> best formats are .ai, .cdr, .eps; .jpg/.tiff/.bmp accepted. Art that isn't camera-ready may incur art charges at $40/hr — we'll tell you before any of that happens.</p>
+          {/* The fine print — mirrors our production terms so nobody is
+              surprised later. */}
+          <div className="rounded-lg bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">
+            <p><strong>Turnaround:</strong> standard production is 5–7 business days. Rush available — 4 days +25%, 2–3 days +50%, next day +75%, same day +100% (subject to availability).</p>
+            <p className="mt-1"><strong>Your own garments:</strong> you assume liability for workmanship on supplied goods; please allow up to 2% for spoilage. Spoilage beyond 2% is credited.</p>
+            <p className="mt-1"><strong>Artwork:</strong> best formats are .ai, .cdr, .eps; .jpg/.tiff/.bmp accepted. Art that isn&rsquo;t camera-ready may incur art charges at $40/hr — we&rsquo;ll tell you before any of that happens.</p>
+          </div>
         </div>
       </div>
     </div>

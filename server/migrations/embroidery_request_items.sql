@@ -1,0 +1,14 @@
+-- Multi-garment embroidery requests (Kevin, 2026-10-03: "let user choose
+-- multiple products if they want and each product could have different
+-- placement").
+--
+-- Apply on the droplet:
+--   psql -d tshirtbrothers -f /var/www/tshirtbrothers/server/migrations/embroidery_request_items.sql
+--
+-- items is the authoritative list:
+--   [{ product_id, product_name, style_number, image_url,   -- null for own-garment
+--      placement, placement_note, desired_size, quantity }]
+-- The legacy single-value columns (placement, desired_size, quantity) are
+-- still FILLED from the first item so existing emails/admin code degrade
+-- gracefully, but new code reads items.
+ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS items JSONB;

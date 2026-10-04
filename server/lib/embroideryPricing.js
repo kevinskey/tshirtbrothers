@@ -197,10 +197,25 @@ export function priceEmbroidery(input) {
     subtotalRetail += r;
   }
 
-  // Garment, already retail (what WE charge; our cost lives in the catalog).
-  const garmentRetail = (Number(input.garmentCentsPerPiece) || 0) * qty;
-  if (garmentRetail > 0) {
-    lines.push({ key: 'garment', label: `Garment × ${qty}`, costCents: 0, retailCents: garmentRetail });
+  // Garments, already retail (what WE charge; our cost lives in the catalog).
+  // Two shapes: the legacy single price-per-piece against the run quantity,
+  // or (multi-garment requests) a list of garments each with its own retail
+  // and quantity — one design, one stitch count, spread across products.
+  let garmentRetail = 0;
+  if (Array.isArray(input.garments) && input.garments.length > 0) {
+    for (const g of input.garments) {
+      const gq = Number(g.quantity) || 0;
+      const per = Number(g.centsPerPiece) || 0;
+      if (gq <= 0 || per <= 0) continue;
+      const line = per * gq;
+      garmentRetail += line;
+      lines.push({ key: 'garment', label: `${g.label || 'Garment'} × ${gq}`, costCents: 0, retailCents: line });
+    }
+  } else {
+    garmentRetail = (Number(input.garmentCentsPerPiece) || 0) * qty;
+    if (garmentRetail > 0) {
+      lines.push({ key: 'garment', label: `Garment × ${qty}`, costCents: 0, retailCents: garmentRetail });
+    }
   }
 
   return {
