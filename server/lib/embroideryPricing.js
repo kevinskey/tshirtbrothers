@@ -173,6 +173,11 @@ export function priceEmbroidery(input) {
   // digitizing reveals the stitch count. The quote settles the difference in
   // either direction: a 12k jacket back carries a balance, a 3k cap design
   // carries a credit.
+  // skipDigitizing: the customer brought their own stitch file — no vendor
+  // digitizing cost, no $25 deposit, no settlement line at all.
+  if (input.skipDigitizing) {
+    // fall through with no digitizing line
+  } else {
   const digiCost = vendorDigitizingCents(stitches);
   const digiRetail = markupCents(digiCost);
   const digiDelta = digiRetail - DIGITIZATION_FEE_CENTS;
@@ -186,6 +191,7 @@ export function priceEmbroidery(input) {
       costCents: digiCost,
       retailCents: digiDelta, // negative = credit, reduces the total
     });
+  }
   }
 
   // Rush — the vendor applies it to production, so: on top of everything

@@ -825,6 +825,9 @@ export interface EmbroideryRequest {
     quantity: number;
   }> | null;
   status: string;
+  stitch_file_url: string | null;
+  stitch_file_name: string | null;
+  needs_digitizing: boolean;
   digitization_paid_at: string | null;
   stitch_count: number | null;
   garment_cents: number | null;
