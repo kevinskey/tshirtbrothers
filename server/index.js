@@ -94,6 +94,12 @@ app.use('/api/deepseek', deepseekRouter);
 app.use('/api/admin/gangsheets', gangsheetRouter);
 app.use('/api/gangsheet-store', gangsheetStoreRouter);
 app.use('/api/admin', embroideryRouter);
+// Second mount: the customer-facing embroidery quote routes
+// (/embroidery/requests + status) live in the same router but must be
+// reachable without the /admin prefix. The admin job routes inside carry
+// their own authenticate+adminOnly guards, so the extra mount exposes
+// nothing that isn't already per-route protected.
+app.use('/api', embroideryRouter);
 app.use('/api', mockupsRouter);
 app.use('/api/stores', storesRouter);
 app.use('/api/store-shop', storeShopRouter);
