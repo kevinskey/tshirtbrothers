@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
+import EmbroideryRequestsPanel from '@/components/admin/EmbroideryRequestsPanel';
 import { toast } from 'sonner';
 import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -7248,6 +7249,13 @@ export default function AdminPage() {
                 >
                   <Plus className="w-4 h-4" /> New Job
                 </button>
+              </div>
+
+              {/* Customer quote requests — the paid-digitization pipeline.
+                  Sits above the internal jobs grid because a paid request is
+                  money already taken: it is the thing waiting on US. */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+                <EmbroideryRequestsPanel />
               </div>
 
               {jobs.length === 0 ? (

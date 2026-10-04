@@ -2119,3 +2119,98 @@ export async function sendGangSheetOrphanPaymentAlert({ sessionId, orderId, amou
     throw err;
   }
 }
+
+// ── Embroidery quote path ───────────────────────────────────────────────────
+// Three moments: the $25 digitization fee clears (customer receipt + admin
+// heads-up), and the admin sends the quote after digitizing.
+
+function embroideryDetails(request) {
+  return detailsTable(
+    detailRow('Quantity', String(request.quantity || 1)) +
+    detailRow('Size', escapeHtml(request.desired_size)) +
+    detailRow('Placement', escapeHtml(request.placement.replace(/_/g, ' ')) +
+      (request.placement_note ? ` — ${escapeHtml(request.placement_note)}` : '')) +
+    detailRow('Garment', request.garment_mode === 'own'
+      ? 'Customer is supplying their own'
+      : escapeHtml(request.garment_choice || '')) +
+    (request.notes ? detailRow('Notes', escapeHtml(request.notes)) : '')
+  );
+}
+
+export async function sendEmbroideryPaidToCustomer({ request }) {
+  const body = `
+    <p>Hi ${escapeHtml((request.customer_name || '').split(' ')[0] || 'there')},</p>
+    <p>Your <strong>$25 digitization fee</strong> is in and your artwork is headed to
+    our digitizer. That step converts your design into an actual stitch file —
+    and once it's done we'll know the exact stitch count, which is what your
+    quote is built from.</p>
+    ${embroideryDetails(request)}
+    <p><strong>What happens next:</strong> we digitize, then reply to this email
+    with your quote — the stitching price plus your garment. Nothing goes on a
+    machine until you approve it.</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id} · ${SHOP_ADDRESS}</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [request.customer_email],
+    subject: `We've got your artwork — digitization underway (Request #${request.id})`,
+    html: baseLayout('Embroidery Digitization Received', body),
+  });
+}
+
+export async function sendEmbroideryPaidToAdmin({ request }) {
+  const body = `
+    <p><strong>${escapeHtml(request.customer_name)} &lt;${escapeHtml(request.customer_email)}&gt;</strong>
+    paid the $25 digitization fee. Artwork is below — send it to the digitizer,
+    then enter the stitch count to fire the quote.</p>
+    ${embroideryDetails(request)}
+    <p><a href="${escapeHtml(request.artwork_url)}">View artwork</a></p>
+    ${primaryButton('Open in Admin', `${DOMAIN}/admin`)}
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id}${request.customer_phone ? ' · ' + escapeHtml(request.customer_phone) : ''}</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [ADMIN_EMAIL],
+    replyTo: request.customer_email,
+    subject: `🧵 Embroidery digitization paid — Request #${request.id} (${escapeHtml(request.customer_name)})`,
+    html: baseLayout('Embroidery Request Paid', body),
+  });
+}
+
+export async function sendEmbroideryQuoteToCustomer({ request }) {
+  const total = formatCurrency(request.quote_cents / 100);
+  // price_breakdown is the engine's line array verbatim — render it rather
+  // than recomputing anything here, so the email can never disagree with
+  // what the admin approved on screen.
+  const breakdown = Array.isArray(request.price_breakdown)
+    ? request.price_breakdown
+    : JSON.parse(request.price_breakdown || '[]');
+  const rows = breakdown.map((l) => {
+    const amount = l.retailCents < 0
+      ? `<span style="color:#16a34a;">&minus;${formatCurrency(Math.abs(l.retailCents) / 100)}</span>`
+      : formatCurrency(l.retailCents / 100);
+    return detailRow(escapeHtml(l.label), amount);
+  }).join('');
+  const body = `
+    <p>Hi ${escapeHtml((request.customer_name || '').split(' ')[0] || 'there')},</p>
+    <p>Your design is digitized — ${String(request.stitch_count).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} stitches. Here's your embroidery quote${request.quantity > 1 ? ` for ${request.quantity} pieces` : ''}.</p>
+    ${detailsTable(rows + detailRow('Total', `<strong>${total}</strong>`))}
+    ${request.garment_mode === 'own' ? `
+    <p style="font-size:13px;color:#6b7280;">You're supplying the garments: ${escapeHtml(SPOILAGE_NOTE)}</p>` : ''}
+    <p>Standard turnaround is 5–7 business days; rush options are available — just ask.
+    Reply to this email to approve and we'll get you on the schedule${request.garment_mode === 'own' ? ' and arrange drop-off of your garments' : ''}.
+    Your digitized stitch file is yours to keep.</p>
+    <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id} · ${SHOP_ADDRESS}</p>
+  `;
+  return resend.emails.send({
+    from: FROM_EMAIL,
+    to: [request.customer_email],
+    replyTo: ADMIN_EMAIL,
+    subject: `Your embroidery quote — ${total} (Request #${request.id})`,
+    html: baseLayout('Your Embroidery Quote', body),
+  });
+}
+
+// Mirrors the Lighthouse terms: customer-supplied goods carry a 2% spoilage
+// allowance and the customer assumes workmanship liability on their goods.
+const SPOILAGE_NOTE = 'please allow up to 2% for spoilage on customer-supplied goods; spoilage beyond 2% is credited.';

@@ -527,6 +527,18 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   gift items are Custom Gift Club's lane — that request
                   becomes a CGC gift quote (customgiftclub.com/quote, feeds
                   the same admin Quotes pipeline), not an apparel line. */}
+              {/* Embroidery hand-off (Kevin, 2026-10-03): stitched work is
+                  priced by stitch count after a paid digitization, so it has
+                  its own path at /embroidery rather than a lane in this
+                  wizard — same pattern as the Gifts card below. */}
+              <Link
+                to="/embroidery"
+                className="rounded-2xl border-2 px-3 py-4 text-left transition-all bg-white border-gray-200 hover:border-gray-400 block"
+              >
+                <span className="text-2xl">🧵</span>
+                <span className="block mt-1 font-bold">{tr('Embroidery', 'Bordado')}</span>
+                <span className="block mt-0.5 text-[11px] text-gray-500">{tr('Stitched logos & monograms →', 'Logos y monogramas →')}</span>
+              </Link>
               <a
                 href="https://customgiftclub.com/quote"
                 className="rounded-2xl border-2 px-3 py-4 text-left transition-all bg-white border-gray-200 hover:border-gray-400 block"

@@ -1168,6 +1168,73 @@ async function handleCheckoutSessionCompleted(session) {
     }
   }
 
+  // Embroidery digitization fee ($25) — the gate on the embroidery quote
+  // path. Payment flips the request to 'paid', spawns a row in the admin
+  // digitizing tracker (embroidery_jobs) so the shop works in the tool it
+  // already has, and emails both sides. Same replay-safety posture as the
+  // gang-sheet branch: only act when Stripe says paid, and the UPDATE's
+  // status guard makes webhook replays no-ops.
+  const embroideryRequestId = session.metadata?.embroideryRequestId;
+  if (embroideryRequestId) {
+    if (session.payment_status && session.payment_status !== 'paid') return;
+    try {
+      const { rows } = await pool.query(
+        `UPDATE embroidery_requests
+           SET status = 'paid', digitization_paid_at = NOW(), updated_at = NOW()
+         WHERE id = $1 AND status = 'awaiting_payment'
+         RETURNING *`,
+        [embroideryRequestId],
+      );
+      if (!rows[0]) {
+        const { rows: existing } = await pool.query(
+          'SELECT id, status FROM embroidery_requests WHERE id = $1', [embroideryRequestId]);
+        if (existing[0] && existing[0].status !== 'awaiting_payment') return; // replay, already handled
+        console.error(`[Stripe Webhook] embroidery_request ${embroideryRequestId} missing — session ${session.id}; MONEY RECEIVED, investigate`);
+        return;
+      }
+      const request = rows[0];
+
+      // Spawn the digitizing job. Failure here must not eat the payment
+      // record — the request is already marked paid above.
+      try {
+        const job = await pool.query(
+          `INSERT INTO embroidery_jobs (name, notes, source_image_url)
+           VALUES ($1, $2, $3) RETURNING id`,
+          [
+            `Request #${request.id} — ${request.customer_name}`,
+            `Customer embroidery request. Size: ${request.desired_size}. Placement: ${request.placement}${request.placement_note ? ' (' + request.placement_note + ')' : ''}. Garment: ${request.garment_mode === 'own' ? 'customer-supplied' : request.garment_choice}.${request.notes ? ' Notes: ' + request.notes : ''}`,
+            request.artwork_url,
+          ],
+        );
+        await pool.query(
+          'UPDATE embroidery_requests SET embroidery_job_id = $1, updated_at = NOW() WHERE id = $2',
+          [job.rows[0].id, request.id],
+        );
+      } catch (e) {
+        console.error('[Stripe Webhook] embroidery job spawn failed for request ' + request.id + ':', e.message);
+      }
+
+      recordActivity({
+        event: 'embroidery_digitization_paid',
+        email: request.customer_email,
+        data: { request_id: request.id, cents: 2500 },
+      });
+
+      import('../services/email.js')
+        .then(({ sendEmbroideryPaidToCustomer, sendEmbroideryPaidToAdmin }) => Promise.allSettled([
+          sendEmbroideryPaidToCustomer({ request }),
+          sendEmbroideryPaidToAdmin({ request }),
+        ]))
+        .then((results) => (results || []).forEach((r) => {
+          if (r.status === 'rejected') console.error('[Stripe Webhook] embroidery email failed:', r.reason?.message);
+        }))
+        .catch((e) => console.error('[Stripe Webhook] embroidery email import failed:', e.message));
+    } catch (err) {
+      console.error('[Stripe Webhook] embroidery handling crashed for session ' + session.id + ':', err);
+    }
+    return;
+  }
+
   const gangSheetOrderId = session.metadata?.gang_sheet_order_id;
   // Admin-sent quote/requote adjustments (send-quote endpoint) reuse the
   // gang_sheet_order_id metadata but must NOT run the normal paid

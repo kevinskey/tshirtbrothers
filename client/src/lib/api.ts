@@ -797,6 +797,69 @@ export interface EmbroideryJob {
   updated_at: string;
 }
 
+// ── Embroidery quote requests (customer path) ──────────────────────────────
+
+export interface EmbroideryRequest {
+  id: number;
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string | null;
+  artwork_url: string;
+  desired_size: string;
+  placement: string;
+  placement_note: string | null;
+  garment_mode: 'tsb' | 'own';
+  garment_choice: string | null;
+  notes: string | null;
+  quantity: number;
+  status: string;
+  digitization_paid_at: string | null;
+  stitch_count: number | null;
+  garment_cents: number | null;
+  quote_cents: number | null;
+  quoted_at: string | null;
+  embroidery_job_id: number | null;
+  created_at: string;
+}
+
+export async function fetchEmbroideryRequests(status?: string) {
+  const qs = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
+  return authRequest<EmbroideryRequest[]>(`/embroidery/requests${qs}`);
+}
+
+export interface EmbroideryQuoteInput {
+  stitchCount: number;
+  quantity: number;
+  garmentCentsPerPiece: number;
+  rush: string;
+  isCap?: boolean;
+  capBack?: boolean;
+  letteringLines?: number;
+  personalizations?: Array<{ sizeInches: string; count: number; secondLine?: boolean }>;
+}
+
+export interface EmbroideryPriceLine {
+  key: string;
+  label: string;
+  costCents: number;
+  retailCents: number;
+}
+
+export async function sendEmbroideryQuote(id: number, input: EmbroideryQuoteInput) {
+  return authRequest<EmbroideryRequest>(`/embroidery/requests/${id}/quote`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Same endpoint, dryRun — returns the breakdown without saving or emailing. */
+export async function previewEmbroideryQuote(id: number, input: EmbroideryQuoteInput) {
+  return authRequest<{ lines: EmbroideryPriceLine[]; totalCents: number; costCents: number }>(
+    `/embroidery/requests/${id}/quote`,
+    { method: 'POST', body: JSON.stringify({ ...input, dryRun: true }) },
+  );
+}
+
 export async function fetchEmbroideryJobs(opts: { status?: string; search?: string } = {}) {
   const p = new URLSearchParams();
   if (opts.status) p.set('status', opts.status);

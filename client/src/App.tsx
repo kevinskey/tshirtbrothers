@@ -20,6 +20,8 @@ import ShopPage from '@/pages/ShopPage';
 import SalePage from '@/pages/SalePage';
 import InstantQuotePage from '@/pages/InstantQuotePage';
 import EasyQuotePage from '@/pages/EasyQuotePage';
+import EmbroideryQuotePage from '@/pages/EmbroideryQuotePage';
+import EmbroideryThanksPage from '@/pages/EmbroideryThanksPage';
 import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
 import AuthPage from '@/pages/AuthPage';
@@ -159,6 +161,10 @@ function App() {
           {/* /quote is the mobile-first Easy Quote card wizard; the full
               live-pricing calculator survives at /quote/classic. */}
           <Route path="/quote" element={<EasyQuotePage />} />
+          {/* Embroidery is quoted by stitch count after a paid digitization,
+              so it gets its own path rather than a lane in the wizard. */}
+          <Route path="/embroidery" element={<EmbroideryQuotePage />} />
+          <Route path="/embroidery/thanks/:id" element={<EmbroideryThanksPage />} />
           {/* Token-gated customer actions linked from quote emails. */}
           <Route path="/quote/decline/:id" element={<QuoteDeclinePage />} />
           <Route path="/quote/artwork/:id" element={<QuoteArtworkPage />} />
