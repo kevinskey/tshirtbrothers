@@ -137,6 +137,17 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+
+  // Keep a live contact draft for sibling flows. The Embroidery tile on the
+  // products step hands visitors to /embroidery AFTER they've typed their
+  // name/phone/email here — asking again on the next page reads as the site
+  // forgetting them (Kevin, 2026-10-03). sessionStorage on purpose: contact
+  // details shouldn't outlive the tab the way tsb_known_email does.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('tsb_contact_draft', JSON.stringify({ name, phone, email }));
+    } catch { /* private mode */ }
+  }, [name, phone, email]);
   const [picked, setPicked] = useState<ProductKey[]>(
     () => (studio ? [studioProductKey(studio.product?.name)] : []),
   );

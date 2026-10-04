@@ -270,6 +270,22 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
         if (garmentMode === 'tsb' && !String(it.productName || '').trim()) {
           return res.status(400).json({ error: 'each item needs a product' });
         }
+        // Garment color + per-size counts (both optional — not every catalog
+        // product exposes them, and own-garment items have neither).
+        let sizes = null;
+        if (it.sizes && typeof it.sizes === 'object' && !Array.isArray(it.sizes)) {
+          sizes = {};
+          let sum = 0;
+          for (const [k, v] of Object.entries(it.sizes)) {
+            const n = parseInt(v, 10);
+            if (!Number.isInteger(n) || n < 0) return res.status(400).json({ error: 'size counts must be non-negative integers' });
+            if (n > 0) { sizes[String(k).slice(0, 12)] = n; sum += n; }
+          }
+          if (sum > 0 && sum !== iq) {
+            return res.status(400).json({ error: 'size counts must add up to the item quantity' });
+          }
+          if (sum === 0) sizes = null;
+        }
         items.push({
           product_id: it.productId ?? null,
           product_name: String(it.productName || '').trim() || null,
@@ -278,6 +294,8 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
           placement: it.placement,
           placement_note: String(it.placementNote || '').trim() || null,
           desired_size: String(it.desiredSize).trim(),
+          color: String(it.color || '').trim() || null,
+          sizes,
           quantity: iq,
         });
       }
@@ -295,7 +313,7 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
     const effPlacement = first ? first.placement : placement;
     const effPlacementNote = first ? first.placement_note : (placementNote || null);
     const effGarmentChoice = items && garmentMode === 'tsb'
-      ? items.map((it) => `${it.product_name}${it.style_number ? ' (' + it.style_number + ')' : ''} × ${it.quantity}`).join('; ')
+      ? items.map((it) => `${it.product_name}${it.style_number ? ' (' + it.style_number + ')' : ''}${it.color ? ', ' + it.color : ''} × ${it.quantity}`).join('; ')
       : (garmentChoice || null);
 
     const base64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');

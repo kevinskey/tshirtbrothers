@@ -147,7 +147,10 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
             <div key={i} className="flex items-center gap-2 text-xs">
               {it.image_url && <img src={it.image_url} alt="" className="h-7 w-7 rounded bg-gray-100 object-contain" />}
               <span className="min-w-0 flex-1 truncate text-gray-700">
-                {it.product_name}{it.style_number ? ` (${it.style_number})` : ''} × {it.quantity} · {it.placement.replace(/_/g, ' ')} · {it.desired_size}
+                {it.product_name}{it.style_number ? ` (${it.style_number})` : ''}
+                {it.color ? ` · ${it.color}` : ''} × {it.quantity}
+                {it.sizes ? ` [${Object.entries(it.sizes).map(([k, v]) => `${k}:${v}`).join(' ')}]` : ''}
+                {' · '}{it.placement.replace(/_/g, ' ')} · {it.desired_size}
               </span>
               <label className="flex items-center gap-1 font-medium text-gray-600">
                 $/pc

@@ -2137,7 +2137,10 @@ function embroideryDetails(request) {
       escapeHtml(
         `${request.garment_mode === 'own' ? 'Customer garment' : (it.product_name || 'Garment')}`
         + `${it.style_number ? ' (' + it.style_number + ')' : ''}`
-        + ` × ${it.quantity} — ${String(it.placement).replace(/_/g, ' ')}`
+        + `${it.color ? ', ' + it.color : ''}`
+        + ` × ${it.quantity}`
+        + `${it.sizes ? ' [' + Object.entries(it.sizes).map(([k, v]) => k + ':' + v).join(' ') + ']' : ''}`
+        + ` — ${String(it.placement).replace(/_/g, ' ')}`
         + `${it.placement_note ? ' (' + it.placement_note + ')' : ''}`
         + `, ${it.desired_size}`
       )
