@@ -245,13 +245,20 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       garmentMode, garmentChoice, notes, quantity,
       items: rawItems,
       stitchFileBase64, stitchFileName,
+      designs: rawDesigns,
     } = req.body;
 
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const emailNorm = String(email || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailNorm)) return res.status(400).json({ error: 'a valid email is required' });
     const hasStitchFile = !!stitchFileBase64;
-    if (!imageBase64 && !hasStitchFile) return res.status(400).json({ error: 'artwork or a stitch file is required' });
+    // designs[] = one entry per distinct design (each is its own $25 charge).
+    // Legacy single imageBase64 = one design.
+    const designInputs = Array.isArray(rawDesigns) && rawDesigns.length > 0
+      ? rawDesigns
+      : (imageBase64 ? [{ imageBase64, filename }] : []);
+    if (designInputs.length > 6) return res.status(400).json({ error: 'six designs max per request — call us for more' });
+    if (designInputs.length === 0 && !hasStitchFile) return res.status(400).json({ error: 'artwork or a stitch file is required' });
     if (hasStitchFile && !STITCH_FILE_EXTS.test(String(stitchFileName || ''))) {
       return res.status(400).json({ error: 'stitch file must be .dst, .pes, .emb, .exp, .jef, .vp3, .xxx or .hus' });
     }
@@ -340,15 +347,21 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       : (garmentChoice || null);
 
     const rand = crypto.randomBytes(4).toString('hex');
-    let artworkUrl = null;
-    if (imageBase64) {
-      const base64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
-      const buf = Buffer.from(base64, 'base64');
-      if (buf.length < 100) return res.status(400).json({ error: 'artwork file looks empty' });
-      const safeName = (filename || 'artwork.png').replace(/[^a-zA-Z0-9.\-]/g, '-');
-      const key = `embroidery/requests/${Date.now()}-${rand}-${safeName}`;
-      artworkUrl = await uploadToSpaces(buf, key, 'image/png');
+    const artworkUrls = [];
+    for (let di = 0; di < designInputs.length; di++) {
+      const dIn = designInputs[di];
+      if (!dIn?.imageBase64) return res.status(400).json({ error: `design ${di + 1} is missing its image` });
+      if (/^https?:\/\//i.test(String(dIn.imageBase64).trim())) {
+        return res.status(400).json({ error: 'send the file contents, not a URL' });
+      }
+      const buf = Buffer.from(String(dIn.imageBase64).replace(/^data:image\/\w+;base64,/, ''), 'base64');
+      if (buf.length < 100) return res.status(400).json({ error: `design ${di + 1} looks empty` });
+      const safeName = (dIn.filename || `design-${di + 1}.png`).replace(/[^a-zA-Z0-9.\-]/g, '-');
+      const key = `embroidery/requests/${Date.now()}-${rand}-${di}-${safeName}`;
+      artworkUrls.push(await uploadToSpaces(buf, key, 'image/png'));
     }
+    const artworkUrl = artworkUrls[0] ?? null;
+    const designCount = hasStitchFile ? Math.max(designInputs.length, 1) : designInputs.length;
 
     let stitchFileUrl = null;
     let parsedStitches = null;
@@ -373,14 +386,16 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
           desired_size, placement, placement_note,
           garment_mode, garment_choice, notes, quantity, items,
           stitch_file_url, stitch_file_name, needs_digitizing, stitch_count,
+          artwork_urls, design_count,
           status, access_token)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        RETURNING *`,
       [String(name).trim(), emailNorm, phone || null, artworkUrl,
        effSize, effPlacement, effPlacementNote,
        garmentMode, effGarmentChoice, notes || null, qty,
        items ? JSON.stringify(items) : null,
        stitchFileUrl, safeStitchName, !hasStitchFile, parsedStitches,
+       artworkUrls.length > 0 ? JSON.stringify(artworkUrls) : null, designCount,
        hasStitchFile ? 'ready_to_quote' : 'awaiting_payment', accessToken]
     );
     const request = rows[0];
@@ -412,12 +427,14 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
           currency: 'usd',
           unit_amount: DIGITIZATION_FEE_CENTS,
           product_data: {
-            name: 'Embroidery Digitization — $25',
-            description: `Request #${request.id} · One-time setup: we convert your artwork into a stitch file. Your quote follows once it's done.`,
-            images: [artworkUrl],
+            name: designCount > 1 ? `Embroidery Digitization × ${designCount} — $25 each` : 'Embroidery Digitization — $25',
+            description: `Request #${request.id} · One-time setup per design: we convert your artwork into stitch files. Your quote follows once they're done.`,
+            ...(artworkUrl ? { images: [artworkUrl] } : {}),
           },
         },
-        quantity: 1,
+        // Each design is its own digitization and its own $25 (Kevin,
+        // 2026-10-04: "that's two separate $25 embroidery charges").
+        quantity: Math.max(designCount, 1),
       }],
       custom_text: {
         submit: {
@@ -522,9 +539,19 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     if (r.garment_mode === 'own' && garments?.some((g) => Number(g.centsPerPiece) > 0)) {
       return res.status(400).json({ error: 'customer is supplying their own garments; garment prices must be 0' });
     }
+    const designsIn = Array.isArray(req.body.designs) && req.body.designs.length > 0
+      ? req.body.designs.map((d) => ({
+          label: String(d.label || '').trim() || null,
+          stitchCount: Number(d.stitchCount),
+          quantity: Number(d.quantity),
+        }))
+      : undefined;
     const priced = priceEmbroidery({
       stitchCount: Number(req.body.stitchCount),
       quantity: Number(req.body.quantity ?? r.quantity ?? 1),
+      designs: designsIn,
+      // What was actually collected at checkout: $25 per design.
+      depositCents: DIGITIZATION_FEE_CENTS * Math.max(Number(r.design_count) || 1, 1),
       skipDigitizing: !!r.stitch_file_url,
       garments,
       garmentCentsPerPiece: garmentPerPiece,
@@ -547,7 +574,8 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
          status = 'quoted', quoted_at = NOW(), updated_at = NOW()
        WHERE id = $8
        RETURNING *`,
-      [Number(req.body.stitchCount), Number(req.body.quantity ?? r.quantity ?? 1),
+      [designsIn ? designsIn.reduce((t, d) => t + d.stitchCount, 0) : Number(req.body.stitchCount),
+       Number(req.body.quantity ?? r.quantity ?? 1),
        garmentTotal, req.body.rush || 'standard',
        priced.costCents, JSON.stringify(priced.lines), priced.totalCents, req.params.id]
     );

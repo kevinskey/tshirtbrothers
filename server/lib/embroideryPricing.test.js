@@ -98,3 +98,29 @@ test('a realistic order: 24 polos, 7.5k-stitch left chest, $24 garments', () => 
   assert.equal(q.lines.find((l) => l.key === 'garment').retailCents, 2400 * 24);
   assert.equal(q.totalCents, Math.round(635 * 24 * 1.7) + (Math.round(2400 * 1.7) - 2500) + 2400 * 24);
 });
+
+test("multi-design: each design is its own run, its own digitizing, its own $25", () => {
+  // Kym's oxford: ribbon 6k + emblem 4k, each on 1 shirt. Two $25s collected.
+  const q = priceEmbroidery({
+    quantity: 1,
+    designs: [
+      { label: 'Ribbon', stitchCount: 6000, quantity: 1 },
+      { label: 'Emblem', stitchCount: 4000, quantity: 1 },
+    ],
+    depositCents: 5000,
+  });
+  const runs = q.lines.filter((l) => l.key === 'stitching');
+  assert.equal(runs.length, 2);
+  // Each run tiers at qty 1: 6k = $13.20, 4k (≤5k col) = $12.00.
+  assert.equal(runs[0].costCents, 1320);
+  assert.equal(runs[1].costCents, 1200);
+  // Digitizing: (6k→$18) + (4k→$12) = $30 cost → $51 retail − $50 deposit = $1 balance.
+  const digi = q.lines.find((l) => l.key === 'digitizing_settlement');
+  assert.equal(digi.retailCents, Math.round(3000 * 1.7) - 5000);
+});
+
+test('legacy single-design input still works unchanged', () => {
+  const legacy = priceEmbroidery({ stitchCount: 5000, quantity: 1 });
+  const viaDesigns = priceEmbroidery({ quantity: 1, designs: [{ stitchCount: 5000, quantity: 1 }], depositCents: 2500 });
+  assert.equal(legacy.totalCents, viaDesigns.totalCents);
+});
