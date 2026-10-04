@@ -36,6 +36,8 @@ interface CatalogProduct {
   image_url: string | null;
 }
 
+interface ColorOption { name: string; hex: string | null; image: string | null }
+
 interface GarmentItem {
   productId: number | null;
   productName: string | null;
@@ -44,7 +46,16 @@ interface GarmentItem {
   placement: PlacementKey;
   placementNote: string;
   desiredSize: string;
-  quantity: string; // kept as text for friendly editing; parsed on submit
+  quantity: string; // single-qty fallback when the catalog has no size list
+  // Garment color + size breakdown (Kevin, 2026-10-03: "this also has no
+  // size or colors"). sizeCounts holds per-size quantities as text; the
+  // real quantity is their sum when any are filled. availableColors/Sizes
+  // are client-only option lists fetched per product — stripped at submit.
+  color: string;
+  sizeCounts: Record<string, string>;
+  availableColors: ColorOption[];
+  availableSizes: string[];
+  optionsLoading: boolean;
 }
 
 const SIZE_HINT: Record<PlacementKey, string> = {
@@ -66,13 +77,46 @@ function newItem(p?: CatalogProduct): GarmentItem {
     placementNote: '',
     desiredSize: '',
     quantity: '1',
+    color: '',
+    sizeCounts: {},
+    availableColors: [],
+    availableSizes: [],
+    optionsLoading: false,
   };
 }
 
+/** Pieces in one item: the size breakdown when any size is filled, else the
+ *  flat qty field. */
+function itemQty(it: GarmentItem): number {
+  const sized = Object.values(it.sizeCounts).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
+  return sized > 0 ? sized : (parseInt(it.quantity, 10) || 0);
+}
+
+/** Contact the visitor already gave us elsewhere this tab (the Easy Quote
+ *  wizard writes tsb_contact_draft as they type), with the long-lived known
+ *  email as a fallback. */
+function knownContact(): { name: string; email: string; phone: string } {
+  let name = '', email = '', phone = '';
+  try {
+    const draft = JSON.parse(sessionStorage.getItem('tsb_contact_draft') || 'null');
+    if (draft) { name = draft.name || ''; email = draft.email || ''; phone = draft.phone || ''; }
+  } catch { /* corrupt draft — fall through */ }
+  try {
+    if (!email) email = localStorage.getItem('tsb_known_email') || '';
+  } catch { /* private mode */ }
+  return { name, email, phone };
+}
+
 export default function EmbroideryQuotePage() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const prefill = useRef(knownContact()).current;
+  const [name, setName] = useState(prefill.name);
+  const [email, setEmail] = useState(prefill.email);
+  const [phone, setPhone] = useState(prefill.phone);
+  // Came over from the wizard with a usable identity? Show it as a one-line
+  // confirmation instead of three empty-looking fields they already filled.
+  const [editingContact, setEditingContact] = useState(
+    !(prefill.name.trim() && /\S+@\S+\.\S+/.test(prefill.email)),
+  );
   const [garmentMode, setGarmentMode] = useState<'tsb' | 'own' | null>(null);
   const [items, setItems] = useState<GarmentItem[]>([]);
   const [notes, setNotes] = useState('');
@@ -100,9 +144,29 @@ export default function EmbroideryQuotePage() {
   }, [productQuery, garmentMode]);
 
   const addProduct = (p: CatalogProduct) => {
-    setItems((prev) => [...prev, newItem(p)]);
+    const idx = items.length;
+    setItems((prev) => [...prev, { ...newItem(p), optionsLoading: true }]);
     setProductQuery('');
     setProductResults([]);
+    // Colors/sizes live behind the product's S&S style id, which the list
+    // endpoint doesn't carry — detail first, then options. Best-effort: a
+    // product with no options just keeps the flat qty field.
+    (async () => {
+      try {
+        const detail = await fetch(`/api/products/${p.id}`).then((r) => r.json());
+        const ssId = detail?.ss_id;
+        if (!ssId) throw new Error('no ss_id');
+        const opts = await fetch(`/api/products/colors/${ssId}`).then((r) => r.json());
+        setItems((prev) => prev.map((it, j) => (j === idx ? {
+          ...it,
+          availableColors: opts.colors ?? [],
+          availableSizes: opts.sizes ?? [],
+          optionsLoading: false,
+        } : it)));
+      } catch {
+        setItems((prev) => prev.map((it, j) => (j === idx ? { ...it, optionsLoading: false } : it)));
+      }
+    })();
   };
   const updateItem = (i: number, patch: Partial<GarmentItem>) =>
     setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
@@ -138,10 +202,11 @@ export default function EmbroideryQuotePage() {
   };
 
   const itemsValid = items.length > 0 && items.every((it) =>
-    (parseInt(it.quantity, 10) || 0) >= 1
+    itemQty(it) >= 1
     && it.desiredSize.trim()
     && (it.placement !== 'other' || it.placementNote.trim())
-    && (garmentMode !== 'tsb' || it.productName));
+    && (garmentMode !== 'tsb' || it.productName)
+    && (it.availableColors.length === 0 || it.color));
 
   const canSubmit =
     name.trim() && /\S+@\S+\.\S+/.test(email) && imageBase64 && garmentMode && itemsValid;
@@ -158,13 +223,22 @@ export default function EmbroideryQuotePage() {
           name: name.trim(), email: email.trim(), phone: phone.trim() || undefined,
           imageBase64, filename: fileName || undefined,
           garmentMode,
-          items: items.map((it) => ({
-            productId: it.productId, productName: it.productName,
-            styleNumber: it.styleNumber, imageUrl: it.imageUrl,
-            placement: it.placement, placementNote: it.placementNote.trim() || undefined,
-            desiredSize: it.desiredSize.trim(),
-            quantity: parseInt(it.quantity, 10) || 1,
-          })),
+          items: items.map((it) => {
+            const sizes = Object.fromEntries(
+              Object.entries(it.sizeCounts)
+                .map(([k, v]) => [k, parseInt(v, 10) || 0])
+                .filter(([, v]) => (v as number) > 0),
+            );
+            return {
+              productId: it.productId, productName: it.productName,
+              styleNumber: it.styleNumber, imageUrl: it.imageUrl,
+              placement: it.placement, placementNote: it.placementNote.trim() || undefined,
+              desiredSize: it.desiredSize.trim(),
+              color: it.color || undefined,
+              sizes: Object.keys(sizes).length > 0 ? sizes : undefined,
+              quantity: itemQty(it),
+            };
+          }),
           notes: notes.trim() || undefined,
         }),
       });
@@ -179,7 +253,7 @@ export default function EmbroideryQuotePage() {
 
   const inputCls = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/60 focus:border-orange-400';
   const labelCls = 'block text-sm font-bold text-gray-900 mb-1.5';
-  const totalPieces = items.reduce((s, it) => s + (parseInt(it.quantity, 10) || 0), 0);
+  const totalPieces = items.reduce((s, it) => s + itemQty(it), 0);
 
   return (
     <div
@@ -350,14 +424,18 @@ export default function EmbroideryQuotePage() {
                             className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                           />
                         </label>
-                        <label className="text-xs font-medium text-gray-600">
-                          Qty
-                          <input
-                            type="number" min={1} max={999} value={it.quantity}
-                            onChange={(e) => updateItem(i, { quantity: e.target.value })}
-                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                          />
-                        </label>
+                        {it.availableSizes.length === 0 ? (
+                          <label className="text-xs font-medium text-gray-600">
+                            Qty
+                            <input
+                              type="number" min={1} max={999} value={it.quantity}
+                              onChange={(e) => updateItem(i, { quantity: e.target.value })}
+                              className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                            />
+                          </label>
+                        ) : (
+                          <span className="self-end pb-1.5 text-xs text-gray-500">{itemQty(it)} pc{itemQty(it) === 1 ? '' : 's'} via sizes</span>
+                        )}
                         {it.placement === 'other' && (
                           <label className="col-span-2 text-xs font-medium text-gray-600 sm:col-span-1">
                             Where?
@@ -369,6 +447,58 @@ export default function EmbroideryQuotePage() {
                           </label>
                         )}
                       </div>
+
+                      {it.optionsLoading && (
+                        <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-400">
+                          <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> loading colors &amp; sizes…
+                        </p>
+                      )}
+
+                      {/* Garment color — picking one also swaps the product
+                          photo to that colorway. */}
+                      {it.availableColors.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-xs font-medium text-gray-600">
+                            Color{it.color ? <> — <strong>{it.color}</strong></> : ''}
+                          </span>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {it.availableColors.map((c) => (
+                              <button
+                                key={c.name} type="button" title={c.name}
+                                aria-label={`Color ${c.name}`} aria-pressed={it.color === c.name}
+                                onClick={() => updateItem(i, { color: c.name, imageUrl: c.image || it.imageUrl })}
+                                className={`h-7 w-7 rounded-full border-2 transition-transform ${
+                                  it.color === c.name ? 'scale-110 border-orange-500' : 'border-gray-200 hover:border-gray-400'
+                                }`}
+                                style={{ background: c.hex || '#ddd' }}
+                              />
+                            ))}
+                          </div>
+                          {!it.color && <p className="mt-1 text-[11px] text-amber-600">Pick a color.</p>}
+                        </div>
+                      )}
+
+                      {/* Size breakdown — per-size counts; the Qty field above
+                          is the fallback for products with no size list. */}
+                      {it.availableSizes.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-xs font-medium text-gray-600">Sizes</span>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {it.availableSizes.map((sz) => (
+                              <label key={sz} className="flex items-center gap-1 text-xs text-gray-600">
+                                {sz}
+                                <input
+                                  type="number" min={0} max={999}
+                                  value={it.sizeCounts[sz] ?? ''}
+                                  onChange={(e) => updateItem(i, { sizeCounts: { ...it.sizeCounts, [sz]: e.target.value } })}
+                                  placeholder="0"
+                                  className="w-14 rounded border border-gray-300 px-1.5 py-1 text-sm"
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {garmentMode === 'tsb' && (
                       <button
@@ -390,21 +520,36 @@ export default function EmbroideryQuotePage() {
             </section>
           )}
 
-          {/* Contact */}
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div>
-              <label htmlFor="emb-name" className={labelCls}>Name</label>
-              <input id="emb-name" type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} autoComplete="name" />
-            </div>
-            <div>
-              <label htmlFor="emb-email" className={labelCls}>Email</label>
-              <input id="emb-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
-            </div>
-            <div>
-              <label htmlFor="emb-phone" className={labelCls}>Phone (optional)</label>
-              <input id="emb-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} autoComplete="tel" />
-            </div>
-          </section>
+          {/* Contact — collapsed to a confirmation line when the visitor
+              already identified themselves in the quote wizard this tab. */}
+          {editingContact ? (
+            <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label htmlFor="emb-name" className={labelCls}>Name</label>
+                <input id="emb-name" type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} autoComplete="name" />
+              </div>
+              <div>
+                <label htmlFor="emb-email" className={labelCls}>Email</label>
+                <input id="emb-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} autoComplete="email" />
+              </div>
+              <div>
+                <label htmlFor="emb-phone" className={labelCls}>Phone (optional)</label>
+                <input id="emb-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} autoComplete="tel" />
+              </div>
+            </section>
+          ) : (
+            <section className="flex items-center justify-between gap-3 rounded-lg bg-orange-50/60 px-3 py-2.5">
+              <p className="min-w-0 truncate text-sm text-gray-700">
+                Quoting for <strong>{name}</strong> · {email}{phone ? ` · ${phone}` : ''}
+              </p>
+              <button
+                type="button" onClick={() => setEditingContact(true)}
+                className="shrink-0 text-xs font-semibold text-orange-600 underline underline-offset-2"
+              >
+                Not you? Edit
+              </button>
+            </section>
+          )}
 
           <section>
             <label htmlFor="emb-notes" className={labelCls}>Anything else? (optional)</label>

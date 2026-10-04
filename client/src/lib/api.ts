@@ -820,6 +820,8 @@ export interface EmbroideryRequest {
     placement: string;
     placement_note: string | null;
     desired_size: string;
+    color: string | null;
+    sizes: Record<string, number> | null;
     quantity: number;
   }> | null;
   status: string;
