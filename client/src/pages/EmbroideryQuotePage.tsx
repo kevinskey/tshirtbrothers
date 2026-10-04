@@ -32,6 +32,7 @@ type PlacementKey = typeof PLACEMENTS[number]['key'];
 interface CatalogProduct {
   id: number;
   name: string;
+  brand: string | null;
   style_number: string | null;
   image_url: string | null;
 }
@@ -121,27 +122,64 @@ export default function EmbroideryQuotePage() {
   const [items, setItems] = useState<GarmentItem[]>([]);
   const [notes, setNotes] = useState('');
 
-  // Catalog picker.
+  // Catalog picker. Every match is reachable (Kevin, 2026-10-03: "allow the
+  // customer to scroll all product matches") — the dropdown is a bounded
+  // scroll area that pages through the API until the LAST page is in, via a
+  // sentinel at the bottom of the list. The server's search is strict about
+  // matching; what made results LOOK wrong was the brand being invisible,
+  // so rows now carry it ("Next Level · Style 3712").
+  const PAGE_SIZE = 24;
   const [productQuery, setProductQuery] = useState('');
   const [productResults, setProductResults] = useState<CatalogProduct[]>([]);
   const [searching, setSearching] = useState(false);
+  const [resultTotal, setResultTotal] = useState(0);
+  const [nextPage, setNextPage] = useState<number | null>(null);
   const searchSeq = useRef(0);
+  const loadingMore = useRef(false);
+
+  const fetchPage = async (q: string, page: number, seq: number) => {
+    const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=${PAGE_SIZE}&page=${page}`);
+    const data = await res.json();
+    if (seq !== searchSeq.current) return;
+    setProductResults((prev) => (page === 1 ? (data.products ?? []) : [...prev, ...(data.products ?? [])]));
+    setResultTotal(data.total ?? 0);
+    setNextPage(page < (data.totalPages ?? 1) ? page + 1 : null);
+  };
+
   useEffect(() => {
     const q = productQuery.trim();
-    if (garmentMode !== 'tsb' || q.length < 2) { setProductResults([]); setSearching(false); return; }
+    if (garmentMode !== 'tsb' || q.length < 2) {
+      setProductResults([]); setSearching(false); setNextPage(null); setResultTotal(0);
+      return;
+    }
     const seq = ++searchSeq.current;
     setSearching(true);
     const t = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
-        const data = await res.json();
-        if (seq !== searchSeq.current) return;
-        setProductResults(data.products ?? []);
-      } catch { if (seq === searchSeq.current) setProductResults([]); }
+      try { await fetchPage(q, 1, seq); }
+      catch { if (seq === searchSeq.current) { setProductResults([]); setNextPage(null); } }
       finally { if (seq === searchSeq.current) setSearching(false); }
     }, 350);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productQuery, garmentMode]);
+
+  // Sentinel at the bottom of the dropdown pulls the next page in.
+  const moreRef = useRef<HTMLLIElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || nextPage === null || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(async (entries) => {
+      if (!entries[0]?.isIntersecting || loadingMore.current || nextPage === null) return;
+      loadingMore.current = true;
+      try { await fetchPage(productQuery.trim(), nextPage, searchSeq.current); }
+      catch { /* scroll again to retry */ }
+      finally { loadingMore.current = false; }
+    }, { root: listRef.current, rootMargin: '80px' });
+    obs.observe(el);
+    return () => obs.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextPage, productQuery]);
 
   const addProduct = (p: CatalogProduct) => {
     const idx = items.length;
@@ -184,6 +222,28 @@ export default function EmbroideryQuotePage() {
   const [imageBase64, setImageBase64] = useState('');
   const [preview, setPreview] = useState('');
 
+  // Already-digitized customers skip the $25 — the fee pays for digitizing,
+  // and they arrive with the stitch file in hand (Kevin, 2026-10-03).
+  const [artMode, setArtMode] = useState<'image' | 'stitch'>('image');
+  const stitchRef = useRef<HTMLInputElement>(null);
+  const [stitchFileName, setStitchFileName] = useState('');
+  const [stitchFileBase64, setStitchFileBase64] = useState('');
+  const onStitchFile = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(dst|pes|emb|exp|jef|vp3|xxx|hus)$/i.test(f.name)) {
+      setError('That doesn\u2019t look like a stitch file — we take .dst, .pes, .emb, .exp, .jef, .vp3, .xxx, .hus.');
+      return;
+    }
+    if (f.size > 10 * 1024 * 1024) { setError('Stitch files over 10 MB — email it to us instead.'); return; }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setStitchFileBase64(String(reader.result ?? ''));
+      setStitchFileName(f.name);
+      setError(null);
+    };
+    reader.readAsDataURL(f);
+  };
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -208,8 +268,9 @@ export default function EmbroideryQuotePage() {
     && (garmentMode !== 'tsb' || it.productName)
     && (it.availableColors.length === 0 || it.color));
 
+  const artReady = artMode === 'stitch' ? !!stitchFileBase64 : !!imageBase64;
   const canSubmit =
-    name.trim() && /\S+@\S+\.\S+/.test(email) && imageBase64 && garmentMode && itemsValid;
+    name.trim() && /\S+@\S+\.\S+/.test(email) && artReady && garmentMode && itemsValid;
 
   const submit = async () => {
     if (!canSubmit || submitting) return;
@@ -221,7 +282,9 @@ export default function EmbroideryQuotePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(), email: email.trim(), phone: phone.trim() || undefined,
-          imageBase64, filename: fileName || undefined,
+          imageBase64: imageBase64 || undefined, filename: fileName || undefined,
+          stitchFileBase64: artMode === 'stitch' ? stitchFileBase64 : undefined,
+          stitchFileName: artMode === 'stitch' ? stitchFileName : undefined,
           garmentMode,
           items: items.map((it) => {
             const sizes = Object.fromEntries(
@@ -244,7 +307,8 @@ export default function EmbroideryQuotePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Something went wrong');
-      window.location.href = data.checkoutUrl;
+      // Stitch-file requests have nothing to pay — straight to confirmation.
+      window.location.href = data.checkoutUrl || data.statusUrl;
     } catch (e) {
       setError((e as Error).message);
       setSubmitting(false);
@@ -289,9 +353,57 @@ export default function EmbroideryQuotePage() {
         </div>
 
         <div className="space-y-6 sm:rounded-3xl sm:border sm:border-orange-100 sm:bg-white sm:p-8 sm:shadow-2xl">
-          {/* Artwork */}
+          {/* Artwork — image to digitize, or an already-digitized stitch file */}
           <section>
             <label className={labelCls}>1. Your artwork</label>
+            <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button" onClick={() => setArtMode('image')}
+                className={`rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-all ${
+                  artMode === 'image' ? 'border-orange-500 bg-orange-50 text-orange-900' : 'border-gray-200 bg-white hover:border-gray-400'
+                }`}
+              >
+                <span className="block font-bold">I have a logo or image</span>
+                <span className="block text-xs text-gray-500">We digitize it — one-time $25</span>
+              </button>
+              <button
+                type="button" onClick={() => setArtMode('stitch')}
+                className={`rounded-xl border-2 px-3 py-2.5 text-left text-sm transition-all ${
+                  artMode === 'stitch' ? 'border-orange-500 bg-orange-50 text-orange-900' : 'border-gray-200 bg-white hover:border-gray-400'
+                }`}
+              >
+                <span className="block font-bold">I already have a stitch file</span>
+                <span className="block text-xs text-gray-500">DST, PES, EMB… — no digitizing fee</span>
+              </button>
+            </div>
+            {artMode === 'stitch' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => stitchRef.current?.click()}
+                  className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-sm text-gray-600 transition-colors hover:border-orange-400"
+                >
+                  {stitchFileName ? (
+                    <>
+                      <Check className="h-4 w-4 shrink-0 text-green-600" aria-hidden />
+                      <span className="min-w-0 truncate">{stitchFileName} — tap to change</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 text-orange-500" aria-hidden />
+                      Upload your stitch file (.dst, .pes, .emb… up to 10 MB)
+                    </>
+                  )}
+                </button>
+                <input
+                  ref={stitchRef} type="file" accept=".dst,.pes,.emb,.exp,.jef,.vp3,.xxx,.hus" className="hidden"
+                  onChange={(e) => onStitchFile(e.target.files?.[0])}
+                />
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Optionally add a picture of the design below so we can see what it looks like.
+                </p>
+              </>
+            )}
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
@@ -306,7 +418,9 @@ export default function EmbroideryQuotePage() {
               ) : (
                 <>
                   <Upload className="h-5 w-5 text-orange-500" aria-hidden />
-                  Upload your logo or design (PNG/JPG, up to 20 MB)
+                  {artMode === 'stitch'
+                    ? 'Optional: a picture of the design (PNG/JPG)'
+                    : 'Upload your logo or design (PNG/JPG, up to 20 MB)'}
                 </>
               )}
             </button>
@@ -359,25 +473,40 @@ export default function EmbroideryQuotePage() {
                   {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-gray-400" aria-hidden />}
                 </div>
                 {productResults.length > 0 && (
-                  <ul className="mt-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
-                    {productResults.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button" onClick={() => addProduct(p)}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-orange-50"
-                        >
-                          {p.image_url
-                            ? <img src={p.image_url} alt="" className="h-9 w-9 rounded object-contain bg-gray-50" />
-                            : <span className="h-9 w-9 rounded bg-gray-100" />}
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">{p.name}</span>
-                            {p.style_number && <span className="block text-xs text-gray-500">Style {p.style_number}</span>}
-                          </span>
-                          <Plus className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <p className="mt-1 px-1 text-[11px] text-gray-400">
+                      {resultTotal} match{resultTotal === 1 ? '' : 'es'} — scroll for all of them
+                    </p>
+                    <ul
+                      ref={listRef}
+                      className="mt-1 max-h-80 overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white shadow-lg"
+                    >
+                      {productResults.map((p) => (
+                        <li key={p.id}>
+                          <button
+                            type="button" onClick={() => addProduct(p)}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-orange-50"
+                          >
+                            {p.image_url
+                              ? <img src={p.image_url} alt="" loading="lazy" className="h-9 w-9 rounded object-contain bg-gray-50" />
+                              : <span className="h-9 w-9 rounded bg-gray-100" />}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-medium">{p.name}</span>
+                              <span className="block truncate text-xs text-gray-500">
+                                {[p.brand, p.style_number ? `Style ${p.style_number}` : null].filter(Boolean).join(' · ')}
+                              </span>
+                            </span>
+                            <Plus className="h-4 w-4 shrink-0 text-orange-500" aria-hidden />
+                          </button>
+                        </li>
+                      ))}
+                      {nextPage !== null && (
+                        <li ref={moreRef} className="py-2 text-center text-xs text-gray-400" aria-hidden>
+                          <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                        </li>
+                      )}
+                    </ul>
+                  </>
                 )}
               </div>
             )}
@@ -570,11 +699,14 @@ export default function EmbroideryQuotePage() {
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-orange-600 px-6 py-4 text-base font-bold text-white shadow-lg transition-colors hover:bg-orange-700 disabled:opacity-40"
           >
             {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
-            {submitting ? 'Heading to checkout…' : 'Pay $25 digitization & get my quote'}
+            {submitting
+              ? (artMode === 'stitch' ? 'Sending…' : 'Heading to checkout…')
+              : (artMode === 'stitch' ? 'Send my stitch file & get my quote' : 'Pay $25 digitization & get my quote')}
           </button>
           <p className="text-center text-xs text-gray-500">
-            Secure checkout by Stripe. After payment we digitize your art and email
-            your quote — no stitching happens until you approve it.
+            {artMode === 'stitch'
+              ? 'No digitizing fee — you already did that part. We review your file and email your quote; nothing stitches until you approve it.'
+              : 'Secure checkout by Stripe. After payment we digitize your art and email your quote — no stitching happens until you approve it.'}
           </p>
 
           {/* The fine print — mirrors our production terms so nobody is

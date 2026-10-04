@@ -25,6 +25,7 @@ import {
 const STATUS_STYLES: Record<string, string> = {
   awaiting_payment: 'bg-yellow-100 text-yellow-800',
   paid: 'bg-blue-100 text-blue-800',
+  ready_to_quote: 'bg-purple-100 text-purple-800',
   quoted: 'bg-green-100 text-green-800',
 };
 
@@ -46,7 +47,8 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   const reqItems = request.items ?? [];
   const multiGarment = request.garment_mode === 'tsb' && reqItems.length > 0;
 
-  const [stitches, setStitches] = useState('');
+  // DST uploads arrive with the stitch count already parsed from the header.
+  const [stitches, setStitches] = useState(request.stitch_count ? String(request.stitch_count) : '');
   const [qty, setQty] = useState(String(request.quantity || 1));
   const [garment, setGarment] = useState('');
   // Multi-garment: one retail $/pc per catalog item, keyed by index.
@@ -254,7 +256,7 @@ export default function EmbroideryRequestsPanel() {
                 )}
               </div>
             </div>
-            {r.status === 'paid' && <QuoteForm request={r} />}
+            {(r.status === 'paid' || r.status === 'ready_to_quote') && <QuoteForm request={r} />}
           </li>
         ))}
       </ul>

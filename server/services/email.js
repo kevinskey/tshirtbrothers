@@ -2184,13 +2184,15 @@ export async function sendEmbroideryPaidToCustomer({ request }) {
   });
 }
 
-export async function sendEmbroideryPaidToAdmin({ request }) {
+export async function sendEmbroideryPaidToAdmin({ request, stitchFileProvided = false }) {
+  const intro = stitchFileProvided
+    ? `brought their <strong>own stitch file</strong>${request.stitch_count ? ` (${Number(request.stitch_count).toLocaleString()} stitches, read from the DST header)` : ''} — no digitizing needed, it's ready to quote now.`
+    : 'paid the $25 digitization fee. Artwork is below — send it to the digitizer, then enter the stitch count to fire the quote.';
   const body = `
-    <p><strong>${escapeHtml(request.customer_name)} &lt;${escapeHtml(request.customer_email)}&gt;</strong>
-    paid the $25 digitization fee. Artwork is below — send it to the digitizer,
-    then enter the stitch count to fire the quote.</p>
+    <p><strong>${escapeHtml(request.customer_name)} &lt;${escapeHtml(request.customer_email)}&gt;</strong> ${intro}</p>
     ${embroideryDetails(request)}
-    <p><a href="${escapeHtml(request.artwork_url)}">View artwork</a></p>
+    ${request.artwork_url ? `<p><a href="${escapeHtml(request.artwork_url)}">View artwork</a></p>` : ''}
+    ${request.stitch_file_url ? `<p><a href="${escapeHtml(request.stitch_file_url)}">Download stitch file${request.stitch_file_name ? ` (${escapeHtml(request.stitch_file_name)})` : ''}</a></p>` : ''}
     ${primaryButton('Open in Admin', `${DOMAIN}/admin`)}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id}${request.customer_phone ? ' · ' + escapeHtml(request.customer_phone) : ''}</p>
   `;
@@ -2198,8 +2200,10 @@ export async function sendEmbroideryPaidToAdmin({ request }) {
     from: FROM_EMAIL,
     to: [ADMIN_EMAIL],
     replyTo: request.customer_email,
-    subject: `🧵 Embroidery digitization paid — Request #${request.id} (${escapeHtml(request.customer_name)})`,
-    html: baseLayout('Embroidery Request Paid', body),
+    subject: stitchFileProvided
+      ? `🧵 Embroidery — stitch file in hand, ready to quote — Request #${request.id} (${escapeHtml(request.customer_name)})`
+      : `🧵 Embroidery digitization paid — Request #${request.id} (${escapeHtml(request.customer_name)})`,
+    html: baseLayout(stitchFileProvided ? 'Embroidery — Ready to Quote' : 'Embroidery Request Paid', body),
   });
 }
 

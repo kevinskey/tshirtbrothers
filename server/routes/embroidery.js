@@ -215,9 +215,27 @@ function getStripe() {
   return new Stripe(key);
 }
 
-// POST /embroidery/requests — public. Creates the request and returns a
-// Stripe Checkout URL for the $25 digitization fee. Nothing is quoted and
-// nobody is emailed until that payment lands (webhook in routes/payments.js).
+// Tajima .DST headers carry the design's stitch count as "ST:nnnnnnn"
+// in the 512-byte text header — parse it so an uploaded stitch file can
+// prefill the quote's stitch count without waiting on anyone. Best effort:
+// other formats (PES/EMB/EXP/JEF) return null and the admin types it.
+function dstStitchCount(buf) {
+  try {
+    const header = buf.slice(0, 512).toString('latin1');
+    const m = header.match(/ST:\s*(\d{1,7})/);
+    return m ? parseInt(m[1], 10) : null;
+  } catch { return null; }
+}
+
+const STITCH_FILE_EXTS = /\.(dst|pes|emb|exp|jef|vp3|xxx|hus)$/i;
+
+// POST /embroidery/requests — public. Two front doors:
+//   • artwork that needs digitizing → Stripe Checkout for the $25 fee;
+//     nothing is quoted until that payment lands (webhook in payments.js).
+//   • an ALREADY-digitized stitch file (stitchFileBase64) → no fee, no
+//     Stripe; the request lands ready_to_quote immediately and the admin
+//     is emailed. For .dst files the stitch count is parsed from the
+//     header and prefilled.
 router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req, res, next) => {
   try {
     const {
@@ -226,12 +244,17 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       desiredSize, placement, placementNote,
       garmentMode, garmentChoice, notes, quantity,
       items: rawItems,
+      stitchFileBase64, stitchFileName,
     } = req.body;
 
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const emailNorm = String(email || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailNorm)) return res.status(400).json({ error: 'a valid email is required' });
-    if (!imageBase64) return res.status(400).json({ error: 'artwork is required' });
+    const hasStitchFile = !!stitchFileBase64;
+    if (!imageBase64 && !hasStitchFile) return res.status(400).json({ error: 'artwork or a stitch file is required' });
+    if (hasStitchFile && !STITCH_FILE_EXTS.test(String(stitchFileName || ''))) {
+      return res.status(400).json({ error: 'stitch file must be .dst, .pes, .emb, .exp, .jef, .vp3, .xxx or .hus' });
+    }
     // Same guard as /quotes/upload-design: a URL here decodes to a garbage
     // blob stored as a broken "image".
     if (/^https?:\/\//i.test(String(imageBase64).trim())) {
@@ -316,30 +339,68 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       ? items.map((it) => `${it.product_name}${it.style_number ? ' (' + it.style_number + ')' : ''}${it.color ? ', ' + it.color : ''} × ${it.quantity}`).join('; ')
       : (garmentChoice || null);
 
-    const base64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
-    const buf = Buffer.from(base64, 'base64');
-    if (buf.length < 100) return res.status(400).json({ error: 'artwork file looks empty' });
-    const safeName = (filename || 'artwork.png').replace(/[^a-zA-Z0-9.\-]/g, '-');
     const rand = crypto.randomBytes(4).toString('hex');
-    const key = `embroidery/requests/${Date.now()}-${rand}-${safeName}`;
-    const artworkUrl = await uploadToSpaces(buf, key, 'image/png');
+    let artworkUrl = null;
+    if (imageBase64) {
+      const base64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
+      const buf = Buffer.from(base64, 'base64');
+      if (buf.length < 100) return res.status(400).json({ error: 'artwork file looks empty' });
+      const safeName = (filename || 'artwork.png').replace(/[^a-zA-Z0-9.\-]/g, '-');
+      const key = `embroidery/requests/${Date.now()}-${rand}-${safeName}`;
+      artworkUrl = await uploadToSpaces(buf, key, 'image/png');
+    }
+
+    let stitchFileUrl = null;
+    let parsedStitches = null;
+    let safeStitchName = null;
+    if (hasStitchFile) {
+      if (/^https?:\/\//i.test(String(stitchFileBase64).trim())) {
+        return res.status(400).json({ error: 'send the stitch file contents, not a URL' });
+      }
+      const sBuf = Buffer.from(String(stitchFileBase64).replace(/^data:[^;]+;base64,/, ''), 'base64');
+      if (sBuf.length < 100) return res.status(400).json({ error: 'stitch file looks empty' });
+      if (sBuf.length > 10 * 1024 * 1024) return res.status(400).json({ error: 'stitch file is over 10 MB' });
+      safeStitchName = String(stitchFileName).replace(/[^a-zA-Z0-9.\-]/g, '-');
+      const sKey = `embroidery/requests/stitch/${Date.now()}-${rand}-${safeStitchName}`;
+      stitchFileUrl = await uploadToSpaces(sBuf, sKey, 'application/octet-stream');
+      if (/\.dst$/i.test(safeStitchName)) parsedStitches = dstStitchCount(sBuf);
+    }
 
     const accessToken = crypto.randomBytes(24).toString('hex');
     const { rows } = await pool.query(
       `INSERT INTO embroidery_requests
          (customer_name, customer_email, customer_phone, artwork_url,
           desired_size, placement, placement_note,
-          garment_mode, garment_choice, notes, quantity, items, access_token)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          garment_mode, garment_choice, notes, quantity, items,
+          stitch_file_url, stitch_file_name, needs_digitizing, stitch_count,
+          status, access_token)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING *`,
       [String(name).trim(), emailNorm, phone || null, artworkUrl,
        effSize, effPlacement, effPlacementNote,
        garmentMode, effGarmentChoice, notes || null, qty,
-       items ? JSON.stringify(items) : null, accessToken]
+       items ? JSON.stringify(items) : null,
+       stitchFileUrl, safeStitchName, !hasStitchFile, parsedStitches,
+       hasStitchFile ? 'ready_to_quote' : 'awaiting_payment', accessToken]
     );
     const request = rows[0];
 
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+
+    if (hasStitchFile) {
+      // No digitizing to pay for. Tell the shop and send the customer
+      // straight to the confirmation page.
+      import('../services/email.js')
+        .then(({ sendEmbroideryPaidToAdmin }) => sendEmbroideryPaidToAdmin({ request, stitchFileProvided: true }))
+        .catch((e) => console.error('[embroidery] stitch-file admin email failed:', e.message));
+      return res.json({
+        id: request.id,
+        token: accessToken,
+        checkoutUrl: null,
+        statusUrl: `${domain}/embroidery/thanks/${request.id}?t=${accessToken}`,
+      });
+    }
+
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -419,7 +480,11 @@ router.get('/embroidery/requests', authenticate, adminOnly, async (req, res, nex
     const { status } = req.query;
     const params = [];
     let where = '';
-    if (status && status !== 'all') { params.push(status); where = 'WHERE status = $1'; }
+    if (status === 'paid') {
+      // One work queue: paid-and-awaiting-digitizing AND walked-in-with-a-
+      // stitch-file both mean "the shop owes this person a quote".
+      where = "WHERE status IN ('paid', 'ready_to_quote')";
+    } else if (status && status !== 'all') { params.push(status); where = 'WHERE status = $1'; }
     const { rows } = await pool.query(
       `SELECT * FROM embroidery_requests ${where} ORDER BY created_at DESC LIMIT 500`,
       params
@@ -438,8 +503,10 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     const { rows } = await pool.query('SELECT * FROM embroidery_requests WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const r = rows[0];
-    // The whole point of the flow: no quote before the $25 clears.
-    if (!r.digitization_paid_at) {
+    // The gate: no quote before digitizing is covered — either the $25
+    // cleared, or the customer brought their own stitch file and there is
+    // nothing to digitize.
+    if (!r.digitization_paid_at && !r.stitch_file_url) {
       return res.status(409).json({ error: 'Digitization fee has not been paid — cannot quote yet' });
     }
 
@@ -458,6 +525,7 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     const priced = priceEmbroidery({
       stitchCount: Number(req.body.stitchCount),
       quantity: Number(req.body.quantity ?? r.quantity ?? 1),
+      skipDigitizing: !!r.stitch_file_url,
       garments,
       garmentCentsPerPiece: garmentPerPiece,
       isCap: !!req.body.isCap,

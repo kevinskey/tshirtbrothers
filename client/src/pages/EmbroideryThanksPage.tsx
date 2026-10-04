@@ -43,7 +43,8 @@ export default function EmbroideryThanksPage() {
     return () => { cancelled = true; };
   }, [id, token, tries, req?.digitization_paid_at]);
 
-  const paid = !!req?.digitization_paid_at;
+  // Paid the fee, or brought a stitch file (ready_to_quote, no fee owed).
+  const paid = !!req?.digitization_paid_at || req?.status === 'ready_to_quote';
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16 text-center">
@@ -55,10 +56,9 @@ export default function EmbroideryThanksPage() {
           </div>
           <h1 className="text-2xl font-bold">You&rsquo;re in the queue</h1>
           <p className="mt-3 text-sm text-gray-600">
-            Digitization fee received for request #{req?.id}. We&rsquo;re converting
-            your artwork into a stitch file now — your quote (stitching + garment)
-            will land in your inbox as soon as it&rsquo;s done. A receipt is on the
-            way from Stripe.
+            {req?.status === 'ready_to_quote'
+              ? <>Stitch file received for request #{req?.id} — no digitizing fee, you already did that part. We&rsquo;ll review it and your quote lands in your inbox shortly.</>
+              : <>Digitization fee received for request #{req?.id}. We&rsquo;re converting your artwork into a stitch file now — your quote (stitching + garment) will land in your inbox as soon as it&rsquo;s done. A receipt is on the way from Stripe.</>}
           </p>
         </>
       ) : (
