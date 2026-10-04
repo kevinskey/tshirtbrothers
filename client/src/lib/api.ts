@@ -826,6 +826,8 @@ export interface EmbroideryRequest {
   }> | null;
   status: string;
   stitch_file_url: string | null;
+  artwork_urls: string[] | null;
+  design_count: number;
   stitch_file_name: string | null;
   needs_digitizing: boolean;
   digitization_paid_at: string | null;
@@ -848,6 +850,8 @@ export interface EmbroideryQuoteInput {
   garmentCentsPerPiece: number;
   /** Multi-garment requests: one entry per item, replaces garmentCentsPerPiece. */
   garments?: Array<{ label: string; centsPerPiece: number; quantity: number }>;
+  /** One entry per design — each with its own stitch count and run qty. */
+  designs?: Array<{ label?: string; stitchCount: number; quantity: number }>;
   rush: string;
   isCap?: boolean;
   capBack?: boolean;

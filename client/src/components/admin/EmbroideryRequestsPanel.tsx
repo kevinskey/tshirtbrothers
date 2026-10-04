@@ -47,8 +47,15 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   const reqItems = request.items ?? [];
   const multiGarment = request.garment_mode === 'tsb' && reqItems.length > 0;
 
-  // DST uploads arrive with the stitch count already parsed from the header.
-  const [stitches, setStitches] = useState(request.stitch_count ? String(request.stitch_count) : '');
+  // One row per DESIGN — each has its own stitch count and run quantity
+  // (two placements on one shirt = two runs). Seeded from design_count, with
+  // a DST-parsed stitch count prefilling the first row when we have one.
+  const [designRows, setDesignRows] = useState<Array<{ label: string; stitches: string; qty: string }>>(() =>
+    Array.from({ length: Math.max(request.design_count || 1, 1) }, (_, i) => ({
+      label: (request.design_count || 1) > 1 ? `Design ${i + 1}` : '',
+      stitches: i === 0 && request.stitch_count ? String(request.stitch_count) : '',
+      qty: String(request.quantity || 1),
+    })));
   const [qty, setQty] = useState(String(request.quantity || 1));
   const [garment, setGarment] = useState('');
   // Multi-garment: one retail $/pc per catalog item, keyed by index.
@@ -61,7 +68,13 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   const [preview, setPreview] = useState<{ lines: EmbroideryPriceLine[]; totalCents: number; costCents: number } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-  const stitchCount = parseInt(stitches.replace(/[^0-9]/g, ''), 10) || 0;
+  const designs = designRows.map((d) => ({
+    label: d.label.trim() || undefined,
+    stitchCount: parseInt(d.stitches.replace(/[^0-9]/g, ''), 10) || 0,
+    quantity: parseInt(d.qty.replace(/[^0-9]/g, ''), 10) || 0,
+  }));
+  const designsOk = designs.every((d) => d.stitchCount > 0 && d.quantity > 0);
+  const stitchCount = designs.reduce((t, d) => t + d.stitchCount, 0);
   const quantity = parseInt(qty.replace(/[^0-9]/g, ''), 10) || 0;
   const garmentCentsPerPiece = request.garment_mode === 'own'
     ? 0
@@ -81,11 +94,12 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
 
   const input: EmbroideryQuoteInput = {
     stitchCount, quantity, garmentCentsPerPiece, garments, rush, isCap, capBack,
+    designs: designs.map((d) => ({ label: d.label, stitchCount: d.stitchCount, quantity: d.quantity })),
   };
 
   // Debounced server-side preview — the engine lives in exactly one place.
   useEffect(() => {
-    if (stitchCount <= 0 || quantity <= 0 || !garmentsReady) { setPreview(null); setPreviewError(null); return; }
+    if (!designsOk || quantity <= 0 || !garmentsReady) { setPreview(null); setPreviewError(null); return; }
     const t = setTimeout(async () => {
       try {
         const p = await previewEmbroideryQuote(request.id, input);
@@ -98,7 +112,7 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stitchCount, quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id, JSON.stringify(garments)]);
+  }, [quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id, JSON.stringify(garments), JSON.stringify(designs)]);
 
   const send = useMutation({
     mutationFn: () => sendEmbroideryQuote(request.id, input),
@@ -110,13 +124,41 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
       <div className="flex flex-wrap items-end gap-3">
+        <div className="w-full space-y-1.5">
+          {designRows.map((d, di) => (
+            <div key={di} className="flex flex-wrap items-end gap-2">
+              {designRows.length > 1 && (
+                <label className="text-xs font-medium text-gray-700">
+                  Design
+                  <input type="text" value={d.label}
+                    onChange={(e) => setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, label: e.target.value } : r))}
+                    className={`${field} w-32`} />
+                </label>
+              )}
+              <label className="text-xs font-medium text-gray-700">
+                Stitch count
+                <input type="text" inputMode="numeric" value={d.stitches}
+                  onChange={(e) => setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, stitches: e.target.value } : r))}
+                  placeholder="e.g. 7500" className={`${field} w-28`} />
+              </label>
+              <label className="text-xs font-medium text-gray-700">
+                Run qty
+                <input type="text" inputMode="numeric" value={d.qty}
+                  onChange={(e) => setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, qty: e.target.value } : r))}
+                  className={`${field} w-16`} />
+              </label>
+              {designRows.length > 1 && (
+                <button type="button" onClick={() => setDesignRows((prev) => prev.filter((_, j) => j !== di))}
+                  className="pb-1.5 text-xs text-gray-400 hover:text-red-600">remove</button>
+              )}
+            </div>
+          ))}
+          <button type="button"
+            onClick={() => setDesignRows((prev) => prev.length >= 6 ? prev : [...prev, { label: `Design ${prev.length + 1}`, stitches: '', qty: qty }])}
+            className="text-xs font-medium text-orange-600 hover:underline">+ add design</button>
+        </div>
         <label className="text-xs font-medium text-gray-700">
-          Stitch count
-          <input type="text" inputMode="numeric" value={stitches} onChange={(e) => setStitches(e.target.value)}
-            placeholder="e.g. 7500" className={`${field} w-28`} />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Qty
+          Garment qty
           <input type="text" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)}
             className={`${field} w-16`} />
         </label>

@@ -12,3 +12,8 @@ ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS needs_digitizing BOOLEA
 -- A stitch-file-only request has no artwork image; the stitch file IS the
 -- artwork. (The API enforces at-least-one-of artwork/stitch file.)
 ALTER TABLE embroidery_requests ALTER COLUMN artwork_url DROP NOT NULL;
+
+-- Multiple designs per request (Kevin, 2026-10-04): each design is its own
+-- $25 digitization charge at checkout and its own stitch count at quote time.
+ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS artwork_urls JSONB;
+ALTER TABLE embroidery_requests ADD COLUMN IF NOT EXISTS design_count INTEGER NOT NULL DEFAULT 1;

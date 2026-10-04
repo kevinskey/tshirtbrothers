@@ -217,10 +217,10 @@ export default function EmbroideryQuotePage() {
     setItems(mode === 'own' ? [newItem()] : []);
   };
 
+  // One entry per DESIGN — each is its own $25 digitization at checkout
+  // (Kevin, 2026-10-04: "that's two separate $25 embroidery charges").
   const fileRef = useRef<HTMLInputElement>(null);
-  const [fileName, setFileName] = useState('');
-  const [imageBase64, setImageBase64] = useState('');
-  const [preview, setPreview] = useState('');
+  const [designs, setDesigns] = useState<Array<{ fileName: string; base64: string }>>([]);
 
   // Already-digitized customers skip the $25 — the fee pays for digitizing,
   // and they arrive with the stitch file in hand (Kevin, 2026-10-03).
@@ -247,19 +247,19 @@ export default function EmbroideryQuotePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const onFile = (f: File | undefined) => {
-    if (!f) return;
-    if (f.size > 20 * 1024 * 1024) { setError('That file is over 20 MB — email it to us instead.'); return; }
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = String(reader.result ?? '');
-      setImageBase64(result);
-      setPreview(result);
-      setFileName(f.name);
-      setError(null);
-    };
-    reader.readAsDataURL(f);
+  const onFiles = (list: FileList | null) => {
+    if (!list) return;
+    for (const f of Array.from(list)) {
+      if (f.size > 20 * 1024 * 1024) { setError(`${f.name} is over 20 MB — email it to us instead.`); continue; }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDesigns((prev) => prev.length >= 6 ? prev : [...prev, { fileName: f.name, base64: String(reader.result ?? '') }]);
+        setError(null);
+      };
+      reader.readAsDataURL(f);
+    }
   };
+  const removeDesign = (i: number) => setDesigns((prev) => prev.filter((_, j) => j !== i));
 
   const itemsValid = items.length > 0 && items.every((it) =>
     itemQty(it) >= 1
@@ -268,7 +268,7 @@ export default function EmbroideryQuotePage() {
     && (garmentMode !== 'tsb' || it.productName)
     && (it.availableColors.length === 0 || it.color));
 
-  const artReady = artMode === 'stitch' ? !!stitchFileBase64 : !!imageBase64;
+  const artReady = artMode === 'stitch' ? !!stitchFileBase64 : designs.length > 0;
   const canSubmit =
     name.trim() && /\S+@\S+\.\S+/.test(email) && artReady && garmentMode && itemsValid;
 
@@ -282,7 +282,9 @@ export default function EmbroideryQuotePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(), email: email.trim(), phone: phone.trim() || undefined,
-          imageBase64: imageBase64 || undefined, filename: fileName || undefined,
+          designs: designs.length > 0
+            ? designs.map((d) => ({ imageBase64: d.base64, filename: d.fileName }))
+            : undefined,
           stitchFileBase64: artMode === 'stitch' ? stitchFileBase64 : undefined,
           stitchFileName: artMode === 'stitch' ? stitchFileName : undefined,
           garmentMode,
@@ -404,29 +406,41 @@ export default function EmbroideryQuotePage() {
                 </p>
               </>
             )}
+            {designs.length > 0 && (
+              <ul className="mb-2 space-y-1.5">
+                {designs.map((d, i) => (
+                  <li key={i} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm">
+                    <img src={d.base64} alt="" className="h-10 w-10 rounded bg-gray-50 object-contain" />
+                    <span className="min-w-0 flex-1 truncate">{d.fileName}</span>
+                    <span className="shrink-0 text-xs text-gray-400">design {i + 1}</span>
+                    <button type="button" onClick={() => removeDesign(i)} aria-label={`Remove design ${i + 1}`}
+                      className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+                      <X className="h-4 w-4" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/40 px-4 py-6 text-sm text-gray-600 transition-colors hover:border-orange-400"
+              className="flex w-full items-center justify-center gap-3 rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/40 px-4 py-5 text-sm text-gray-600 transition-colors hover:border-orange-400"
             >
-              {preview ? (
-                <>
-                  <img src={preview} alt="Your artwork" className="h-16 w-16 rounded bg-white object-contain" />
-                  <span className="min-w-0 truncate">{fileName} — tap to change</span>
-                  <Check className="h-4 w-4 shrink-0 text-green-600" aria-hidden />
-                </>
-              ) : (
-                <>
-                  <Upload className="h-5 w-5 text-orange-500" aria-hidden />
-                  {artMode === 'stitch'
-                    ? 'Optional: a picture of the design (PNG/JPG)'
-                    : 'Upload your logo or design (PNG/JPG, up to 20 MB)'}
-                </>
-              )}
+              <Upload className="h-5 w-5 text-orange-500" aria-hidden />
+              {artMode === 'stitch'
+                ? 'Optional: pictures of the design(s) (PNG/JPG)'
+                : designs.length === 0
+                  ? 'Upload your logo or design (PNG/JPG, up to 20 MB)'
+                  : 'Add another design — each design is its own $25 digitization'}
             </button>
+            {artMode === 'image' && designs.length > 1 && (
+              <p className="mt-1.5 text-xs text-gray-600">
+                {designs.length} designs — digitization total <strong className="text-orange-600">${designs.length * 25}</strong> ($25 each).
+              </p>
+            )}
             <input
-              ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => onFile(e.target.files?.[0])}
+              ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+              onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }}
             />
           </section>
 
@@ -701,7 +715,9 @@ export default function EmbroideryQuotePage() {
             {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
             {submitting
               ? (artMode === 'stitch' ? 'Sending…' : 'Heading to checkout…')
-              : (artMode === 'stitch' ? 'Send my stitch file & get my quote' : 'Pay $25 digitization & get my quote')}
+              : (artMode === 'stitch'
+                  ? 'Send my stitch file & get my quote'
+                  : `Pay $${Math.max(designs.length, 1) * 25} digitization & get my quote`)}
           </button>
           <p className="text-center text-xs text-gray-500">
             {artMode === 'stitch'

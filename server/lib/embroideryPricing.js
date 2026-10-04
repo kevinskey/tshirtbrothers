@@ -105,30 +105,51 @@ export function vendorDigitizingCents(stitchCount) {
  * }
  */
 export function priceEmbroidery(input) {
-  const qty = Number(input.quantity);
-  const stitches = Number(input.stitchCount);
+  // Designs: one order can carry several designs, each with its own stitch
+  // count and its own run quantity (Kym's oxford: ribbon left chest + school
+  // emblem right chest = TWO runs on ONE shirt). Each design prices as its
+  // own vendor run — tier by ITS quantity — and each design is its own
+  // digitization. The legacy single stitchCount/quantity pair is just the
+  // one-design case.
+  const designs = Array.isArray(input.designs) && input.designs.length > 0
+    ? input.designs
+    : [{ label: null, stitchCount: input.stitchCount, quantity: input.quantity }];
+  if (designs.length > 6) return { error: 'six designs max per quote — split larger jobs' };
+  for (const d of designs) {
+    const dq = Number(d.quantity);
+    const ds = Number(d.stitchCount);
+    if (!Number.isInteger(dq) || dq < 1) return { error: 'each design needs a positive run quantity' };
+    if (!Number.isInteger(ds) || ds < 1) return { error: 'each design needs a positive stitch count' };
+    if (dq > MAX_AUTO_QUOTE_QTY) return { error: `Over ${MAX_AUTO_QUOTE_QTY} pieces the vendor prices by phone — quote this one manually` };
+    if (input.capBack && ds > CAP_BACK_MAX_STITCHES) {
+      return { error: `Cap backs only go up to ${CAP_BACK_MAX_STITCHES} stitches` };
+    }
+  }
+  // qty = total garment pieces (for garment lines and the cap surcharges);
+  // falls back to the largest design run when not supplied.
+  const qty = Number(input.quantity) || Math.max(...designs.map((d) => Number(d.quantity)));
   if (!Number.isInteger(qty) || qty < 1) return { error: 'quantity must be a positive integer' };
-  if (!Number.isInteger(stitches) || stitches < 1) return { error: 'stitchCount must be a positive integer' };
   if (qty > MAX_AUTO_QUOTE_QTY) return { error: `Over ${MAX_AUTO_QUOTE_QTY} pieces the vendor prices by phone — quote this one manually` };
   const rush = RUSH_LEVELS[input.rush || 'standard'];
   if (!rush) return { error: 'unknown rush level' };
-  if (input.capBack && stitches > CAP_BACK_MAX_STITCHES) {
-    return { error: `Cap backs only go up to ${CAP_BACK_MAX_STITCHES} stitches` };
-  }
 
   const lines = [];
   let vendorCost = 0;
 
-  // Stitching, per piece × qty.
-  const perPiece = vendorPerPieceCents(qty, stitches);
-  const stitchingCost = perPiece * qty;
-  vendorCost += stitchingCost;
-  lines.push({
-    key: 'stitching',
-    label: `Embroidery — ${stitches.toLocaleString()} stitches × ${qty}`,
-    costCents: stitchingCost,
-    retailCents: markupCents(stitchingCost),
-  });
+  // Stitching: one vendor run per design, tiered by that design's quantity.
+  for (const d of designs) {
+    const dq = Number(d.quantity);
+    const ds = Number(d.stitchCount);
+    const perPiece = vendorPerPieceCents(dq, ds);
+    const runCost = perPiece * dq;
+    vendorCost += runCost;
+    lines.push({
+      key: 'stitching',
+      label: `Embroidery${d.label ? ` — ${d.label}` : ''} — ${ds.toLocaleString()} stitches × ${dq}`,
+      costCents: runCost,
+      retailCents: markupCents(runCost),
+    });
+  }
 
   // Cap surcharges.
   if (input.isCap) {
@@ -176,22 +197,31 @@ export function priceEmbroidery(input) {
   // skipDigitizing: the customer brought their own stitch file — no vendor
   // digitizing cost, no $25 deposit, no settlement line at all.
   if (input.skipDigitizing) {
-    // fall through with no digitizing line
+    // Customer brought their own stitch file(s) — nothing to digitize.
   } else {
-  const digiCost = vendorDigitizingCents(stitches);
-  const digiRetail = markupCents(digiCost);
-  const digiDelta = digiRetail - DIGITIZATION_FEE_CENTS;
-  vendorCost += digiCost;
-  if (digiDelta !== 0) {
-    lines.push({
-      key: 'digitizing_settlement',
-      label: digiDelta > 0
-        ? `Digitizing balance (${Math.ceil(stitches / 1000)}k stitches @ formula; $25 deposit applied)`
-        : `Digitizing credit ($25 deposit exceeded formula for ${Math.ceil(stitches / 1000)}k stitches)`,
-      costCents: digiCost,
-      retailCents: digiDelta, // negative = credit, reduces the total
-    });
-  }
+    // EVERY design is its own digitization: its own $25 charge at checkout
+    // (Kevin, 2026-10-04: "that's two separate $25 embroidery charges") and
+    // its own $3/1k at the vendor. The deposit that settles here is
+    // therefore $25 x designs — or whatever the caller says was actually
+    // collected, which matters for converted/legacy requests.
+    const depositCents = Number.isInteger(input.depositCents)
+      ? input.depositCents
+      : DIGITIZATION_FEE_CENTS * designs.length;
+    const digiCost = designs.reduce((t, d) => t + vendorDigitizingCents(Number(d.stitchCount)), 0);
+    const digiRetail = markupCents(digiCost);
+    const digiDelta = digiRetail - depositCents;
+    vendorCost += digiCost;
+    if (digiDelta !== 0) {
+      const kDesc = designs.map((d) => `${Math.ceil(Number(d.stitchCount) / 1000)}k`).join(' + ');
+      lines.push({
+        key: 'digitizing_settlement',
+        label: digiDelta > 0
+          ? `Digitizing balance (${designs.length > 1 ? designs.length + ' designs: ' : ''}${kDesc} @ formula; $${(depositCents / 100).toFixed(0)} deposit applied)`
+          : `Digitizing credit ($${(depositCents / 100).toFixed(0)} deposit exceeded formula for ${kDesc})`,
+        costCents: digiCost,
+        retailCents: digiDelta, // negative = credit, reduces the total
+      });
+    }
   }
 
   // Rush — the vendor applies it to production, so: on top of everything
