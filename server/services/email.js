@@ -2125,6 +2125,29 @@ export async function sendGangSheetOrphanPaymentAlert({ sessionId, orderId, amou
 // heads-up), and the admin sends the quote after digitizing.
 
 function embroideryDetails(request) {
+  // Multi-garment requests carry items[]; render one row per product so the
+  // digitizer sees every placement. Single-garment requests fall back to the
+  // legacy flat fields.
+  const items = Array.isArray(request.items)
+    ? request.items
+    : (typeof request.items === 'string' ? JSON.parse(request.items || 'null') : null);
+  if (items && items.length > 0) {
+    const rows = items.map((it, i) => detailRow(
+      `Item ${i + 1}`,
+      escapeHtml(
+        `${request.garment_mode === 'own' ? 'Customer garment' : (it.product_name || 'Garment')}`
+        + `${it.style_number ? ' (' + it.style_number + ')' : ''}`
+        + ` × ${it.quantity} — ${String(it.placement).replace(/_/g, ' ')}`
+        + `${it.placement_note ? ' (' + it.placement_note + ')' : ''}`
+        + `, ${it.desired_size}`
+      )
+    )).join('');
+    return detailsTable(
+      detailRow('Total pieces', String(request.quantity || 1)) +
+      rows +
+      (request.notes ? detailRow('Notes', escapeHtml(request.notes)) : '')
+    );
+  }
   return detailsTable(
     detailRow('Quantity', String(request.quantity || 1)) +
     detailRow('Size', escapeHtml(request.desired_size)) +

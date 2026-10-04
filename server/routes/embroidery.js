@@ -225,6 +225,7 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       imageBase64, filename,
       desiredSize, placement, placementNote,
       garmentMode, garmentChoice, notes, quantity,
+      items: rawItems,
     } = req.body;
 
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
@@ -236,19 +237,66 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
     if (/^https?:\/\//i.test(String(imageBase64).trim())) {
       return res.status(400).json({ error: 'send the file contents, not a URL' });
     }
-    if (!desiredSize || !String(desiredSize).trim()) return res.status(400).json({ error: 'desiredSize is required' });
-    if (!PLACEMENTS.has(placement)) return res.status(400).json({ error: 'placement is invalid' });
-    if (placement === 'other' && !String(placementNote || '').trim()) {
-      return res.status(400).json({ error: 'describe the placement' });
-    }
     if (garmentMode !== 'tsb' && garmentMode !== 'own') return res.status(400).json({ error: 'garmentMode must be tsb or own' });
-    if (garmentMode === 'tsb' && !String(garmentChoice || '').trim()) {
-      return res.status(400).json({ error: 'tell us which garment you want' });
+    const hasItems = Array.isArray(rawItems) && rawItems.length > 0;
+    if (!hasItems) {
+      if (!desiredSize || !String(desiredSize).trim()) return res.status(400).json({ error: 'desiredSize is required' });
+      if (!PLACEMENTS.has(placement)) return res.status(400).json({ error: 'placement is invalid' });
+      if (placement === 'other' && !String(placementNote || '').trim()) {
+        return res.status(400).json({ error: 'describe the placement' });
+      }
+      if (garmentMode === 'tsb' && !String(garmentChoice || '').trim()) {
+        return res.status(400).json({ error: 'tell us which garment you want' });
+      }
     }
-    const qty = parseInt(quantity, 10);
+    // Multi-garment: items[] is authoritative when present (one design,
+    // several products, each with its own placement/size/qty). The legacy
+    // single-value fields are mirrored from the first item so older
+    // readers (emails, admin list) keep working.
+    let items = null;
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      if (rawItems.length > 10) return res.status(400).json({ error: 'ten different products max per request — call us for more' });
+      items = [];
+      for (const it of rawItems) {
+        const iq = parseInt(it.quantity, 10);
+        if (!Number.isInteger(iq) || iq < 1 || iq > 999) {
+          return res.status(400).json({ error: 'each item quantity must be between 1 and 999' });
+        }
+        if (!PLACEMENTS.has(it.placement)) return res.status(400).json({ error: 'item placement is invalid' });
+        if (it.placement === 'other' && !String(it.placementNote || '').trim()) {
+          return res.status(400).json({ error: 'describe the placement for each "somewhere else" item' });
+        }
+        if (!String(it.desiredSize || '').trim()) return res.status(400).json({ error: 'each item needs a stitch size' });
+        if (garmentMode === 'tsb' && !String(it.productName || '').trim()) {
+          return res.status(400).json({ error: 'each item needs a product' });
+        }
+        items.push({
+          product_id: it.productId ?? null,
+          product_name: String(it.productName || '').trim() || null,
+          style_number: String(it.styleNumber || '').trim() || null,
+          image_url: String(it.imageUrl || '').trim() || null,
+          placement: it.placement,
+          placement_note: String(it.placementNote || '').trim() || null,
+          desired_size: String(it.desiredSize).trim(),
+          quantity: iq,
+        });
+      }
+    }
+
+    const qty = items
+      ? items.reduce((s2, it) => s2 + it.quantity, 0)
+      : parseInt(quantity, 10);
     if (!Number.isInteger(qty) || qty < 1 || qty > 999) {
-      return res.status(400).json({ error: 'quantity must be between 1 and 999 (call us for more)' });
+      return res.status(400).json({ error: 'total quantity must be between 1 and 999 (call us for more)' });
     }
+
+    const first = items ? items[0] : null;
+    const effSize = first ? first.desired_size : String(desiredSize || '').trim();
+    const effPlacement = first ? first.placement : placement;
+    const effPlacementNote = first ? first.placement_note : (placementNote || null);
+    const effGarmentChoice = items && garmentMode === 'tsb'
+      ? items.map((it) => `${it.product_name}${it.style_number ? ' (' + it.style_number + ')' : ''} × ${it.quantity}`).join('; ')
+      : (garmentChoice || null);
 
     const base64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
     const buf = Buffer.from(base64, 'base64');
@@ -263,12 +311,13 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       `INSERT INTO embroidery_requests
          (customer_name, customer_email, customer_phone, artwork_url,
           desired_size, placement, placement_note,
-          garment_mode, garment_choice, notes, quantity, access_token)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          garment_mode, garment_choice, notes, quantity, items, access_token)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [String(name).trim(), emailNorm, phone || null, artworkUrl,
-       String(desiredSize).trim(), placement, placementNote || null,
-       garmentMode, garmentChoice || null, notes || null, qty, accessToken]
+       effSize, effPlacement, effPlacementNote,
+       garmentMode, effGarmentChoice, notes || null, qty,
+       items ? JSON.stringify(items) : null, accessToken]
     );
     const request = rows[0];
 
@@ -384,9 +433,14 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
       return res.status(400).json({ error: 'customer is supplying their own garment; garment price must be 0' });
     }
 
+    const garments = Array.isArray(req.body.garments) ? req.body.garments : undefined;
+    if (r.garment_mode === 'own' && garments?.some((g) => Number(g.centsPerPiece) > 0)) {
+      return res.status(400).json({ error: 'customer is supplying their own garments; garment prices must be 0' });
+    }
     const priced = priceEmbroidery({
       stitchCount: Number(req.body.stitchCount),
       quantity: Number(req.body.quantity ?? r.quantity ?? 1),
+      garments,
       garmentCentsPerPiece: garmentPerPiece,
       isCap: !!req.body.isCap,
       capBack: !!req.body.capBack,
@@ -398,7 +452,8 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
 
     if (req.body.dryRun) return res.json({ dryRun: true, ...priced });
 
-    const garmentTotal = priced.lines.find((l) => l.key === 'garment')?.retailCents ?? 0;
+    // Multiple products = multiple garment lines; sum them all.
+    const garmentTotal = priced.lines.filter((l) => l.key === 'garment').reduce((t, l) => t + l.retailCents, 0);
     const updated = await pool.query(
       `UPDATE embroidery_requests SET
          stitch_count = $1, quantity = $2, garment_cents = $3, rush = $4,
