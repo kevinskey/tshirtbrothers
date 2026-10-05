@@ -804,7 +804,8 @@ export interface EmbroideryRequest {
   customer_name: string;
   customer_email: string;
   customer_phone: string | null;
-  artwork_url: string;
+  /** Null when the customer brought a stitch file instead of artwork. */
+  artwork_url: string | null;
   desired_size: string;
   placement: string;
   placement_note: string | null;

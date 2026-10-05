@@ -403,9 +403,19 @@ export default function EmbroideryRequestsPanel() {
         {q.data?.map((r) => (
           <li key={r.id} className="rounded-xl border border-gray-200 p-3">
             <div className="flex items-start gap-3">
-              <a href={r.artwork_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                <img src={r.artwork_url} alt="" className="h-14 w-14 rounded object-contain bg-gray-100" />
-              </a>
+              {/* Stitch-file-only requests have no artwork image — the DST
+                  IS the artwork, so link the tile to it instead. */}
+              {r.artwork_url ? (
+                <a href={r.artwork_url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                  <img src={r.artwork_url} alt="" className="h-14 w-14 rounded object-contain bg-gray-100" />
+                </a>
+              ) : (
+                <a href={r.stitch_file_url ?? undefined} target="_blank" rel="noopener noreferrer"
+                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded bg-gray-100 text-gray-400"
+                  title={r.stitch_file_name ?? 'stitch file'}>
+                  <FileText className="h-6 w-6" aria-hidden />
+                </a>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <strong className="text-sm">#{r.id} \u00b7 {r.customer_name}</strong>
