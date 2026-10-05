@@ -268,7 +268,7 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
               placeholder="e.g. 24.00" className={`${field} w-24`} />
           </label>
         ) : (
-          <span className="pb-1.5 text-xs text-gray-500">Own garment \u2014 2% spoilage terms apply</span>
+          <span className="pb-1.5 text-xs text-gray-500">Own garment — 2% spoilage terms apply</span>
         )}
         <label className="text-xs font-medium text-gray-700">
           Turnaround
@@ -386,7 +386,7 @@ export default function EmbroideryRequestsPanel() {
         <h3 className="text-sm font-semibold">Quote Requests</h3>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           className="ml-auto rounded border border-gray-300 px-2 py-1 text-xs" aria-label="Filter requests by status">
-          <option value="paid">Paid \u2014 needs quote</option>
+          <option value="paid">Paid — needs quote</option>
           <option value="quoted">Quoted</option>
           <option value="awaiting_payment">Awaiting payment</option>
           <option value="all">All</option>
@@ -396,7 +396,7 @@ export default function EmbroideryRequestsPanel() {
       {q.isPending && <Loader2 className="h-5 w-5 animate-spin text-gray-400" aria-hidden />}
       {q.isError && <p className="text-sm text-red-600">{(q.error as Error).message}</p>}
       {q.data?.length === 0 && (
-        <p className="text-sm text-gray-500">Nothing here \u2014 paid requests appear when the $25 digitization clears.</p>
+        <p className="text-sm text-gray-500">Nothing here — paid requests appear when the $25 digitization clears.</p>
       )}
 
       <ul className="space-y-3">
@@ -418,7 +418,7 @@ export default function EmbroideryRequestsPanel() {
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <strong className="text-sm">#{r.id} \u00b7 {r.customer_name}</strong>
+                  <strong className="text-sm">#{r.id} · {r.customer_name}</strong>
                   <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_STYLES[r.status] ?? 'bg-gray-100 text-gray-700'}`}>
                     {r.status.replace(/_/g, ' ')}
                   </span>
@@ -428,8 +428,8 @@ export default function EmbroideryRequestsPanel() {
                   {r.customer_email}{r.customer_phone ? ` \u00b7 ${r.customer_phone}` : ''}
                 </p>
                 <p className="mt-1 text-xs text-gray-700">
-                  qty {r.quantity} \u00b7 {r.desired_size} \u00b7 {r.placement.replace(/_/g, ' ')}
-                  {r.placement_note ? ` (${r.placement_note})` : ''} \u00b7{' '}
+                  qty {r.quantity} · {r.desired_size} · {r.placement.replace(/_/g, ' ')}
+                  {r.placement_note ? ` (${r.placement_note})` : ''} ·{' '}
                   {r.garment_mode === 'own' ? 'own garment' : r.garment_choice}
                 </p>
                 {r.notes && <p className="mt-0.5 text-xs italic text-gray-500">{r.notes}</p>}
