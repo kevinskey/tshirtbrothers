@@ -510,6 +510,25 @@ router.get('/embroidery/requests', authenticate, adminOnly, async (req, res, nex
   } catch (err) { next(err); }
 });
 
+// GET /embroidery/requests/by-quote/:quoteId — admin. The Quotes workflow
+// embeds the embroidery form in the quote drawer; this is its lookup.
+// Degrades to [] while the quote_id column migration hasn't been applied
+// (it needs table-owner privileges, so it's run by hand).
+router.get('/embroidery/requests/by-quote/:quoteId', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM embroidery_requests
+       WHERE quote_id = $1 AND status <> 'superseded'
+       ORDER BY created_at DESC`,
+      [req.params.quoteId]
+    );
+    res.json(rows);
+  } catch (err) {
+    if (err.code === '42703') return res.json([]); // undefined_column — migration pending
+    next(err);
+  }
+});
+
 // POST /embroidery/requests/:id/quote — admin. Prices via the Lighthouse
 // engine (lib/embroideryPricing.js): vendor cost x house markup, every
 // surcharge from the sheet, rush multipliers, and the $25 digitization

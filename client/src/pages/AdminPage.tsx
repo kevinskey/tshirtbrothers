@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import EmbroideryRequestsPanel from '@/components/admin/EmbroideryRequestsPanel';
+import { QuoteEmbroiderySection } from '@/components/admin/EmbroideryQuoteForm';
 import { toast } from 'sonner';
 import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
@@ -8207,6 +8208,13 @@ export default function AdminPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Embroidery workflow, inline. When this quote was
+                      converted to an embroidery request, the whole job —
+                      DST/PDF profile attachments, stitch counts, pricing
+                      lines, quote email — is worked right here. Renders
+                      nothing for non-embroidery quotes. */}
+                  <QuoteEmbroiderySection quoteId={Number(q.id)} />
 
                   {/* Design preview — prefer the flattened mockup so what
                       the admin sees here matches the customer's approval
