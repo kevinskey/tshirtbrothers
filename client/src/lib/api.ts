@@ -829,6 +829,15 @@ export interface EmbroideryRequest {
   artwork_urls: string[] | null;
   design_count: number;
   stitch_file_name: string | null;
+  /** Digitizer deliverables, indexed by design. */
+  design_files: Array<{
+    label?: string | null;
+    pdf_url?: string;
+    pdf_name?: string;
+    dst_url?: string;
+    dst_name?: string;
+    stitch_count?: number;
+  } | null> | null;
   needs_digitizing: boolean;
   digitization_paid_at: string | null;
   stitch_count: number | null;
@@ -857,6 +866,8 @@ export interface EmbroideryQuoteInput {
   capBack?: boolean;
   letteringLines?: number;
   personalizations?: Array<{ sizeInches: string; count: number; secondLine?: boolean }>;
+  /** Admin-entered adjustments — label + whole cents, negative = discount. */
+  extraLines?: Array<{ label: string; amountCents: number }>;
 }
 
 export interface EmbroideryPriceLine {
@@ -871,6 +882,24 @@ export async function sendEmbroideryQuote(id: number, input: EmbroideryQuoteInpu
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+/** Attach digitizer deliverables (PDF profile and/or DST) to one design. */
+export async function uploadEmbroideryRequestFile(
+  id: number,
+  input: {
+    designIndex: number;
+    label?: string;
+    pdfBase64?: string;
+    pdfName?: string;
+    dstBase64?: string;
+    dstName?: string;
+  },
+) {
+  return authRequest<{ request: EmbroideryRequest; parsedStitchCount: number | null }>(
+    `/embroidery/requests/${id}/files`,
+    { method: 'POST', body: JSON.stringify(input) },
+  );
 }
 
 /** Same endpoint, dryRun — returns the breakdown without saving or emailing. */

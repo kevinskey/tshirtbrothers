@@ -2221,10 +2221,22 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
       : formatCurrency(l.retailCents / 100);
     return detailRow(escapeHtml(l.label), amount);
   }).join('');
+  // Digitizer PDF profiles (stitch-out preview + color sequence) — one per
+  // design when the admin attached them. The customer sees exactly what the
+  // stitched design will look like before approving the price.
+  const designFiles = Array.isArray(request.design_files)
+    ? request.design_files
+    : JSON.parse(request.design_files || '[]');
+  const profileLinks = designFiles
+    .map((f, i) => f?.pdf_url
+      ? `<li><a href="${escapeHtml(f.pdf_url)}">${escapeHtml(f.label || `Design ${i + 1}`)} — stitch-out preview (PDF)</a></li>`
+      : '')
+    .join('');
   const body = `
     <p>Hi ${escapeHtml((request.customer_name || '').split(' ')[0] || 'there')},</p>
     <p>Your design is digitized — ${String(request.stitch_count).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} stitches. Here's your embroidery quote${request.quantity > 1 ? ` for ${request.quantity} pieces` : ''}.</p>
     ${detailsTable(rows + detailRow('Total', `<strong>${total}</strong>`))}
+    ${profileLinks ? `<p style="margin-bottom:4px;"><strong>Your digitized design${designFiles.filter((f) => f?.pdf_url).length > 1 ? 's' : ''}:</strong></p><ul style="margin-top:4px;">${profileLinks}</ul>` : ''}
     ${request.garment_mode === 'own' ? `
     <p style="font-size:13px;color:#6b7280;">You're supplying the garments: ${escapeHtml(SPOILAGE_NOTE)}</p>` : ''}
     <p>Standard turnaround is 5–7 business days; rush options are available — just ask.
