@@ -846,12 +846,19 @@ export interface EmbroideryRequest {
   quote_cents: number | null;
   quoted_at: string | null;
   embroidery_job_id: number | null;
+  /** The quote this request was converted from, when there is one. */
+  quote_id: number | null;
   created_at: string;
 }
 
 export async function fetchEmbroideryRequests(status?: string) {
   const qs = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
   return authRequest<EmbroideryRequest[]>(`/embroidery/requests${qs}`);
+}
+
+/** Embroidery requests converted from a quote — powers the quote drawer's inline embroidery section. */
+export async function fetchEmbroideryRequestsByQuote(quoteId: number) {
+  return authRequest<EmbroideryRequest[]>(`/embroidery/requests/by-quote/${quoteId}`);
 }
 
 export interface EmbroideryQuoteInput {
