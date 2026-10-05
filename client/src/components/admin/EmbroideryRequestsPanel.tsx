@@ -10,17 +10,45 @@
 // SERVER-side (lib/embroideryPricing.js). The preview below is a dryRun
 // call to the same endpoint that saves — one engine, zero drift — so what
 // the admin sees is byte-identical to what the customer will be emailed.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Mail, ExternalLink } from 'lucide-react';
+import { Loader2, Mail, ExternalLink, Paperclip, FileText } from 'lucide-react';
 import {
   fetchEmbroideryRequests,
   sendEmbroideryQuote,
   previewEmbroideryQuote,
+  uploadEmbroideryRequestFile,
   type EmbroideryRequest,
   type EmbroideryQuoteInput,
   type EmbroideryPriceLine,
 } from '@/lib/api';
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('could not read file'));
+    r.readAsDataURL(file);
+  });
+}
+
+// One hidden-input attach button — used for the per-design DST and PDF slots.
+function AttachButton({ accept, label, busy, onFile }: {
+  accept: string; label: string; busy: boolean; onFile: (f: File) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input ref={ref} type="file" accept={accept} className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); e.target.value = ''; }} />
+      <button type="button" disabled={busy} onClick={() => ref.current?.click()}
+        className="inline-flex items-center gap-1 rounded border border-gray-300 bg-white px-2 py-1 text-[11px] font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-40">
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Paperclip className="h-3 w-3" aria-hidden />}
+        {label}
+      </button>
+    </>
+  );
+}
 
 const STATUS_STYLES: Record<string, string> = {
   awaiting_payment: 'bg-yellow-100 text-yellow-800',
@@ -51,11 +79,18 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   // (two placements on one shirt = two runs). Seeded from design_count, with
   // a DST-parsed stitch count prefilling the first row when we have one.
   const [designRows, setDesignRows] = useState<Array<{ label: string; stitches: string; qty: string }>>(() =>
-    Array.from({ length: Math.max(request.design_count || 1, 1) }, (_, i) => ({
-      label: (request.design_count || 1) > 1 ? `Design ${i + 1}` : '',
-      stitches: i === 0 && request.stitch_count ? String(request.stitch_count) : '',
-      qty: String(request.quantity || 1),
-    })));
+    Array.from({ length: Math.max(request.design_count || 1, 1) }, (_, i) => {
+      // Stitch count prefill order: a count parsed from an attached DST wins,
+      // then the request-level count (from a customer-supplied stitch file).
+      const attached = request.design_files?.[i]?.stitch_count;
+      return {
+        label: request.design_files?.[i]?.label
+          || ((request.design_count || 1) > 1 ? `Design ${i + 1}` : ''),
+        stitches: attached ? String(attached)
+          : i === 0 && request.stitch_count ? String(request.stitch_count) : '',
+        qty: String(request.quantity || 1),
+      };
+    }));
   const [qty, setQty] = useState(String(request.quantity || 1));
   const [garment, setGarment] = useState('');
   // Multi-garment: one retail $/pc per catalog item, keyed by index.
@@ -67,6 +102,34 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
   const [capBack, setCapBack] = useState(false);
   const [preview, setPreview] = useState<{ lines: EmbroideryPriceLine[]; totalCents: number; costCents: number } | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  // Custom pricing lines — label + dollars, negative = discount/credit.
+  const [extraRows, setExtraRows] = useState<Array<{ label: string; amount: string }>>([]);
+  // Digitizer deliverables (DST + PDF profile) attach per design.
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Sending is gated server-side until the digitization payment clears (or a
+  // customer stitch file made digitizing moot); everything else works now.
+  const canSend = !!(request.digitization_paid_at || request.stitch_file_url);
+
+  async function attachFile(di: number, kind: 'pdf' | 'dst', file: File) {
+    setUploading(`${di}:${kind}`);
+    setUploadError(null);
+    try {
+      const b64 = await fileToBase64(file);
+      const res = await uploadEmbroideryRequestFile(request.id, kind === 'pdf'
+        ? { designIndex: di, pdfBase64: b64, pdfName: file.name }
+        : { designIndex: di, dstBase64: b64, dstName: file.name });
+      if (kind === 'dst' && res.parsedStitchCount) {
+        setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, stitches: String(res.parsedStitchCount) } : r));
+      }
+      qc.invalidateQueries({ queryKey: ['embroidery-requests'] });
+    } catch (e) {
+      setUploadError((e as Error).message);
+    } finally {
+      setUploading(null);
+    }
+  }
 
   const designs = designRows.map((d) => ({
     label: d.label.trim() || undefined,
@@ -92,14 +155,24 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     : undefined;
   const garmentsReady = !multiGarment || garments!.every((g) => g.centsPerPiece > 0);
 
+  // Custom lines: a row counts once it has a label and a non-zero amount; a
+  // half-filled row holds the preview so a typo can't ship as $0.
+  const extraLines = extraRows.map((r) => ({
+    label: r.label.trim(),
+    amountCents: Math.round((parseFloat(r.amount) || 0) * 100),
+  }));
+  const extrasOk = extraRows.length === 0
+    || extraLines.every((l) => l.label !== '' && Number.isInteger(l.amountCents) && l.amountCents !== 0);
+
   const input: EmbroideryQuoteInput = {
     stitchCount, quantity, garmentCentsPerPiece, garments, rush, isCap, capBack,
     designs: designs.map((d) => ({ label: d.label, stitchCount: d.stitchCount, quantity: d.quantity })),
+    extraLines: extraLines.length > 0 ? extraLines : undefined,
   };
 
   // Debounced server-side preview — the engine lives in exactly one place.
   useEffect(() => {
-    if (!designsOk || quantity <= 0 || !garmentsReady) { setPreview(null); setPreviewError(null); return; }
+    if (!designsOk || quantity <= 0 || !garmentsReady || !extrasOk) { setPreview(null); setPreviewError(null); return; }
     const t = setTimeout(async () => {
       try {
         const p = await previewEmbroideryQuote(request.id, input);
@@ -112,7 +185,7 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     }, 400);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id, JSON.stringify(garments), JSON.stringify(designs)]);
+  }, [quantity, garmentCentsPerPiece, rush, isCap, capBack, request.id, JSON.stringify(garments), JSON.stringify(designs), JSON.stringify(extraLines)]);
 
   const send = useMutation({
     mutationFn: () => sendEmbroideryQuote(request.id, input),
@@ -125,8 +198,11 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-full space-y-1.5">
-          {designRows.map((d, di) => (
-            <div key={di} className="flex flex-wrap items-end gap-2">
+          {designRows.map((d, di) => {
+            const attached = request.design_files?.[di];
+            return (
+            <div key={di} className="space-y-1">
+            <div className="flex flex-wrap items-end gap-2">
               {designRows.length > 1 && (
                 <label className="text-xs font-medium text-gray-700">
                   Design
@@ -152,7 +228,30 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
                   className="pb-1.5 text-xs text-gray-400 hover:text-red-600">remove</button>
               )}
             </div>
-          ))}
+            {/* Digitizer deliverables for THIS design: the DST goes to the
+                machine, the PDF profile goes to the customer with the quote. */}
+            <div className="flex flex-wrap items-center gap-2 pl-0.5">
+              <AttachButton accept=".dst,.pes,.emb,.exp,.jef,.vp3,.xxx,.hus" label="Attach DST"
+                busy={uploading === `${di}:dst`} onFile={(f) => attachFile(di, 'dst', f)} />
+              <AttachButton accept=".pdf,application/pdf" label="Attach PDF profile"
+                busy={uploading === `${di}:pdf`} onFile={(f) => attachFile(di, 'pdf', f)} />
+              {attached?.dst_url && (
+                <a href={attached.dst_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline">
+                  <Paperclip className="h-3 w-3" aria-hidden />{attached.dst_name || 'stitch file'}
+                </a>
+              )}
+              {attached?.pdf_url && (
+                <a href={attached.pdf_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:underline">
+                  <FileText className="h-3 w-3" aria-hidden />{attached.pdf_name || 'PDF profile'}
+                </a>
+              )}
+            </div>
+            </div>
+            );
+          })}
+          {uploadError && <p className="text-[11px] text-red-600">{uploadError}</p>}
           <button type="button"
             onClick={() => setDesignRows((prev) => prev.length >= 6 ? prev : [...prev, { label: `Design ${prev.length + 1}`, stitches: '', qty: qty }])}
             className="text-xs font-medium text-orange-600 hover:underline">+ add design</button>
@@ -211,6 +310,34 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
         </div>
       )}
 
+      {/* Custom pricing lines — anything the Lighthouse sheet doesn't model:
+          art charges, extra placements, discounts (negative amounts). They're
+          priced by the same server engine so the saved quote and the email
+          carry them verbatim. */}
+      <div className="mt-3 space-y-1.5">
+        {extraRows.map((r, i) => (
+          <div key={i} className="flex flex-wrap items-end gap-2">
+            <label className="text-xs font-medium text-gray-700">
+              Line item
+              <input type="text" value={r.label} placeholder="e.g. Art charge — 1 hr"
+                onChange={(e) => setExtraRows((prev) => prev.map((row, j) => j === i ? { ...row, label: e.target.value } : row))}
+                className={`${field} w-56`} />
+            </label>
+            <label className="text-xs font-medium text-gray-700">
+              Amount $ (− for discount)
+              <input type="text" inputMode="decimal" value={r.amount} placeholder="e.g. 40.00"
+                onChange={(e) => setExtraRows((prev) => prev.map((row, j) => j === i ? { ...row, amount: e.target.value } : row))}
+                className={`${field} w-28`} />
+            </label>
+            <button type="button" onClick={() => setExtraRows((prev) => prev.filter((_, j) => j !== i))}
+              className="pb-1.5 text-xs text-gray-400 hover:text-red-600">remove</button>
+          </div>
+        ))}
+        <button type="button" onClick={() => setExtraRows((prev) => [...prev, { label: '', amount: '' }])}
+          className="text-xs font-medium text-orange-600 hover:underline">+ add pricing line</button>
+        {!extrasOk && <p className="text-[11px] text-amber-600">Every custom line needs a label and a non-zero amount before the preview appears.</p>}
+      </div>
+
       {previewError && <p className="mt-2 text-xs text-red-600">{previewError}</p>}
       {preview && (
         <div className="mt-3 rounded border border-gray-200 bg-white p-2 text-xs">
@@ -229,8 +356,13 @@ function QuoteForm({ request }: { request: EmbroideryRequest }) {
         </div>
       )}
 
-      <div className="mt-2 flex justify-end">
-        <button type="button" disabled={!preview || send.isPending} onClick={() => send.mutate()}
+      <div className="mt-2 flex items-center justify-end gap-3">
+        {!canSend && (
+          <span className="text-[11px] text-amber-600">
+            Awaiting digitization payment — files and preview work now; the email unlocks when it clears.
+          </span>
+        )}
+        <button type="button" disabled={!preview || !canSend || send.isPending} onClick={() => send.mutate()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-black px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
           {send.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Mail className="h-3.5 w-3.5" aria-hidden />}
           Email this quote
@@ -298,7 +430,7 @@ export default function EmbroideryRequestsPanel() {
                 )}
               </div>
             </div>
-            {(r.status === 'paid' || r.status === 'ready_to_quote') && <QuoteForm request={r} />}
+            {(r.status === 'paid' || r.status === 'ready_to_quote' || r.status === 'awaiting_payment') && <QuoteForm request={r} />}
           </li>
         ))}
       </ul>

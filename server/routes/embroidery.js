@@ -520,11 +520,12 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     const { rows } = await pool.query('SELECT * FROM embroidery_requests WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
     const r = rows[0];
-    // The gate: no quote before digitizing is covered — either the $25
-    // cleared, or the customer brought their own stitch file and there is
-    // nothing to digitize.
-    if (!r.digitization_paid_at && !r.stitch_file_url) {
-      return res.status(409).json({ error: 'Digitization fee has not been paid — cannot quote yet' });
+    // The gate: no quote goes OUT before digitizing is covered — either the
+    // $25 cleared, or the customer brought their own stitch file and there
+    // is nothing to digitize. Previews (dryRun) are allowed any time so the
+    // admin can prep pricing while payment is pending.
+    if (!req.body.dryRun && !r.digitization_paid_at && !r.stitch_file_url) {
+      return res.status(409).json({ error: 'Digitization fee has not been paid — cannot send the quote yet' });
     }
 
     const garmentPerPiece = Number(req.body.garmentCentsPerPiece ?? 0);
@@ -559,6 +560,7 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
       capBack: !!req.body.capBack,
       letteringLines: Number(req.body.letteringLines) || 0,
       personalizations: Array.isArray(req.body.personalizations) ? req.body.personalizations : [],
+      extraLines: Array.isArray(req.body.extraLines) ? req.body.extraLines : [],
       rush: req.body.rush || 'standard',
     });
     if (priced.error) return res.status(400).json({ error: priced.error });
@@ -588,6 +590,79 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
 
     res.json(updated.rows[0]);
   } catch (err) { next(err); }
+});
+
+// POST /embroidery/requests/:id/files — admin. Attach the digitizer's
+// deliverables to one design on the request: the DST stitch file and/or the
+// PDF profile (stitch-out preview + color sequence). The PDF profiles ride
+// the quote email to the customer; a .dst upload also parses the header's
+// ST: stitch count so the quote form can prefill it.
+// Body: { designIndex, label?, pdfBase64?, pdfName?, dstBase64?, dstName? }
+router.post('/embroidery/requests/:id/files', authenticate, adminOnly, express.json({ limit: '30mb' }), async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM embroidery_requests WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const r = rows[0];
+
+    const designIndex = Number(req.body.designIndex);
+    if (!Number.isInteger(designIndex) || designIndex < 0 || designIndex > 9) {
+      return res.status(400).json({ error: 'designIndex must be 0–9' });
+    }
+    const { pdfBase64, pdfName, dstBase64, dstName, label } = req.body;
+    if (!pdfBase64 && !dstBase64) return res.status(400).json({ error: 'attach a PDF profile and/or a DST file' });
+
+    const decode = (b64, kind) => {
+      if (/^https?:\/\//i.test(String(b64).trim())) throw Object.assign(new Error(`send the ${kind} file contents, not a URL`), { status: 400 });
+      const buf = Buffer.from(String(b64).replace(/^data:[^;]+;base64,/, ''), 'base64');
+      if (buf.length < 100) throw Object.assign(new Error(`${kind} file looks empty`), { status: 400 });
+      if (buf.length > 20 * 1024 * 1024) throw Object.assign(new Error(`${kind} file is over 20 MB`), { status: 400 });
+      return buf;
+    };
+    const safe = (name, fallback) => String(name || fallback).replace(/[^a-zA-Z0-9.\-]/g, '-');
+
+    const files = Array.isArray(r.design_files) ? [...r.design_files] : [];
+    while (files.length <= designIndex) files.push(null);
+    const entry = { ...(files[designIndex] || {}) };
+    if (label !== undefined) entry.label = String(label || '').trim() || null;
+
+    const rand = crypto.randomBytes(4).toString('hex');
+    let parsedStitches = null;
+
+    if (pdfBase64) {
+      const buf = decode(pdfBase64, 'PDF');
+      if (buf.slice(0, 5).toString('latin1') !== '%PDF-') {
+        return res.status(400).json({ error: 'that file is not a PDF' });
+      }
+      const name = safe(pdfName, `design-${designIndex + 1}-profile.pdf`);
+      const key = `embroidery/requests/files/${r.id}/${Date.now()}-${rand}-${name}`;
+      entry.pdf_url = await uploadToSpaces(buf, key, 'application/pdf');
+      entry.pdf_name = name;
+    }
+    if (dstBase64) {
+      const buf = decode(dstBase64, 'stitch');
+      const name = safe(dstName, `design-${designIndex + 1}.dst`);
+      if (!STITCH_FILE_EXTS.test(name)) {
+        return res.status(400).json({ error: 'stitch file must be .dst, .pes, .emb, .exp, .jef, .vp3, .xxx or .hus' });
+      }
+      const key = `embroidery/requests/files/${r.id}/${Date.now()}-${rand}-${name}`;
+      entry.dst_url = await uploadToSpaces(buf, key, 'application/octet-stream');
+      entry.dst_name = name;
+      if (/\.dst$/i.test(name)) {
+        parsedStitches = dstStitchCount(buf);
+        if (parsedStitches) entry.stitch_count = parsedStitches;
+      }
+    }
+
+    files[designIndex] = entry;
+    const updated = await pool.query(
+      'UPDATE embroidery_requests SET design_files = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [JSON.stringify(files), r.id]
+    );
+    res.json({ request: updated.rows[0], parsedStitchCount: parsedStitches });
+  } catch (err) {
+    if (err?.status === 400) return res.status(400).json({ error: err.message });
+    next(err);
+  }
 });
 
 // GET /embroidery/rush-levels — admin helper so the panel's dropdown and the

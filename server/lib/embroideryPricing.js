@@ -254,11 +254,30 @@ export function priceEmbroidery(input) {
     }
   }
 
+  // Custom line items — admin-entered adjustments the sheet doesn't model
+  // (art charges, thread-color changes, discounts as negative amounts).
+  // Retail-only and added AFTER rush so a manual adjustment is never
+  // silently multiplied by a rush percentage.
+  let extraRetail = 0;
+  for (const x of input.extraLines || []) {
+    const label = String(x.label || '').trim();
+    const amount = Number(x.amountCents);
+    if (!label) return { error: 'every custom line needs a label' };
+    if (!Number.isInteger(amount) || amount === 0) {
+      return { error: `custom line "${label}" needs a non-zero whole-cent amount` };
+    }
+    extraRetail += amount;
+    lines.push({ key: 'custom', label, costCents: 0, retailCents: amount });
+  }
+
+  const total = subtotalRetail + garmentRetail + extraRetail;
+  if (total < 0) return { error: 'custom lines push the quote total below zero' };
+
   return {
     lines,
     costCents: vendorCost,
-    retailCents: subtotalRetail + garmentRetail,
-    totalCents: subtotalRetail + garmentRetail,
+    retailCents: total,
+    totalCents: total,
     rushLabel: rush.label,
   };
 }
