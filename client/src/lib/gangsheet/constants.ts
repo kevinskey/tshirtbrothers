@@ -30,7 +30,7 @@ export const GRID_LABEL_COLOR = '#9ca3af';
 export const PRICING = {
   standard: { rate: 6.00, label: 'Standard', desc: 'ASAP same day to next day (Mon–Fri)' },
   rush: { rate: 8.00, label: 'Rush', desc: '5-hr rush, M–F same day, cutoff 11am' },
-  hotRush: { rate: 12.00, label: 'Hot Rush', desc: '5-hr HOT RUSH, M–F same day, cutoff 1:30pm' },
+  hotRush: { rate: 12.00, label: 'Hot Rush', desc: '5-hr HOT RUSH, M–F same day, cutoff 10am' },
 } as const;
 
 export type PricingTier = keyof typeof PRICING;

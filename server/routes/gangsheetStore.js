@@ -85,7 +85,7 @@ async function uploadSheetThumb(fileKey, buf, limitInputPixels) {
 export const TIER_PROMISES = {
   standard: 'Ready in 2 business days',
   rush: 'Ready next business day — order by 11:00 AM',
-  hot_rush: 'Ready same day — order by 1:30 PM',
+  hot_rush: 'Ready same day — order by 10:00 AM',
 };
 
 export async function loadSettings() {
