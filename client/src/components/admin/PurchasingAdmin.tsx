@@ -487,8 +487,34 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     }));
   }
 
+  // Copy a line as a complete, orderable line — size included.
+  //
+  // This used to blank the size, assuming the only reason to duplicate was
+  // "another size of the same color". It is just as often the other way
+  // round: the same size in four colors. Clearing the size made every copy
+  // unmatched, so a four-color order meant re-picking the size four times.
+  // Copying faithfully serves both: change whichever axis you meant to.
+  function duplicateLine(key: string) {
+    setLines((prev) => {
+      const i = prev.findIndex((x) => x.key === key);
+      const src = i < 0 ? undefined : prev[i];
+      if (!src) return prev;
+      const skus = src.styleId ? skuCache[src.styleId] : undefined;
+      const copy: PoLine = { ...src, key: nextKey() };
+      const next = [...prev];
+      next.splice(i + 1, 0, skus ? resolveLineWith(copy, skus) : copy);
+      return next;
+    });
+  }
+
   const readyLines = lines.filter((l) => l.sku && l.qty > 0);
   const unresolved = lines.filter((l) => !l.sku);
+  // Duplicating now copies the size too, so two lines can carry the same
+  // SKU — which S&S would happily bill twice. Surface it; don't block, since
+  // split quantities across lines are occasionally intentional.
+  const duplicateSkus = Array.from(
+    readyLines.reduce((m, l) => m.set(l.sku as string, (m.get(l.sku as string) || 0) + 1), new Map<string, number>()),
+  ).filter(([, n]) => n > 1).map(([sku]) => sku);
   const estSubtotal = readyLines.reduce((sum, l) => sum + (l.price || 0) * l.qty, 0);
 
   // Order summary rollups — the bottom-line total alone doesn't show where
@@ -797,18 +823,8 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                           </td>
                           <td className="px-2 py-2 whitespace-nowrap">
                             <button
-                              onClick={() => setLines((prev) => {
-                                // Duplicate right below, size cleared — the
-                                // usual reason to copy is another size of the
-                                // same product/color. SKU/price re-resolve
-                                // when the new size is picked.
-                                const i = prev.findIndex((x) => x.key === l.key);
-                                const copy = { ...l, key: nextKey(), size: '', sku: null, price: null, stock: null };
-                                const next = [...prev];
-                                next.splice(i + 1, 0, copy);
-                                return next;
-                              })}
-                              title="Duplicate line (pick another size)"
+                              onClick={() => duplicateLine(l.key)}
+                              title="Duplicate line (then change the color or size)"
                               className="text-gray-400 hover:text-blue-600 mr-2"
                             >
                               <Copy className="w-4 h-4" />
@@ -1030,6 +1046,11 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
               {unresolved.length > 0 && (
                 <div className="text-amber-600 mt-1">
                   {unresolved.length} line{unresolved.length === 1 ? '' : 's'} unmatched — pick a color and size, or remove. Unmatched lines are not sent.
+                </div>
+              )}
+              {duplicateSkus.length > 0 && (
+                <div className="text-amber-600 mt-1">
+                  Same SKU on more than one line ({duplicateSkus.join(', ')}) — the quantities add up, so merge or remove unless that's intended.
                 </div>
               )}
               {!selectedProfileId && (
