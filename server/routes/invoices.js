@@ -5,6 +5,7 @@ import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
 import * as theme from '../services/emailTheme.js';
+import { mailRecipients, normalizeCcEmails } from '../services/recipients.js';
 
 const router = Router();
 
@@ -551,12 +552,15 @@ router.post('/', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, quote_id,
-      deposit_percent, mockup_id, extra_mockups,
+      deposit_percent, mockup_id, extra_mockups, cc_emails,
     } = req.body;
 
     if (!customer_name || !customer_email) {
       return res.status(400).json({ error: 'customer_name and customer_email are required' });
     }
+
+    const cc = normalizeCcEmails(cc_emails);
+    if (cc.error) return res.status(400).json({ error: cc.error });
 
     const invoice_number = await generateInvoiceNumber();
     const amount_due = Number(total) || 0;
@@ -566,8 +570,8 @@ router.post('/', async (req, res, next) => {
       `INSERT INTO invoices
         (invoice_number, customer_name, customer_email, customer_phone, customer_address,
          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-         notes, due_date, quote_id, status, deposit_percent, mockup_id, extra_mockups)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17,$18::jsonb)
+         notes, due_date, quote_id, status, deposit_percent, mockup_id, extra_mockups, cc_emails)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17,$18::jsonb,$19::jsonb)
        RETURNING *`,
       [
         invoice_number, customer_name, customer_email, customer_phone || null,
@@ -576,6 +580,7 @@ router.post('/', async (req, res, next) => {
         amount_due, notes || null, due_date || null, quote_id || null, depositPct,
         mockup_id ? Number(mockup_id) : null,
         JSON.stringify(cleanExtraMockups(extra_mockups)),
+        JSON.stringify(cc.emails),
       ]
     );
 
@@ -592,8 +597,18 @@ router.put('/:id', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, status,
-      deposit_percent, mockup_id, extra_mockups,
+      deposit_percent, mockup_id, extra_mockups, cc_emails,
     } = req.body;
+
+    // Additional addresses that ride along on every customer-facing send
+    // for this invoice. null is a COALESCE no-op, so an untouched field
+    // leaves the existing list alone.
+    let ccJson = null;
+    if (cc_emails !== undefined) {
+      const cc = normalizeCcEmails(cc_emails);
+      if (cc.error) return res.status(400).json({ error: cc.error });
+      ccJson = JSON.stringify(cc.emails);
+    }
 
     const existing = await pool.query('SELECT * FROM invoices WHERE id = $1', [id]);
     if (existing.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
@@ -631,6 +646,7 @@ router.put('/:id', async (req, res, next) => {
         deposit_percent = COALESCE($16, deposit_percent),
         mockup_id = COALESCE($17, mockup_id),
         extra_mockups = COALESCE($18::jsonb, extra_mockups),
+        cc_emails = COALESCE($19::jsonb, cc_emails),
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -645,6 +661,7 @@ router.put('/:id', async (req, res, next) => {
         deposit_percent !== undefined ? Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0)) : null,
         mockup_id !== undefined ? (mockup_id ? Number(mockup_id) : null) : null,
         extra_mockups !== undefined ? JSON.stringify(cleanExtraMockups(extra_mockups)) : null,
+        ccJson,
       ]
     );
 
@@ -712,7 +729,7 @@ router.post('/:id/send', async (req, res, next) => {
     try {
       ({ error: sendError } = await getResend().emails.send({
         from: FROM_EMAIL,
-        to: [invoice.customer_email],
+        to: mailRecipients(invoice),
         subject,
         html,
       }));

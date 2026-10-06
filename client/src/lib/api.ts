@@ -134,6 +134,9 @@ export interface Quote {
   mockup_image_url_back?: string | null;
   /** Set when the customer rules on a proof; cleared when a revision goes
    *  out, which is what distinguishes a first send from a re-approval. */
+  /** Additional addresses copied on every customer-facing send for this
+   *  quote. customer_email stays the primary (replies, receipts). */
+  cc_emails?: string[];
   mockup_approved_at?: string | null;
   mockup_rejected_at?: string | null;
   mockup_revision?: number | null;
@@ -329,6 +332,8 @@ export async function updateQuoteCustomer(id: string, patch: {
   customer_email?: string;
   customer_name?: string;
   customer_phone?: string;
+  /** Additional addresses copied on every customer-facing send. */
+  cc_emails?: string[];
 }) {
   return authRequest<Quote>(`/quotes/${id}`, {
     method: 'PATCH',
@@ -1184,6 +1189,8 @@ export interface Invoice {
   quote_id: string | null;
   mockup_id: number | null;
   extra_mockups?: ExtraMockup[];
+  /** Additional addresses copied on every customer-facing send. */
+  cc_emails?: string[];
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
   payments: { amount: number; method: string; date: string }[];
@@ -1198,6 +1205,7 @@ export interface CreateInvoiceData {
   customer_name: string;
   customer_email: string;
   customer_phone?: string;
+  cc_emails?: string[];
   customer_address?: string;
   items: InvoiceItem[];
   subtotal: number;
