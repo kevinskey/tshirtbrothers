@@ -1124,6 +1124,15 @@ export default function AdminPage() {
   });
   const detailHasEmbroidery = ((detailEmbroidery.data as Array<{ status: string }> | undefined) ?? [])
     .some((r) => r.status !== 'superseded');
+  // Mobile quote cards default COLLAPSED (Kevin 2026-10-06: more quotes on
+  // screen without scrolling). The chevron expands one card; tapping the
+  // card still opens the detail drawer.
+  const [expandedQuoteCards, setExpandedQuoteCards] = useState<Set<string>>(new Set());
+  const toggleQuoteCard = (id: string) => setExpandedQuoteCards((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [adminNotesDraft, setAdminNotesDraft] = useState('');
   const [adminNotesSaving, setAdminNotesSaving] = useState(false);
   const [mockupPickerOpen, setMockupPickerOpen] = useState(false);
@@ -3401,6 +3410,7 @@ export default function AdminPage() {
                 const needed = q.date_needed ? new Date(q.date_needed) : null;
                 const daysUntil = needed ? Math.ceil((needed.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
                 const isRush = daysUntil !== null && daysUntil <= 7;
+                const cardOpen = expandedQuoteCards.has(String(q.id));
                 return (
                 <div
                   key={q.id}
@@ -3440,12 +3450,12 @@ export default function AdminPage() {
                     <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
                     {q.color && <span className="text-gray-500"> · {q.color}</span>}
                   </div>
-                  {(q.mockup_image_url || q.design_url) && (
+                  {cardOpen && (q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
                       <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
                     </div>
                   )}
-                  {q.extra_design_urls && q.extra_design_urls.length > 0 && (
+                  {cardOpen && q.extra_design_urls && q.extra_design_urls.length > 0 && (
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {q.extra_design_urls.map((u, i) => (
                         <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block">
@@ -3454,6 +3464,7 @@ export default function AdminPage() {
                       ))}
                     </div>
                   )}
+                  {cardOpen && (
                   <div className="flex items-center gap-2 text-xs text-gray-600" onClick={(e) => e.stopPropagation()}>
                     <span className="font-medium">Due:</span>
                     <DueDateCell
@@ -3463,12 +3474,13 @@ export default function AdminPage() {
                       onChange={(date) => dueDateMutation.mutate({ id: String(q.id), date })}
                     />
                   </div>
-                  {q.notes && (
+                  )}
+                  {cardOpen && q.notes && (
                     <div className="text-xs text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 line-clamp-2">
                       <span className="font-medium">Note:</span> {q.notes}
                     </div>
                   )}
-                  {q.admin_notes && (
+                  {cardOpen && q.admin_notes && (
                     <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 line-clamp-2">
                       <span className="font-medium">Internal:</span> {q.admin_notes}
                     </div>
@@ -3480,8 +3492,18 @@ export default function AdminPage() {
                       {q.estimated_price != null && (
                         <span className="font-semibold text-gray-900">${Number(q.estimated_price).toFixed(2)}</span>
                       )}
+                      <button
+                        type="button"
+                        aria-label={cardOpen ? 'Collapse quote card' : 'Expand quote card'}
+                        aria-expanded={cardOpen}
+                        onClick={(e) => { e.stopPropagation(); toggleQuoteCard(String(q.id)); }}
+                        className="h-7 w-7 -my-1 flex items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+                      >
+                        <ChevronDown className={`w-4 h-4 transition-transform ${cardOpen ? 'rotate-180' : ''}`} />
+                      </button>
                     </span>
                   </div>
+                  {cardOpen && (
                   <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
                     {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                       <button
@@ -3545,6 +3567,7 @@ export default function AdminPage() {
                       Delete
                     </button>
                   </div>
+                  )}
                 </div>
                 );
               })}
