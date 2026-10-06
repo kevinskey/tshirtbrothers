@@ -1862,14 +1862,34 @@ export default function AdminPage() {
   async function sendQuoteMockup(q: Quote) {
     if (sendingQuoteMockup) return;
     if (!q.customer_email) { toast('Add a customer email first', 'error'); return; }
-    if (!confirm(`Email the mockup approval link to ${q.customer_email}?`)) return;
+
+    // Once the customer has ruled on a proof, the next send is a revision:
+    // their old approval stops counting and the old link stops working, so
+    // say that out loud and offer to tell them what changed.
+    const isReapproval = q.status === 'approved' || !!q.mockup_approved_at || !!q.mockup_rejected_at;
+    let message: string | undefined;
+    if (isReapproval) {
+      const note = prompt(
+        `Send the UPDATED mockup to ${q.customer_email} for re-approval?\n\n`
+        + 'Their earlier approval will be cleared and the old link will stop working.\n\n'
+        + "Optional — what changed? (shown in the email, leave blank to skip)",
+        '',
+      );
+      if (note === null) return;
+      message = note.trim() || undefined;
+    } else if (!confirm(`Email the mockup approval link to ${q.customer_email}?`)) {
+      return;
+    }
+
     setSendingQuoteMockup(true);
     try {
-      const result = await sendQuoteMockupForApproval(q.id);
+      const result = await sendQuoteMockupForApproval(q.id, message);
       setDetailQuote(result.quote);
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
       queryClient.invalidateQueries({ queryKey: ['mockups'] });
-      toast(`Mockup approval link sent to ${q.customer_email}`);
+      toast(result.is_revision
+        ? `Revision ${result.quote.mockup_revision ?? ''} sent to ${q.customer_email} for re-approval`.replace('  ', ' ')
+        : `Mockup approval link sent to ${q.customer_email}`);
     } catch (err) {
       toast((err as Error).message || 'Send failed', 'error');
     } finally {
@@ -8385,7 +8405,9 @@ export default function AdminPage() {
                           <Send className="w-3.5 h-3.5" />
                           {sendingQuoteMockup
                             ? 'Sending…'
-                            : q.status === 'awaiting_approval' ? 'Re-send mockup for approval' : 'Send mockup for approval'}
+                            : (q.status === 'approved' || q.mockup_approved_at || q.mockup_rejected_at)
+                              ? 'Send updated mockup for re-approval'
+                              : q.status === 'awaiting_approval' ? 'Re-send mockup for approval' : 'Send mockup for approval'}
                         </button>
                       )}
                       {q.mockup_image_url && (

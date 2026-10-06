@@ -1242,15 +1242,34 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
   console.log(`[Email] Mockup share sent to ${toEmail}`);
 }
 
-export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
+export async function sendMockupForApproval(mockup, approveUrl, lang = 'en', opts = {}) {
   const es = lang === 'es';
   const previewBlock = mockupPreviewBlock(mockup, es);
 
-  const body = es ? `
-    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Tu Diseño de Muestra Está Listo para Aprobar</h2>
-    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${mockup.customer_name || ''},</p>
-    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">Preparamos una muestra de tu diseño sobre el producto que elegiste. Revísala y dinos si la apruebas o qué te gustaría cambiar.</p>
+  // revision > 0 means the customer already ruled on an earlier proof. Say
+  // so plainly — otherwise a second near-identical email reads as a
+  // duplicate and the changes go unexamined.
+  const rev = Number(mockup.revision || 0);
+  const isRevision = rev > 0;
+  const revisionBanner = isRevision ? `
+    <div style="margin:0 0 20px;padding:12px 16px;background:#fffbeb;border-left:4px solid ${BRAND_ORANGE};border-radius:0 8px 8px 0;">
+      <p style="margin:0;font-size:14px;font-weight:700;color:#92400e;">${es ? `Muestra actualizada — revisión ${rev}` : `Updated mockup — revision ${rev}`}</p>
+      <p style="margin:4px 0 0;font-size:13px;color:#92400e;">${es
+        ? 'Esta versión reemplaza la que te enviamos antes. Por favor revísala y apruébala de nuevo.'
+        : 'This version replaces the one we sent earlier. Please take another look and approve it again.'}</p>
+    </div>` : '';
+  const changeNote = opts.message ? `
+    <div style="margin:0 0 20px;font-size:15px;color:#374151;background:#f9fafb;border-left:3px solid ${BRAND_ORANGE};padding:12px 16px;border-radius:4px;white-space:pre-wrap;"><strong>${es ? 'Qué cambió:' : 'What changed:'}</strong>\n${escapeHtml(opts.message)}</div>` : '';
 
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">${isRevision ? 'Tu Muestra Actualizada Está Lista para Aprobar' : 'Tu Diseño de Muestra Está Listo para Aprobar'}</h2>
+    <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hola ${mockup.customer_name || ''},</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">${isRevision
+      ? 'Actualizamos tu muestra con los cambios solicitados. Revísala y dinos si la apruebas o qué más te gustaría cambiar.'
+      : 'Preparamos una muestra de tu diseño sobre el producto que elegiste. Revísala y dinos si la apruebas o qué te gustaría cambiar.'}</p>
+
+    ${revisionBanner}
+    ${changeNote}
     ${previewBlock}
 
     <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Producto:</strong> ${mockup.product_name || 'Ropa Personalizada'}</p>
@@ -1260,10 +1279,14 @@ export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
 
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
   ` : `
-    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">Mockup Ready for Your Approval</h2>
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_DARK};">${isRevision ? 'Updated Mockup — Ready for Your Approval' : 'Mockup Ready for Your Approval'}</h2>
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${mockup.customer_name || 'there'},</p>
-    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">We put together a mockup of your design on the product you picked. Please take a look and let us know if it's approved, or what you'd like changed.</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#6b7280;">${isRevision
+      ? "We've updated your mockup. Please take another look and let us know if it's approved, or what you'd still like changed."
+      : "We put together a mockup of your design on the product you picked. Please take a look and let us know if it's approved, or what you'd like changed."}</p>
 
+    ${revisionBanner}
+    ${changeNote}
     ${previewBlock}
 
     <p style="margin:8px 0 4px;font-size:14px;color:#6b7280;"><strong>Product:</strong> ${mockup.product_name || 'Custom Apparel'}</p>
@@ -1278,9 +1301,10 @@ export async function sendMockupForApproval(mockup, approveUrl, lang = 'en') {
     await resend.emails.send({
       from: FROM_EMAIL,
       to: [mockup.customer_email],
-      subject: es
-        ? 'Aprobación de Muestra - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : '')
-        : 'Mockup Approval - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
+      subject: (es
+        ? `${isRevision ? `Muestra Actualizada (rev. ${rev})` : 'Aprobación de Muestra'} - TShirt Brothers`
+        : `${isRevision ? `Updated Mockup (rev. ${rev})` : 'Mockup Approval'} - TShirt Brothers`)
+        + (mockup.name ? ` - ${mockup.name}` : ''),
       html: baseLayout(es ? 'Aprobación de Muestra' : 'Mockup Approval', body),
     });
     console.log('[Email] Mockup approval sent to ' + mockup.customer_email);

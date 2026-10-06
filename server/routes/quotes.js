@@ -1505,14 +1505,19 @@ router.post('/admin/:id/send-mockup', authenticate, adminOnly, async (req, res, 
       );
     }
 
-    const sent = await sendMockupApprovalById(mockup.id);
+    const sent = await sendMockupApprovalById(mockup.id, { message: req.body?.message });
     if (sent.error) return res.status(sent.code || 500).json({ error: sent.error });
 
     const fresh = await pool.query(
       `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
       [id],
     );
-    res.json({ quote: fresh.rows[0], approve_url: sent.approveUrl, mockup_id: mockup.id });
+    res.json({
+      quote: fresh.rows[0],
+      approve_url: sent.approveUrl,
+      mockup_id: mockup.id,
+      is_revision: sent.isRevision,
+    });
   } catch (err) { next(err); }
 });
 
