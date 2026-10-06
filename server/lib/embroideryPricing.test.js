@@ -35,25 +35,33 @@ test('digitizing is $3 per 1,000 stitches, ceilinged', () => {
   assert.equal(vendorDigitizingCents(12000), 3600);
 });
 
-test('markup is applied to vendor cost on every line', () => {
+test('stitching retail is $1 per 1,000 stitches per piece; cost stays Lighthouse', () => {
   const q = priceEmbroidery({ stitchCount: 5000, quantity: 1 });
   const stitching = q.lines.find((l) => l.key === 'stitching');
-  assert.equal(stitching.costCents, 1200);
-  assert.equal(stitching.retailCents, Math.round(1200 * (1 + EMBROIDERY_MARKUP))); // $20.40
+  assert.equal(stitching.costCents, 1200);              // sheet cost, unchanged
+  assert.equal(stitching.retailCents, 500);             // 5 thousands × $1
+  // ceil + per-piece: 7,500 stitches on 24 pieces = 8 × $1 × 24.
+  const run = priceEmbroidery({ stitchCount: 7500, quantity: 24 });
+  assert.equal(run.lines.find((l) => l.key === 'stitching').retailCents, 8 * 100 * 24);
 });
 
-test('digitizing deposit settles in BOTH directions', () => {
-  // 12k stitches: formula retail = 3600 × 1.7 = 6120 > 2500 deposit → balance 3620.
-  const big = priceEmbroidery({ stitchCount: 12000, quantity: 1 });
-  const bigDigi = big.lines.find((l) => l.key === 'digitizing_settlement');
-  assert.equal(bigDigi.retailCents, Math.round(3600 * 1.7) - DIGITIZATION_FEE_CENTS);
-  assert.ok(bigDigi.retailCents > 0);
-
-  // 3k stitches: formula retail = 900 × 1.7 = 1530 < 2500 deposit → credit −970.
-  const small = priceEmbroidery({ stitchCount: 3000, quantity: 1 });
-  const smallDigi = small.lines.find((l) => l.key === 'digitizing_settlement');
-  assert.equal(smallDigi.retailCents, Math.round(900 * 1.7) - DIGITIZATION_FEE_CENTS);
-  assert.ok(smallDigi.retailCents < 0, 'small designs credit the unused deposit');
+test('digitizing is flat $25/design/size — standard deposit settles to zero', () => {
+  // Any stitch count: retail is the $25 already collected → no settlement line.
+  for (const stitchCount of [3000, 12000]) {
+    const q = priceEmbroidery({ stitchCount, quantity: 1 });
+    assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
+  }
+  // A design digitized at 2 sizes is two $25s; only one was collected → $25 balance.
+  const twoSizes = priceEmbroidery({
+    quantity: 1,
+    designs: [{ stitchCount: 5000, quantity: 1, sizeCount: 2 }],
+    depositCents: DIGITIZATION_FEE_CENTS,
+  });
+  const digi = twoSizes.lines.find((l) => l.key === 'digitizing_settlement');
+  assert.equal(digi.retailCents, DIGITIZATION_FEE_CENTS);
+  // Legacy over-collection credits back (small enough to keep the total ≥ 0).
+  const over = priceEmbroidery({ stitchCount: 5000, quantity: 1, depositCents: 3000 });
+  assert.equal(over.lines.find((l) => l.key === 'digitizing_settlement').retailCents, 2500 - 3000);
 });
 
 test('cap surcharges, lettering and personalization come off the sheet', () => {
@@ -90,13 +98,15 @@ test('over 1000 pieces refuses to auto-quote — vendor says call', () => {
 
 test('a realistic order: 24 polos, 7.5k-stitch left chest, $24 garments', () => {
   const q = priceEmbroidery({ stitchCount: 7500, quantity: 24, garmentCentsPerPiece: 2400 });
-  // Stitching: 24–71 tier, 8k column = $6.35 → ×24 = $152.40 cost, ×1.7 = $259.08.
-  assert.equal(q.lines.find((l) => l.key === 'stitching').retailCents, Math.round(635 * 24 * 1.7));
-  // Digitizing: 8k thousands × $3 = $24 cost → $40.80 retail − $25 deposit = $15.80 balance.
-  assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement').retailCents, Math.round(2400 * 1.7) - 2500);
+  // Stitching retail: ceil(7.5k) = 8 thousands × $1 × 24 = $192.00.
+  assert.equal(q.lines.find((l) => l.key === 'stitching').retailCents, 8 * 100 * 24);
+  // Cost column still tracks the sheet: 24–71 tier, 8k column = $6.35 × 24.
+  assert.equal(q.lines.find((l) => l.key === 'stitching').costCents, 635 * 24);
+  // Digitizing: flat $25, already collected → no settlement line.
+  assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
   // Garment rides through at retail.
   assert.equal(q.lines.find((l) => l.key === 'garment').retailCents, 2400 * 24);
-  assert.equal(q.totalCents, Math.round(635 * 24 * 1.7) + (Math.round(2400 * 1.7) - 2500) + 2400 * 24);
+  assert.equal(q.totalCents, 8 * 100 * 24 + 2400 * 24);
 });
 
 test("multi-design: each design is its own run, its own digitizing, its own $25", () => {
@@ -111,12 +121,14 @@ test("multi-design: each design is its own run, its own digitizing, its own $25"
   });
   const runs = q.lines.filter((l) => l.key === 'stitching');
   assert.equal(runs.length, 2);
-  // Each run tiers at qty 1: 6k = $13.20, 4k (≤5k col) = $12.00.
+  // Cost column tiers at qty 1: 6k = $13.20, 4k (≤5k col) = $12.00.
   assert.equal(runs[0].costCents, 1320);
   assert.equal(runs[1].costCents, 1200);
-  // Digitizing: (6k→$18) + (4k→$12) = $30 cost → $51 retail − $50 deposit = $1 balance.
-  const digi = q.lines.find((l) => l.key === 'digitizing_settlement');
-  assert.equal(digi.retailCents, Math.round(3000 * 1.7) - 5000);
+  // Retail: $1/1k per design — $6 + $4.
+  assert.equal(runs[0].retailCents, 600);
+  assert.equal(runs[1].retailCents, 400);
+  // Digitizing: 2 × $25 retail, $50 collected → settles to zero, no line.
+  assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
 });
 
 test('legacy single-design input still works unchanged', () => {

@@ -1,7 +1,10 @@
-// Embroidery pricing — built from the Lighthouse Promotions contract sheet
-// (349 Glynn St N, Fayetteville — "Contract Embroidery Pricing, For Resellers
-// Only", effective 1/1/22, with Kevin's handwritten personalization updates).
-// Those numbers are OUR COST; retail is cost × (1 + EMBROIDERY_MARKUP).
+// Embroidery pricing — the Lighthouse Promotions contract sheet (349 Glynn
+// St N, Fayetteville — "Contract Embroidery Pricing, For Resellers Only",
+// effective 1/1/22, with Kevin's handwritten personalization updates) is
+// OUR COST column. Customer retail (Kevin, 2026-10-05): stitching at $1 per
+// 1,000 stitches per piece, digitizing flat $25 per design per size; the
+// cost × (1 + EMBROIDERY_MARKUP) convention still covers the other lines
+// (caps, lettering, personalization).
 //
 // Kevin, 2026-10-03: "this is my supplier charges so be sure i have a markup;
 // also use all the points they use in this document including spoilage etc."
@@ -20,6 +23,14 @@
 //   • over 1000 pieces: "call" — refuse to auto-quote, same as the vendor.
 
 export const EMBROIDERY_MARKUP = 0.70; // house convention, same as blanks
+
+// Customer-facing stitching rate (Kevin, 2026-10-05: "we charge $1 per 1000
+// stitches, digitizing is $25 per item per size"). Stitch-count retail no
+// longer derives from the Lighthouse sheet — the sheet remains the COST
+// column only, so the margin on every quote stays visible. NOTE: at tiny
+// quantities with big designs this retail can fall BELOW vendor cost (the
+// cost column makes that obvious); that's Kevin's pricing call.
+export const RETAIL_PER_1000_STITCHES_CENTS = 100;
 
 // ── Vendor cost tables (cents) ──────────────────────────────────────────────
 
@@ -147,7 +158,8 @@ export function priceEmbroidery(input) {
       key: 'stitching',
       label: `Embroidery${d.label ? ` — ${d.label}` : ''} — ${ds.toLocaleString()} stitches × ${dq}`,
       costCents: runCost,
-      retailCents: markupCents(runCost),
+      // $1 per 1,000 stitches per piece (Kevin 2026-10-05), not sheet × markup.
+      retailCents: Math.ceil(ds / 1000) * RETAIL_PER_1000_STITCHES_CENTS * dq,
     });
   }
 
@@ -188,36 +200,33 @@ export function priceEmbroidery(input) {
     lines.push({ key: 'personalization', label, costCents: c, retailCents: markupCents(c) });
   }
 
-  // Digitizing: the Lighthouse formula, marked up (Kevin, 2026-10-03: "use
-  // lighthouse formula for digitizing also"). The $25 collected upfront is a
-  // DEPOSIT, not the price — it exists because $3/1k can't be computed until
-  // digitizing reveals the stitch count. The quote settles the difference in
-  // either direction: a 12k jacket back carries a balance, a 3k cap design
-  // carries a credit.
+  // Digitizing: flat $25 per design per size (Kevin, 2026-10-05 — replaced
+  // the 2026-10-03 "Lighthouse formula marked up" rule). The $25 collected
+  // at checkout IS the price, so when the standard deposit was collected the
+  // settlement is zero and no line appears; a settlement line only shows for
+  // converted/legacy requests where a different amount was collected, or
+  // multi-size digitizations (sizeCount > 1 on a design).
   // skipDigitizing: the customer brought their own stitch file — no vendor
-  // digitizing cost, no $25 deposit, no settlement line at all.
+  // digitizing cost, no $25 charge, no settlement line at all.
   if (input.skipDigitizing) {
     // Customer brought their own stitch file(s) — nothing to digitize.
   } else {
-    // EVERY design is its own digitization: its own $25 charge at checkout
-    // (Kevin, 2026-10-04: "that's two separate $25 embroidery charges") and
-    // its own $3/1k at the vendor. The deposit that settles here is
-    // therefore $25 x designs — or whatever the caller says was actually
-    // collected, which matters for converted/legacy requests.
     const depositCents = Number.isInteger(input.depositCents)
       ? input.depositCents
       : DIGITIZATION_FEE_CENTS * designs.length;
     const digiCost = designs.reduce((t, d) => t + vendorDigitizingCents(Number(d.stitchCount)), 0);
-    const digiRetail = markupCents(digiCost);
+    // $25 per design per size (a design digitized at two sizes is two files).
+    const sizeCount = (d) => Math.max(1, Number(d.sizeCount) || 1);
+    const digiRetail = designs.reduce((t, d) => t + DIGITIZATION_FEE_CENTS * sizeCount(d), 0);
     const digiDelta = digiRetail - depositCents;
     vendorCost += digiCost;
     if (digiDelta !== 0) {
-      const kDesc = designs.map((d) => `${Math.ceil(Number(d.stitchCount) / 1000)}k`).join(' + ');
+      const units = designs.reduce((t, d) => t + sizeCount(d), 0);
       lines.push({
         key: 'digitizing_settlement',
         label: digiDelta > 0
-          ? `Digitizing balance (${designs.length > 1 ? designs.length + ' designs: ' : ''}${kDesc} @ formula; $${(depositCents / 100).toFixed(0)} deposit applied)`
-          : `Digitizing credit ($${(depositCents / 100).toFixed(0)} deposit exceeded formula for ${kDesc})`,
+          ? `Digitizing balance (${units} × $${(DIGITIZATION_FEE_CENTS / 100).toFixed(0)}; $${(depositCents / 100).toFixed(0)} deposit applied)`
+          : `Digitizing credit ($${(depositCents / 100).toFixed(0)} deposit exceeds ${units} × $${(DIGITIZATION_FEE_CENTS / 100).toFixed(0)})`,
         costCents: digiCost,
         retailCents: digiDelta, // negative = credit, reduces the total
       });
