@@ -2184,10 +2184,12 @@ export async function sendEmbroideryPaidToCustomer({ request }) {
   });
 }
 
-export async function sendEmbroideryPaidToAdmin({ request, stitchFileProvided = false }) {
+export async function sendEmbroideryPaidToAdmin({ request, stitchFileProvided = false, unpaidIntake = false }) {
   const intro = stitchFileProvided
     ? `brought their <strong>own stitch file</strong>${request.stitch_count ? ` (${Number(request.stitch_count).toLocaleString()} stitches, read from the DST header)` : ''} — no digitizing needed, it's ready to quote now.`
-    : 'paid the $25 digitization fee. Artwork is below — send it to the digitizer, then enter the stitch count to fire the quote.';
+    : unpaidIntake
+      ? 'sent a <strong>new embroidery request</strong> — nothing collected yet. Estimate the stitch count from the size, send the quote; their deposit (digitizing in full + 50% of the work) is what starts digitizing.'
+      : 'paid the $25 digitization fee. Artwork is below — send it to the digitizer, then enter the stitch count to fire the quote.';
   const body = `
     <p><strong>${escapeHtml(request.customer_name)} &lt;${escapeHtml(request.customer_email)}&gt;</strong> ${intro}</p>
     ${embroideryDetails(request)}
@@ -2202,8 +2204,15 @@ export async function sendEmbroideryPaidToAdmin({ request, stitchFileProvided = 
     replyTo: request.customer_email,
     subject: stitchFileProvided
       ? `🧵 Embroidery — stitch file in hand, ready to quote — Request #${request.id} (${escapeHtml(request.customer_name)})`
-      : `🧵 Embroidery digitization paid — Request #${request.id} (${escapeHtml(request.customer_name)})`,
-    html: baseLayout(stitchFileProvided ? 'Embroidery — Ready to Quote' : 'Embroidery Request Paid', body),
+      : unpaidIntake
+        ? `🧵 New embroidery request — estimate & quote — Request #${request.id} (${escapeHtml(request.customer_name)})`
+        : `🧵 Embroidery digitization paid — Request #${request.id} (${escapeHtml(request.customer_name)})`,
+    html: baseLayout(
+      stitchFileProvided ? 'Embroidery — Ready to Quote'
+        : unpaidIntake ? 'New Embroidery Request'
+        : 'Embroidery Request Paid',
+      body,
+    ),
   });
 }
 

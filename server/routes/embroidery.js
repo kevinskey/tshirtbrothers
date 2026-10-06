@@ -396,67 +396,30 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
        items ? JSON.stringify(items) : null,
        stitchFileUrl, safeStitchName, !hasStitchFile, parsedStitches,
        artworkUrls.length > 0 ? JSON.stringify(artworkUrls) : null, designCount,
-       hasStitchFile ? 'ready_to_quote' : 'awaiting_payment', accessToken]
+       'ready_to_quote', accessToken]
     );
     const request = rows[0];
 
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
-    if (hasStitchFile) {
-      // No digitizing to pay for. Tell the shop and send the customer
-      // straight to the confirmation page.
-      import('../services/email.js')
-        .then(({ sendEmbroideryPaidToAdmin }) => sendEmbroideryPaidToAdmin({ request, stitchFileProvided: true }))
-        .catch((e) => console.error('[embroidery] stitch-file admin email failed:', e.message));
-      return res.json({
-        id: request.id,
-        token: accessToken,
-        checkoutUrl: null,
-        statusUrl: `${domain}/embroidery/thanks/${request.id}?t=${accessToken}`,
-      });
-    }
+    // Option B intake (Kevin 2026-10-06): NO money collected here. Every
+    // request lands ready_to_quote; the admin sends an estimate-based quote
+    // and the customer's deposit (digitizing in full + 50% of the work) is
+    // the first payment — digitizing starts only after it clears. The $25
+    // intake checkout this used to create is gone; the admin payment-link
+    // endpoint still exists for digitizing-only collections.
+    import('../services/email.js')
+      .then(({ sendEmbroideryPaidToAdmin }) => sendEmbroideryPaidToAdmin({
+        request, stitchFileProvided: hasStitchFile, unpaidIntake: !hasStitchFile,
+      }))
+      .catch((e) => console.error('[embroidery] intake admin email failed:', e.message));
 
-    const stripe = getStripe();
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      customer_email: emailNorm,
-      submit_type: 'pay',
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          unit_amount: DIGITIZATION_FEE_CENTS,
-          product_data: {
-            name: designCount > 1 ? `Embroidery Digitization × ${designCount} — $25 each` : 'Embroidery Digitization — $25',
-            description: `Request #${request.id} · One-time setup per design: we convert your artwork into stitch files. Your quote follows once they're done.`,
-            ...(artworkUrl ? { images: [artworkUrl] } : {}),
-          },
-        },
-        // Each design is its own digitization and its own $25 (Kevin,
-        // 2026-10-04: "that's two separate $25 embroidery charges").
-        quantity: Math.max(designCount, 1),
-      }],
-      custom_text: {
-        submit: {
-          message: 'Digitization is how embroidery gets priced — once your art is converted to stitches we know the stitch count, and your quote lands in your inbox. — TShirt Brothers',
-        },
-      },
-      payment_intent_data: {
-        description: `TShirt Brothers — embroidery digitization, Request #${request.id}`,
-      },
-      // metadata.embroideryRequestId is what the webhook in routes/payments.js
-      // dispatches on — same pattern as quoteId / gang_sheet_order_id.
-      metadata: { embroideryRequestId: String(request.id) },
-      success_url: `${domain}/embroidery/thanks/${request.id}?t=${accessToken}`,
-      cancel_url: `${domain}/embroidery`,
+    res.json({
+      id: request.id,
+      token: accessToken,
+      checkoutUrl: null,
+      statusUrl: `${domain}/embroidery/thanks/${request.id}?t=${accessToken}`,
     });
-
-    await pool.query(
-      'UPDATE embroidery_requests SET stripe_session_id = $1, updated_at = NOW() WHERE id = $2',
-      [session.id, request.id]
-    );
-
-    res.json({ id: request.id, token: accessToken, checkoutUrl: session.url });
   } catch (err) { next(err); }
 });
 

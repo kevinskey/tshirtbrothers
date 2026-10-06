@@ -1,10 +1,10 @@
 // Embroidery Quote — the customer path for stitched work (Kevin, 2026-10-03).
 //
 // Embroidery cannot be instant-quoted the way screen printing can: price is
-// driven by STITCH COUNT, and stitch count only exists after the artwork is
-// digitized. So this page collects the request and gates on the $25
-// digitization fee via Stripe Checkout; the quote is a human reply after
-// digitizing, priced off the Lighthouse sheet x house markup server-side.
+// driven by STITCH COUNT. This page collects the request and artwork with
+// NO payment (Kevin 2026-10-06, estimate-first flow): the shop estimates
+// the count from the size, emails a full quote (digitizing $25/design +
+// stitching + garments), and the quote's deposit is what starts the work.
 //
 // Garments: "get them from us" opens a live picker over the real catalog
 // (/api/products) — multiple products per request, and EACH product carries
@@ -217,8 +217,8 @@ export default function EmbroideryQuotePage() {
     setItems(mode === 'own' ? [newItem()] : []);
   };
 
-  // One entry per DESIGN — each is its own $25 digitization at checkout
-  // (Kevin, 2026-10-04: "that's two separate $25 embroidery charges").
+  // One entry per DESIGN — each is its own $25 digitization line on the
+  // quote (Kevin, 2026-10-04: "that's two separate $25 embroidery charges").
   const fileRef = useRef<HTMLInputElement>(null);
   const [designs, setDesigns] = useState<Array<{ fileName: string; base64: string }>>([]);
 
@@ -345,12 +345,13 @@ export default function EmbroideryQuotePage() {
             Atlanta&rsquo;s custom t-shirt shop · (470) 622-1392
           </p>
           <p className="mt-3 text-sm leading-relaxed text-gray-600">
-            Embroidery is priced by <strong>stitch count</strong>, and we only know the
-            stitch count after your artwork is <strong>digitized</strong> — converted
-            into a stitch file a machine can sew. Digitization is a one-time{' '}
-            <strong className="text-orange-600">$25</strong>. Pay it here, we digitize,
-            and your quote lands in your inbox: stitching + your garments. The stitch
-            file is yours to keep.
+            Embroidery is priced by <strong>stitch count</strong>. Send us your artwork
+            and size and we estimate it for you — your full quote lands in your inbox:
+            digitizing (<strong className="text-orange-600">$25</strong> per design),
+            stitching, and garments if we supply them.{' '}
+            <strong>Nothing is billed now</strong> — a deposit on the quote is what
+            starts the work, and we confirm the exact stitch count with you before
+            anything sews. The stitch file is yours to keep.
           </p>
         </div>
 
@@ -366,7 +367,7 @@ export default function EmbroideryQuotePage() {
                 }`}
               >
                 <span className="block font-bold">I have a logo or image</span>
-                <span className="block text-xs text-gray-500">We digitize it — one-time $25</span>
+                <span className="block text-xs text-gray-500">We digitize it — $25 per design, on your quote</span>
               </button>
               <button
                 type="button" onClick={() => setArtMode('stitch')}
@@ -714,15 +715,15 @@ export default function EmbroideryQuotePage() {
           >
             {submitting ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
             {submitting
-              ? (artMode === 'stitch' ? 'Sending…' : 'Heading to checkout…')
+              ? 'Sending…'
               : (artMode === 'stitch'
                   ? 'Send my stitch file & get my quote'
-                  : `Pay $${Math.max(designs.length, 1) * 25} digitization & get my quote`)}
+                  : 'Send my artwork & get my quote')}
           </button>
           <p className="text-center text-xs text-gray-500">
             {artMode === 'stitch'
               ? 'No digitizing fee — you already did that part. We review your file and email your quote; nothing stitches until you approve it.'
-              : 'Secure checkout by Stripe. After payment we digitize your art and email your quote — no stitching happens until you approve it.'}
+              : 'No payment now. We estimate your stitch count and email your full quote — paying its deposit is what starts digitizing, and nothing sews until you approve.'}
           </p>
 
           {/* The fine print — mirrors our production terms so nobody is
