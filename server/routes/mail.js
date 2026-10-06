@@ -36,7 +36,7 @@ router.get('/aliases', async (req, res, next) => {
 });
 
 // GET / — message list. Filters: alias, q (from/subject search), unread=1,
-// folder (inbox|sent|all), limit/offset.
+// folder (inbox|sent|drafts|all), limit/offset.
 router.get('/', async (req, res, next) => {
   try {
     const { alias, q, unread, folder = 'inbox' } = req.query;
@@ -47,7 +47,8 @@ router.get('/', async (req, res, next) => {
     const params = [];
     let i = 1;
     if (folder === 'inbox') conditions.push('NOT outgoing');
-    else if (folder === 'sent') conditions.push('outgoing');
+    else if (folder === 'sent') conditions.push(`outgoing AND folder <> 'Drafts'`);
+    else if (folder === 'drafts') conditions.push(`folder = 'Drafts'`);
     if (alias) { conditions.push(`alias = $${i++}`); params.push(String(alias).toLowerCase()); }
     if (unread === '1') conditions.push('NOT seen AND NOT outgoing');
     if (q) {
@@ -116,6 +117,36 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // POST /send — compose or reply. body: {from, to, cc?, subject, text, replyToId?}
+// Save an email as a draft — nothing is sent. Drafts live in mail_messages
+// with folder='Drafts' (excluded from the Sent filter above) so they show
+// up in the Mail section next to everything else.
+router.post('/draft', async (req, res, next) => {
+  try {
+    const { from, to, subject, text } = req.body;
+    const fromAddr = String(from || '').toLowerCase().trim() || null;
+    const toList = String(to || '')
+      .split(/[,;]/).map((a) => a.trim().toLowerCase()).filter(Boolean);
+    const { rows } = await pool.query(
+      `INSERT INTO mail_messages
+         (folder, message_id, from_addr, to_addrs, alias, subject,
+          snippet, body_text, msg_date, seen, outgoing)
+       VALUES ('Drafts', $1, $2, $3, $2, $4, $5, $6, NOW(), TRUE, TRUE)
+       RETURNING id`,
+      [
+        `draft-${Date.now()}-${Math.random().toString(36).slice(2)}@local`,
+        fromAddr,
+        JSON.stringify(toList),
+        subject || '(no subject)',
+        (text || '').replace(/\s+/g, ' ').slice(0, 180),
+        text || null,
+      ]
+    );
+    res.status(201).json({ id: rows[0].id, saved: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post('/send', async (req, res, next) => {
   try {
     const { from, to, cc, subject, text, replyToId } = req.body;

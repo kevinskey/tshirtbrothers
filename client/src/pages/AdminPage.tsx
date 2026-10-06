@@ -1131,6 +1131,9 @@ export default function AdminPage() {
   const [aiDraft, setAiDraft] = useState<DraftReply | null>(null);
   const [aiDraftLoading, setAiDraftLoading] = useState(false);
   const [aiDraftQuestion, setAiDraftQuestion] = useState('');
+  // Body handed to the quote drawer's email composer (e.g. "Use in email"
+  // on an AI draft). Bumping the key re-opens the composer with new text.
+  const [emailPrefill, setEmailPrefill] = useState<{ body: string; key: number } | null>(null);
   const [aiPriceResult, setAiPriceResult] = useState<PriceSuggestion | null>(null);
   const [aiPriceLoading, setAiPriceLoading] = useState(false);
 
@@ -8605,25 +8608,33 @@ export default function AdminPage() {
                             <div key={tone} className="bg-purple-50 border border-purple-200 rounded-lg p-2">
                               <div className="flex items-center justify-between mb-1">
                                 <span className="text-[10px] font-bold uppercase text-purple-700">{tone}</span>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(aiDraft[tone]);
-                                    alert('Copied!');
-                                  }}
-                                  className="text-[10px] text-purple-600 hover:underline"
-                                >
-                                  Copy
-                                </button>
+                                <span className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setEmailPrefill({ body: aiDraft[tone], key: Date.now() })}
+                                    className="text-[10px] font-semibold text-indigo-600 hover:underline"
+                                  >
+                                    Use in email
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(aiDraft[tone]);
+                                      alert('Copied!');
+                                    }}
+                                    className="text-[10px] text-purple-600 hover:underline"
+                                  >
+                                    Copy
+                                  </button>
+                                </span>
                               </div>
                               <p className="text-xs text-gray-800 whitespace-pre-wrap">{aiDraft[tone]}</p>
                             </div>
                           ))}
-                          <a
-                            href={`mailto:${customerEmail}?subject=Re:%20Quote%20%23${q.id}&body=${encodeURIComponent(aiDraft.friendly)}`}
+                          <button
+                            onClick={() => setEmailPrefill({ body: aiDraft.friendly, key: Date.now() })}
                             className="block w-full text-center px-3 py-2 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                           >
-                            📧 Send via Email
-                          </a>
+                            📧 Open in email composer
+                          </button>
                         </div>
                       )}
                     </div>
@@ -8661,6 +8672,13 @@ export default function AdminPage() {
 
                   {/* Actions */}
                   <div className="pt-2 space-y-2">
+                    {/* Email the customer from the shop mailbox, or stash
+                        a draft in Mail › Drafts. */}
+                    <QuoteEmailPanel
+                      quoteId={q.id}
+                      email={customerEmail || ''}
+                      prefill={emailPrefill}
+                    />
                     {/* Text the customer and read what they text back, in
                         the job the conversation is about. */}
                     <QuoteSmsPanel
@@ -10905,6 +10923,118 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Customer email ───────────────────────────────────────────────────
+// "Email Customer" composes right in the quote drawer and sends through
+// the shop mailbox (/api/mail/send — Purelymail, proper SPF/DKIM), so it
+// lands in the Mail section's Sent folder. "Save draft" files the text
+// under Mail → Drafts instead of sending.
+function QuoteEmailPanel({ quoteId, email, prefill }: {
+  quoteId: string | number;
+  email: string;
+  prefill: { body: string; key: number } | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [from, setFrom] = useState('info@tshirtbrothers.com');
+  const [to, setTo] = useState(email);
+  const [subject, setSubject] = useState(`Quote #${quoteId} — T-Shirt Brothers`);
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState<'send' | 'draft' | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => { setTo(email); }, [email]);
+  useEffect(() => {
+    if (prefill) { setBody(prefill.body); setOpen(true); setNote(null); }
+  }, [prefill?.key]);
+
+  const post = async (path: string, kind: 'send' | 'draft') => {
+    if (!to.trim()) { setNote('Add a recipient first'); return; }
+    if (!body.trim()) { setNote('Write the message first'); return; }
+    setBusy(kind);
+    setNote(null);
+    try {
+      const r = await fetch(path, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}`,
+        },
+        body: JSON.stringify({ from, to, subject, text: body }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Failed (${r.status})`);
+      if (kind === 'send') { setNote('Sent ✓ — logged in Mail › Sent'); setBody(''); }
+      else setNote('Draft saved ✓ — find it in Mail › Drafts');
+    } catch (err) {
+      setNote((err as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!email) {
+    return (
+      <div className="w-full py-3 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg">
+        No email address on this quote — nothing to email
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full py-3 bg-indigo-600 text-white font-semibold hover:bg-indigo-700 flex items-center justify-center gap-2"
+      >
+        <Mail className="w-4 h-4" />
+        {open ? 'Hide Email' : 'Email Customer'}
+      </button>
+      {open && (
+        <div className="p-3 space-y-2 bg-gray-50">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <label className="text-[11px] text-gray-500">From
+              <input value={from} onChange={(e) => setFrom(e.target.value)}
+                className="mt-0.5 w-full border border-gray-200 rounded px-2 py-1.5 text-sm" style={{ fontSize: '16px' }} />
+            </label>
+            <label className="text-[11px] text-gray-500">To
+              <input value={to} onChange={(e) => setTo(e.target.value)}
+                className="mt-0.5 w-full border border-gray-200 rounded px-2 py-1.5 text-sm" style={{ fontSize: '16px' }} />
+            </label>
+          </div>
+          <label className="block text-[11px] text-gray-500">Subject
+            <input value={subject} onChange={(e) => setSubject(e.target.value)}
+              className="mt-0.5 w-full border border-gray-200 rounded px-2 py-1.5 text-sm" style={{ fontSize: '16px' }} />
+          </label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={6}
+            placeholder="Write the email — or generate one with Draft Reply above and tap Use in email."
+            className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm"
+            style={{ fontSize: '16px' }}
+          />
+          {note && <p className="text-xs text-gray-600">{note}</p>}
+          <div className="flex gap-2">
+            <button
+              disabled={busy !== null}
+              onClick={() => post('/api/mail/send', 'send')}
+              className="flex-1 px-3 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {busy === 'send' ? 'Sending…' : 'Send email'}
+            </button>
+            <button
+              disabled={busy !== null}
+              onClick={() => post('/api/mail/draft', 'draft')}
+              className="px-3 py-2 text-sm font-semibold bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+            >
+              {busy === 'draft' ? 'Saving…' : 'Save draft'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

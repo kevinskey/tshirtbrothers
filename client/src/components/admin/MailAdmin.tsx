@@ -52,7 +52,7 @@ export default function MailAdmin() {
   const [messages, setMessages] = useState<MailListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingNow, setSyncingNow] = useState(false);
-  const [folder, setFolder] = useState<'inbox' | 'sent'>('inbox');
+  const [folder, setFolder] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
   const [aliasFilter, setAliasFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [openMsg, setOpenMsg] = useState<MailFull | null>(null);
@@ -331,7 +331,7 @@ export default function MailAdmin() {
       {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex rounded-lg border overflow-hidden">
-          {(['inbox', 'sent'] as const).map((f) => (
+          {(['inbox', 'sent', 'drafts'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFolder(f)}
