@@ -11,6 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Mail, Paperclip, FileText } from 'lucide-react';
 import {
   fetchEmbroideryRequestsByQuote,
+  createEmbroideryPaymentLink,
   sendEmbroideryQuote,
   previewEmbroideryQuote,
   uploadEmbroideryRequestFile,
@@ -193,6 +194,17 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
     onSuccess: () => qc.invalidateQueries({ queryKey: ['embroidery-requests'] }),
   });
 
+  // Fresh digitization checkout link — the intake session dies after 24h,
+  // and without payment the quote email above stays locked.
+  const [payLinkUrl, setPayLinkUrl] = useState<string | null>(null);
+  const payLink = useMutation({
+    mutationFn: () => createEmbroideryPaymentLink(request.id),
+    onSuccess: async (d) => {
+      setPayLinkUrl(d.url);
+      try { await navigator.clipboard.writeText(d.url); } catch { /* shown below regardless */ }
+    },
+  });
+
   const field = 'mt-1 block rounded border border-gray-300 px-2 py-1.5 text-sm';
 
   return (
@@ -357,11 +369,22 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
         </div>
       )}
 
-      <div className="mt-2 flex items-center justify-end gap-3">
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-3">
         {!canSend && (
           <span className="text-[11px] text-amber-600">
             Awaiting digitization payment — files and preview work now; the email unlocks when it clears.
           </span>
+        )}
+        {!canSend && (
+          <button
+            type="button"
+            disabled={payLink.isPending}
+            onClick={() => payLink.mutate()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-40"
+          >
+            {payLink.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+            {payLinkUrl ? 'Copy payment link again' : 'Get payment link'}
+          </button>
         )}
         <button type="button" disabled={!preview || !canSend || !garmentsReady || send.isPending} onClick={() => send.mutate()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-black px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
@@ -370,6 +393,13 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
         </button>
       </div>
       {send.isError && <p className="mt-2 text-xs text-red-600">{(send.error as Error).message}</p>}
+      {payLink.isError && <p className="mt-2 text-xs text-red-600">{(payLink.error as Error).message}</p>}
+      {payLinkUrl && (
+        <p className="mt-2 break-all rounded border border-emerald-200 bg-emerald-50 p-2 text-[11px] text-emerald-800">
+          Payment link copied to clipboard — text or email it to the customer:{' '}
+          <a href={payLinkUrl} target="_blank" rel="noreferrer" className="underline">{payLinkUrl}</a>
+        </p>
+      )}
     </div>
   );
 }

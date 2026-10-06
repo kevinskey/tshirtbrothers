@@ -529,6 +529,55 @@ router.get('/embroidery/requests/by-quote/:quoteId', authenticate, adminOnly, as
   }
 });
 
+// POST /embroidery/requests/:id/payment-link — admin. Mints a FRESH Stripe
+// checkout for the digitization fee. The intake session expires after 24h
+// (Stripe's default), which used to strand unpaid requests with no way to
+// collect — and the quote email stays gated until digitization is paid.
+// Same line items and webhook metadata as intake, so payments.js marks
+// digitization_paid_at exactly the same way.
+router.post('/embroidery/requests/:id/payment-link', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM embroidery_requests WHERE id = $1', [req.params.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    const r = rows[0];
+    if (r.digitization_paid_at) return res.status(409).json({ error: 'Digitization is already paid' });
+    if (r.stitch_file_url) return res.status(409).json({ error: 'Customer supplied a stitch file — nothing to collect' });
+
+    const designCount = Math.max(Number(r.design_count) || 1, 1);
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: r.customer_email,
+      submit_type: 'pay',
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: DIGITIZATION_FEE_CENTS,
+          product_data: {
+            name: designCount > 1 ? `Embroidery Digitization × ${designCount} — $25 each` : 'Embroidery Digitization — $25',
+            description: `Request #${r.id} · One-time setup per design: we convert your artwork into stitch files. Your quote follows once they're done.`,
+            ...(r.artwork_url ? { images: [r.artwork_url] } : {}),
+          },
+        },
+        quantity: designCount,
+      }],
+      payment_intent_data: {
+        description: `TShirt Brothers — embroidery digitization, Request #${r.id}`,
+      },
+      metadata: { embroideryRequestId: String(r.id) },
+      success_url: `${domain}/embroidery/thanks/${r.id}?t=${r.access_token}`,
+      cancel_url: `${domain}/embroidery`,
+    });
+    await pool.query(
+      'UPDATE embroidery_requests SET stripe_session_id = $1, updated_at = NOW() WHERE id = $2',
+      [session.id, r.id]
+    );
+    res.json({ url: session.url, amountCents: DIGITIZATION_FEE_CENTS * designCount });
+  } catch (err) { next(err); }
+});
+
 // POST /embroidery/requests/:id/quote — admin. Prices via the Lighthouse
 // engine (lib/embroideryPricing.js): vendor cost x house markup, every
 // surcharge from the sheet, rush multipliers, and the $25 digitization

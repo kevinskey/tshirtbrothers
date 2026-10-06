@@ -918,6 +918,15 @@ export async function previewEmbroideryQuote(id: number, input: EmbroideryQuoteI
   );
 }
 
+/** Fresh Stripe checkout for the digitization fee — the intake session
+ *  expires after 24h, so unpaid requests need a re-mintable link. */
+export async function createEmbroideryPaymentLink(id: number) {
+  return authRequest<{ url: string; amountCents: number }>(
+    `/embroidery/requests/${id}/payment-link`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
 export async function fetchEmbroideryJobs(opts: { status?: string; search?: string } = {}) {
   const p = new URLSearchParams();
   if (opts.status) p.set('status', opts.status);
