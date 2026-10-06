@@ -415,7 +415,7 @@ export default function QuoteItemsEditor({
                   const cur = d.sizes.find((s) => s.size === size)?.quantity ?? 0;
                   return (
                     <div key={size} className="flex items-center gap-1 bg-white rounded border border-gray-200 px-1.5 py-1">
-                      <span className="text-[11px] font-semibold text-gray-600 w-7">{size}</span>
+                      <span className="text-[11px] font-semibold text-gray-600 shrink-0 min-w-7 max-w-16 truncate" title={size}>{size}</span>
                       <input
                         type="number"
                         min={0}
@@ -452,6 +452,10 @@ export default function QuoteItemsEditor({
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Print areas</label>
               <div className="flex flex-wrap gap-1.5">
+                {/* Standard toggles first, then any stored values that
+                    aren't in the standard list (customer-submitted strings
+                    like "Front — 11in, 4-color") as active chips — without
+                    this the data is on the quote but invisible here. */}
                 {['Front', 'Back', 'Left Sleeve', 'Right Sleeve', 'Pocket', 'Hood'].map((a) => {
                   const on = d.print_areas.includes(a);
                   return (
@@ -465,6 +469,17 @@ export default function QuoteItemsEditor({
                     >{a}</button>
                   );
                 })}
+                {d.print_areas
+                  .filter((a) => !['Front', 'Back', 'Left Sleeve', 'Right Sleeve', 'Pocket', 'Hood'].includes(a))
+                  .map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      onClick={() => togglePrintArea(i, a)}
+                      title="Custom print area from the request — click to remove"
+                      className="text-xs px-2 py-1 rounded-full border bg-red-600 text-white border-red-600"
+                    >{a} ×</button>
+                  ))}
               </div>
               <button
                 type="button"

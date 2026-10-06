@@ -8151,7 +8151,7 @@ export default function AdminPage() {
             <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailQuote(null)}>
               <div className="absolute inset-0 bg-black/50" />
               <div
-                className="relative bg-white w-full md:max-w-lg h-full overflow-auto shadow-2xl animate-slide-in-right"
+                className="relative bg-white w-full md:max-w-2xl lg:max-w-3xl h-full overflow-auto shadow-2xl animate-slide-in-right"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between z-10">
