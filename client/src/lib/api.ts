@@ -132,6 +132,11 @@ export interface Quote {
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
   mockup_image_url_back?: string | null;
+  /** Set when the customer rules on a proof; cleared when a revision goes
+   *  out, which is what distinguishes a first send from a re-approval. */
+  mockup_approved_at?: string | null;
+  mockup_rejected_at?: string | null;
+  mockup_revision?: number | null;
   extra_mockups?: ExtraMockup[];
   price_breakdown?: PriceBreakdown | null;
   deposit_amount?: number | null;
@@ -456,10 +461,17 @@ export async function replaceQuoteItems(quoteId: string, items: QuoteItem[]) {
 // this quote. Server finds the newest quote-linked mockup, backfills its
 // customer contact from the quote, and reuses the mockups send flow (which
 // advances the quote to awaiting_approval when its status allows).
-export async function sendQuoteMockupForApproval(quoteId: string | number) {
-  return authRequest<{ quote: Quote; approve_url: string; mockup_id: number }>(
+// A send that follows a customer decision goes out as a numbered revision:
+// the server bumps the revision, invalidates the old approval link, clears
+// the stale approval stamp, and the email says it supersedes the last proof.
+// `message` is the optional "what changed" note shown above the images.
+export async function sendQuoteMockupForApproval(
+  quoteId: string | number,
+  message?: string,
+) {
+  return authRequest<{ quote: Quote; approve_url: string; mockup_id: number; is_revision: boolean }>(
     `/quotes/admin/${quoteId}/send-mockup`,
-    { method: 'POST' },
+    { method: 'POST', body: JSON.stringify(message ? { message } : {}) },
   );
 }
 

@@ -36,15 +36,28 @@ async function regeneratePreviewForMockup(row) {
 // courtesy re-send mid-production must not drag it backwards. The SMS nudge
 // mirrors PATCH /api/quotes/:id: awaiting_approval is SMS-only because the
 // approval email itself just went out.
-async function advanceQuoteOnMockupSend(quoteId) {
+async function advanceQuoteOnMockupSend(quoteId, { isRevision = false } = {}) {
   if (!quoteId) return;
   try {
+    // A revision pulls the quote back out of 'approved': the customer
+    // approved a proof that no longer exists, so that approval — and its
+    // stamp, which the dashboard ages off — must not stand. Statuses past
+    // the proof stage (in_production and later) still stay put; a courtesy
+    // re-send mid-run must not rewind real production state.
+    const statuses = isRevision
+      ? ['accepted', 'awaiting_approval', 'approved']
+      : ['accepted', 'awaiting_approval'];
     const { rows } = await pool.query(
       `UPDATE quotes
-          SET status = 'awaiting_approval', mockup_sent_at = NOW()
-        WHERE id = $1 AND status IN ('accepted', 'awaiting_approval')
+          SET status = 'awaiting_approval',
+              mockup_sent_at = NOW(),
+              mockup_approved_at = CASE WHEN $2 THEN NULL ELSE mockup_approved_at END,
+              mockup_rejected_at = CASE WHEN $2 THEN NULL ELSE mockup_rejected_at END,
+              mockup_feedback = CASE WHEN $2 THEN NULL ELSE mockup_feedback END,
+              mockup_revision = mockup_revision + CASE WHEN $2 THEN 1 ELSE 0 END
+        WHERE id = $1 AND status = ANY($3)
         RETURNING *`,
-      [quoteId],
+      [quoteId, isRevision, statuses],
     );
     if (rows[0] && rows[0].status === 'awaiting_approval') {
       const { smsStatusUpdateToCustomer } = await import('../services/sms.js');
@@ -297,7 +310,7 @@ router.post('/admin/mockups/backfill-previews', authenticate, adminOnly, async (
 // mockups-section Send button and the quote modal's send-mockup route
 // (quotes.js), so a quote-linked send behaves identically wherever it
 // starts. Returns { row, approveUrl } or { error, code }.
-export async function sendMockupApprovalById(id) {
+export async function sendMockupApprovalById(id, { message } = {}) {
   const { rows } = await pool.query('SELECT * FROM mockups WHERE id = $1', [id]);
   if (rows.length === 0) return { error: 'Not found', code: 404 };
   let m = rows[0];
@@ -309,11 +322,21 @@ export async function sendMockupApprovalById(id) {
     m = await regeneratePreviewForMockup(m);
   }
 
-  const token = m.approve_token || crypto.randomBytes(16).toString('hex');
+  // The customer already ruled on this proof, so what goes out now is a
+  // revision — it needs its own number, a token the old email can't reuse,
+  // and copy that says it supersedes what they saw.
+  const isRevision = ['approved', 'rejected'].includes(m.status);
+  const token = isRevision || !m.approve_token
+    ? crypto.randomBytes(16).toString('hex')
+    : m.approve_token;
   const updated = await pool.query(
-    `UPDATE mockups SET approve_token = $1, status = 'sent', updated_at = NOW()
-     WHERE id = $2 RETURNING *`,
-    [token, id],
+    `UPDATE mockups
+        SET approve_token = $1,
+            status = 'sent',
+            revision = revision + CASE WHEN $3 THEN 1 ELSE 0 END,
+            updated_at = NOW()
+      WHERE id = $2 RETURNING *`,
+    [token, id, isRevision],
   );
 
   const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
@@ -329,24 +352,24 @@ export async function sendMockupApprovalById(id) {
       if (q.rows[0]) lang = quoteLang(q.rows[0]);
     }
     if (typeof sendMockupForApproval === 'function') {
-      await sendMockupForApproval(updated.rows[0], approveUrl, lang);
+      await sendMockupForApproval(updated.rows[0], approveUrl, lang, { message });
     }
   } catch (err) {
     console.error('[mockup send] email failed:', err.message);
     // Non-fatal: the admin can copy the link manually.
   }
 
-  await advanceQuoteOnMockupSend(updated.rows[0].quote_id);
+  await advanceQuoteOnMockupSend(updated.rows[0].quote_id, { isRevision });
 
-  return { row: updated.rows[0], approveUrl };
+  return { row: updated.rows[0], approveUrl, isRevision };
 }
 
 // POST /admin/mockups/:id/send - email the customer an approval link
 router.post('/admin/mockups/:id/send', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const sent = await sendMockupApprovalById(req.params.id);
+    const sent = await sendMockupApprovalById(req.params.id, { message: req.body?.message });
     if (sent.error) return res.status(sent.code || 500).json({ error: sent.error });
-    res.json({ ...sent.row, approve_url: sent.approveUrl });
+    res.json({ ...sent.row, approve_url: sent.approveUrl, is_revision: sent.isRevision });
   } catch (err) { next(err); }
 });
 
