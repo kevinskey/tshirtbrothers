@@ -136,6 +136,86 @@ export async function sendQuoteRequestNotification(quote) {
  */
 // Pure HTML builder — exported so admin previews can render it without
 // sending. sendQuotePriceToCustomer wraps it.
+// Every view we have of the customer's artwork, ordered the way someone
+// pictures a garment: front, back, then sleeves. The quote row itself only
+// carries front/back, but the Studio mockup linked to it holds all four —
+// a 4-location job (e.g. front + back + both sleeves) has to show all four
+// in the quote email, not just the front. Falls back to the raw uploaded
+// design when no mockup was ever rendered.
+async function quoteMockupViews(quote) {
+  const views = [];
+  const seen = new Set();
+  const push = (url, label) => {
+    if (!url || typeof url !== 'string' || seen.has(url)) return;
+    seen.add(url);
+    views.push({ url, label });
+  };
+
+  // The linked Studio mockup is the richest source — it's the only one with
+  // sleeve renders. Non-fatal if it fails: the quote columns still cover
+  // front/back.
+  if (quote?.id) {
+    try {
+      const { default: pool } = await import('../db.js');
+      const { rows } = await pool.query(
+        `SELECT preview_image_url, preview_image_url_back,
+                preview_image_url_sleeve, preview_image_url_sleeve_left
+           FROM mockups WHERE quote_id = $1 ORDER BY id DESC LIMIT 1`,
+        [quote.id],
+      );
+      const m = rows[0];
+      if (m) {
+        push(m.preview_image_url, 'Front');
+        push(m.preview_image_url_back, 'Back');
+        push(m.preview_image_url_sleeve, 'Right Sleeve');
+        push(m.preview_image_url_sleeve_left, 'Left Sleeve');
+      }
+    } catch (err) {
+      console.error(`[Email] mockup view lookup failed for quote ${quote.id}:`, err.message);
+    }
+  }
+
+  push(quote?.mockup_image_url, 'Front');
+  push(quote?.mockup_image_url_back, 'Back');
+
+  const extras = typeof quote?.extra_mockups === 'string'
+    ? (() => { try { return JSON.parse(quote.extra_mockups); } catch { return []; } })()
+    : (quote?.extra_mockups || []);
+  if (Array.isArray(extras)) {
+    extras.forEach((e, i) => {
+      push(e?.front, `Additional ${i + 1}`);
+      push(e?.back, `Additional ${i + 1} — Back`);
+    });
+  }
+
+  if (!views.length) push(quote?.design_url, 'Your Design');
+  return views;
+}
+
+// Two-up table grid (Outlook won't do flex/grid). A lone view renders full
+// width and unlabeled — labels only earn their space when there's more than
+// one thing to tell apart.
+function mockupGalleryHtml(views) {
+  if (!views.length) return '';
+  const img = (v, maxWidth) =>
+    `<img src="${v.url}" alt="${escapeHtml(v.label)}" style="width:100%;max-width:${maxWidth}px;border-radius:12px;border:1px solid ${theme.LINE};background:#f8fafc;" />`;
+
+  if (views.length === 1) {
+    return `<div style="text-align:center;">${img(views[0], 300)}</div>`;
+  }
+
+  const cells = views.map((v) => `
+    <td width="50%" valign="top" style="padding:6px;text-align:center;">
+      ${img(v, 260)}
+      <p style="margin:6px 0 0;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${theme.GRAY};">${escapeHtml(v.label)}</p>
+    </td>`);
+  if (cells.length % 2) cells.push('<td width="50%"></td>');
+
+  const rows = [];
+  for (let i = 0; i < cells.length; i += 2) rows.push(`<tr>${cells[i]}${cells[i + 1]}</tr>`);
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows.join('')}</table>`;
+}
+
 export async function buildQuoteEmailHtml(quote, priceDetails) {
   const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount } = priceDetails;
   const deposit = (Number(total) * 0.5).toFixed(2);
@@ -177,6 +257,7 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
   // 2026-09 branded redesign — same data, links, and pricing as before,
   // rendered with the shared theme (see emailTheme.js).
   const promo = await theme.getActivePromotion();
+  const mockupViews = await quoteMockupViews(quote);
   const summaryRows = [
     { label: 'Base Price (apparel)', value: formatCurrency(basePrice) },
     { label: 'Printing Cost', value: formatCurrency(printingCost) },
@@ -231,16 +312,14 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
           { label: 'Print Areas', lines: [escapeHtml(printAreasDisplay)] },
         ].filter(Boolean))}
       `),
-      quote.design_url ? theme.bodySection(`
-        <div style="text-align:center;">
-          <p style="margin:0 0 8px;font-size:14px;font-weight:700;color:${BRAND_DARK};">Your Design</p>
-          <img src="${quote.design_url}" alt="Your custom design" style="max-width:280px;width:100%;border-radius:12px;border:1px solid #e5e7eb;" />
-        </div>
+      mockupViews.length ? theme.bodySection(`
+        ${theme.sectionTitle(mockupViews.length > 1 ? `Your Mockup — All ${mockupViews.length} Print Locations` : 'Your Design')}
+        ${mockupGalleryHtml(mockupViews)}
       `) : '',
       theme.bodySection(`
         ${theme.sectionTitle('Order Items')}
         ${theme.itemsTable([{
-          img: quote.design_url || null,
+          img: mockupViews[0]?.url || quote.design_url || null,
           name: quote.product_name || 'Custom Apparel',
           detail: quote.design_type ? `Decoration: ${quote.design_type}` : '',
           color: quote.color || '—',
