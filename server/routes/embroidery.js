@@ -592,7 +592,10 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     // $25 cleared, or the customer brought their own stitch file and there
     // is nothing to digitize. Previews (dryRun) are allowed any time so the
     // admin can prep pricing while payment is pending.
-    if (!req.body.dryRun && !r.digitization_paid_at && !r.stitch_file_url) {
+    // allowUnpaid: deliberate admin override (Kevin 2026-10-06 — "usually
+    // digitizing isn't done before quote deposit is paid"). The quote then
+    // carries the digitizing charge as an open line instead of a paid credit.
+    if (!req.body.dryRun && !req.body.allowUnpaid && !r.digitization_paid_at && !r.stitch_file_url) {
       return res.status(409).json({ error: 'Digitization fee has not been paid — cannot send the quote yet' });
     }
 
