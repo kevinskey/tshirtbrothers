@@ -207,24 +207,27 @@ export function priceEmbroidery(input) {
   if (input.skipDigitizing) {
     // Customer brought their own stitch file(s) — nothing to digitize.
   } else {
-    const depositCents = Number.isInteger(input.depositCents)
-      ? input.depositCents
-      : DIGITIZATION_FEE_CENTS * designs.length;
-    const digiCost = designs.reduce((t, d) => t + vendorDigitizingCents(Number(d.stitchCount)), 0);
-    // $25 per design per size (a design digitized at two sizes is two files).
+    // The digitizing charge is ALWAYS its own visible line (Kevin,
+    // 2026-10-06: "I charge $25 per design — total should be $50", not a
+    // hidden wash). What was actually PAID at checkout arrives as
+    // depositCents (0 when payment hasn't cleared) and shows as a credit.
     const sizeCount = (d) => Math.max(1, Number(d.sizeCount) || 1);
-    const digiRetail = designs.reduce((t, d) => t + DIGITIZATION_FEE_CENTS * sizeCount(d), 0);
-    const digiDelta = digiRetail - depositCents;
+    const units = designs.reduce((t, d) => t + sizeCount(d), 0);
+    const digiCost = designs.reduce((t, d) => t + vendorDigitizingCents(Number(d.stitchCount)), 0);
     vendorCost += digiCost;
-    if (digiDelta !== 0) {
-      const units = designs.reduce((t, d) => t + sizeCount(d), 0);
+    lines.push({
+      key: 'digitizing',
+      label: `Digitizing — ${units} design${units > 1 ? 's' : ''} × $${(DIGITIZATION_FEE_CENTS / 100).toFixed(0)}`,
+      costCents: digiCost,
+      retailCents: DIGITIZATION_FEE_CENTS * units,
+    });
+    const depositCents = Number.isInteger(input.depositCents) ? input.depositCents : 0;
+    if (depositCents > 0) {
       lines.push({
-        key: 'digitizing_settlement',
-        label: digiDelta > 0
-          ? `Digitizing balance (${units} × $${(DIGITIZATION_FEE_CENTS / 100).toFixed(0)}; $${(depositCents / 100).toFixed(0)} deposit applied)`
-          : `Digitizing credit ($${(depositCents / 100).toFixed(0)} deposit exceeds ${units} × $${(DIGITIZATION_FEE_CENTS / 100).toFixed(0)})`,
-        costCents: digiCost,
-        retailCents: digiDelta, // negative = credit, reduces the total
+        key: 'digitizing_deposit',
+        label: `Digitization payment received — thank you`,
+        costCents: 0,
+        retailCents: -depositCents,
       });
     }
   }

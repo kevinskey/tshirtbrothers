@@ -43,23 +43,21 @@ test('stitching retail is sheet cost at 50% margin (cost × 2)', () => {
   assert.equal(EMBROIDERY_MARKUP, 1.0);                 // 50% margin = ×2
 });
 
-test('digitizing is flat $25/design/size — standard deposit settles to zero', () => {
-  // Any stitch count: retail is the $25 already collected → no settlement line.
-  for (const stitchCount of [3000, 12000]) {
-    const q = priceEmbroidery({ stitchCount, quantity: 1 });
-    assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
-  }
-  // A design digitized at 2 sizes is two $25s; only one was collected → $25 balance.
+test('digitizing: always a visible $25/design/size line; paid deposits credit back', () => {
+  // Unpaid (no depositCents): the charge shows, no credit line.
+  const unpaid = priceEmbroidery({ stitchCount: 12000, quantity: 1 });
+  assert.equal(unpaid.lines.find((l) => l.key === 'digitizing').retailCents, DIGITIZATION_FEE_CENTS);
+  assert.equal(unpaid.lines.find((l) => l.key === 'digitizing_deposit'), undefined);
+  // Paid: charge + matching credit → nets to zero in the total.
+  const paid = priceEmbroidery({ stitchCount: 12000, quantity: 1, depositCents: DIGITIZATION_FEE_CENTS });
+  assert.equal(paid.lines.find((l) => l.key === 'digitizing_deposit').retailCents, -DIGITIZATION_FEE_CENTS);
+  assert.equal(paid.totalCents, unpaid.totalCents - DIGITIZATION_FEE_CENTS);
+  // A design digitized at 2 sizes is two $25s.
   const twoSizes = priceEmbroidery({
     quantity: 1,
     designs: [{ stitchCount: 5000, quantity: 1, sizeCount: 2 }],
-    depositCents: DIGITIZATION_FEE_CENTS,
   });
-  const digi = twoSizes.lines.find((l) => l.key === 'digitizing_settlement');
-  assert.equal(digi.retailCents, DIGITIZATION_FEE_CENTS);
-  // Legacy over-collection credits back (small enough to keep the total ≥ 0).
-  const over = priceEmbroidery({ stitchCount: 5000, quantity: 1, depositCents: 3000 });
-  assert.equal(over.lines.find((l) => l.key === 'digitizing_settlement').retailCents, 2500 - 3000);
+  assert.equal(twoSizes.lines.find((l) => l.key === 'digitizing').retailCents, 2 * DIGITIZATION_FEE_CENTS);
 });
 
 test('cap surcharges, lettering and personalization come off the sheet', () => {
@@ -99,11 +97,11 @@ test('a realistic order: 24 polos, 7.5k-stitch left chest, $24 garments', () => 
   // Stitching: 24–71 tier, 8k column = $6.35 × 24 = $152.40 cost, × 2 = $304.80.
   assert.equal(q.lines.find((l) => l.key === 'stitching').costCents, 635 * 24);
   assert.equal(q.lines.find((l) => l.key === 'stitching').retailCents, 635 * 24 * 2);
-  // Digitizing: flat $25, already collected → no settlement line.
-  assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
+  // Digitizing: flat $25 line, visible (no deposit passed → no credit).
+  assert.equal(q.lines.find((l) => l.key === 'digitizing').retailCents, 2500);
   // Garment rides through at retail.
   assert.equal(q.lines.find((l) => l.key === 'garment').retailCents, 2400 * 24);
-  assert.equal(q.totalCents, 635 * 24 * 2 + 2400 * 24);
+  assert.equal(q.totalCents, 635 * 24 * 2 + 2500 + 2400 * 24);
 });
 
 test("multi-design: each design is its own run, its own digitizing, its own $25", () => {
@@ -124,12 +122,13 @@ test("multi-design: each design is its own run, its own digitizing, its own $25"
   // Retail at 50% margin: cost × 2.
   assert.equal(runs[0].retailCents, 2640);
   assert.equal(runs[1].retailCents, 2400);
-  // Digitizing: 2 × $25 retail, $50 collected → settles to zero, no line.
-  assert.equal(q.lines.find((l) => l.key === 'digitizing_settlement'), undefined);
+  // Digitizing: 2 × $25 charge shown, $50 collected credits back — nets zero.
+  assert.equal(q.lines.find((l) => l.key === 'digitizing').retailCents, 5000);
+  assert.equal(q.lines.find((l) => l.key === 'digitizing_deposit').retailCents, -5000);
 });
 
 test('legacy single-design input still works unchanged', () => {
   const legacy = priceEmbroidery({ stitchCount: 5000, quantity: 1 });
-  const viaDesigns = priceEmbroidery({ quantity: 1, designs: [{ stitchCount: 5000, quantity: 1 }], depositCents: 2500 });
+  const viaDesigns = priceEmbroidery({ quantity: 1, designs: [{ stitchCount: 5000, quantity: 1 }] });
   assert.equal(legacy.totalCents, viaDesigns.totalCents);
 });

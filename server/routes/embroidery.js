@@ -570,8 +570,11 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
       stitchCount: Number(req.body.stitchCount),
       quantity: Number(req.body.quantity ?? r.quantity ?? 1),
       designs: designsIn,
-      // What was actually collected at checkout: $25 per design.
-      depositCents: DIGITIZATION_FEE_CENTS * Math.max(Number(r.design_count) || 1, 1),
+      // Only credit money that actually cleared: before payment the quote
+      // shows the full digitizing charge; after, the paid credit offsets it.
+      depositCents: r.digitization_paid_at
+        ? DIGITIZATION_FEE_CENTS * Math.max(Number(r.design_count) || 1, 1)
+        : 0,
       skipDigitizing: !!r.stitch_file_url,
       garments,
       garmentCentsPerPiece: garmentPerPiece,
