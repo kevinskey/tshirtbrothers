@@ -6,6 +6,22 @@ import { renderMockupComposite } from '../services/composite.js';
 
 const router = Router();
 
+// Columns the mockups LIST needs. Deliberately not SELECT *: design_elements
+// is the Design Studio's editable layer data, which embeds the artwork
+// itself — across ~110 rows it serialized to 117 MB of JSON (one row 7.5 MB)
+// that the grid never reads, and every admin had to download it before a
+// single thumbnail appeared. Only GET /admin/mockups/:id ships it, which is
+// where Studio hydrates from.
+const LIST_COLUMNS = `
+  id, name, customer_id, customer_email, customer_name, quote_id,
+  product_id, product_ss_id, product_name, product_image_url, graphic_url,
+  placement, back_graphic_url, back_placement, back_product_image_url,
+  preview_image_url, preview_image_url_back, back_preview_image_url,
+  preview_image_url_sleeve, preview_image_url_sleeve_left,
+  notes, status, approve_token, revision, color_index, design_color_index,
+  design_canvas_inches, design_canvas_inches_h,
+  sent_at, created_at, updated_at`;
+
 // Render a composite for the given mockup row and persist preview_image_url.
 // Returns the updated row, or the original row if compositing was skipped
 // (missing inputs) or failed (logged but non-fatal — UI falls back to
@@ -105,7 +121,7 @@ router.get('/admin/mockups', authenticate, adminOnly, async (req, res, next) => 
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const { rows } = await pool.query(
-      `SELECT * FROM mockups ${where} ORDER BY created_at DESC LIMIT 500`,
+      `SELECT ${LIST_COLUMNS} FROM mockups ${where} ORDER BY created_at DESC LIMIT 500`,
       params,
     );
     res.json(rows);

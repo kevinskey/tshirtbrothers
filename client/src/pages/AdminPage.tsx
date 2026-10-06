@@ -1149,6 +1149,10 @@ export default function AdminPage() {
     queryKey: ['mockups', 'picker'],
     queryFn: () => fetchMockups(),
     enabled: mockupPickerOpen,
+    // Same reason as mockupsQuery: picking a mockup you just designed is
+    // the common case, so the picker must never serve a stale list.
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   // AI helpers (DeepSeek)
@@ -1528,6 +1532,12 @@ export default function AdminPage() {
     queryKey: ['mockups'],
     queryFn: () => fetchMockups(),
     enabled: activeSection === 'mockups',
+    // Design Studio saves with a raw fetch and never invalidates this key,
+    // so the app-wide 5-minute staleTime left a just-saved mockup missing
+    // from the grid with no way to force it back short of a reload.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
   // Which mockups are already live on TSB Direct — flips the grid button
   // from "Add to TSB Direct" to "✓ Added".
@@ -7511,6 +7521,15 @@ export default function AdminPage() {
                 <h2 className="text-2xl font-display font-bold text-gray-900">Mockups</h2>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => mockupsQuery.refetch()}
+                    disabled={mockupsQuery.isFetching}
+                    className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+                    title="Reload the mockup list from the server"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${mockupsQuery.isFetching ? 'animate-spin' : ''}`} />
+                    {mockupsQuery.isFetching ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                  <button
                     onClick={handleBackfillMockupPreviews}
                     disabled={backfilling}
                     className="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
@@ -9059,7 +9078,7 @@ export default function AdminPage() {
                           }}
                           className="block w-full text-left rounded-lg border border-gray-200 hover:border-blue-500 hover:ring-2 hover:ring-blue-200 transition bg-white overflow-hidden disabled:opacity-50"
                         >
-                          <img src={m.preview_image_url || ''} alt={m.name || `Mockup #${m.id}`} className="w-full h-32 object-contain bg-gray-50" />
+                          <img src={m.preview_image_url || ''} alt={m.name || `Mockup #${m.id}`} loading="lazy" decoding="async" className="w-full h-32 object-contain bg-gray-50" />
                           <div className="p-2">
                             <p className="text-xs font-medium text-gray-900 truncate">{m.name || `Mockup #${m.id}`}</p>
                             {m.product_name && <p className="text-[11px] text-gray-500 truncate">{m.product_name}</p>}
@@ -10656,7 +10675,7 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
   const cur = images[Math.min(idx, images.length - 1)]!;
   return (
     <div className="relative w-full h-full group">
-      <img src={cur.src} alt={`${alt} — ${cur.label}`} className="absolute inset-0 w-full h-full object-contain" />
+      <img src={cur.src} alt={`${alt} — ${cur.label}`} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-contain" />
       {images.length > 1 && (
         <>
           <button
