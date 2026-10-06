@@ -3446,9 +3446,21 @@ export default function AdminPage() {
                       )}
                     </div>
                   </div>
-                  <div className="text-sm text-gray-700">
-                    <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
-                    {q.color && <span className="text-gray-500"> · {q.color}</span>}
+                  <div className="flex items-center gap-2.5">
+                    {/* Collapsed cards keep a thumbnail of the customer's
+                        graphic (Kevin 2026-10-06) — expanding swaps it for
+                        the full-width preview below. */}
+                    {!cardOpen && (q.mockup_image_url || q.design_url) && (
+                      <img
+                        src={q.mockup_image_url || q.design_url || ''}
+                        alt="Customer design"
+                        className="w-12 h-12 shrink-0 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                      />
+                    )}
+                    <div className="text-sm text-gray-700 min-w-0">
+                      <span className="font-medium">{q.quantity}×</span> {q.product_name || q.productName}
+                      {q.color && <span className="text-gray-500"> · {q.color}</span>}
+                    </div>
                   </div>
                   {cardOpen && (q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
