@@ -929,6 +929,7 @@ export default function AdminPage() {
             customer_name: inv.customer_name || '',
             customer_email: inv.customer_email || '',
             customer_phone: inv.customer_phone || '',
+            cc_emails: (inv.cc_emails || []).join(', '),
             customer_address: '',
             items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
             tax: String(inv.tax || 0),
@@ -1044,6 +1045,8 @@ export default function AdminPage() {
     customer_name: string;
     customer_email: string;
     customer_phone: string;
+    /** Comma-separated while editing; split into an array on save. */
+    cc_emails: string;
     customer_address: string;
     items: InvoiceItem[];
     tax: string;
@@ -1056,7 +1059,7 @@ export default function AdminPage() {
     mockup_preview_url_back: string | null;
     extra_mockups: ExtraMockup[];
   }>({
-    customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
+    customer_name: '', customer_email: '', customer_phone: '', cc_emails: '', customer_address: '',
     items: [{ description: '', quantity: 1, unit_price: 0 }],
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
     mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
@@ -1076,6 +1079,7 @@ export default function AdminPage() {
       customer_name: q.customer_name || q.customerName || '',
       customer_email: q.customer_email || q.customerEmail || '',
       customer_phone: q.customer_phone || q.customerPhone || '',
+      cc_emails: (q.cc_emails || []).join(', '),
       customer_address: '',
       items: [{
         description: q.product_name || q.productName || 'Custom printing order',
@@ -2083,7 +2087,7 @@ export default function AdminPage() {
 
   function resetInvoiceForm() {
     setInvoiceForm({
-      customer_name: '', customer_email: '', customer_phone: '', customer_address: '',
+      customer_name: '', customer_email: '', customer_phone: '', cc_emails: '', customer_address: '',
       items: [{ description: '', quantity: 1, unit_price: 0, weight_oz: 0, shipping_cost: 0 }],
       tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
       mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
@@ -2254,6 +2258,7 @@ export default function AdminPage() {
           customer_name: invoiceForm.customer_name,
           customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
           customer_phone: invoiceForm.customer_phone || undefined,
+          cc_emails: invoiceForm.cc_emails.split(',').map((e) => e.trim()).filter(Boolean),
           customer_address: invoiceForm.customer_address || undefined,
           items: invoiceForm.items,
           subtotal,
@@ -2291,6 +2296,7 @@ export default function AdminPage() {
       customer_name: inv.customer_name || '',
       customer_email: inv.customer_email || '',
       customer_phone: inv.customer_phone || '',
+      cc_emails: (inv.cc_emails || []).join(', '),
       customer_address: '',
       items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }],
       tax: String(inv.tax || 0),
@@ -2312,6 +2318,7 @@ export default function AdminPage() {
       customer_name: invoiceForm.customer_name,
       customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
       customer_phone: invoiceForm.customer_phone || undefined,
+      cc_emails: invoiceForm.cc_emails.split(',').map((e) => e.trim()).filter(Boolean),
       customer_address: invoiceForm.customer_address || undefined,
       items: invoiceForm.items,
       subtotal,
@@ -2339,6 +2346,7 @@ export default function AdminPage() {
       customer_name: invoiceForm.customer_name,
       customer_email: invoiceForm.customer_email.replace(/^mailto:/i, '').trim(),
       customer_phone: invoiceForm.customer_phone || undefined,
+      cc_emails: invoiceForm.cc_emails.split(',').map((e) => e.trim()).filter(Boolean),
       customer_address: invoiceForm.customer_address || undefined,
       items: invoiceForm.items,
       subtotal,
@@ -5399,7 +5407,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []) }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', cc_emails: (inv.cc_emails || []).join(', '), customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []) }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -5589,6 +5597,11 @@ export default function AdminPage() {
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">Phone</label>
                         <input type="tel" value={invoiceForm.customer_phone} onChange={e => setInvoiceForm(p => ({ ...p, customer_phone: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="(555) 000-0000" />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1">Also email (CC)</label>
+                        <input value={invoiceForm.cc_emails} onChange={e => setInvoiceForm(p => ({ ...p, cc_emails: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="ap@company.com, manager@company.com (max 5)" />
+                        <p className="mt-1 text-[11px] text-gray-500">Copied on the invoice and every payment email. The address above stays the primary.</p>
                       </div>
                     </div>
                     <div className="mt-3">

@@ -15,6 +15,7 @@ import {
   sendQuoteDeclinedToAdmin,
   sendOrderShippedToCustomer,
   quoteLang,
+  normalizeCcEmails,
 } from '../services/email.js';
 import {
   smsNewQuoteToAdmin,
@@ -1189,7 +1190,7 @@ router.post('/:id/production-step', authenticate, adminOnly, async (req, res, ne
 router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { status, notes, customer_email, customer_name, customer_phone, date_needed } = req.body;
+    const { status, notes, customer_email, customer_name, customer_phone, date_needed, cc_emails } = req.body;
 
     // Status is optional now — this endpoint accepts partial updates
     // covering status / notes / customer contact info. At least one
@@ -1242,6 +1243,13 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (customer_email !== undefined) push('customer_email', customer_email);
     if (customer_name  !== undefined) push('customer_name',  customer_name);
     if (customer_phone !== undefined) push('customer_phone', customer_phone);
+    // Additional addresses that ride along on every customer-facing send.
+    if (cc_emails !== undefined) {
+      const cc = normalizeCcEmails(cc_emails);
+      if (cc.error) return res.status(400).json({ error: cc.error });
+      params.push(JSON.stringify(cc.emails));
+      patches.push(`cc_emails = $${params.length}::jsonb`);
+    }
     // Due date. '' and null both clear it; anything else must be a plain
     // YYYY-MM-DD so a DATE column never gets a timezone-shifted timestamp.
     if (date_needed !== undefined) {

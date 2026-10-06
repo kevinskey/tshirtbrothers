@@ -1,6 +1,10 @@
 import { Resend } from 'resend';
 import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 import * as theme from './emailTheme.js';
+import { mailRecipients, normalizeCcEmails, mockupRecipients } from './recipients.js';
+
+// Re-exported so existing importers of email.js keep resolving them.
+export { mailRecipients, normalizeCcEmails, mockupRecipients };
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 // Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
@@ -439,7 +443,7 @@ export async function sendQuotePriceToCustomer(quote, priceDetails) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: 'Your Custom Printing Quote from TShirt Brothers',
       html,
     });
@@ -537,7 +541,7 @@ export async function sendDepositReceiptToCustomer(quote) {
     try {
       await resend.emails.send({
         from: FROM_EMAIL,
-        to: [quote.customer_email],
+        to: mailRecipients(quote),
         subject: `Depósito recibido — Confirmación del pedido #${quote.id}`,
         html: baseLayout('Depósito Recibido', bodyEs),
       });
@@ -584,7 +588,7 @@ export async function sendDepositReceiptToCustomer(quote) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: `Deposit received — Order #${quote.id} confirmation`,
       html: baseLayout('Deposit Received', body),
     });
@@ -667,7 +671,7 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject,
       html: baseLayout(heading, body),
     });
@@ -712,7 +716,7 @@ export async function sendAbandonedQuoteFollowUp(quote) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: es
         ? 'Tu cotización de TShirt Brothers está guardada · Cuando estés listo'
         : 'Your TShirt Brothers quote is saved · Ready when you are',
@@ -747,7 +751,7 @@ export async function sendReviewRequestEmail(quote) {
     try {
       await resend.emails.send({
         from: FROM_EMAIL,
-        to: [quote.customer_email],
+        to: mailRecipients(quote),
         subject: 'Un favor rápido — ¿una reseña de 30 segundos en Google? · TShirt Brothers',
         html: baseLayout('Déjanos una Reseña', bodyEs),
       });
@@ -770,7 +774,7 @@ export async function sendReviewRequestEmail(quote) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: 'Quick favor — 30-second Google review? · TShirt Brothers',
       html: baseLayout('Leave Us a Review', body),
     });
@@ -810,7 +814,7 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
     try {
       await resend.emails.send({
         from: FROM_EMAIL,
-        to: [quote.customer_email],
+        to: mailRecipients(quote),
         subject: `Saldo pendiente — Pedido #${quote.id} · TShirt Brothers`,
         html: baseLayout('Saldo Pendiente', bodyEs),
       });
@@ -845,7 +849,7 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: 'Balance Due - TShirt Brothers Order #' + quote.id,
       html: baseLayout('Balance Due', body),
     });
@@ -885,7 +889,7 @@ export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, ba
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: `Order #${quote.id} updated — TShirt Brothers`,
       html: baseLayout('Order Updated', body),
     });
@@ -999,7 +1003,7 @@ export async function sendPaidInvoiceReceipt(invoice) {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [invoice.customer_email],
+      to: mailRecipients(invoice),
       subject: `Receipt - TShirt Brothers Invoice ${invoice.invoice_number}`,
       html,
     });
@@ -1300,7 +1304,7 @@ export async function sendMockupForApproval(mockup, approveUrl, lang = 'en', opt
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [mockup.customer_email],
+      to: await mockupRecipients(mockup),
       subject: (es
         ? `${isRevision ? `Muestra Actualizada (rev. ${rev})` : 'Aprobación de Muestra'} - TShirt Brothers`
         : `${isRevision ? `Updated Mockup (rev. ${rev})` : 'Mockup Approval'} - TShirt Brothers`)
@@ -1344,7 +1348,7 @@ export async function sendMockupRejectedAckToCustomer(mockup, note, lang = 'en')
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [mockup.customer_email],
+      to: await mockupRecipients(mockup),
       subject: es ? 'Recibimos tus cambios - TShirt Brothers' : "We're on your mockup changes - TShirt Brothers",
       html: baseLayout(es ? 'Recibimos tus comentarios' : 'We got your feedback', body),
     });
@@ -1381,7 +1385,7 @@ export async function sendArtworkRequestToCustomer(quote, uploadUrl, { message, 
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: es ? `Sube tu diseño - Cotización #${quote.id} - TShirt Brothers` : `Artwork needed for your order - Quote #${quote.id} - TShirt Brothers`,
       html: baseLayout(es ? 'Necesitamos tu diseño' : 'We need your artwork', body),
     });
@@ -1533,7 +1537,7 @@ export async function sendBalancePaidConfirmation(quote, lang = 'en') {
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: es ? `Pedido #${quote.id} pagado — ${pickup ? 'listo para recoger' : 'lo enviamos pronto'}` : `Order #${quote.id} paid in full — ${pickup ? 'pickup details inside' : 'shipping soon'}`,
       html: baseLayout(es ? 'Pagado por completo' : 'Paid in full', body),
     });
@@ -1627,7 +1631,7 @@ export async function sendOrderShippedToCustomer(quote, { carrier, trackingNumbe
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
-      to: [quote.customer_email],
+      to: mailRecipients(quote),
       subject: es ? `Tu pedido #${quote.id} va en camino 📦` : `Your order #${quote.id} has shipped 📦`,
       html: baseLayout(es ? 'Pedido enviado' : 'Order shipped', body),
     });
@@ -1938,7 +1942,7 @@ export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, gra
   `;
   return resend.emails.send({
     from: FROM_EMAIL,
-    to: [quote.customer_email],
+    to: mailRecipients(quote),
     subject,
     html: baseLayout(
       customOnly
