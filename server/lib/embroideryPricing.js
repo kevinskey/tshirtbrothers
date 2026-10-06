@@ -1,10 +1,12 @@
 // Embroidery pricing — the Lighthouse Promotions contract sheet (349 Glynn
 // St N, Fayetteville — "Contract Embroidery Pricing, For Resellers Only",
 // effective 1/1/22, with Kevin's handwritten personalization updates) is
-// OUR COST column. Customer retail (Kevin, 2026-10-05): stitching at $1 per
-// 1,000 stitches per piece, digitizing flat $25 per design per size; the
-// cost × (1 + EMBROIDERY_MARKUP) convention still covers the other lines
-// (caps, lettering, personalization).
+// OUR COST column. Customer retail (Kevin, 2026-10-05, final): chart cost
+// at a 50% MARGIN — price = cost × 2 — on every sheet-priced line
+// (stitching, caps, lettering, personalization). Digitizing is the one
+// exception: flat $25 per design per size, settled against the $25
+// checkout deposits. (A briefly-live $1/1,000-stitch retail was reverted
+// the same day — it ran below vendor cost on small jobs.)
 //
 // Kevin, 2026-10-03: "this is my supplier charges so be sure i have a markup;
 // also use all the points they use in this document including spoilage etc."
@@ -22,15 +24,10 @@
 //     surfaced to the customer, not charged)
 //   • over 1000 pieces: "call" — refuse to auto-quote, same as the vendor.
 
-export const EMBROIDERY_MARKUP = 0.70; // house convention, same as blanks
-
-// Customer-facing stitching rate (Kevin, 2026-10-05: "we charge $1 per 1000
-// stitches, digitizing is $25 per item per size"). Stitch-count retail no
-// longer derives from the Lighthouse sheet — the sheet remains the COST
-// column only, so the margin on every quote stays visible. NOTE: at tiny
-// quantities with big designs this retail can fall BELOW vendor cost (the
-// cost column makes that obvious); that's Kevin's pricing call.
-export const RETAIL_PER_1000_STITCHES_CENTS = 100;
+// 50% margin (Kevin 2026-10-05): price = cost × 2, i.e. half of every
+// retail dollar is profit. (If this was meant as 50% MARKUP — cost × 1.5 —
+// change to 0.50.) markupCents() computes cost × (1 + EMBROIDERY_MARKUP).
+export const EMBROIDERY_MARKUP = 1.00;
 
 // ── Vendor cost tables (cents) ──────────────────────────────────────────────
 
@@ -158,8 +155,7 @@ export function priceEmbroidery(input) {
       key: 'stitching',
       label: `Embroidery${d.label ? ` — ${d.label}` : ''} — ${ds.toLocaleString()} stitches × ${dq}`,
       costCents: runCost,
-      // $1 per 1,000 stitches per piece (Kevin 2026-10-05), not sheet × markup.
-      retailCents: Math.ceil(ds / 1000) * RETAIL_PER_1000_STITCHES_CENTS * dq,
+      retailCents: markupCents(runCost),
     });
   }
 

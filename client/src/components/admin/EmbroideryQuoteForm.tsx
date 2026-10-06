@@ -169,8 +169,11 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
   };
 
   // Debounced server-side preview — the engine lives in exactly one place.
+  // Unpriced garments no longer hold the preview hostage (Kevin 2026-10-05,
+  // "pricing should show here"): the embroidery math shows immediately and
+  // unpriced garments simply aren't in it yet. Sending stays gated below.
   useEffect(() => {
-    if (!designsOk || quantity <= 0 || !garmentsReady || !extrasOk) { setPreview(null); setPreviewError(null); return; }
+    if (!designsOk || quantity <= 0 || !extrasOk) { setPreview(null); setPreviewError(null); return; }
     const t = setTimeout(async () => {
       try {
         const p = await previewEmbroideryQuote(request.id, input);
@@ -304,7 +307,7 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
               </label>
             </div>
           ))}
-          {!garmentsReady && <p className="text-[11px] text-amber-600">Price every garment before the preview appears.</p>}
+          {!garmentsReady && <p className="text-[11px] text-amber-600">Unpriced garments aren't in the total yet — price every garment before emailing the quote.</p>}
         </div>
       )}
 
@@ -360,7 +363,7 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
             Awaiting digitization payment — files and preview work now; the email unlocks when it clears.
           </span>
         )}
-        <button type="button" disabled={!preview || !canSend || send.isPending} onClick={() => send.mutate()}
+        <button type="button" disabled={!preview || !canSend || !garmentsReady || send.isPending} onClick={() => send.mutate()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-black px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">
           {send.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Mail className="h-3.5 w-3.5" aria-hidden />}
           Email this quote
