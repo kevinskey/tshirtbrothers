@@ -138,6 +138,34 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
 
+  // Known customers skip the interview (Kevin 2026-10-06): a signed-in
+  // visitor's name/phone/email come from their account and the wizard
+  // opens straight on the product step. Missing phone on the profile
+  // lands them on the phone step instead, since the quote needs one.
+  // Back navigation still reaches the contact steps to edit.
+  useEffect(() => {
+    const token = localStorage.getItem('tsb_token');
+    if (!token) return;
+    let cancelled = false;
+    fetch('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me: { name?: string; email?: string; phone?: string } | null) => {
+        if (cancelled || !me?.email) return;
+        setName((v) => v || me.name || '');
+        setEmail((v) => v || me.email || '');
+        setPhone((v) => v || me.phone || '');
+        // Fast-forward only if they haven't begun the interview themselves.
+        setStep((s) => {
+          if (s !== 'name') return s;
+          if (!me.name) return s;
+          return me.phone ? 'products' : 'phone';
+        });
+      })
+      .catch(() => { /* logged-out token or network blip — normal flow */ });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Keep a live contact draft for sibling flows. The Embroidery tile on the
   // products step hands visitors to /embroidery AFTER they've typed their
   // name/phone/email here — asking again on the next page reads as the site
