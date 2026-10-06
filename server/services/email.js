@@ -216,10 +216,47 @@ function mockupGalleryHtml(views) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows.join('')}</table>`;
 }
 
+// Line items are where an admin-built quote's real money lives: the editor
+// writes unit_price/line_total per product to quote_items and leaves the
+// legacy single-product columns on `quotes` empty. The email predates that
+// table, so without this it renders one synthesized row at $0.00 and only
+// the grand total survives.
+async function quoteLineItems(quote) {
+  if (!quote?.id) return [];
+  try {
+    const { default: pool } = await import('../db.js');
+    const { rows } = await pool.query(
+      `SELECT product_name, color, sizes, quantity, unit_price, line_total, notes, design_url
+         FROM quote_items WHERE quote_id = $1 ORDER BY position, id`,
+      [quote.id],
+    );
+    return rows;
+  } catch (err) {
+    console.error(`[Email] line item lookup failed for quote ${quote.id}:`, err.message);
+    return [];
+  }
+}
+
+// "S: 12, M: 20" from either the jsonb array or the legacy object shape.
+function sizeBreakdown(sizes) {
+  const s = typeof sizes === 'string'
+    ? (() => { try { return JSON.parse(sizes); } catch { return null; } })()
+    : sizes;
+  if (!s) return '';
+  if (Array.isArray(s)) {
+    return s
+      .filter((x) => !x?.quantity || Number(x.quantity) > 0)
+      .map((x) => (typeof x === 'object' ? `${x.size}: ${x.quantity}` : x))
+      .join(', ');
+  }
+  if (typeof s === 'object') {
+    return Object.entries(s).filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k}: ${v}`).join(', ');
+  }
+  return String(s);
+}
+
 export async function buildQuoteEmailHtml(quote, priceDetails) {
   const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount } = priceDetails;
-  const deposit = (Number(total) * 0.5).toFixed(2);
-
   const sizesDisplay = (() => {
     const s = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
     if (!s) return 'N/A';
@@ -258,9 +295,25 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
   // rendered with the shared theme (see emailTheme.js).
   const promo = await theme.getActivePromotion();
   const mockupViews = await quoteMockupViews(quote);
+  const lineItems = await quoteLineItems(quote);
+
+  // Merchandise figure, in order of trust: what the caller priced, else the
+  // sum of the line items. The grand total falls back the same way so a
+  // quote priced purely through the items editor still shows real numbers
+  // instead of $0.00.
+  const itemsSubtotal = lineItems.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
+  const quotedMerch = Number(basePrice || 0) + Number(printingCost || 0);
+  const merchTotal = quotedMerch > 0 ? quotedMerch : itemsSubtotal;
+  const grandTotal = Number(total) > 0
+    ? Number(total)
+    : Number(quote.calculated_price || quote.estimated_price || merchTotal);
+  const depositDue = (grandTotal * 0.5).toFixed(2);
+
   const summaryRows = [
-    { label: 'Base Price (apparel)', value: formatCurrency(basePrice) },
-    { label: 'Printing Cost', value: formatCurrency(printingCost) },
+    lineItems.length
+      ? { label: 'Items Subtotal', value: formatCurrency(merchTotal) }
+      : { label: 'Base Price (apparel)', value: formatCurrency(basePrice) },
+    lineItems.length ? null : { label: 'Printing Cost', value: formatCurrency(printingCost) },
     Number(designFee) > 0 ? { label: 'Design / Setup Fee', value: formatCurrency(designFee) } : null,
     Number(rushFee) > 0 ? { label: 'Rush Fee', value: formatCurrency(rushFee) } : null,
     Number(discountAmount) > 0 ? {
@@ -318,26 +371,50 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
       `) : '',
       theme.bodySection(`
         ${theme.sectionTitle('Order Items')}
-        ${theme.itemsTable([{
-          img: mockupViews[0]?.url || quote.design_url || null,
-          name: quote.product_name || 'Custom Apparel',
-          detail: quote.design_type ? `Decoration: ${quote.design_type}` : '',
-          color: quote.color || '—',
-          size: /,/.test(sizesDisplay) ? 'Multi' : sizesDisplay,
-          qty: quote.quantity,
-          // Product line = apparel + printing; fees/tax/shipping stay in the
-          // summary so nothing is double-counted or recalculated.
-          unit: Number(quote.quantity) > 0 ? (Number(basePrice) + Number(printingCost)) / Number(quote.quantity) : Number(basePrice) + Number(printingCost),
-          subtotal: Number(basePrice) + Number(printingCost),
-        }], { unitLabel: 'Unit Price' })}
-        <p style="margin:8px 0 0;font-size:12px;color:#6b7280;"><strong>Size breakdown:</strong> ${escapeHtml(sizesDisplay)}</p>
+        ${theme.itemsTable(
+          lineItems.length
+            ? lineItems.map((i) => {
+                const breakdown = sizeBreakdown(i.sizes);
+                return {
+                  img: i.design_url || mockupViews[0]?.url || quote.design_url || null,
+                  name: i.product_name || 'Custom Apparel',
+                  detail: i.notes || '',
+                  color: i.color || '—',
+                  size: /,/.test(breakdown) ? 'Multi' : (breakdown || '—'),
+                  qty: i.quantity,
+                  unit: Number(i.unit_price || 0),
+                  subtotal: Number(i.line_total || 0),
+                };
+              })
+            : [{
+                img: mockupViews[0]?.url || quote.design_url || null,
+                name: quote.product_name || 'Custom Apparel',
+                detail: quote.design_type ? `Decoration: ${quote.design_type}` : '',
+                color: quote.color || '—',
+                size: /,/.test(sizesDisplay) ? 'Multi' : sizesDisplay,
+                qty: quote.quantity,
+                // Product line = apparel + printing; fees/tax/shipping stay in
+                // the summary so nothing is double-counted or recalculated.
+                unit: Number(quote.quantity) > 0 ? merchTotal / Number(quote.quantity) : merchTotal,
+                subtotal: merchTotal,
+              }],
+          { unitLabel: 'Unit Price' },
+        )}
+        ${lineItems.length
+          ? lineItems.map((i) => {
+              const breakdown = sizeBreakdown(i.sizes);
+              return breakdown && /,/.test(breakdown)
+                ? `<p style="margin:8px 0 0;font-size:12px;color:#6b7280;"><strong>${escapeHtml(i.product_name || 'Item')} sizes:</strong> ${escapeHtml(breakdown)}</p>`
+                : '';
+            }).join('')
+          : `<p style="margin:8px 0 0;font-size:12px;color:#6b7280;"><strong>Size breakdown:</strong> ${escapeHtml(sizesDisplay)}</p>`}
       `),
       theme.bodySection(`
         ${theme.sectionTitle('Pricing Summary')}
-        ${theme.summaryTable(summaryRows, { label: 'Grand Total (USD)', value: formatCurrency(total) })}
+        ${theme.summaryTable(summaryRows, { label: 'Grand Total (USD)', value: formatCurrency(grandTotal) })}
         <div style="background:#fef3c7;border-radius:10px;padding:14px;margin-top:14px;text-align:center;">
           <span style="font-size:14px;font-weight:700;color:#92400e;">50% Deposit Required to Begin — due upon receipt:</span>
-          <span style="font-size:18px;font-weight:800;color:${BRAND_DARK};"> ${formatCurrency(deposit)}</span>
+          <span style="font-size:18px;font-weight:800;color:${BRAND_DARK};"> ${formatCurrency(depositDue)}</span>
         </div>
       `),
       promo ? theme.bodySection(theme.couponPanel(promo)) : '',
