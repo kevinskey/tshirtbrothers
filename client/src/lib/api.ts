@@ -867,8 +867,9 @@ export interface EmbroideryQuoteInput {
   garmentCentsPerPiece: number;
   /** Multi-garment requests: one entry per item, replaces garmentCentsPerPiece. */
   garments?: Array<{ label: string; centsPerPiece: number; quantity: number }>;
-  /** One entry per design — each with its own stitch count and run qty. */
-  designs?: Array<{ label?: string; stitchCount: number; quantity: number }>;
+  /** One entry per design — each with its own stitch count and run qty.
+   *  estimated = not yet digitized; the line is labeled "(estimated)". */
+  designs?: Array<{ label?: string; stitchCount: number; quantity: number; estimated?: boolean }>;
   rush: string;
   isCap?: boolean;
   capBack?: boolean;

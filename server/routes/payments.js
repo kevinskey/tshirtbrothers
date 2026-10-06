@@ -1175,6 +1175,58 @@ async function handleCheckoutSessionCompleted(session) {
   // gang-sheet branch: only act when Stripe says paid, and the UPDATE's
   // status guard makes webhook replays no-ops.
   const embroideryRequestId = session.metadata?.embroideryRequestId;
+
+  // 50% quote deposit (estimate-first flow, 2026-10-06): acceptance is the
+  // deposit. It also covers the digitizing fee, so digitization_paid_at is
+  // stamped here too and the digitizing job is spawned — the deposit is
+  // what green-lights the work. Replay-safe via the deposit_paid_at guard.
+  if (embroideryRequestId && session.metadata?.embroideryDeposit === '1') {
+    if (session.payment_status && session.payment_status !== 'paid') return;
+    try {
+      const { rows } = await pool.query(
+        `UPDATE embroidery_requests
+           SET status = 'accepted', deposit_paid_at = NOW(),
+               digitization_paid_at = COALESCE(digitization_paid_at, NOW()),
+               updated_at = NOW()
+         WHERE id = $1 AND deposit_paid_at IS NULL
+         RETURNING *`,
+        [embroideryRequestId],
+      );
+      if (!rows[0]) return; // replay, already handled
+      const request = rows[0];
+      if (!request.embroidery_job_id) {
+        try {
+          const job = await pool.query(
+            `INSERT INTO embroidery_jobs (name, notes, source_image_url)
+             VALUES ($1, $2, $3) RETURNING id`,
+            [
+              `Request #${request.id} — ${request.customer_name}`,
+              `Deposit paid — digitize now. Size: ${request.desired_size}. Placement: ${request.placement}${request.placement_note ? ' (' + request.placement_note + ')' : ''}. Garment: ${request.garment_mode === 'own' ? 'customer-supplied' : request.garment_choice}.${request.notes ? ' Notes: ' + request.notes : ''}`,
+              request.artwork_url,
+            ],
+          );
+          await pool.query(
+            'UPDATE embroidery_requests SET embroidery_job_id = $1, updated_at = NOW() WHERE id = $2',
+            [job.rows[0].id, request.id],
+          );
+        } catch (e) {
+          console.error('[Stripe Webhook] embroidery job spawn failed for request ' + request.id + ':', e.message);
+        }
+      }
+      recordActivity({
+        event: 'embroidery_deposit_paid',
+        email: request.customer_email,
+        data: { request_id: request.id, cents: request.deposit_cents },
+      });
+      import('../services/email.js')
+        .then(({ sendEmbroideryPaidToAdmin }) => sendEmbroideryPaidToAdmin({ request }))
+        .catch((e) => console.error('[Stripe Webhook] embroidery deposit email failed:', e.message));
+    } catch (err) {
+      console.error('[Stripe Webhook] embroidery deposit handling crashed for session ' + session.id + ':', err);
+    }
+    return;
+  }
+
   if (embroideryRequestId) {
     if (session.payment_status && session.payment_status !== 'paid') return;
     try {

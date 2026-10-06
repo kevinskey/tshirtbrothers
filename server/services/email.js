@@ -2232,16 +2232,29 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
       ? `<li><a href="${escapeHtml(f.pdf_url)}">${escapeHtml(f.label || `Design ${i + 1}`)} — stitch-out preview (PDF)</a></li>`
       : '')
     .join('');
+  // Estimate-first flow: any "(estimated)" line means the quote went out
+  // BEFORE digitizing. The intro and the fine print say so, and the CTA is
+  // the 50% deposit that green-lights the work.
+  const hasEstimates = breakdown.some((l) => String(l.label || '').includes('(estimated)'));
+  const depositTotal = formatCurrency(Math.round(request.quote_cents / 2) / 100);
+  const acceptUrl = `${process.env.DOMAIN || 'https://tshirtbrothers.com'}/api/embroidery/requests/${request.id}/accept?t=${request.access_token}`;
   const body = `
     <p>Hi ${escapeHtml((request.customer_name || '').split(' ')[0] || 'there')},</p>
-    <p>Your design is digitized — ${String(request.stitch_count).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} stitches. Here's your embroidery quote${request.quantity > 1 ? ` for ${request.quantity} pieces` : ''}.</p>
+    ${hasEstimates
+      ? `<p>Here's your embroidery quote${request.quantity > 1 ? ` for ${request.quantity} pieces` : ''}. Stitch counts marked <em>(estimated)</em> are based on your design's size — we confirm them when we digitize, and if anything changes we contact you before any additional charge.</p>`
+      : `<p>Your design is digitized — ${String(request.stitch_count).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} stitches. Here's your embroidery quote${request.quantity > 1 ? ` for ${request.quantity} pieces` : ''}.</p>`}
     ${detailsTable(rows + detailRow('Total', `<strong>${total}</strong>`))}
+    <p style="margin:20px 0;text-align:center;">
+      <a href="${acceptUrl}" style="display:inline-block;background:#111;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
+        Accept &amp; pay ${depositTotal} deposit
+      </a><br>
+      <span style="font-size:12px;color:#6b7280;">50% to get on the schedule — balance due at pickup. Paying the deposit starts ${hasEstimates ? 'digitizing' : 'production'}.</span>
+    </p>
     ${profileLinks ? `<p style="margin-bottom:4px;"><strong>Your digitized design${designFiles.filter((f) => f?.pdf_url).length > 1 ? 's' : ''}:</strong></p><ul style="margin-top:4px;">${profileLinks}</ul>` : ''}
     ${request.garment_mode === 'own' ? `
     <p style="font-size:13px;color:#6b7280;">You're supplying the garments: ${escapeHtml(SPOILAGE_NOTE)}</p>` : ''}
     <p>Standard turnaround is 5–7 business days; rush options are available — just ask.
-    Reply to this email to approve and we'll get you on the schedule${request.garment_mode === 'own' ? ' and arrange drop-off of your garments' : ''}.
-    Your digitized stitch file is yours to keep.</p>
+    ${hasEstimates ? 'Once your deposit is in, we digitize, send you stitch-out previews for approval, and sew.' : 'Your digitized stitch file is yours to keep.'}</p>
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id} · ${SHOP_ADDRESS}</p>
   `;
   return resend.emails.send({

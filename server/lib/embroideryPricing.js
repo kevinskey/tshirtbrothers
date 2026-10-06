@@ -153,7 +153,10 @@ export function priceEmbroidery(input) {
     vendorCost += runCost;
     lines.push({
       key: 'stitching',
-      label: `Embroidery${d.label ? ` — ${d.label}` : ''} — ${ds.toLocaleString()} stitches × ${dq}`,
+      // "(estimated)" = sized from the artwork, not yet digitized — the
+      // customer is told the count is confirmed after digitizing and any
+      // upcharge is communicated before sewing.
+      label: `Embroidery${d.label ? ` — ${d.label}` : ''} — ${ds.toLocaleString()} stitches${d.estimated ? ' (estimated)' : ''} × ${dq}`,
       costCents: runCost,
       retailCents: markupCents(runCost),
     });

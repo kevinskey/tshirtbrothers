@@ -107,7 +107,11 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
 
   // Sending is gated server-side until the digitization payment clears (or a
   // customer stitch file made digitizing moot); everything else works now.
-  const canSend = !!(request.digitization_paid_at || request.stitch_file_url);
+  // Estimate-first flow (Kevin 2026-10-06): the quote always sends — it IS
+  // the payment vehicle (Accept & pay deposit button in the email). Payment
+  // gates the digitizing work, not the quote.
+  const canSend = true;
+  const unpaid = !request.digitization_paid_at && !(request as { deposit_paid_at?: string | null }).deposit_paid_at;
 
   async function attachFile(di: number, kind: 'pdf' | 'dst', file: File) {
     setUploading(`${di}:${kind}`);
@@ -165,7 +169,12 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
 
   const input: EmbroideryQuoteInput = {
     stitchCount, quantity, garmentCentsPerPiece, garments, rush, isCap, capBack,
-    designs: designs.map((d) => ({ label: d.label, stitchCount: d.stitchCount, quantity: d.quantity })),
+    // A design with no DST yet is an ESTIMATE — the engine labels its line
+    // "(estimated)" and the quote email explains the true-up.
+    designs: designs.map((d, i) => ({
+      label: d.label, stitchCount: d.stitchCount, quantity: d.quantity,
+      estimated: !request.design_files?.[i]?.dst_url && !request.stitch_file_url,
+    })),
     extraLines: extraLines.length > 0 ? extraLines : undefined,
   };
 
@@ -370,12 +379,12 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
       )}
 
       <div className="mt-2 flex flex-wrap items-center justify-end gap-3">
-        {!canSend && (
+        {unpaid && (
           <span className="text-[11px] text-amber-600">
-            Awaiting digitization payment — files and preview work now; the email unlocks when it clears.
+            Estimates until digitized — the quote email carries an Accept &amp; pay deposit button; the deposit starts the work.
           </span>
         )}
-        {!canSend && (
+        {unpaid && (
           <button
             type="button"
             disabled={payLink.isPending}

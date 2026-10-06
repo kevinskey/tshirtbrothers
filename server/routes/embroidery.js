@@ -529,6 +529,55 @@ router.get('/embroidery/requests/by-quote/:quoteId', authenticate, adminOnly, as
   }
 });
 
+// GET /embroidery/requests/:id/accept — PUBLIC, token-gated. The "Accept &
+// pay deposit" link in the quote email. Creates a Stripe checkout for 50%
+// of the quoted total and 303s the customer straight into it; the webhook
+// (metadata.embroideryDeposit) marks the request accepted, which is what
+// green-lights digitizing (Kevin 2026-10-06: customer pays BEFORE any
+// digitizing work; estimates are trued up and upcharges communicated).
+router.get('/embroidery/requests/:id/accept', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM embroidery_requests WHERE id = $1', [req.params.id]);
+    const r = rows[0];
+    if (!r || String(req.query.t || '') !== r.access_token) return res.status(404).send('Not found');
+    const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    if (r.deposit_paid_at) return res.redirect(`${domain}/embroidery/thanks/${r.id}?t=${r.access_token}`);
+    if (!r.quote_cents || !['quoted', 'paid'].includes(r.status)) {
+      return res.status(409).send('This quote is not ready for payment — reply to your quote email and we will sort it out.');
+    }
+    const depositCents = Math.round(Number(r.quote_cents) / 2);
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      customer_email: r.customer_email,
+      submit_type: 'pay',
+      line_items: [{
+        price_data: {
+          currency: 'usd',
+          unit_amount: depositCents,
+          product_data: {
+            name: `Embroidery deposit — Request #${r.id}`,
+            description: `50% deposit on your ${(Number(r.quote_cents) / 100).toFixed(2)} embroidery quote. Balance due at pickup/delivery.`,
+          },
+        },
+        quantity: 1,
+      }],
+      payment_intent_data: {
+        description: `TShirt Brothers — embroidery deposit, Request #${r.id}`,
+      },
+      metadata: { embroideryRequestId: String(r.id), embroideryDeposit: '1' },
+      success_url: `${domain}/embroidery/thanks/${r.id}?t=${r.access_token}`,
+      cancel_url: `${domain}/embroidery`,
+    });
+    await pool.query(
+      'UPDATE embroidery_requests SET deposit_cents = $1, stripe_session_id = $2, updated_at = NOW() WHERE id = $3',
+      [depositCents, session.id, r.id]
+    );
+    res.redirect(303, session.url);
+  } catch (err) { next(err); }
+});
+
 // POST /embroidery/requests/:id/payment-link — admin. Mints a FRESH Stripe
 // checkout for the digitization fee. The intake session expires after 24h
 // (Stripe's default), which used to strand unpaid requests with no way to
@@ -592,12 +641,9 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
     // $25 cleared, or the customer brought their own stitch file and there
     // is nothing to digitize. Previews (dryRun) are allowed any time so the
     // admin can prep pricing while payment is pending.
-    // allowUnpaid: deliberate admin override (Kevin 2026-10-06 — "usually
-    // digitizing isn't done before quote deposit is paid"). The quote then
-    // carries the digitizing charge as an open line instead of a paid credit.
-    if (!req.body.dryRun && !req.body.allowUnpaid && !r.digitization_paid_at && !r.stitch_file_url) {
-      return res.status(409).json({ error: 'Digitization fee has not been paid — cannot send the quote yet' });
-    }
+    // No payment gate on SENDING (Kevin 2026-10-06): the flow is
+    // estimate → quote → customer pays the 50% deposit → THEN digitizing
+    // and sew-out happen. Payment gates the work, not the quote.
 
     const garmentPerPiece = Number(req.body.garmentCentsPerPiece ?? 0);
     if (!Number.isInteger(garmentPerPiece) || garmentPerPiece < 0) {
@@ -616,6 +662,7 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
           label: String(d.label || '').trim() || null,
           stitchCount: Number(d.stitchCount),
           quantity: Number(d.quantity),
+          estimated: !!d.estimated,
         }))
       : undefined;
     const priced = priceEmbroidery({
