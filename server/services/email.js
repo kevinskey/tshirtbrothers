@@ -2236,7 +2236,14 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
   // BEFORE digitizing. The intro and the fine print say so, and the CTA is
   // the 50% deposit that green-lights the work.
   const hasEstimates = breakdown.some((l) => String(l.label || '').includes('(estimated)'));
-  const depositTotal = formatCurrency(Math.round(request.quote_cents / 2) / 100);
+  // Deposit = digitizing in FULL + 50% of the rest (no deposit ON
+  // digitizing — Kevin 2026-10-06). Mirrors the accept endpoint's math.
+  const digiDueCents = breakdown
+    .filter((l) => l.key === 'digitizing' || l.key === 'digitizing_deposit')
+    .reduce((t, l) => t + Number(l.retailCents || 0), 0);
+  const depositCents = Math.max(0, digiDueCents)
+    + Math.round(Math.max(0, request.quote_cents - Math.max(0, digiDueCents)) / 2);
+  const depositTotal = formatCurrency(depositCents / 100);
   const acceptUrl = `${process.env.DOMAIN || 'https://tshirtbrothers.com'}/api/embroidery/requests/${request.id}/accept?t=${request.access_token}`;
   const body = `
     <p>Hi ${escapeHtml((request.customer_name || '').split(' ')[0] || 'there')},</p>
@@ -2248,7 +2255,7 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
       <a href="${acceptUrl}" style="display:inline-block;background:#111;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">
         Accept &amp; pay ${depositTotal} deposit
       </a><br>
-      <span style="font-size:12px;color:#6b7280;">50% to get on the schedule — balance due at pickup. Paying the deposit starts ${hasEstimates ? 'digitizing' : 'production'}.</span>
+      <span style="font-size:12px;color:#6b7280;">Covers digitizing in full plus half the work — balance due at pickup. Paying the deposit starts ${hasEstimates ? 'digitizing' : 'production'}.</span>
     </p>
     ${profileLinks ? `<p style="margin-bottom:4px;"><strong>Your digitized design${designFiles.filter((f) => f?.pdf_url).length > 1 ? 's' : ''}:</strong></p><ul style="margin-top:4px;">${profileLinks}</ul>` : ''}
     ${request.garment_mode === 'own' ? `

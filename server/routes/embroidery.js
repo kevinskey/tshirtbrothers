@@ -545,7 +545,17 @@ router.get('/embroidery/requests/:id/accept', async (req, res, next) => {
     if (!r.quote_cents || !['quoted', 'paid'].includes(r.status)) {
       return res.status(409).send('This quote is not ready for payment — reply to your quote email and we will sort it out.');
     }
-    const depositCents = Math.round(Number(r.quote_cents) / 2);
+    // No deposit ON digitizing (Kevin 2026-10-06): digitizing is paid in
+    // FULL up front — half a digitizing fee wouldn't cover the work that
+    // starts immediately. Deposit = 100% digitizing + 50% of the rest.
+    const breakdown = Array.isArray(r.price_breakdown)
+      ? r.price_breakdown
+      : JSON.parse(r.price_breakdown || '[]');
+    const digiDueCents = breakdown
+      .filter((l) => l.key === 'digitizing' || l.key === 'digitizing_deposit')
+      .reduce((t, l) => t + Number(l.retailCents || 0), 0);
+    const depositCents = Math.max(0, digiDueCents)
+      + Math.round(Math.max(0, Number(r.quote_cents) - Math.max(0, digiDueCents)) / 2);
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -558,7 +568,7 @@ router.get('/embroidery/requests/:id/accept', async (req, res, next) => {
           unit_amount: depositCents,
           product_data: {
             name: `Embroidery deposit — Request #${r.id}`,
-            description: `50% deposit on your ${(Number(r.quote_cents) / 100).toFixed(2)} embroidery quote. Balance due at pickup/delivery.`,
+            description: `Deposit on your $${(Number(r.quote_cents) / 100).toFixed(2)} embroidery quote: digitizing in full plus 50% of the work. Balance due at pickup/delivery.`,
           },
         },
         quantity: 1,
