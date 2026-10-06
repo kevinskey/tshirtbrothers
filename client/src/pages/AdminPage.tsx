@@ -105,6 +105,7 @@ import {
   calculateQuotePrice,
   bulkImportCustomers,
   fetchEmbroideryJobs,
+  fetchEmbroideryRequestsByQuote,
   createEmbroideryJob,
   updateEmbroideryJob,
   attachEmbroideryDst,
@@ -1111,6 +1112,18 @@ export default function AdminPage() {
 
   // Quote/Order detail drawer state
   const [detailQuote, setDetailQuote] = useState<Quote | Order | null>(null);
+  // Converted-to-embroidery quotes price in the embroidery panel; the
+  // generic line-items editor, stale quote pricing and Studio mockup
+  // buttons just contradict it (Kevin 2026-10-06, "too many non working
+  // buttons and redundancy"). Same query key as QuoteEmbroiderySection,
+  // so this rides its cache.
+  const detailEmbroidery = useQuery({
+    queryKey: ['embroidery-requests', 'by-quote', Number(detailQuote?.id)],
+    queryFn: () => fetchEmbroideryRequestsByQuote(Number(detailQuote!.id)),
+    enabled: !!detailQuote,
+  });
+  const detailHasEmbroidery = ((detailEmbroidery.data as Array<{ status: string }> | undefined) ?? [])
+    .some((r) => r.status !== 'superseded');
   const [adminNotesDraft, setAdminNotesDraft] = useState('');
   const [adminNotesSaving, setAdminNotesSaving] = useState(false);
   const [mockupPickerOpen, setMockupPickerOpen] = useState(false);
@@ -8309,6 +8322,10 @@ export default function AdminPage() {
                         <input type="file" accept="image/*" multiple className="hidden"
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
+                      {/* Studio mockups are a print-flow tool — hidden for
+                          embroidery conversions, where the DST/PDF profile
+                          IS the proof. */}
+                      {!detailHasEmbroidery && (<>
                       <button
                         onClick={() => navigate(`/design?attachToQuote=${q.id}`)}
                         className="w-full mt-2 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
@@ -8323,6 +8340,7 @@ export default function AdminPage() {
                         <GalleryHorizontal className="w-3.5 h-3.5" />
                         {q.mockup_image_url ? 'Change mockup' : 'Pick mockup from Studio'}
                       </button>
+                      </>)}
                       {q.mockup_image_url && (
                         <button
                           onClick={() => sendQuoteMockup(q as Quote)}
@@ -8386,6 +8404,7 @@ export default function AdminPage() {
                         <input type="file" accept="image/*" multiple className="hidden"
                           onChange={(e) => { uploadQuoteGraphics(q as Quote, e.target.files); e.target.value = ''; }} />
                       </label>
+                      {!detailHasEmbroidery && (<>
                       <button
                         onClick={() => navigate(`/design?attachToQuote=${q.id}`)}
                         className="w-full mb-2 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 px-3 py-2 rounded-lg flex items-center justify-center gap-1"
@@ -8400,6 +8419,7 @@ export default function AdminPage() {
                         <GalleryHorizontal className="w-3.5 h-3.5" />
                         Pick mockup from Studio
                       </button>
+                      </>)}
                     </div>
                   )}
 
@@ -8416,7 +8436,14 @@ export default function AdminPage() {
                       all live as editable line items. Customer-submitted
                       values have been backfilled as the first item. The
                       product picker hits the catalog via live search so it
-                      can find any of the 5k+ products without preloading. */}
+                      can find any of the 5k+ products without preloading.
+                      Hidden for converted embroidery quotes — their pricing
+                      lives in the embroidery panel above. */}
+                  {detailHasEmbroidery ? (
+                    <p className="text-xs text-gray-500 border border-dashed border-gray-200 rounded-lg p-3">
+                      This quote was converted to embroidery — pricing and line items live in the embroidery request above.
+                    </p>
+                  ) : (
                   <QuoteItemsEditor
                     // The editor seeds its drafts on mount, so remount when
                     // the drawer's slim row is hydrated with the full quote
@@ -8429,6 +8456,7 @@ export default function AdminPage() {
                       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
                     }}
                   />
+                  )}
 
                   {/* Shipping */}
                   <div>
@@ -8641,7 +8669,7 @@ export default function AdminPage() {
                   </div>
 
                   {/* Pricing */}
-                  {total > 0 && (
+                  {total > 0 && !detailHasEmbroidery && (
                     <div>
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Pricing</p>
                       <div className="space-y-1 text-sm bg-gray-50 rounded-lg p-3">
