@@ -195,6 +195,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // Fresh designs for canvas event handlers registered once at init.
   const designsRef = useRef<DesignItem[]>([]);
   useEffect(() => { designsRef.current = designs; }, [designs]);
+  // Canvas event handlers are registered once on mount, so they'd close
+  // over stale state — these refs always point at the latest versions of
+  // the size/fit machinery (assigned below, after the functions exist).
+  const updateDesignSizeRef = useRef<(designId: string, widthInches: number) => void>(() => {});
+  const checkFitRef = useRef<() => void>(() => {});
   const [pricingTier, setPricingTier] = useState<PricingTier>('standard');
   const [zoom, setZoom] = useState(1);
   // Gap between designs for auto-place/arrange. 0.1" was the hardcoded
@@ -419,6 +424,26 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     };
     canvas.on('object:moving', clampToSheet);
     canvas.on('object:modified', clampToSheet);
+
+    // Resizing a graphic with the canvas handles must refresh the sheet
+    // exactly like typing a width does (Kevin 2026-10-06): sync the new
+    // size into state (all copies of the design follow), repack overlaps,
+    // re-run fit — which auto-bumps the sheet length — and reprice. A
+    // plain move still re-checks fit so the trim suggestion stays honest.
+    const syncAfterModify = (e: { target?: unknown }) => {
+      const obj = e.target as FabricImage | undefined;
+      const designId = (obj as any)?.data?.designId;
+      if (!obj || !designId) return;
+      const d = designsRef.current.find((x) => x.id === designId);
+      if (!d) return;
+      const wIn = (obj.getScaledWidth?.() || 0) / inchesToPx(1);
+      if (Math.abs(wIn - d.printWidthInches) > 0.02) {
+        updateDesignSizeRef.current(designId, wIn);
+      } else {
+        checkFitRef.current();
+      }
+    };
+    canvas.on('object:modified', syncAfterModify);
 
     return () => {
       canvas.dispose();
@@ -1164,6 +1189,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     checkFit();
     recalculateSheet();
   }
+  // Keep the canvas-event refs current (registered once on mount, above).
+  useEffect(() => {
+    updateDesignSizeRef.current = updateDesignSize;
+    checkFitRef.current = () => checkFit();
+  });
 
   // After a size change, if any two objects overlap, bin-pack everything so
   // nobody's stacked on top of each other.
