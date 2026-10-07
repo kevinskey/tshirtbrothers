@@ -161,6 +161,19 @@ import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
 type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
+const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
+
+// Which section a fresh mount should land on, read straight off the URL.
+// This has to be the useState initializer, not an effect: the URL-sync
+// effect below runs first on mount and — seeing the default 'dashboard' —
+// would strip ?section= out of the address bar before any effect could
+// read it. That's what sent every deep link (Design Studio's "back to
+// Mockups", notification-email links) to the Dashboard instead.
+function sectionFromUrl(): Section {
+  const s = new URLSearchParams(window.location.search).get('section');
+  return s && VALID_SECTIONS.includes(s as Section) ? (s as Section) : 'dashboard';
+}
+
 type QuoteFilter = 'all' | 'pending' | 'quoted' | 'accepted' | 'awaiting_approval' | 'approved' | 'in_production' | 'ready' | 'completed' | 'rejected' | 'archived';
 type OrderFilter = 'all' | 'accepted' | 'completed';
 
@@ -697,7 +710,7 @@ export default function AdminPage() {
   const [, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   // Dashboard + Pipeline merged: 'quotes' (= Pipeline) is now the landing.
-  const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  const [activeSection, setActiveSection] = useState<Section>(sectionFromUrl);
   // Quote id handed to the Blanks (S&S) purchasing builder by the quote
   // menu's "Order blanks" action; cleared once the builder consumes it.
   const [purchasingQuoteId, setPurchasingQuoteId] = useState<number | null>(null);
@@ -883,12 +896,9 @@ export default function AdminPage() {
     const section = params.get('section');
     const id = params.get('id');
     const editInvoice = params.get('editInvoice');
-    const validSections: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
-    if (section && validSections.includes(section as Section)) {
-      // 'dashboard' is a real section again (stats overview); 'quotes' is
-      // the pipeline list — deep links go exactly where they say.
-      setActiveSection(section as Section);
-    }
+    // activeSection itself is seeded from the URL by sectionFromUrl() in the
+    // useState initializer — see the comment there. This effect only handles
+    // the extra params that ride along with a deep link.
     if (id && /^\d+$/.test(id)) {
       setHighlightedQuoteId(id);
     }
@@ -1561,6 +1571,18 @@ export default function AdminPage() {
   // "Add to TSB Direct" — publish a mockup as a store product via the
   // group-stores from-mockup endpoint.
   const [storeMockupTarget, setStoreMockupTarget] = useState<Mockup | null>(null);
+  // Mockup whose details modal (name / status / customer / notes) is open.
+  const [detailsMockupTarget, setDetailsMockupTarget] = useState<Mockup | null>(null);
+  // How many cards of the filtered grid are rendered. 117 mockups × up to
+  // four full-resolution Spaces screenshots each is what made this page crawl;
+  // the browser only has to decode a page at a time now.
+  const MOCKUP_PAGE_SIZE = 24;
+  const [mockupVisibleCount, setMockupVisibleCount] = useState(MOCKUP_PAGE_SIZE);
+  // A new search/filter/sort is a new list — start it back at page one so
+  // "Show more" doesn't silently leave you 90 cards deep in a 3-card result.
+  useEffect(() => {
+    setMockupVisibleCount(MOCKUP_PAGE_SIZE);
+  }, [mockupSearch, mockupStatusFilter, mockupSortOrder]);
   // Default decoration placement per garment type, in % of the product
   // photo — chest for tees/fleece, front panel for headwear, left chest
   // for polos/outerwear. Seeded when a product is picked; the sliders
@@ -2573,6 +2595,44 @@ export default function AdminPage() {
       queryClient.invalidateQueries({ queryKey: ['mockups'] });
     } catch (err: any) {
       alert(err?.message || 'Convert failed');
+    }
+  }
+
+  // Email the mockup's own customer_email an approval link. Same server call
+  // the quote modal's send-mockup uses, so a mockup approved from here lands
+  // in exactly the same state as one approved through the order process:
+  // status 'sent' → customer taps approve/reject on /mockup/<token> → status
+  // 'approved' and, if the mockup is tied to a quote, that quote advances too.
+  // Re-sending after an approve/reject automatically bumps the revision and
+  // issues a fresh token, invalidating the old email's link.
+  const [sendingMockupId, setSendingMockupId] = useState<number | null>(null);
+  async function handleSendMockupApproval(m: Mockup) {
+    if (!m.customer_email) {
+      toast('Add a customer email in Details first — that is who the approval goes to', 'error');
+      setDetailsMockupTarget(m);
+      return;
+    }
+    const verb = ['approved', 'rejected'].includes(m.status) ? 'Send a revision of' : 'Send';
+    if (!confirm(`${verb} "${m.name || 'this mockup'}" to ${m.customer_email} for approval?`)) return;
+    const message = prompt('Optional note to include in the email (leave blank for none):', '') ?? '';
+    setSendingMockupId(m.id);
+    try {
+      const r = await fetch(`/api/admin/mockups/${m.id}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ message: message.trim() || undefined }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.error || `HTTP ${r.status}`);
+      setMockupAfterSend(body.approve_url || null);
+      toast(body.is_revision
+        ? `Revision ${body.revision ?? ''} sent to ${m.customer_email} — the old link no longer works`
+        : `Approval request sent to ${m.customer_email}`);
+      await mockupsQuery.refetch();
+    } catch (err: any) {
+      toast(err?.message || 'Send failed', 'error');
+    } finally {
+      setSendingMockupId(null);
     }
   }
 
@@ -7507,6 +7567,7 @@ export default function AdminPage() {
               const bt = new Date(b.created_at).getTime();
               return mockupSortOrder === 'oldest' ? at - bt : bt - at;
             });
+          const visibleMockups = mockups.slice(0, mockupVisibleCount);
           const statusCount = (s: Mockup['status']) => allMockups.filter((m) => m.status === s).length;
           const STATUS_COLORS: Record<Mockup['status'], string> = {
             draft: 'bg-gray-100 text-gray-700',
@@ -7607,8 +7668,9 @@ export default function AdminPage() {
                   )}
                 </div>
               ) : (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {mockups.map((m) => {
+                  {visibleMockups.map((m) => {
                     const pl = m.placement || { x: 35, y: 30, width: 30 };
                     return (
                       <div key={m.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden flex flex-col">
@@ -7646,7 +7708,13 @@ export default function AdminPage() {
                         </div>
                         <div className="p-3 flex-1 flex flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
-                            <MockupNameEditor mockup={m} onSaved={() => mockupsQuery.refetch()} />
+                            <h3
+                              className="font-semibold text-gray-900 text-sm truncate cursor-pointer rounded px-0.5 -mx-0.5 hover:bg-orange-50"
+                              title="Click to edit name, status, customer and notes"
+                              onClick={() => setDetailsMockupTarget(m)}
+                            >
+                              {m.name || 'Untitled'}
+                            </h3>
                             <button onClick={() => handleDeleteMockup(m.id)} className="text-gray-300 hover:text-red-500 shrink-0">
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -7656,7 +7724,17 @@ export default function AdminPage() {
                           </span>
                           <p className="text-xs text-gray-500 line-clamp-1">{m.customer_name || 'Unknown'} · {m.customer_email || 'no email'}</p>
                           <p className="text-[11px] text-gray-400">Product: {m.product_name || '—'}</p>
+                          {m.notes && (
+                            <p className="text-[11px] text-gray-500 bg-amber-50 border border-amber-100 rounded px-2 py-1 whitespace-pre-wrap line-clamp-3">{m.notes}</p>
+                          )}
                           <div className="flex flex-wrap gap-1 mt-auto pt-2">
+                            <button
+                              onClick={() => setDetailsMockupTarget(m)}
+                              className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              title="Edit name, status, customer and notes"
+                            >
+                              Details
+                            </button>
                             <button
                               onClick={() => navigate(`/design?editMockup=${m.id}`)}
                               className="text-[11px] px-2 py-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -7665,9 +7743,27 @@ export default function AdminPage() {
                               Edit
                             </button>
                             <button
+                              onClick={() => void handleSendMockupApproval(m)}
+                              disabled={sendingMockupId === m.id}
+                              className={`text-[11px] px-2 py-1 rounded disabled:opacity-50 ${
+                                m.customer_email
+                                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                              }`}
+                              title={m.customer_email
+                                ? `Email ${m.customer_email} an approve / request-changes link`
+                                : 'No customer email on this mockup yet — click to add one'}
+                            >
+                              {sendingMockupId === m.id
+                                ? 'Sending…'
+                                : ['approved', 'rejected'].includes(m.status)
+                                  ? 'Send revision'
+                                  : 'Send for Approval'}
+                            </button>
+                            <button
                               onClick={() => setShareMockupTarget(m)}
                               className="text-[11px] px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
-                              title="Email or text this mockup to anyone"
+                              title="Email or text this mockup to anyone (one-off, no approval tracking)"
                             >
                               Share
                             </button>
@@ -7743,11 +7839,40 @@ export default function AdminPage() {
                     );
                   })}
                 </div>
+                {mockups.length > visibleMockups.length && (
+                  <div className="mt-4 text-center">
+                    <button
+                      onClick={() => setMockupVisibleCount((n) => n + MOCKUP_PAGE_SIZE)}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+                    >
+                      Show more ({mockups.length - visibleMockups.length} more)
+                    </button>
+                  </div>
+                )}
+                </>
               )}
 
             </div>
           );
         })()}
+
+        {/* Mockup details — name, status, customer, notes. */}
+        {detailsMockupTarget && (
+          <MockupDetailsModal
+            mockup={detailsMockupTarget}
+            onClose={() => setDetailsMockupTarget(null)}
+            onSaved={(patch) => {
+              // Patch the cached list in place so the card updates instantly;
+              // the refetch then reconciles with what the server actually
+              // stored. Without the optimistic write the grid shows the old
+              // name for as long as the 117-row refetch takes.
+              queryClient.setQueryData<Mockup[]>(['mockups'], (prev) =>
+                (prev ?? []).map((m) => (m.id === detailsMockupTarget.id ? { ...m, ...patch } : m)));
+              void mockupsQuery.refetch();
+              toast('Mockup updated');
+            }}
+          />
+        )}
 
         {/* Add-to-TSB-Direct modal — publish a mockup as a store product. */}
         {storeMockupTarget && (
@@ -10618,55 +10743,139 @@ function AddToStoreModal({ mockup, collections, onClose, onDone }: {
 
 // Click-to-rename title on a mockup card. Saves on Enter/blur via the
 // mockups PATCH endpoint; Escape cancels.
-function MockupNameEditor({ mockup, onSaved }: { mockup: Mockup; onSaved: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  // Optimistic: show the new name the moment it's submitted — waiting for
-  // the full list refetch made renames feel seconds slow. Reverts on error.
-  const [localName, setLocalName] = useState<string | null>(null);
+// Mockup details editor. Everything the mockups table lets an admin set by
+// hand — name, status, who it's for, and free-text notes — in one modal.
+//
+// This replaced a click-to-rename <input> that saved on blur. Blur fires for
+// any reason the field loses focus (a background refetch re-rendering the
+// grid, a stray click, switching apps), so a half-typed name could vanish
+// with no save and no warning — what Kevin saw as "the mockup closes when I
+// try to edit the name". An explicit Save/Cancel can't do that.
+const MOCKUP_STATUSES: Mockup['status'][] = ['draft', 'sent', 'approved', 'rejected', 'converted_to_quote'];
+
+function MockupDetailsModal({ mockup, onClose, onSaved }: {
+  mockup: Mockup;
+  onClose: () => void;
+  onSaved: (patched: Partial<Mockup>) => void;
+}) {
+  const [form, setForm] = useState({
+    name: mockup.name ?? '',
+    status: mockup.status,
+    customer_name: mockup.customer_name ?? '',
+    customer_email: mockup.customer_email ?? '',
+    notes: mockup.notes ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   async function save() {
-    setEditing(false);
-    const name = draft.trim();
-    if (!name || name === (localName ?? mockup.name ?? '')) return;
-    setLocalName(name);
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    const patch = {
+      name: form.name.trim() || null,
+      status: form.status,
+      customer_name: form.customer_name.trim() || null,
+      customer_email: form.customer_email.trim() || null,
+      notes: form.notes.trim() || null,
+    };
     try {
       const r = await fetch(`/api/admin/mockups/${mockup.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(patch),
       });
-      if (r.ok) onSaved();
-      else setLocalName(null);
-    } catch {
-      setLocalName(null);
+      if (!r.ok) throw new Error(`Save failed (HTTP ${r.status})`);
+      onSaved(patch as Partial<Mockup>);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setSaving(false);
     }
   }
 
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => void save()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-          if (e.key === 'Escape') setEditing(false);
-        }}
-        className="w-full text-sm font-semibold text-gray-900 border border-orange-400 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300"
-        style={{ fontSize: '16px' }}
-      />
-    );
-  }
   return (
-    <h3
-      className="font-semibold text-gray-900 text-sm truncate cursor-text rounded px-0.5 -mx-0.5 hover:bg-orange-50"
-      title="Click to rename"
-      onClick={() => { setDraft(localName ?? mockup.name ?? ''); setEditing(true); }}
-    >
-      {localName ?? mockup.name ?? 'Untitled'}
-    </h3>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">Mockup details</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="p-5 space-y-3">
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Name</span>
+            <input
+              autoFocus
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+              placeholder="Untitled"
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Status</span>
+            <select
+              value={form.status}
+              onChange={(e) => set('status', e.target.value)}
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-orange-500"
+            >
+              {MOCKUP_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-medium text-gray-600">Customer name</span>
+              <input
+                value={form.customer_name}
+                onChange={(e) => set('customer_name', e.target.value)}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                style={{ fontSize: '16px' }}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-gray-600">Customer email</span>
+              <input
+                type="email"
+                value={form.customer_email}
+                onChange={(e) => set('customer_email', e.target.value)}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                style={{ fontSize: '16px' }}
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-600">Notes</span>
+            <textarea
+              value={form.notes}
+              onChange={(e) => set('notes', e.target.value)}
+              rows={4}
+              placeholder="Ink colors, print sizes, who approved it, anything you need to remember…"
+              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:border-orange-500"
+              style={{ fontSize: '16px' }}
+            />
+          </label>
+          <p className="text-[11px] text-gray-400">
+            The customer email is who <span className="font-medium">Send for Approval</span> goes to.
+            Product and artwork are edited in Design Studio — use the Edit button on the card.
+          </p>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-3 border-t border-gray-200">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900">Cancel</button>
+          <button
+            onClick={() => void save()}
+            disabled={saving}
+            className="px-4 py-1.5 bg-orange-500 text-white text-sm font-semibold rounded-lg hover:bg-orange-600 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
