@@ -38,7 +38,13 @@ interface ArtLibraryItem {
   name: string;
   thumbnail_url: string;
   image_url: string;
+  // Which picker tab this came from. Art Library ids and mockup ids are
+  // separate sequences that collide freely, so identity across the two
+  // sources is (source, id) — see itemKey() — never id alone.
+  source?: 'art' | 'mockup';
 }
+
+const itemKey = (i: ArtLibraryItem) => `${i.source || 'art'}:${i.id}`;
 
 function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
@@ -96,6 +102,9 @@ export default function CampaignsAdmin() {
   const [examples, setExamples] = useState<ArtLibraryItem[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [library, setLibrary] = useState<ArtLibraryItem[]>([]);
+  const [mockupLibrary, setMockupLibrary] = useState<ArtLibraryItem[]>([]);
+  const [pickerTab, setPickerTab] = useState<'art' | 'mockup'>('art');
+  const [pickerSearch, setPickerSearch] = useState('');
   const [recipientCount, setRecipientCount] = useState<number | null>(null);
   const [sample, setSample] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
@@ -107,11 +116,35 @@ export default function CampaignsAdmin() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const pickerQuery = pickerSearch.trim().toLowerCase();
+  const pickerItems = (pickerTab === 'art' ? library : mockupLibrary)
+    .filter((d) => !pickerQuery || (d.name || '').toLowerCase().includes(pickerQuery));
+
   // Load art library once on mount.
   useEffect(() => {
     fetch('/api/admin/designs-library', { headers: authHeaders() })
       .then((r) => r.ok ? r.json() : [])
-      .then(setLibrary)
+      .then((rows: ArtLibraryItem[]) => setLibrary(rows.map((r) => ({ ...r, source: 'art' as const }))))
+      .catch(() => {});
+  }, []);
+
+  // Mockups as a second source of example art. A mockup's front preview is
+  // the finished garment shot, which is what sells in a marketing email —
+  // better than the bare graphic the Art Library holds. Only mockups that
+  // actually have a rendered preview can be shown.
+  useEffect(() => {
+    fetch('/api/admin/mockups', { headers: authHeaders() })
+      .then((r) => r.ok ? r.json() : [])
+      .then((rows: Array<{ id: number; name: string | null; preview_image_url: string | null }>) =>
+        setMockupLibrary(rows
+          .filter((m) => m.preview_image_url)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || `Mockup #${m.id}`,
+            image_url: m.preview_image_url!,
+            thumbnail_url: m.preview_image_url!,
+            source: 'mockup' as const,
+          }))))
       .catch(() => {});
   }, []);
 
@@ -478,10 +511,13 @@ export default function CampaignsAdmin() {
         ) : (
           <div className="flex flex-wrap gap-2">
             {examples.map((e) => (
-              <div key={e.id} className="relative w-20 h-20 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
+              <div key={itemKey(e)} className="relative w-20 h-20 bg-gray-50 border border-gray-200 rounded-lg overflow-hidden" title={e.name}>
                 <img src={e.thumbnail_url || e.image_url} alt={e.name} className="w-full h-full object-contain" />
+                {e.source === 'mockup' && (
+                  <span className="absolute bottom-0 left-0 right-0 bg-black/55 text-white text-[9px] text-center leading-tight py-0.5">mockup</span>
+                )}
                 <button
-                  onClick={() => setExamples(examples.filter((x) => x.id !== e.id))}
+                  onClick={() => setExamples(examples.filter((x) => itemKey(x) !== itemKey(e)))}
                   className="absolute top-0 right-0 bg-black/60 text-white rounded-bl px-1"
                   title="Remove"
                 ><X className="w-3 h-3" /></button>
@@ -646,21 +682,52 @@ export default function CampaignsAdmin() {
       {pickerOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
           <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Pick designs ({examples.length}/6)</h3>
-              <button onClick={() => setPickerOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900">Pick designs ({examples.length}/6)</h3>
+                <button onClick={() => setPickerOpen(false)}><X className="w-5 h-5 text-gray-400" /></button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {([['art', 'Art Library', library.length], ['mockup', 'Mockups', mockupLibrary.length]] as const).map(([tab, label, count]) => (
+                  <button
+                    key={tab}
+                    onClick={() => setPickerTab(tab)}
+                    className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
+                      pickerTab === tab
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
+                    }`}
+                  >
+                    {label} ({count})
+                  </button>
+                ))}
+                <input
+                  type="search"
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                  placeholder="Search by name…"
+                  className="flex-1 min-w-[140px] border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                  style={{ fontSize: '16px' }}
+                />
+              </div>
             </div>
             <div className="p-4 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-              {library.length === 0 ? (
-                <div className="col-span-full text-center py-12 text-gray-400 text-sm">Art Library is empty. Send a quote graphic to the Art Library first.</div>
-              ) : library.map((d) => {
-                const picked = examples.some((e) => e.id === d.id);
+              {pickerItems.length === 0 ? (
+                <div className="col-span-full text-center py-12 text-gray-400 text-sm">
+                  {pickerSearch.trim()
+                    ? `Nothing matches “${pickerSearch.trim()}” in ${pickerTab === 'art' ? 'the Art Library' : 'Mockups'}.`
+                    : pickerTab === 'art'
+                      ? 'Art Library is empty. Send a quote graphic to the Art Library first.'
+                      : 'No mockups with a rendered preview yet. Design one in Design Studio, or use Re-render Missing Previews on the Mockups page.'}
+                </div>
+              ) : pickerItems.map((d) => {
+                const picked = examples.some((e) => itemKey(e) === itemKey(d));
                 return (
                   <button
-                    key={d.id}
+                    key={itemKey(d)}
                     onClick={() => {
                       if (picked) {
-                        setExamples(examples.filter((e) => e.id !== d.id));
+                        setExamples(examples.filter((e) => itemKey(e) !== itemKey(d)));
                       } else if (examples.length < 6) {
                         setExamples([...examples, d]);
                       }
@@ -668,7 +735,7 @@ export default function CampaignsAdmin() {
                     className={`relative aspect-square bg-gray-50 border-2 rounded-lg overflow-hidden ${picked ? 'border-red-500' : 'border-gray-200 hover:border-gray-300'}`}
                     title={d.name}
                   >
-                    <img src={d.thumbnail_url || d.image_url} alt={d.name} className="w-full h-full object-contain" />
+                    <img src={d.thumbnail_url || d.image_url} alt={d.name} loading="lazy" className="w-full h-full object-contain" />
                     {picked && <span className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center"><Check className="w-3 h-3" /></span>}
                   </button>
                 );
