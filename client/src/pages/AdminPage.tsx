@@ -152,6 +152,7 @@ import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
+import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
 import ShipLabelModal from '@/components/admin/ShipLabelModal';
@@ -10810,6 +10811,19 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
     setCustomerPicker(null);
   }
 
+  // Escape closes the dialog — but only once the customer suggestion list is
+  // down, so the first Escape dismisses the dropdown rather than throwing away
+  // the whole edit.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (customerPicker) { setCustomerPicker(null); return; }
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [customerPicker, onClose]);
+
   async function save() {
     if (saving) return;
     setSaving(true);
@@ -10839,8 +10853,8 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" {...dismissOnBackdrop(onClose)}>
+      <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
           <h3 className="font-semibold text-gray-900">Mockup details</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
