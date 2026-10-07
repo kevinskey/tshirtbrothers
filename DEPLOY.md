@@ -9,7 +9,7 @@ original droplet at 134.199.194.178, which no longer exists._
 |---|---|
 | Droplet | `198.211.113.144` (shared "gleeworld" droplet) |
 | App dir | `/var/www/tshirtbrothers` |
-| Frontend | nginx serves `client/dist` statically (vhost `/etc/nginx/sites-enabled/tshirtbrothers`) |
+| Frontend | nginx serves `client/dist` statically (vhost `/etc/nginx/sites-enabled/tshirtbrothers` — tracked copy + how to apply it: [`deploy/nginx/`](deploy/nginx/README.md); nothing deploys it automatically) |
 | API | pm2 app `tshirtbrothers-api` → `server/index.js` on **:3001**, runs as user `tsb` |
 | Database | local PostgreSQL 16, db `tshirtbrothers`, app user `tsbadmin` (env in `server/.env` as `DB_*`, not `DATABASE_URL`) |
 | File storage | DigitalOcean Spaces bucket `tshirtbrothers` (region `atl1`); gang-sheet customer files are **private** ACL |
