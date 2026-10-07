@@ -38,6 +38,9 @@ const SINGLE_WEIGHT_FONTS = new Set([
   'UnifrakturMaguntia', 'UnifrakturCook', 'MedievalSharp',
   'Varela Round', 'Fjalla One', 'DM Serif Display', 'Prata',
   'Patrick Hand', 'Architects Daughter', 'DM Mono',
+  // Collegiate / varsity block. (Sarpanch is excluded on purpose — it really
+  // does ship 400–900, so it takes the normal :wght@400;700 path.)
+  'Graduate', 'Jockey One', 'Changa One', 'League Gothic', 'Archivo Black',
 ]);
 
 // Fonts whose ONLY weight is 700 — a name-only URL (which defaults to 400)

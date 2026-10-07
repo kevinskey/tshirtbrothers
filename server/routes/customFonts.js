@@ -28,7 +28,7 @@ const publicRouter = Router();
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
 const VALID_CATEGORIES = new Set([
-  'custom', 'sans', 'display', 'serif', 'decorative', 'distressed',
+  'custom', 'sans', 'collegiate', 'display', 'serif', 'decorative', 'distressed',
   'script', 'gothic', 'mono', 'system',
 ]);
 
