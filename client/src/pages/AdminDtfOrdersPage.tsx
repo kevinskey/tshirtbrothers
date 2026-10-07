@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X, PenSquare, Mail } from 'lucide-react';
@@ -471,7 +471,12 @@ function SettingsCard() {
 
 function DtfOrdersQueue() {
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<'open' | 'all'>('open');
+  // Deep link from a customer profile: /admin/dtf-orders?order=123. The order
+  // may well be closed, so an incoming link starts on the "all" filter —
+  // otherwise the row it points at just isn't in the table.
+  const [searchParams] = useSearchParams();
+  const focusedId = Number(searchParams.get('order')) || null;
+  const [statusFilter, setStatusFilter] = useState<'open' | 'all'>(focusedId ? 'all' : 'open');
   const queryClient = useQueryClient();
 
   const { data: orders, isLoading, isError, isFetching } = useQuery<OrderRow[]>({
@@ -754,7 +759,11 @@ function DtfOrdersQueue() {
                   const fileFt = fileHeightFt(order.file_height_px);
                   const fileMismatch = fileFt !== null && fileFt !== order.length_ft;
                   return (
-                    <tr key={order.id} className="border-b border-gray-100 align-top last:border-b-0">
+                    <tr
+                      key={order.id}
+                      ref={order.id === focusedId ? (el) => el?.scrollIntoView({ block: 'center' }) : undefined}
+                      className={`border-b border-gray-100 align-top last:border-b-0 ${order.id === focusedId ? 'bg-orange-50 ring-2 ring-inset ring-orange-300' : ''}`}
+                    >
                       <td className="px-3 py-3">
                         <span className="font-semibold text-gray-900">#{order.id}</span>
                         <span className={`ml-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${TIER_BADGE[order.tier]}`}>

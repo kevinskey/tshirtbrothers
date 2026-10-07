@@ -201,8 +201,13 @@ export default function CustomerPage() {
                 </tr></thead>
                 <tbody>
                   {customer.invoices.map((inv) => (
-                    <tr key={inv.id} className="border-b border-gray-50 last:border-0">
-                      <td className="py-2 pr-4 font-medium text-gray-900">{inv.invoice_number}</td>
+                    <tr
+                      key={inv.id}
+                      onClick={() => window.open(`/invoice/view/${inv.id}`, '_blank', 'noopener')}
+                      className="border-b border-gray-50 last:border-0 cursor-pointer hover:bg-orange-50"
+                      title={`Open invoice ${inv.invoice_number}`}
+                    >
+                      <td className="py-2 pr-4 font-medium text-orange-600 underline decoration-orange-200 underline-offset-2">{inv.invoice_number}</td>
                       <td className="py-2 pr-4 text-gray-500">{fmtDate(inv.created_at)}</td>
                       <td className="py-2 pr-4 text-right">{fmtMoney(inv.total)}</td>
                       <td className="py-2 pr-4 text-right text-green-700">{fmtMoney(inv.amount_paid)}</td>
@@ -229,9 +234,14 @@ export default function CustomerPage() {
                 </tr></thead>
                 <tbody>
                   {customer.gang_sheet_orders.map((g) => (
-                    <tr key={g.id} className="border-b border-gray-50 last:border-0">
+                    <tr
+                      key={g.id}
+                      onClick={() => navigate(`/admin/dtf-orders?order=${g.id}`)}
+                      className="border-b border-gray-50 last:border-0 cursor-pointer hover:bg-orange-50"
+                      title={`Open DTF order #${g.id}`}
+                    >
                       <td className="py-2 pr-4 text-gray-500">{fmtDate(g.paid_at || g.created_at)}</td>
-                      <td className="py-2 pr-4">22" × {g.length_ft} ft · {g.tier}</td>
+                      <td className="py-2 pr-4 text-orange-600 underline decoration-orange-200 underline-offset-2">#{g.id} · 22" × {g.length_ft} ft · {g.tier}</td>
                       <td className="py-2 pr-4 capitalize">{g.delivery}</td>
                       <td className="py-2 pr-4 text-right">{fmtMoney((g.price_cents + g.shipping_cents) / 100)}</td>
                       <td className="py-2"><StatusBadge status={g.status} /></td>
@@ -256,9 +266,14 @@ export default function CustomerPage() {
                 </tr></thead>
                 <tbody>
                   {customer.quotes.map((q) => (
-                    <tr key={q.id} className="border-b border-gray-50 last:border-0">
+                    <tr
+                      key={q.id}
+                      onClick={() => navigate(`/admin/order/${q.id}`)}
+                      className="border-b border-gray-50 last:border-0 cursor-pointer hover:bg-orange-50"
+                      title={`Open order #${q.id}`}
+                    >
                       <td className="py-2 pr-4 text-gray-500">{fmtDate(q.created_at)}</td>
-                      <td className="py-2 pr-4">{q.product_name || '—'}</td>
+                      <td className="py-2 pr-4 text-orange-600 underline decoration-orange-200 underline-offset-2">{q.product_name || `Order #${q.id}`}</td>
                       <td className="py-2 pr-4 text-right">{q.quantity}</td>
                       <td className="py-2 pr-4 text-right">{q.estimated_price ? fmtMoney(q.estimated_price) : '—'}</td>
                       <td className="py-2"><StatusBadge status={q.status} /></td>
