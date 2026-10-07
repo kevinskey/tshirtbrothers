@@ -17,6 +17,7 @@
 export type FontCategory =
   | 'sans'
   | 'display'
+  | 'collegiate'
   | 'serif'
   | 'decorative'
   | 'distressed'
@@ -35,6 +36,7 @@ export const FONT_CATEGORIES: { id: FontCategory; label: string }[] = [
   // Custom first when present — admins want their uploads top-of-list.
   { id: 'custom', label: 'Custom' },
   { id: 'sans', label: 'Sans' },
+  { id: 'collegiate', label: 'Collegiate' },
   { id: 'display', label: 'Display' },
   { id: 'serif', label: 'Serif' },
   { id: 'decorative', label: 'Decorative' },
@@ -51,6 +53,17 @@ const SANS = [
   'Barlow', 'Karla', 'Cabin', 'Exo 2', 'Titillium Web', 'Varela Round',
   'Archivo', 'Outfit', 'Sora', 'DM Sans', 'Space Grotesk', 'Manrope',
   'Plus Jakarta Sans', 'Albert Sans', 'Figtree',
+];
+
+// Varsity / team-uniform block faces. Their own category because uniform and
+// collegiate-wear customers shop for this look by name ("varsity block"), and
+// burying them in Display means they never get found. Graduate is the closest
+// free match to a classic spurred varsity slab; the rest are jersey-number
+// and team-name workhorses. Pair any of them with the text outline control
+// for the two-tone tackle-twill look.
+const COLLEGIATE = [
+  'Graduate', 'Jockey One', 'Changa One', 'League Gothic', 'Archivo Black',
+  'Sarpanch',
 ];
 
 const DISPLAY = [
@@ -113,6 +126,7 @@ const SYSTEM = [
 
 export const FONT_CATALOG: CategorizedFont[] = [
   ...SANS.map((name) => ({ name, category: 'sans' as const })),
+  ...COLLEGIATE.map((name) => ({ name, category: 'collegiate' as const })),
   ...DISPLAY.map((name) => ({ name, category: 'display' as const })),
   ...SERIF.map((name) => ({ name, category: 'serif' as const })),
   ...DECORATIVE.map((name) => ({ name, category: 'decorative' as const })),
