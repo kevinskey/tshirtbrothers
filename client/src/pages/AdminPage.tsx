@@ -10753,6 +10753,17 @@ function AddToStoreModal({ mockup, collections, onClose, onDone }: {
 // try to edit the name". An explicit Save/Cancel can't do that.
 const MOCKUP_STATUSES: Mockup['status'][] = ['draft', 'sent', 'approved', 'rejected', 'converted_to_quote'];
 
+// Settle on a value only after the user stops typing, so a lookup fires per
+// pause instead of per keystroke.
+function useDebouncedValue<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
+
 function MockupDetailsModal({ mockup, onClose, onSaved }: {
   mockup: Mockup;
   onClose: () => void;
@@ -10769,6 +10780,29 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Typing a customer name searches the customer book (name OR email) and
+  // offers matches; picking one fills in the email and links customer_id, so
+  // Send for Approval has a recipient without anyone retyping an address.
+  // customerId is only overwritten by an explicit pick — hand-typing a name
+  // leaves whatever link the mockup already had alone.
+  const [customerId, setCustomerId] = useState<number | null>(mockup.customer_id);
+  const [customerPicker, setCustomerPicker] = useState<'name' | 'email' | null>(null);
+  const customerTerm = (customerPicker === 'email' ? form.customer_email : form.customer_name).trim();
+  const debouncedTerm = useDebouncedValue(customerTerm, 250);
+  const customerMatches = useQuery({
+    queryKey: ['admin', 'customers', 'mockup-picker', debouncedTerm],
+    queryFn: () => fetchCustomers(debouncedTerm),
+    enabled: customerPicker !== null && debouncedTerm.length >= 2,
+    staleTime: 60_000,
+  });
+  const suggestions = (customerMatches.data ?? []).slice(0, 8);
+
+  function pickCustomer(c: Customer) {
+    setForm((f) => ({ ...f, customer_name: c.name || f.customer_name, customer_email: c.email || f.customer_email }));
+    setCustomerId(Number(c.id) || null);
+    setCustomerPicker(null);
+  }
+
   async function save() {
     if (saving) return;
     setSaving(true);
@@ -10778,6 +10812,7 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
       status: form.status,
       customer_name: form.customer_name.trim() || null,
       customer_email: form.customer_email.trim() || null,
+      customer_id: customerId,
       notes: form.notes.trim() || null,
     };
     try {
@@ -10827,26 +10862,68 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
             </select>
           </label>
           <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs font-medium text-gray-600">Customer name</span>
-              <input
-                value={form.customer_name}
-                onChange={(e) => set('customer_name', e.target.value)}
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                style={{ fontSize: '16px' }}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-gray-600">Customer email</span>
-              <input
-                type="email"
-                value={form.customer_email}
-                onChange={(e) => set('customer_email', e.target.value)}
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-                style={{ fontSize: '16px' }}
-              />
-            </label>
+            {(['name', 'email'] as const).map((field) => (
+              <div key={field} className="relative">
+                <span className="text-xs font-medium text-gray-600">
+                  {field === 'name' ? 'Customer name' : 'Customer email'}
+                </span>
+                <input
+                  type={field === 'email' ? 'email' : 'text'}
+                  autoComplete="off"
+                  value={field === 'name' ? form.customer_name : form.customer_email}
+                  onChange={(e) => {
+                    set(field === 'name' ? 'customer_name' : 'customer_email', e.target.value);
+                    setCustomerPicker(field);
+                  }}
+                  onFocus={() => setCustomerPicker(field)}
+                  // Close on blur, but a frame later — a mousedown on a
+                  // suggestion blurs the input before the click lands, and
+                  // unmounting the list first would swallow the pick.
+                  onBlur={() => setTimeout(() => setCustomerPicker((p) => (p === field ? null : p)), 150)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') { e.stopPropagation(); setCustomerPicker(null); }
+                    if (e.key === 'Enter' && customerPicker === field && suggestions.length === 1) {
+                      e.preventDefault();
+                      pickCustomer(suggestions[0]!);
+                    }
+                  }}
+                  placeholder={field === 'name' ? 'Start typing to search customers…' : 'name@example.com'}
+                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                  style={{ fontSize: '16px' }}
+                />
+                {customerPicker === field && debouncedTerm.length >= 2 && (
+                  <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                    {customerMatches.isFetching && suggestions.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">Searching…</p>
+                    ) : suggestions.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-gray-400">
+                        No customer matches “{debouncedTerm}” — what you typed is kept as-is.
+                      </p>
+                    ) : (
+                      suggestions.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => pickCustomer(c)}
+                          className="w-full text-left px-3 py-2 hover:bg-orange-50 border-b border-gray-50 last:border-0"
+                        >
+                          <span className="block text-sm text-gray-900 truncate">{c.name || '(no name)'}</span>
+                          <span className="block text-[11px] text-gray-500 truncate">{c.email}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
+          {customerId != null && (
+            <p className="text-[11px] text-emerald-700">
+              Linked to customer #{customerId}.{' '}
+              <button type="button" onClick={() => setCustomerId(null)} className="underline hover:text-emerald-900">Unlink</button>
+            </p>
+          )}
           <label className="block">
             <span className="text-xs font-medium text-gray-600">Notes</span>
             <textarea
