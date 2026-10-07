@@ -10797,9 +10797,16 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
   });
   const suggestions = (customerMatches.data ?? []).slice(0, 8);
 
+  // GET /admin/customers returns account rows (integer id) alongside guest
+  // rows — people invoiced or quoted without an account — whose id is a
+  // synthetic 'guest:<email>'. There's no users row for a guest to point
+  // mockups.customer_id at, so only accounts create a link. Either way the
+  // name and email fill in, which is all Send for Approval needs.
+  const isAccount = (c: Customer) => /^\d+$/.test(String(c.id));
+
   function pickCustomer(c: Customer) {
     setForm((f) => ({ ...f, customer_name: c.name || f.customer_name, customer_email: c.email || f.customer_email }));
-    setCustomerId(Number(c.id) || null);
+    setCustomerId(isAccount(c) ? Number(c.id) : null);
     setCustomerPicker(null);
   }
 
@@ -10908,7 +10915,10 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
                           onClick={() => pickCustomer(c)}
                           className="w-full text-left px-3 py-2 hover:bg-orange-50 border-b border-gray-50 last:border-0"
                         >
-                          <span className="block text-sm text-gray-900 truncate">{c.name || '(no name)'}</span>
+                          <span className="block text-sm text-gray-900 truncate">
+                            {c.name || '(no name)'}
+                            {!isAccount(c) && <span className="ml-1.5 text-[10px] uppercase font-bold text-gray-400">guest</span>}
+                          </span>
                           <span className="block text-[11px] text-gray-500 truncate">{c.email}</span>
                         </button>
                       ))
@@ -10918,11 +10928,13 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
               </div>
             ))}
           </div>
-          {customerId != null && (
+          {customerId != null ? (
             <p className="text-[11px] text-emerald-700">
-              Linked to customer #{customerId}.{' '}
+              Linked to customer account #{customerId}.{' '}
               <button type="button" onClick={() => setCustomerId(null)} className="underline hover:text-emerald-900">Unlink</button>
             </p>
+          ) : form.customer_email.trim() && (
+            <p className="text-[11px] text-gray-400">Not linked to a customer account — the email above is still who gets the approval.</p>
           )}
           <label className="block">
             <span className="text-xs font-medium text-gray-600">Notes</span>
