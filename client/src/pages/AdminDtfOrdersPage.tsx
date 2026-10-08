@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X, PenSquare, Mail } from 'lucide-react';
+import { Loader2, Download, RefreshCw, ChevronDown, ChevronUp, Send, Eye, X, PenSquare, Mail, Printer } from 'lucide-react';
+import { printPackingSlip } from '../lib/packingSlip';
 import SendToVendorDialog, { type VendorSendPayload } from '../components/gangsheet/SendToVendorDialog';
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -19,6 +20,7 @@ type OrderRow = {
   layout: LayoutPlacement[] | null;
   customer_name: string | null;
   customer_email: string | null;
+  customer_phone: string | null;
   length_ft: number;
   tier: TierKey;
   price_cents: number;
@@ -120,6 +122,39 @@ function countdownLabel(order: OrderRow): { text: string; overdue: boolean } {
   if (hours < 24) return { text: `${hours}h ${mins}m left`, overdue: false };
   const days = Math.floor(hours / 24);
   return { text: `${days}d ${hours % 24}h left`, overdue: false };
+}
+
+// The customer's packing slip for one sheet: what's on it, where it's
+// going, no prices or admin notes.
+function printDtfPackingSlip(order: OrderRow) {
+  const a = order.ship_address;
+  const groups = order.layout ? layoutSummary(order.layout) : [];
+  const designs = groups.reduce((n, g) => n + g.count, 0);
+  printPackingSlip({
+    orderNumber: order.id,
+    orderType: 'DTF Gang Sheet',
+    date: order.paid_at || order.created_at,
+    customer: { name: order.customer_name, email: order.customer_email, phone: order.customer_phone },
+    fulfillment: order.delivery,
+    shipTo: order.delivery === 'ship' && a
+      ? [order.customer_name || '', a.line1 || '', [a.city, a.state].filter(Boolean).join(', ') + (a.zip ? ` ${a.zip}` : '')]
+          .filter((l) => l.trim() !== '')
+      : undefined,
+    shippingMethod: order.delivery === 'ship' ? 'Shipped' : null,
+    items: [{
+      title: `DTF gang sheet — ${order.length_ft} ft`,
+      detail: [
+        `${TIER_LABEL[order.tier]} turnaround`,
+        designs > 0 ? `${designs} print${designs === 1 ? '' : 's'} on sheet` : null,
+      ].filter(Boolean).join(' · '),
+      qty: 1,
+      image: groups[0]?.image_url ?? null,
+    }],
+    gallery: groups.length > 0 ? {
+      title: "What's on your sheet",
+      images: groups.map((g) => ({ src: g.image_url, caption: `${g.count} × ${g.wIn}″ × ${g.hIn}″` })),
+    } : null,
+  });
 }
 
 function authHeaders(): Record<string, string> {
@@ -789,6 +824,9 @@ function DtfOrdersQueue() {
                       <td className="px-3 py-3">
                         <div className="font-medium text-gray-900">{order.customer_name || '—'}</div>
                         <div className="text-xs text-gray-500">{order.customer_email || '—'}</div>
+                        {order.customer_phone && (
+                          <a href={`tel:${order.customer_phone}`} className="text-xs text-gray-500 hover:text-gray-800">{order.customer_phone}</a>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-gray-700">{order.delivery === 'ship' ? 'Ship' : 'Pickup'}</div>
@@ -845,6 +883,13 @@ function DtfOrdersQueue() {
                             className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                           >
                             <Download className="h-3.5 w-3.5" /> Download
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => printDtfPackingSlip(order)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-orange-200 px-2.5 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-50"
+                          >
+                            <Printer className="h-3.5 w-3.5" /> Packing slip
                           </button>
                           <button
                             type="button"

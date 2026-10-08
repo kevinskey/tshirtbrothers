@@ -14,6 +14,7 @@ import {
   fetchStoreOrderRates, buyStoreOrderLabel,
   type AdminStoreOrderDetail, type ShippingRate,
 } from '@/lib/api';
+import { slipCouponHtml } from '@/lib/packingSlip';
 
 const usd = (cents: number | null | undefined) => (cents == null ? '—' : `$${(cents / 100).toFixed(2)}`);
 
@@ -164,6 +165,9 @@ function PackingSlip({ order, ship, isPickup, brandColor, storeLogo }: {
           {' '}Questions about your order? Reply to your confirmation email and we will take care of it.
         </div>
       </div>
+
+      {/* Same 20%-off thank-you code that goes in every TSB box */}
+      <div dangerouslySetInnerHTML={{ __html: slipCouponHtml() }} />
 
       {/* Powered by — TSB is the maker, not the seller */}
       <div style={{ marginTop: 26, paddingTop: 14, borderTop: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>

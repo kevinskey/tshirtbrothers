@@ -342,7 +342,7 @@ router.put('/customers/:id', async (req, res, next) => {
     // Emails arrive pasted from mail clients as "mailto:x@y.com" — strip it.
     const email = req.body?.email ? String(req.body.email).replace(/^mailto:/i, '').trim() : req.body?.email;
 
-    // Guest customers (no account) live only on their quotes/invoices; their
+    // Guest customers (no account) live only on their quotes/invoices/DTF orders; their
     // list id is "guest:<email>". Update those records directly.
     if (String(req.params.id).startsWith('guest:')) {
       const gEmail = String(req.params.id).slice(6).toLowerCase();
@@ -355,6 +355,13 @@ router.put('/customers/:id', async (req, res, next) => {
       );
       await pool.query(
         `UPDATE invoices SET customer_name = COALESCE($1, customer_name),
+           customer_phone = COALESCE($2, customer_phone),
+           customer_email = COALESCE($3, customer_email)
+         WHERE LOWER(customer_email) = $4`,
+        [name || null, phone || null, email || null, gEmail],
+      );
+      await pool.query(
+        `UPDATE gang_sheet_orders SET customer_name = COALESCE($1, customer_name),
            customer_phone = COALESCE($2, customer_phone),
            customer_email = COALESCE($3, customer_email)
          WHERE LOWER(customer_email) = $4`,
@@ -440,7 +447,7 @@ router.get('/customers', async (req, res, next) => {
       params
     );
 
-    // Guest customers: people invoiced or quoted without an account. They
+    // Guest customers: people invoiced, quoted or buying DTF without an account. They
     // live only in quotes/invoices, so an accounts-only search hid them
     // from the invoice picker. Deduped by email, newest record wins.
     const guestParams = [];
@@ -466,6 +473,11 @@ router.get('/customers', async (req, res, next) => {
            SELECT customer_name, customer_email, customer_phone, NULL, created_at
              FROM quotes
             WHERE customer_email IS NOT NULL AND customer_email <> ''
+           UNION ALL
+           -- DTF buyers from before checkout created accounts for them.
+           SELECT customer_name, customer_email, customer_phone, ship_address->>'line1', created_at
+             FROM gang_sheet_orders
+            WHERE paid_at IS NOT NULL AND customer_email IS NOT NULL AND customer_email <> ''
          ) g
         WHERE lower(g.email) NOT IN (SELECT lower(email) FROM users WHERE email IS NOT NULL)
           ${guestFilter}
