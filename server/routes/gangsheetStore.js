@@ -11,6 +11,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
 import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles, sendGangSheetQuoteToCustomer } from '../services/email.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { ensureCustomer, isValidPhone } from '../lib/customers.js';
 
 const router = Router();
 
@@ -294,10 +295,19 @@ const EMAIL_RE = /.+@.+\..+/;
 router.post('/checkout', checkoutLimiter, async (req, res, next) => {
   try {
     const { length_ft, tier, delivery = 'pickup', file_key,
-            name, email, note, ship_address, attested } = req.body || {};
+            name, email, phone, note, ship_address, attested } = req.body || {};
+    // Same contact info a quote requires — every DTF buyer becomes a
+    // customer the shop can reach.
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'Enter your name' });
+    }
     if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
       return res.status(400).json({ error: 'Enter a valid email address' });
     }
+    if (!isValidPhone(phone)) {
+      return res.status(400).json({ error: 'Enter a valid phone number' });
+    }
+    if (phone.length > 40) return res.status(400).json({ error: 'That field is too long' });
     // Generous length caps — this route is anonymous and rate-limited but
     // still accepts free-text fields that end up in emails and the admin
     // queue, so cap them well short of anything that could bloat storage
@@ -325,6 +335,12 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       return res.status(400).json({ error: `That turnaround isn't available right now (${avail.reason}).` });
     }
     if (!['pickup', 'ship'].includes(delivery)) return res.status(400).json({ error: 'Invalid delivery option' });
+    if (delivery === 'ship') {
+      const a = ship_address && typeof ship_address === 'object' ? ship_address : {};
+      if (!['line1', 'city', 'state', 'zip'].every((k) => typeof a[k] === 'string' && a[k].trim())) {
+        return res.status(400).json({ error: 'Enter your full shipping address' });
+      }
+    }
     const keyMatch = typeof file_key === 'string' ? file_key.match(FILE_KEY_RE) : null;
     if (!keyMatch) {
       return res.status(400).json({ error: 'Upload your sheet first' });
@@ -367,12 +383,24 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       whiteBgFlag = lay.rows[0]?.white_bg_flag === true;
     } catch { /* table may not exist yet on first boot — non-fatal */ }
 
+    const customerName = name.trim();
+    const customerEmail = email.trim();
+    const customerPhone = phone.trim();
+    const userId = await ensureCustomer({
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone,
+      address: delivery === 'ship'
+        ? { street: ship_address.line1, city: ship_address.city, state: ship_address.state, zip: ship_address.zip }
+        : undefined,
+    });
+
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
-        (customer_name, customer_email, length_ft, tier, price_cents, shipping_cents,
+        (customer_name, customer_email, customer_phone, user_id, length_ft, tier, price_cents, shipping_cents,
          delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-      [name || null, email || null, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+      [customerName, customerEmail, customerPhone, userId, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
        file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag],
     );
@@ -407,7 +435,7 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       mode: 'payment',
       payment_method_types: ['card'],
       line_items: lineItems,
-      customer_email: email || undefined,
+      customer_email: customerEmail,
       success_url: `${domain}/dtf/success?order=${orderId}`,
       cancel_url: `${domain}/dtf`,
       metadata: { gang_sheet_order_id: String(orderId) },

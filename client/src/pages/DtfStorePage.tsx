@@ -44,6 +44,7 @@ type CheckoutBody = {
   file_key: string;
   name: string;
   email: string;
+  phone: string;
   note?: string;
   ship_address?: ShipAddress;
   attested: boolean;
@@ -187,6 +188,7 @@ export default function DtfStorePage() {
   const [shipAddr, setShipAddr] = useState<ShipAddress>({ line1: '', city: '', state: '', zip: '' });
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
   const [agree, setAgree] = useState(false);
 
@@ -308,8 +310,9 @@ export default function DtfStorePage() {
       tier,
       delivery,
       file_key: uploadedFile.file_key,
-      name,
-      email,
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
       attested: agree,
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(delivery === 'ship' ? { ship_address: shipAddr } : {}),
@@ -341,12 +344,26 @@ export default function DtfStorePage() {
 
   const shipFieldsFilled = shipAddr.line1.trim() && shipAddr.city.trim() && shipAddr.state.trim() && shipAddr.zip.trim();
   const emailValid = EMAIL_RE.test(email.trim());
+  // Same rule the quote form and server use: 10–15 digits, any formatting.
+  const phoneDigits = phone.replace(/\D/g, '').length;
+  const phoneValid = phoneDigits >= 10 && phoneDigits <= 15;
   const canCheckout = !!uploadedFile
     && agree
+    && !!name.trim()
     && emailValid
+    && phoneValid
     && !checkingOut
     && !uploading
     && (delivery !== 'ship' || !!shipFieldsFilled);
+  // Spelled out under the button so a greyed-out Checkout is never a mystery.
+  const missing = [
+    !uploadedFile && 'your sheet',
+    !name.trim() && 'name',
+    !emailValid && 'email',
+    !phoneValid && 'phone',
+    delivery === 'ship' && !shipFieldsFilled && 'shipping address',
+    !agree && 'the artwork agreement',
+  ].filter(Boolean) as string[];
 
   const heroRate = config ? money(config.rates.standard) : null;
 
@@ -819,7 +836,9 @@ export default function DtfStorePage() {
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <input
                   type="text"
-                  placeholder="Name"
+                  placeholder="Full name *"
+                  autoComplete="name"
+                  required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -828,7 +847,9 @@ export default function DtfStorePage() {
                 <div>
                   <input
                     type="email"
-                    placeholder="Email"
+                    placeholder="Email *"
+                    autoComplete="email"
+                    required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -836,6 +857,21 @@ export default function DtfStorePage() {
                   />
                   {email.trim() !== '' && !emailValid && (
                     <p className="mt-1 text-xs text-red-600">Enter a valid email address</p>
+                  )}
+                </div>
+                <div>
+                  <input
+                    type="tel"
+                    placeholder="Phone *"
+                    autoComplete="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    style={{ fontSize: '16px' }}
+                  />
+                  {phone.trim() !== '' && !phoneValid && (
+                    <p className="mt-1 text-xs text-red-600">Enter a valid phone number</p>
                   )}
                 </div>
                 <textarea
@@ -881,6 +917,9 @@ export default function DtfStorePage() {
               >
                 {checkingOut ? 'Redirecting to checkout…' : 'Checkout'}
               </button>
+              {!checkingOut && !uploading && missing.length > 0 && (
+                <p className="mt-2 text-center text-xs text-gray-500">Still needed: {missing.join(', ')}</p>
+              )}
             </div>
           </div>
         </div>
