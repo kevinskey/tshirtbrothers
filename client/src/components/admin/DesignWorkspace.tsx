@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Crop, Check, Eraser } from 'lucide-react';
+import AllUploadsBrowser, { type UploadItem } from './AllUploadsBrowser';
+import { Loader2, Trash2, Download, Save, Search, Sparkles, RotateCcw, Image, FolderOpen, Plus, X, Edit3, ZoomIn, Scissors, QrCode, Shirt, Crop, Check, Eraser, HardDrive } from 'lucide-react';
 
 interface DesignAsset {
   id: number;
@@ -68,7 +69,7 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
   // Land on the Library view by default — the sidebar entry is labeled
   // "Art Library", so opening it on the Create tools was confusing.
   // Create is one click away via the toggle in the header.
-  const [view, setView] = useState<'create' | 'library'>('library');
+  const [view, setView] = useState<'create' | 'library' | 'uploads'>('library');
 
   // Save dialog
   const [saveDialog, setSaveDialog] = useState(false);
@@ -624,6 +625,28 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     setView('create');
   }
 
+  // "All Uploads" → editor. Public files load straight from the CDN. Private
+  // ones (gang sheet orders) 403 on the CDN, so pull the bytes through the
+  // authenticated proxy and hand the editor a data URL instead.
+  async function loadUploadToEditor(item: UploadItem) {
+    const name = item.name.replace(/\.[a-z0-9]+$/i, '');
+    if (!item.private) { loadDesignToEditor(item.publicUrl, name); return; }
+    try {
+      const res = await fetch(`/api/admin/uploads/file?key=${encodeURIComponent(item.key)}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(blob);
+      });
+      loadDesignToEditor(dataUrl, name);
+    } catch {
+      alert('Could not open that file in the editor.');
+    }
+  }
+
   // Re-encode whatever's at `url` as a transparent PNG before triggering the
   // download, so a graphic with transparency always saves as a true PNG with
   // its alpha channel preserved (instead of being served as the original JPG
@@ -673,14 +696,17 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h2 onClick={() => { setGeneratedImage(null); setImageHistory([]); setPrompt(''); setQrText(''); setView('create'); }} className="text-xl md:text-2xl font-display font-bold text-gray-900 cursor-pointer hover:text-orange-600 transition">Design Workspace</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => setView('create')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'create' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             <Sparkles className="w-4 h-4 inline mr-1" /> Create
           </button>
           <button onClick={() => setView('library')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'library' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             <FolderOpen className="w-4 h-4 inline mr-1" /> Library ({designs.length})
+          </button>
+          <button onClick={() => setView('uploads')} className={`px-4 py-2 rounded-lg text-sm font-medium transition ${view === 'uploads' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            <HardDrive className="w-4 h-4 inline mr-1" /> All Uploads
           </button>
         </div>
       </div>
@@ -1247,6 +1273,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
             )}
           </div>
         </div>
+      )}
+
+      {view === 'uploads' && (
+        <AllUploadsBrowser onEdit={loadUploadToEditor} />
       )}
 
       {view === 'library' && (
