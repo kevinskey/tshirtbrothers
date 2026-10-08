@@ -286,6 +286,7 @@ export async function getActivePromotion() {
       `SELECT code, headline, subtext, discount_type, discount_value, min_order_amount, expires_at
          FROM promotions
         WHERE active = TRUE
+          AND COALESCE(holiday, '') <> 'packing_slip'
           AND (starts_at IS NULL OR starts_at <= NOW())
           AND (expires_at IS NULL OR expires_at > NOW())
         ORDER BY expires_at ASC NULLS LAST
