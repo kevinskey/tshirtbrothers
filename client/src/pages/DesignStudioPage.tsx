@@ -168,9 +168,65 @@ function getShapePath(shape: TextShapeName, intensity: number): string {
   }
 }
 
-function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outline, letterSpacing, wordSpacing }: {
+// Text stroke, resolved once for every renderer.
+//
+// Precedence copied verbatim from hydrateLegacy.convertPlainText: a real
+// stroke (strokeColor + strokeWidth) wins, and the legacy `outline` boolean
+// keeps its old 1px translucent-black look when the new fields aren't set,
+// so designs saved before this round-trip unchanged. Mirroring that rule
+// rather than re-deciding it is the point — Fabric paints the saved mockups
+// and the production art, and a studio that disagreed with it would show
+// customers one thing and print another.
+//
+// `width` is returned in the same 800-unit reference space as fontSize;
+// callers scale it exactly as they scale fontSize.
+function resolveTextStroke(el: { outline?: boolean; strokeColor?: string; strokeWidth?: number }):
+  { color: string; width: number } | null {
+  const useRealStroke =
+    typeof el.strokeWidth === 'number' && el.strokeWidth > 0 && !!el.strokeColor;
+  if (useRealStroke) return { color: el.strokeColor as string, width: el.strokeWidth as number };
+  if (el.outline) return { color: 'rgba(0,0,0,0.5)', width: 1 };
+  return null;
+}
+
+// Default thickness when the outline is first switched on, as a share of the
+// font size. 8% reads as a varsity/collegiate border at jersey sizes without
+// closing up the counters on tighter faces.
+const DEFAULT_STROKE_RATIO = 0.08;
+
+/** Turning the outline on/off. Enabling writes a real stroke rather than the
+ *  legacy boolean alone, so the Fabric renderer (which paints the saved
+ *  mockup and the production art) and the studio agree on what was asked for. */
+function outlineTogglePatch(el: DesignElement): Partial<DesignElement> {
+  if (resolveTextStroke(el)) {
+    // Clear the legacy flag too, or an old design would keep its 1px shadow
+    // after the user explicitly switched the outline off.
+    return { outline: false, strokeWidth: 0, strokeColor: undefined };
+  }
+  return {
+    outline: true,
+    strokeColor: el.strokeColor ?? defaultStrokeColor(el.color),
+    strokeWidth: Math.max(1, Math.round((el.fontSize ?? 24) * DEFAULT_STROKE_RATIO)),
+  };
+}
+
+/** Black on light text, white on dark — so switching the outline on is
+ *  visible straight away rather than painting black onto a dark shirt. */
+function defaultStrokeColor(textColor: string | undefined): string {
+  const hex = (textColor ?? '#ffffff').replace('#', '');
+  if (hex.length !== 6) return '#000000';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return '#000000';
+  // Rec. 601 luma: cheap, and good enough to answer "is this light or dark".
+  return (0.299 * r + 0.587 * g + 0.114 * b) > 140 ? '#000000' : '#ffffff';
+}
+
+function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outline, strokeColor, strokeWidth, letterSpacing, wordSpacing }: {
   text: string; shape: TextShapeName; intensity: number;
   fontSize: number; color: string; fontFamily: string; outline?: boolean;
+  strokeColor?: string; strokeWidth?: number;
   letterSpacing?: number; wordSpacing?: number;
 }) {
   if (shape === 'normal') return null; // handled by regular span
@@ -188,10 +244,17 @@ function ShapedText({ text, shape, intensity, fontSize, color, fontFamily, outli
   const letterDx = (letterSpacing ?? 0) * scaledSize;
   const wordDx = (wordSpacing ?? 0) * scaledSize;
   const textStyle: React.CSSProperties = {};
-  if (outline) {
-    textStyle.stroke = 'rgba(0,0,0,0.5)';
-    textStyle.strokeWidth = 1;
+  const stroke = resolveTextStroke({ outline, strokeColor, strokeWidth });
+  if (stroke) {
+    textStyle.stroke = stroke.color;
+    // Shaped text is drawn at scaledSize rather than fontSize, so the stroke
+    // has to be scaled by the same ratio or an arched word would carry a
+    // visibly heavier border than the same word set straight.
+    textStyle.strokeWidth = stroke.width * (scaledSize / fontSize);
+    // Stroke first, fill on top: a centred stroke otherwise eats half its
+    // width out of the glyph and thin faces lose their counters.
     textStyle.paintOrder = 'stroke fill';
+    textStyle.strokeLinejoin = 'round';
   }
   // Render each character as its own <tspan> with an explicit dx offset —
   // this is the only reliable way to control spacing on text following a
@@ -4971,11 +5034,22 @@ export default function DesignStudioPage() {
                       color={el.color ?? '#fff'}
                       fontFamily={el.fontFamily ?? 'Inter'}
                       outline={el.outline}
+                      strokeColor={el.strokeColor}
+                      strokeWidth={el.strokeWidth}
                       letterSpacing={el.letterSpacing}
                       wordSpacing={el.wordSpacing}
                     />
                   </div>
-                ) : (
+                ) : (() => {
+                  const stroke = resolveTextStroke(el);
+                  const fontPx = ((el.fontSize ?? 24) * surfaceWidth) / 800;
+                  // Legacy outline stays the four-corner text-shadow it always
+                  // was. A real stroke uses -webkit-text-stroke, which
+                  // html2canvas 1.4.1 does honour (webkitTextStrokeWidth ->
+                  // strokeText, and it walks paint-order layers), so the saved
+                  // mockup matches the studio.
+                  const legacyOutline = !!stroke && !el.strokeWidth;
+                  return (
                   <span
                     // whitespace-pre (not pre-wrap): the box always tracks
                     // the measured glyph width, so auto-wrap only ever fired
@@ -4989,7 +5063,7 @@ export default function DesignStudioPage() {
                       // disagreed on sizes by 2-4x — text overlapped art
                       // in the saved image even when it sat above in the
                       // studio. px is unambiguous in both.
-                      fontSize: `${((el.fontSize ?? 24) * surfaceWidth) / 800}px`,
+                      fontSize: `${fontPx}px`,
                       color: el.color ?? '#fff',
                       fontFamily: el.fontFamily ?? 'Inter',
                       fontWeight: 700,
@@ -4997,15 +5071,21 @@ export default function DesignStudioPage() {
                       letterSpacing: el.letterSpacing != null ? `${el.letterSpacing}em` : undefined,
                       wordSpacing: el.wordSpacing != null ? `${el.wordSpacing}em` : undefined,
                       lineHeight: el.lineHeight ?? 1.2,
-                      textShadow: el.outline ? `
+                      ...(stroke && !legacyOutline ? {
+                        WebkitTextStrokeWidth: `${(stroke.width * surfaceWidth) / 800}px`,
+                        WebkitTextStrokeColor: stroke.color,
+                        paintOrder: 'stroke fill',
+                      } : {}),
+                      textShadow: legacyOutline ? `
                         -1px -1px 0 rgba(0,0,0,0.5), 1px -1px 0 rgba(0,0,0,0.5),
                         -1px 1px 0 rgba(0,0,0,0.5), 1px 1px 0 rgba(0,0,0,0.5)
-                      ` : '0 1px 3px rgba(0,0,0,0.3)',
+                      ` : stroke ? 'none' : '0 1px 3px rgba(0,0,0,0.3)',
                     }}
                   >
                     {el.content}
                   </span>
-                )}
+                  );
+                })()}
 
                 {/* Selection handles */}
                 {isSelected && (
@@ -5466,15 +5546,69 @@ export default function DesignStudioPage() {
         )}
       </div>
 
-      {/* Outline */}
-      <button
-        type="button"
-        onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })}
-        className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${selectedEl.outline ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
-      >
-        <span className="text-sm">◌</span>
-        <span>Outline</span>
-      </button>
+      {/* Outline — colour and thickness, not just on/off. The collegiate
+          two-tone look is the whole reason this control exists. */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setTextPop(textPop === 'ol' ? null : 'ol')}
+          className={`px-2 py-1.5 rounded-md text-[10px] font-semibold flex flex-col items-center w-11 ${textPop === 'ol' || resolveTextStroke(selectedEl) ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+        >
+          <span className="text-sm">◌</span>
+          <span>Outline</span>
+        </button>
+        {textPop === 'ol' && (
+          <div className="absolute bottom-full right-0 mb-2 w-56 bg-white border rounded-lg shadow-xl p-3 z-50 space-y-2.5">
+            <button
+              type="button"
+              onClick={() => updateElement(selectedEl.id, outlineTogglePatch(selectedEl))}
+              className={`w-full px-3 py-1.5 rounded text-[11px] font-medium border ${resolveTextStroke(selectedEl) ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+            >
+              {resolveTextStroke(selectedEl) ? 'Outline on' : 'Outline off'}
+            </button>
+            {resolveTextStroke(selectedEl) && (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-gray-600">Colour</span>
+                  <input
+                    type="color"
+                    value={selectedEl.strokeColor ?? '#000000'}
+                    onChange={e => updateElement(selectedEl.id, {
+                      strokeColor: e.target.value,
+                      // A legacy design has no width yet; adopt the default
+                      // so picking a colour actually shows that colour.
+                      strokeWidth: selectedEl.strokeWidth || Math.max(1, Math.round((selectedEl.fontSize ?? 24) * DEFAULT_STROKE_RATIO)),
+                    })}
+                    className="h-7 w-12 rounded border border-gray-200 bg-white"
+                    aria-label="Outline colour"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gray-600">Thickness</span>
+                    <span className="text-[11px] text-gray-500">
+                      {Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1} max={20} step={1}
+                    value={Math.min(20, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
+                    // Stored as a share of the font size so resizing the text
+                    // keeps the border in proportion instead of thinning out.
+                    onChange={e => updateElement(selectedEl.id, {
+                      strokeWidth: Math.max(1, ((selectedEl.fontSize ?? 24) * Number(e.target.value)) / 100),
+                      strokeColor: selectedEl.strokeColor ?? defaultStrokeColor(selectedEl.color),
+                    })}
+                    className="w-full accent-blue-600"
+                    aria-label="Outline thickness"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="w-px h-7 bg-gray-200 mx-0.5" />
 
@@ -5605,14 +5739,51 @@ export default function DesignStudioPage() {
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-gray-600">Outline</span>
-          <button type="button" onClick={() => updateElement(selectedEl.id, { outline: !selectedEl.outline })} className={`px-4 py-1.5 text-xs font-medium rounded-lg border transition ${selectedEl.outline ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
-            {selectedEl.outline ? 'On' : 'Off'}
-          </button>
+          <div className="flex items-center gap-2">
+            {resolveTextStroke(selectedEl) && (
+              <input
+                type="color"
+                value={selectedEl.strokeColor ?? '#000000'}
+                onChange={e => updateElement(selectedEl.id, {
+                  strokeColor: e.target.value,
+                  strokeWidth: selectedEl.strokeWidth || Math.max(1, Math.round((selectedEl.fontSize ?? 24) * DEFAULT_STROKE_RATIO)),
+                })}
+                className="h-7 w-10 rounded border border-gray-200 bg-white"
+                aria-label="Outline colour"
+              />
+            )}
+            <button type="button" onClick={() => updateElement(selectedEl.id, outlineTogglePatch(selectedEl))} className={`px-4 py-1.5 text-xs font-medium rounded-lg border transition ${resolveTextStroke(selectedEl) ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
+              {resolveTextStroke(selectedEl) ? 'On' : 'Off'}
+            </button>
+          </div>
         </div>
 
+        {resolveTextStroke(selectedEl) && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Thickness</span>
+            <div className="flex items-center gap-2 flex-1 ml-4">
+              <input
+                type="range" min={1} max={20} step={1}
+                value={Math.min(20, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
+                onChange={e => updateElement(selectedEl.id, {
+                  strokeWidth: Math.max(1, ((selectedEl.fontSize ?? 24) * Number(e.target.value)) / 100),
+                  strokeColor: selectedEl.strokeColor ?? defaultStrokeColor(selectedEl.color),
+                })}
+                className="flex-1 accent-blue-600"
+              />
+              <span className="text-sm text-gray-700 w-14 text-right">
+                {Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Phase 2 PR #14: text effects (drop shadow / real stroke /
-            gradient fill). Fabric-only — legacy renderer doesn't paint
-            these fields, but they round-trip through save/load fine. */}
+            gradient fill). Drop shadow and gradient are still Fabric-only
+            and round-trip through save/load; strokeColor/strokeWidth are
+            no longer — the legacy renderer paints them too now (see
+            resolveTextStroke), which is what the Outline control above
+            writes. */}
         {useFabricRenderer && (
           <div>
             <span className="text-sm text-gray-600 mb-2 block">Effects</span>
