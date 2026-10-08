@@ -27,6 +27,7 @@ import {
 
 import { uploadObject } from '../services/spaces.js';
 import { sendMockupApprovalById } from './mockups.js';
+import { ensureCustomer, isValidPhone } from '../lib/customers.js';
 
 const router = Router();
 
@@ -162,12 +163,8 @@ router.post('/', async (req, res, next) => {
     }
 
     // Phone is required alongside email so the shop can always reach the
-    // customer. Digits only for the length check so formatting like
-    // (555) 000-0000 passes; the raw string is what gets stored.
-    const phoneDigits = typeof customer_phone === 'string'
-      ? customer_phone.replace(/\D/g, '')
-      : '';
-    if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+    // customer. Same rule the DTF store checkout enforces.
+    if (!isValidPhone(customer_phone)) {
       return res.status(400).json({ error: 'customer_phone is required' });
     }
 
@@ -195,50 +192,10 @@ router.post('/', async (req, res, next) => {
     // via the forgot-password flow later). Failures here are non-fatal —
     // the quote must still save.
     if (!userId && customer_email) {
-      try {
-        const existing = await pool.query(
-          'SELECT id, phone FROM users WHERE LOWER(email) = LOWER($1)',
-          [customer_email],
-        );
-        if (existing.rows.length > 0) {
-          userId = existing.rows[0].id;
-          if (!existing.rows[0].phone && customer_phone) {
-            await pool.query(
-              'UPDATE users SET phone = $1 WHERE id = $2',
-              [customer_phone, userId],
-            );
-          }
-        } else {
-          const bcrypt = (await import('bcryptjs')).default;
-          const hash = await bcrypt.hash(
-            Math.random().toString(36).slice(2) + Date.now(),
-            10,
-          );
-          const addr = shipping_address && typeof shipping_address === 'object'
-            ? shipping_address
-            : {};
-          const created = await pool.query(
-            `INSERT INTO users
-               (name, email, phone, password_hash, role,
-                address_street, address_city, address_state, address_zip)
-             VALUES ($1, $2, $3, $4, 'customer', $5, $6, $7, $8)
-             RETURNING id`,
-            [
-              customer_name,
-              customer_email,
-              customer_phone || null,
-              hash,
-              addr.street || null,
-              addr.city || null,
-              addr.state || null,
-              addr.zip || null,
-            ],
-          );
-          userId = created.rows[0].id;
-        }
-      } catch (err) {
-        console.error('[quotes] auto-add customer failed:', err.message);
-      }
+      const addr = shipping_address && typeof shipping_address === 'object' ? shipping_address : {};
+      userId = await ensureCustomer({
+        name: customer_name, email: customer_email, phone: customer_phone, address: addr,
+      });
     }
 
     const result = await pool.query(

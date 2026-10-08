@@ -20,6 +20,7 @@ type OrderRow = {
   layout: LayoutPlacement[] | null;
   customer_name: string | null;
   customer_email: string | null;
+  customer_phone: string | null;
   length_ft: number;
   tier: TierKey;
   price_cents: number;
@@ -133,7 +134,7 @@ function printDtfPackingSlip(order: OrderRow) {
     orderNumber: order.id,
     orderType: 'DTF Gang Sheet',
     date: order.paid_at || order.created_at,
-    customer: { name: order.customer_name, email: order.customer_email },
+    customer: { name: order.customer_name, email: order.customer_email, phone: order.customer_phone },
     fulfillment: order.delivery,
     shipTo: order.delivery === 'ship' && a
       ? [order.customer_name || '', a.line1 || '', [a.city, a.state].filter(Boolean).join(', ') + (a.zip ? ` ${a.zip}` : '')]
@@ -823,6 +824,9 @@ function DtfOrdersQueue() {
                       <td className="px-3 py-3">
                         <div className="font-medium text-gray-900">{order.customer_name || '—'}</div>
                         <div className="text-xs text-gray-500">{order.customer_email || '—'}</div>
+                        {order.customer_phone && (
+                          <a href={`tel:${order.customer_phone}`} className="text-xs text-gray-500 hover:text-gray-800">{order.customer_phone}</a>
+                        )}
                       </td>
                       <td className="px-3 py-3">
                         <div className="text-gray-700">{order.delivery === 'ship' ? 'Ship' : 'Pickup'}</div>
