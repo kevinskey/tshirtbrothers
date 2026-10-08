@@ -194,6 +194,13 @@ function resolveTextStroke(el: { outline?: boolean; strokeColor?: string; stroke
 // closing up the counters on tighter faces.
 const DEFAULT_STROKE_RATIO = 0.08;
 
+// Thickness ceiling, as a percentage of font size. Well past a varsity
+// border and into heavy cartoon/bubble territory, which is the point — the
+// old 20% cap stopped short of looks people actually ask for. Note the
+// stroke is centred on the glyph outline with the fill painted over it, so
+// the visible border outside the letter is about half this number.
+const MAX_STROKE_PCT = 100;
+
 /** Turning the outline on/off. Enabling writes a real stroke rather than the
  *  legacy boolean alone, so the Fabric renderer (which paints the saved
  *  mockup and the production art) and the studio agree on what was asked for. */
@@ -5592,8 +5599,8 @@ export default function DesignStudioPage() {
                   </div>
                   <input
                     type="range"
-                    min={1} max={20} step={1}
-                    value={Math.min(20, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
+                    min={1} max={MAX_STROKE_PCT} step={1}
+                    value={Math.min(MAX_STROKE_PCT, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
                     // Stored as a share of the font size so resizing the text
                     // keeps the border in proportion instead of thinning out.
                     onChange={e => updateElement(selectedEl.id, {
@@ -5763,8 +5770,8 @@ export default function DesignStudioPage() {
             <span className="text-sm text-gray-600">Thickness</span>
             <div className="flex items-center gap-2 flex-1 ml-4">
               <input
-                type="range" min={1} max={20} step={1}
-                value={Math.min(20, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
+                type="range" min={1} max={MAX_STROKE_PCT} step={1}
+                value={Math.min(MAX_STROKE_PCT, Math.max(1, Math.round(((selectedEl.strokeWidth || 0) / (selectedEl.fontSize ?? 24)) * 100)))}
                 onChange={e => updateElement(selectedEl.id, {
                   strokeWidth: Math.max(1, ((selectedEl.fontSize ?? 24) * Number(e.target.value)) / 100),
                   strokeColor: selectedEl.strokeColor ?? defaultStrokeColor(selectedEl.color),
