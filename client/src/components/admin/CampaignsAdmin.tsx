@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye, Upload } from 'lucide-react';
+import { Loader2, Send, Sparkles, X, Check, Mail, MousePointerClick, UserMinus, Eye, Upload, Shirt } from 'lucide-react';
 
 type Filter = 'all' | 'recent_quoted' | 'past_invoiced' | 'new_30' | 'prospects';
 
@@ -398,7 +398,7 @@ export default function CampaignsAdmin() {
     <div className="pt-6 space-y-6 max-w-5xl">
       <div>
         <h2 className="text-lg md:text-xl font-display font-bold text-gray-900">Email & Marketing</h2>
-        <p className="text-sm text-gray-500 mt-1">Draft a marketing email with AI, attach examples from the Art Library, and send to a customer segment. Live performance metrics below.</p>
+        <p className="text-sm text-gray-500 mt-1">Draft a marketing email with AI, attach examples from the Art Library or your mockups, and send to a customer segment. Live performance metrics below.</p>
       </div>
 
       {/* Overview cards */}
@@ -488,10 +488,17 @@ export default function CampaignsAdmin() {
               {uploading ? 'Uploading…' : 'Upload file'}
             </button>
             <button
-              onClick={() => setPickerOpen(true)}
+              onClick={() => { setPickerTab('art'); setPickerSearch(''); setPickerOpen(true); }}
               className="text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg"
             >
-              Pick from Art Library
+              Art Library
+            </button>
+            <button
+              onClick={() => { setPickerTab('mockup'); setPickerSearch(''); setPickerOpen(true); }}
+              className="flex items-center gap-1 text-xs font-medium text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg"
+            >
+              <Shirt className="w-3.5 h-3.5" />
+              Mockups
             </button>
             <input
               ref={fileInputRef}
@@ -507,7 +514,10 @@ export default function CampaignsAdmin() {
           </div>
         </div>
         {examples.length === 0 ? (
-          <p className="text-xs text-gray-400">Optional. Up to 6 thumbnails will appear in the email body.</p>
+          <p className="text-xs text-gray-400">
+            Optional. Up to 6 thumbnails will appear in the email body. Mockups show the finished
+            garment, which sells better than the bare graphic.
+          </p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {examples.map((e) => (
