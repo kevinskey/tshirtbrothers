@@ -154,9 +154,14 @@ export default function QuoteItemsEditor({
             : [];
           let sizes = Array.isArray(prod?.sizes) ? (prod.sizes as unknown[]).map(String).filter(Boolean) : [];
           let costMin: number | null = null;
-          if (colors.length === 0 && (prod?.style_number || prod?.name)) {
+          if (colors.length === 0 && (prod?.ss_id || prod?.style_number || prod?.name)) {
+            // Resolve by catalog id when we have one — style numbers are not
+            // unique across brands and the text search picked the wrong style.
+            const query = prod?.ss_id
+              ? `product_id=${id}`
+              : `styleQ=${encodeURIComponent(prod.style_number || prod.name)}`;
             const lr = await fetch(
-              `/api/quotes/admin/live-cost?styleQ=${encodeURIComponent(prod.style_number || prod.name)}`,
+              `/api/quotes/admin/live-cost?${query}`,
               { headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` } },
             );
             if (lr.ok) {

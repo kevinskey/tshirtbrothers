@@ -1022,10 +1022,20 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
   try {
     const q = String(req.query.styleQ || '').trim();
     const quoteId = req.query.quote_id ? Number(req.query.quote_id) : null;
+    const productId = req.query.product_id ? Number(req.query.product_id) : null;
     let color = String(req.query.color || '').trim().toLowerCase();
 
     let resolved = null; // { ss_id?, searchText?, from }
-    if (!q && quoteId) {
+    // An explicit catalog product id is unambiguous — style numbers are not
+    // (e.g. "202" is both Tultex 10667 and a discontinued SoftShirts style,
+    // and the text search picked the wrong one).
+    if (productId) {
+      const pr = await pool.query('SELECT ss_id FROM products WHERE id = $1', [productId]);
+      if (pr.rows.length === 0) return res.status(404).json({ error: 'Product not found' });
+      if (!pr.rows[0].ss_id) return res.status(404).json({ error: 'Product has no S&S style id' });
+      resolved = { ss_id: String(pr.rows[0].ss_id), from: 'product id' };
+    }
+    if (!resolved && !q && quoteId) {
       const qr = await pool.query(
         'SELECT product_id, product_name, color, inputs_json FROM quotes WHERE id = $1', [quoteId]);
       if (qr.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
