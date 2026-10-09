@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, Loader2, Search, Calculator } from 'lucide-react';
+import { Plus, Trash2, Copy, Loader2, Search, Calculator } from 'lucide-react';
 import type { Product, Quote, QuoteItem } from '@/lib/api';
 import { fetchAdminProducts, replaceQuoteItems, calculateInstantPrice } from '@/lib/api';
 
@@ -236,6 +236,24 @@ export default function QuoteItemsEditor({
     }]);
   }
 
+  // Copy a line right below itself — same product, sizes, print areas and
+  // price — so a second colorway (or a near-identical style) is one edit
+  // away. The copy drops `id` so it saves as a new row, and deep-copies the
+  // arrays so editing one line never mutates the other.
+  function duplicateDraft(i: number) {
+    setDrafts((prev) => {
+      const src = prev[i];
+      if (!src) return prev;
+      const copy: DraftItem = {
+        ...src,
+        id: undefined,
+        sizes: src.sizes.map((s) => ({ ...s })),
+        print_areas: [...src.print_areas],
+      };
+      return [...prev.slice(0, i + 1), copy, ...prev.slice(i + 1)];
+    });
+  }
+
   function removeDraft(i: number) {
     setDrafts((prev) => prev.filter((_, idx) => idx !== i));
   }
@@ -359,6 +377,13 @@ export default function QuoteItemsEditor({
                   onName={(name) => updateDraft(i, { product_name: name })}
                 />
               </div>
+              <button
+                onClick={() => duplicateDraft(i)}
+                title="Duplicate item"
+                className="p-1.5 text-gray-400 hover:text-blue-600 mt-4"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
               <button
                 onClick={() => removeDraft(i)}
                 title="Remove item"
