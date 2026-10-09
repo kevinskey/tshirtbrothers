@@ -16,6 +16,30 @@ const FROM_EMAIL = FROM_EMAIL_RAW.includes('<') ? FROM_EMAIL_RAW : `${FROM_NAME_
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'kevin@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 
+/**
+ * Send through Resend, failing loudly.
+ *
+ * The SDK does NOT throw when the API rejects a message — it resolves with
+ * `{ data: null, error }`. Every call site here used to ignore that, so a
+ * rejected recipient (suppressed address, domain problem, bad payload) looked
+ * exactly like a delivered one: the surrounding try/catch never fired, the
+ * success line still got logged, and the admin UI still said "quote sent to
+ * customer". On 2026-10-09 that cost us a round of "did it actually send?"
+ * that only the Resend ids could answer.
+ *
+ * Returns the message id so callers can log something checkable.
+ */
+async function sendMail(payload) {
+  const { data, error } = await resend.emails.send(payload);
+  if (error) {
+    const to = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
+    const err = new Error(`Resend rejected "${payload.subject}" to ${to}: ${error.message || JSON.stringify(error)}`);
+    err.resendError = error;
+    throw err;
+  }
+  return data?.id;
+}
+
 // ── Shared styles ────────────────────────────────────────────────────────────
 
 const BRAND_ORANGE = '#f97316';
@@ -123,7 +147,7 @@ export async function sendQuoteRequestNotification(quote) {
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `New Quote Request from ${quote.customer_name}`,
@@ -438,19 +462,21 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
   return html;
 }
 
+// Deliberately NOT wrapped in try/catch: the admin send-price route awaits
+// this and then tells the operator "quote sent to customer". Swallowing the
+// failure here is what let that message appear for a send that never left —
+// the operator believes the customer has pricing and stops chasing it. A
+// throw surfaces as a 500 the UI can report honestly.
 export async function sendQuotePriceToCustomer(quote, priceDetails) {
   const html = await buildQuoteEmailHtml(quote, priceDetails);
-  try {
-    await resend.emails.send({
-      from: FROM_EMAIL,
-      to: mailRecipients(quote),
-      subject: 'Your Custom Printing Quote from TShirt Brothers',
-      html,
-    });
-    console.log(`[Email] Price quote sent to ${quote.customer_email}`);
-  } catch (err) {
-    console.error('[Email] Failed to send price quote:', err);
-  }
+  const id = await sendMail({
+    from: FROM_EMAIL,
+    to: mailRecipients(quote),
+    subject: 'Your Custom Printing Quote from TShirt Brothers',
+    html,
+  });
+  console.log(`[Email] Price quote sent to ${quote.customer_email} (resend id ${id})`);
+  return id;
 }
 
 /**
@@ -479,7 +505,7 @@ export async function sendQuoteAcceptedNotification(quote) {
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `Quote Accepted! ${quote.customer_name} - Deposit Received`,
@@ -539,7 +565,7 @@ export async function sendDepositReceiptToCustomer(quote) {
 
   if (es) {
     try {
-      await resend.emails.send({
+      await sendMail({
         from: FROM_EMAIL,
         to: mailRecipients(quote),
         subject: `Depósito recibido — Confirmación del pedido #${quote.id}`,
@@ -586,7 +612,7 @@ export async function sendDepositReceiptToCustomer(quote) {
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: `Deposit received — Order #${quote.id} confirmation`,
@@ -669,7 +695,7 @@ export async function sendQuoteStatusUpdate(quote, newStatus) {
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject,
@@ -714,7 +740,7 @@ export async function sendAbandonedQuoteFollowUp(quote) {
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392. — Kevin</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: es
@@ -749,7 +775,7 @@ export async function sendReviewRequestEmail(quote) {
       <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿No quedaste satisfecho con tu pedido? Responde a este correo y lo arreglamos. — Kevin</p>
     `;
     try {
-      await resend.emails.send({
+      await sendMail({
         from: FROM_EMAIL,
         to: mailRecipients(quote),
         subject: 'Un favor rápido — ¿una reseña de 30 segundos en Google? · TShirt Brothers',
@@ -772,7 +798,7 @@ export async function sendReviewRequestEmail(quote) {
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Not happy with your order? Just reply to this email and we'll make it right. — Kevin</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: 'Quick favor — 30-second Google review? · TShirt Brothers',
@@ -812,7 +838,7 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
       <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">¿Preguntas? Responde a este correo o llámanos al (470) 622-1392. Hablamos español.</p>
     `;
     try {
-      await resend.emails.send({
+      await sendMail({
         from: FROM_EMAIL,
         to: mailRecipients(quote),
         subject: `Saldo pendiente — Pedido #${quote.id} · TShirt Brothers`,
@@ -847,7 +873,7 @@ export async function sendBalanceDueToCustomer(quote, { total, depositPaid, bala
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: 'Balance Due - TShirt Brothers Order #' + quote.id,
@@ -887,7 +913,7 @@ export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, ba
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: `Order #${quote.id} updated — TShirt Brothers`,
@@ -1001,7 +1027,7 @@ export async function buildPaidReceiptHtml(invoice) {
 export async function sendPaidInvoiceReceipt(invoice) {
   const html = await buildPaidReceiptHtml(invoice);
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(invoice),
       subject: `Receipt - TShirt Brothers Invoice ${invoice.invoice_number}`,
@@ -1173,13 +1199,13 @@ export function buildPayoutRemittanceEmail({ store, payout, toEmail, toName }) {
 
 export async function sendPayoutRemittanceEmail(opts) {
   const { subject, html } = buildPayoutRemittanceEmail(opts);
-  await resend.emails.send({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
+  await sendMail({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
   console.log(`[Email] Payout remittance sent to ${opts.toEmail} for payout ${opts.payout.id}`);
 }
 
 export async function sendStoreLaunchEmail(opts) {
   const { subject, html } = buildStoreLaunchEmail(opts);
-  await resend.emails.send({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
+  await sendMail({ from: FROM_EMAIL, to: [opts.toEmail], subject, html });
   console.log(`[Email] Store launch email sent to ${opts.toEmail} for ${opts.store.slug}`);
 }
 
@@ -1237,7 +1263,7 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
 
-  await resend.emails.send({
+  await sendMail({
     from: FROM_EMAIL,
     to: [toEmail],
     subject: 'Your Mockup - TShirt Brothers' + (mockup.name ? ` - ${mockup.name}` : ''),
@@ -1302,7 +1328,7 @@ export async function sendMockupForApproval(mockup, approveUrl, lang = 'en', opt
   `;
 
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: await mockupRecipients(mockup),
       subject: (es
@@ -1346,7 +1372,7 @@ export async function sendMockupRejectedAckToCustomer(mockup, note, lang = 'en')
     <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: await mockupRecipients(mockup),
       subject: es ? 'Recibimos tus cambios - TShirt Brothers' : "We're on your mockup changes - TShirt Brothers",
@@ -1383,7 +1409,7 @@ export async function sendArtworkRequestToCustomer(quote, uploadUrl, { message, 
     <p style="margin:0;font-size:13px;color:#9ca3af;">Best formats: high-resolution PNG with a transparent background. Don't have a file? Reply to this email — our design team helps for free.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: es ? `Sube tu diseño - Cotización #${quote.id} - TShirt Brothers` : `Artwork needed for your order - Quote #${quote.id} - TShirt Brothers`,
@@ -1406,7 +1432,7 @@ export async function sendArtworkReceivedToAdmin(quote, urls) {
     ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `Artwork received · Quote #${quote.id} · ${quote.customer_name || quote.customer_email || ''}`,
@@ -1429,7 +1455,7 @@ export async function sendQuoteDeclinedToAdmin(quote, reason) {
     ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `Declined · Quote #${quote.id} · ${quote.customer_name || quote.customer_email || ''}`,
@@ -1458,7 +1484,7 @@ export async function sendPoShippedToAdmin(po) {
     ${primaryButton('Open Purchasing', `${DOMAIN}/admin?section=purchasing`)}
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `Blanks shipped · PO ${po.po_number || po.id}${po.quote_id ? ` · Quote #${po.quote_id}` : ''}`,
@@ -1535,7 +1561,7 @@ export async function sendBalancePaidConfirmation(quote, lang = 'en') {
     <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: es ? `Pedido #${quote.id} pagado — ${pickup ? 'listo para recoger' : 'lo enviamos pronto'}` : `Order #${quote.id} paid in full — ${pickup ? 'pickup details inside' : 'shipping soon'}`,
@@ -1560,7 +1586,7 @@ export async function sendBalancePaidToAdmin(quote, amount) {
     ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `Balance paid · Quote #${quote.id} · ${pickup ? 'pickup' : 'SHIP'} · ${quote.customer_name || ''}`,
@@ -1594,7 +1620,7 @@ export async function sendStoreOrderShippedEmail(order) {
     <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [order.buyer_email],
       subject: `Your ${order.store_name} order has shipped 📦`,
@@ -1629,7 +1655,7 @@ export async function sendOrderShippedToCustomer(quote, { carrier, trackingNumbe
     <p style="margin:16px 0 0;font-size:13px;color:#9ca3af;text-align:center;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
       subject: es ? `Tu pedido #${quote.id} va en camino 📦` : `Your order #${quote.id} has shipped 📦`,
@@ -1755,7 +1781,7 @@ export async function sendMockupDecisionToAdmin(mockup, action, note) {
       </p>` : ''}
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject: `${approved ? 'Approved' : 'Changes requested'}: ${mockup.name || 'mockup'}${mockup.quote_id ? ` · Quote #${mockup.quote_id}` : ''}`,
@@ -1786,12 +1812,12 @@ export async function sendNewsletterEmail({ to, subject, renderHtml, campaignId 
     : '';
   let html = renderHtml({ unsubHtml, openPixelHtml });
   if (campaignId) html = wrapLinksForTracking(html, campaignId, to);
-  return resend.emails.send({ from: FROM_EMAIL, to: [to], subject, html });
+  return sendMail({ from: FROM_EMAIL, to: [to], subject, html });
 }
 
 export async function sendCampaignEmail({ to, subject, bodyHtml, exampleImageUrls = [], campaignId = 0 }) {
   const html = buildCampaignHtml({ subject, bodyHtml, exampleImageUrls, recipientEmail: to, campaignId });
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [to],
     subject,
@@ -1940,7 +1966,7 @@ export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, gra
       ? 'Responde a este correo y uno de nosotros te atenderá personalmente — hablamos español.'
       : 'Reply to this email and one of us will personally walk you through it.'}</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: mailRecipients(quote),
     subject,
@@ -1962,7 +1988,7 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
     ${primaryButton('Open in Admin', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Quote ID #${quote.id} · ${items.length} item${items.length === 1 ? '' : 's'} · design_type=instant-quote</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [ADMIN_EMAIL],
     replyTo: quote.customer_email,
@@ -2024,7 +2050,7 @@ export async function sendGangSheetPaidToCustomer({ order }) {
     )}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">We'll email you again as soon as it's ready.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [order.customer_email],
     subject,
@@ -2061,7 +2087,7 @@ export async function sendGangSheetReadyToCustomer({ order }) {
     ${deliveryBlock}
     <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [order.customer_email],
     subject,
@@ -2093,7 +2119,7 @@ export async function sendGangSheetQuoteToCustomer({ order, message, amountCents
     ${payBlock}
     <p style="font-size:13px;color:#9ca3af;text-align:center;margin-top:18px;">Questions? Reply to this email or call us at (470) 622-1392.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [order.customer_email],
     replyTo: ADMIN_EMAIL,
@@ -2119,7 +2145,7 @@ export async function sendGangSheetLinkEmail({ to, sheetName, url, linkExpiresDa
     <p style="font-size:13px;color:#6b7280;margin-top:12px;">Direct link: <a href="${url}" style="color:${BRAND_ORANGE};word-break:break-all;">${url}</a></p>
     <p style="font-size:13px;color:#b91c1c;margin-top:8px;">This download link expires in ${linkExpiresDays} days.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [to],
     replyTo: ADMIN_EMAIL,
@@ -2184,7 +2210,7 @@ export async function sendGangSheetToVendor({
     ${expiryLine}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-1392.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [vendorEmail],
     replyTo: ADMIN_EMAIL,
@@ -2234,7 +2260,7 @@ export async function sendGangSheetVendorFiles({
     ${expiryLine}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Questions? Reply to this email — it goes straight to Kevin at T-Shirt Brothers, or call (470) 622-1392.</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [vendorEmail],
     replyTo: ADMIN_EMAIL,
@@ -2263,7 +2289,7 @@ export async function sendGangSheetPaidToAdmin({ order }) {
     ${primaryButton('Open in Admin', `${DOMAIN}/admin/dtf-orders`)}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Order ID #${order.id}</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [ADMIN_EMAIL],
     replyTo: order.customer_email || undefined,
@@ -2291,7 +2317,7 @@ export async function sendGangSheetOrphanPaymentAlert({ sessionId, orderId, amou
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Check the Stripe Dashboard for this session, then the gang_sheet_orders table for order #${escapeHtml(String(orderId))}.</p>
   `;
   try {
-    await resend.emails.send({
+    await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
       subject,
@@ -2360,7 +2386,7 @@ export async function sendEmbroideryPaidToCustomer({ request }) {
     machine until you approve it.</p>
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id} · ${SHOP_ADDRESS}</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [request.customer_email],
     subject: `We've got your artwork — digitization underway (Request #${request.id})`,
@@ -2382,7 +2408,7 @@ export async function sendEmbroideryPaidToAdmin({ request, stitchFileProvided = 
     ${primaryButton('Open in Admin', `${DOMAIN}/admin`)}
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id}${request.customer_phone ? ' · ' + escapeHtml(request.customer_phone) : ''}</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [ADMIN_EMAIL],
     replyTo: request.customer_email,
@@ -2457,7 +2483,7 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
     ${hasEstimates ? 'Once your deposit is in, we digitize, send you stitch-out previews for approval, and sew.' : 'Your digitized stitch file is yours to keep.'}</p>
     <p style="font-size:13px;color:#6b7280;margin-top:18px;">Request #${request.id} · ${SHOP_ADDRESS}</p>
   `;
-  return resend.emails.send({
+  return sendMail({
     from: FROM_EMAIL,
     to: [request.customer_email],
     replyTo: ADMIN_EMAIL,
