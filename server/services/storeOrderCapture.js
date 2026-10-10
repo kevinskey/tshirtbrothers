@@ -327,6 +327,17 @@ export async function captureStoreOrder(session) {
       console.error('[captureStoreOrder] webhook dispatch error:', err);
     });
 
+    // ── 5. Tell the shop a shirt needs printing (fire-and-forget) ─────────
+    // Sits after COMMIT and after the idempotency guard above, so a Stripe
+    // webhook retry returns early and can never mail the same sale twice.
+    notifyAdminOfSale({
+      storeId, orderId,
+      buyerEmail, buyerName, shippingAddress,
+      lines, gross_total, store_earnings_total,
+    }).catch((err) => {
+      console.error('[captureStoreOrder] admin sale notice failed:', err.message);
+    });
+
     console.log(
       `[captureStoreOrder] captured order ${orderId} for store ${storeId}: ` +
       `store earns ${store_earnings_total}¢, TSB earns ${tsb_earnings_total + shipping_cents + tax_cents}¢`
@@ -342,4 +353,54 @@ export async function captureStoreOrder(session) {
 
 function tryParseJson(raw) {
   try { return JSON.parse(raw); } catch { return raw; }
+}
+
+/**
+ * Email the shop that a storefront sale just happened.
+ *
+ * Until 2026-10-10 a group-store sale was silent — captured, ledgered, and
+ * invisible until someone thought to open the dashboard. Kevin asked to be
+ * told when a Sensory Seasons shirt sells; every group store gets the same
+ * notice, since a sale nobody hears about is the same problem whichever
+ * store it came from.
+ *
+ * STORE_ORDER_NOTIFY_SLUGS narrows it to a comma-separated list of store
+ * slugs when the volume stops being welcome; unset means every store.
+ *
+ * The capture already committed by the time this runs — anything in here
+ * that throws is logged and dropped, never retried into a second email.
+ */
+async function notifyAdminOfSale({
+  storeId, orderId, buyerEmail, buyerName, shippingAddress,
+  lines, gross_total, store_earnings_total,
+}) {
+  const storeRes = await pool.query(`SELECT id, name, slug FROM stores WHERE id = $1`, [storeId]);
+  const store = storeRes.rows[0];
+  if (!store) return;
+
+  const only = (process.env.STORE_ORDER_NOTIFY_SLUGS || '')
+    .split(',').map((s) => s.trim()).filter(Boolean);
+  if (only.length > 0 && !only.includes(store.slug)) return;
+
+  // Titles for the line items — the snapshot carries ids, and an email
+  // that says "product 186 × 1" is not a notification, it's a riddle.
+  const ids = [...new Set(lines.map((l) => l.store_product_id).filter(Boolean))];
+  const titleRes = ids.length
+    ? await pool.query(`SELECT id, title FROM store_products WHERE id = ANY($1)`, [ids])
+    : { rows: [] };
+  const titles = new Map(titleRes.rows.map((r) => [r.id, r.title]));
+
+  const { sendStoreOrderPlacedToAdmin } = await import('./email.js');
+  await sendStoreOrderPlacedToAdmin({
+    store,
+    order: {
+      id: orderId,
+      buyer_email: buyerEmail,
+      buyer_name: buyerName,
+      gross_total_cents: gross_total,
+      store_earnings_cents: store_earnings_total,
+      shipping_address: shippingAddress,
+    },
+    lines: lines.map((l) => ({ ...l, title: titles.get(l.store_product_id) })),
+  });
 }
