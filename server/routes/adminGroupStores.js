@@ -388,11 +388,30 @@ router.post('/:id/products', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+/**
+ * Normalize a caller-supplied product slug the way the create form does:
+ * lowercase, non-alphanumerics to single hyphens, trimmed, 160 chars (the
+ * column width). Returns null when nothing usable survives.
+ */
+function normalizeSlug(raw) {
+  const s = String(raw).toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 160)
+    .replace(/-+$/, '');
+  return s || null;
+}
+
 // ── PATCH /:id/products/:productId ───────────────────────────────────────
-// Partial product update: pause/resume, cover photo, title, pricing,
+// Partial product update: pause/resume, cover photo, title, slug, pricing,
 // description, min qty, variants, and campaign_ref (the "collection"
 // tag — products whose campaign_ref matches the storefront's
 // featured_collection key appear in that collection).
+//
+// Slug is editable because a product duplicated from another arrives as
+// "<original>-copy" and that string is the customer-facing URL. Renaming
+// one breaks any link already shared for the old slug — the caller is
+// expected to know that; nothing redirects.
 router.patch('/:id/products/:productId', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -407,6 +426,11 @@ router.patch('/:id/products/:productId', async (req, res, next) => {
     if (typeof body.is_active === 'boolean') push('is_active', body.is_active);
     if (typeof body.cover_image === 'string' && body.cover_image.trim()) push('cover_image', body.cover_image.trim());
     if (typeof body.title === 'string' && body.title.trim()) push('title', body.title.trim());
+    if (typeof body.slug === 'string' && body.slug.trim()) {
+      const slug = normalizeSlug(body.slug);
+      if (!slug) return res.status(400).json({ error: 'slug must contain at least one letter or number' });
+      push('slug', slug);
+    }
     if (Number.isInteger(body.retail_price_cents) && body.retail_price_cents > 0) push('retail_price_cents', body.retail_price_cents);
     if (body.decoration_cost_cents === null || (Number.isInteger(body.decoration_cost_cents) && body.decoration_cost_cents >= 0)) {
       push('decoration_cost_cents', body.decoration_cost_cents);
@@ -422,11 +446,20 @@ router.patch('/:id/products/:productId', async (req, res, next) => {
 
     if (sets.length === 0) return res.status(400).json({ error: 'No valid fields to update' });
 
-    const { rows } = await pool.query(
-      `UPDATE store_products SET ${sets.join(', ')} WHERE store_id = $1 AND id = $2
-       RETURNING id, title, is_active, cover_image, campaign_ref`,
-      params,
-    );
+    let rows;
+    try {
+      ({ rows } = await pool.query(
+        `UPDATE store_products SET ${sets.join(', ')} WHERE store_id = $1 AND id = $2
+         RETURNING id, title, slug, is_active, cover_image, campaign_ref`,
+        params,
+      ));
+    } catch (err) {
+      // UNIQUE (store_id, slug) — same answer the create route gives.
+      if (err.code === '23505') {
+        return res.status(409).json({ error: `slug "${normalizeSlug(body.slug)}" already in use for this store` });
+      }
+      throw err;
+    }
     if (!rows[0]) return res.status(404).json({ error: 'Product not found' });
     res.json(rows[0]);
   } catch (err) { next(err); }
