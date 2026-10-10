@@ -1597,6 +1597,69 @@ export async function sendBalancePaidToAdmin(quote, amount) {
   }
 }
 
+/**
+ * Store orders keep their ship-to in Stripe's shape (line1 / postal_code),
+ * not the quote shape shipToLines() reads (address / zip) — feeding one to
+ * the other silently drops the street and mails you a city with no house.
+ */
+function storeShipToLines(addr) {
+  if (!addr || typeof addr !== 'object') return '';
+  const cityLine = [[addr.city, addr.state].filter(Boolean).join(', '), addr.postal_code]
+    .filter(Boolean).join(' ');
+  return [addr.name, addr.line1, addr.line2, cityLine]
+    .filter((l) => l && String(l).trim())
+    .map((l) => escapeHtml(String(l)))
+    .join('<br/>');
+}
+
+/**
+ * Someone bought from a group store — tell the shop.
+ *
+ * A storefront sale used to land silently: the Stripe webhook captured it,
+ * credited the ledger, and nothing told anyone a shirt needed printing.
+ * You found out by opening the dashboard. This is the only push notice a
+ * store sale produces, so it carries what you need to act — what sold, in
+ * what size, where it's going, and what the org earned.
+ *
+ * @param {object} p
+ * @param {object} p.store  { id, name, slug }
+ * @param {object} p.order  { id, buyer_email, buyer_name, gross_total_cents,
+ *                            store_earnings_cents, shipping_address }
+ * @param {Array}  p.lines  [{ title, qty, variant, line_retail_cents }]
+ */
+export async function sendStoreOrderPlacedToAdmin({ store, order, lines = [] }) {
+  const items = lines.map((l) => {
+    const variant = [l.variant?.size, l.variant?.color].filter(Boolean).join(' · ');
+    return `<li style="margin:0 0 4px;font-size:14px;color:#374151;"><strong>${l.qty}×</strong> ${escapeHtml(l.title || `Product ${l.store_product_id}`)}${variant ? ` <span style="color:#9ca3af;">(${escapeHtml(variant)})</span>` : ''}</li>`;
+  }).join('');
+  const units = lines.reduce((s, l) => s + (l.qty || 0), 0);
+  const ship = storeShipToLines(order.shipping_address);
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">🛒 New ${escapeHtml(store.name)} order</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${escapeHtml(order.buyer_name || order.buyer_email || 'A customer')}</strong> just bought ${units} item${units === 1 ? '' : 's'} — ${formatCurrency((order.gross_total_cents || 0) / 100)}.</p>
+    ${items ? `<ul style="margin:0 0 16px;padding-left:18px;">${items}</ul>` : ''}
+    ${detailsTable(
+      detailRow('Order', `#${order.id}`) +
+      detailRow('Buyer', escapeHtml(order.buyer_email || '—')) +
+      detailRow('Order total', formatCurrency((order.gross_total_cents || 0) / 100)) +
+      detailRow(`${escapeHtml(store.name)} earns`, formatCurrency((order.store_earnings_cents || 0) / 100)) +
+      detailRow('Ship to', ship || '⚠️ no address on file — contact the buyer')
+    )}
+    ${primaryButton('Open the Order', `${DOMAIN}/admin/store-order/${order.id}`)}
+  `;
+  try {
+    const id = await sendMail({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `🛒 ${store.name} sale · ${units} item${units === 1 ? '' : 's'} · ${formatCurrency((order.gross_total_cents || 0) / 100)} · order #${order.id}`,
+      html: baseLayout(`New ${store.name} order`, body),
+    });
+    console.log(`[Email] Store order ${order.id} (${store.slug}) admin notice sent to ${ADMIN_EMAIL} (resend id ${id})`);
+  } catch (err) {
+    console.error('[Email] Failed to send store-order placed admin notice:', err);
+  }
+}
+
 /** Order went in the mail — tracking email to the customer. */
 // Storefront order shipped. Same shape as the quote version, but the
 // buyer bought from a store they know by name, not from a TSB quote —
