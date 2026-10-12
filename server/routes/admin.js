@@ -466,7 +466,15 @@ router.get('/customers', async (req, res, next) => {
               0::int AS design_count, 0::int AS quote_count
          FROM (
            SELECT customer_name AS name, customer_email AS email,
-                  customer_phone AS phone, customer_address AS address, created_at
+                  customer_phone AS phone,
+                  -- customer_address became JSONB with the invoice editor:
+                  -- {"address": "<freeform>"} or a structured object. The
+                  -- bare column here made the UNION jsonb-vs-text and 500'd
+                  -- the whole customers list (and every customer picker).
+                  COALESCE(customer_address->>'address',
+                           customer_address->>'line1',
+                           customer_address #>> '{}') AS address,
+                  created_at
              FROM invoices
             WHERE customer_email IS NOT NULL AND customer_email <> ''
            UNION ALL

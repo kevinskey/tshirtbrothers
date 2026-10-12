@@ -29,6 +29,21 @@ function formatCurrency(amount) {
   return `$${Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// invoices.customer_address is JSONB: {"address": "<freeform>"} when the
+// editor was given a plain string, or a structured object. Render one line
+// of text for emails/PDFs — passing the raw object to escapeHtml prints
+// "[object Object]".
+export function customerAddressText(addr) {
+  if (!addr) return '';
+  if (typeof addr === 'string') return addr;
+  if (typeof addr === 'object') {
+    if (addr.address) return String(addr.address);
+    return [addr.line1 || addr.street, addr.city, addr.state, addr.zip]
+      .filter(Boolean).join(', ');
+  }
+  return String(addr);
+}
+
 // Generate next invoice number: INV-YYYYMMDD-001
 export async function generateInvoiceNumber() {
   const today = new Date();
@@ -207,7 +222,8 @@ export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
           theme.escapeHtml(invoice.customer_email || ''),
           theme.escapeHtml(invoice.customer_phone || ''),
         ] },
-        invoice.customer_address ? { label: 'Billing Information', lines: [theme.escapeHtml(invoice.customer_address)] } : null,
+        customerAddressText(invoice.customer_address)
+          ? { label: 'Billing Information', lines: [theme.escapeHtml(customerAddressText(invoice.customer_address))] } : null,
         { label: 'Payment Terms', lines: [
           owedNow.paymentType === 'deposit' ? `<strong>${owedNow.depositPercent}% deposit up front</strong>` : (amountDue <= 0 ? 'Paid' : '<strong>Due upon receipt</strong>'),
           termsLine || 'Thank you for your payment.',
