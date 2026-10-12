@@ -988,6 +988,7 @@ async function handleCheckoutSessionCompleted(session) {
   const storeId = session.metadata?.store_id;
   const jdsSku = session.metadata?.jds_sku;
   const cgcOrderId = session.metadata?.cgc_order_id;
+  const apcOrderId = session.metadata?.apc_order_id;
   const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
 
   // Custom Gift Club purchase (routes/cgc.js). The pending cgc_orders row
@@ -1019,6 +1020,43 @@ async function handleCheckoutSessionCompleted(session) {
       );
     } catch (err) {
       console.error('[Stripe Webhook] CGC order capture failed:', err);
+    }
+    return;
+  }
+
+  // All Print Club purchase (routes/apc.js). Same pattern as CGC above:
+  // flip the pending row, then auto-submit to 4over (fire-and-forget — a
+  // supplier hiccup must never fail the webhook; failures are recorded on
+  // the order for the admin).
+  if (apcOrderId) {
+    const orderId = parseInt(apcOrderId, 10);
+    try {
+      await pool.query(
+        `UPDATE apc_orders SET
+           status = 'paid',
+           customer_email = COALESCE($2, customer_email),
+           customer_name = $3,
+           shipping_address = $4,
+           shipping_cents = $5,
+           total_cents = $6,
+           updated_at = NOW()
+         WHERE id = $1 AND stripe_session_id = $7 AND status = 'pending'`,
+        [
+          orderId,
+          session.customer_details?.email || null,
+          session.customer_details?.name || session.shipping_details?.name || null,
+          session.shipping_details?.address
+            ? JSON.stringify(session.shipping_details.address) : null,
+          session.total_details?.amount_shipping ?? 0,
+          session.amount_total ?? 0,
+          session.id,
+        ],
+      );
+      const { submitPaidOrderToFourOver } = await import('../services/apcCatalog.js');
+      submitPaidOrderToFourOver(orderId)
+        .catch((err) => console.error('[Stripe Webhook] APC 4over submit failed:', err));
+    } catch (err) {
+      console.error('[Stripe Webhook] APC order capture failed:', err);
     }
     return;
   }

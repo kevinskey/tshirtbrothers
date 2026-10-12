@@ -50,6 +50,8 @@ import jdsRouter from './routes/jds.js';
 import jdsStoreRouter from './routes/jdsStore.js';
 import cgcRouter from './routes/cgc.js';
 import { backfillCgcCategories, backfillCgcSports } from './services/cgcCatalog.js';
+import apcRouter from './routes/apc.js';
+import { seedApcDemoCatalog } from './services/apcCatalog.js';
 import mailRouter from './routes/mail.js';
 import smsRouter, { publicRouter as smsInboundRouter } from './routes/sms.js';
 import orderDetailRouter from './routes/orderDetail.js';
@@ -120,6 +122,7 @@ app.use('/api/purchasing', purchasingRouter);
 app.use('/api/jds', jdsRouter);
 app.use('/api/jds-store', jdsStoreRouter); // JDS gifts & awards retail store (Stripe)
 app.use('/api/cgc', cgcRouter); // Custom Gift Club sister-brand storefront
+app.use('/api/apc', apcRouter); // All Print Club sister-brand storefront (4over)
 app.use('/api/mail', mailRouter);
 app.use('/api/sms', smsInboundRouter); // Twilio webhook (signature-checked, no JWT)
 app.use('/api/sms', smsRouter);        // admin thread / inbox / send
@@ -160,6 +163,8 @@ app.listen(PORT, () => {
       .catch((err) => console.error('[cgc] category backfill failed:', err)))
     .then(() => backfillCgcSports()
       .catch((err) => console.error('[cgc] sport backfill failed:', err)))
+    .then(() => seedApcDemoCatalog()
+      .catch((err) => console.error('[apc] demo catalog seed failed:', err)))
     .then(() => startMailSync())
     .catch((err) => {
       console.error('[migrations] fatal:', err);
