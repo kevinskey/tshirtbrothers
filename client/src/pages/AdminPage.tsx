@@ -6,6 +6,7 @@ import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAut
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  Image as ImageIcon,
   LayoutDashboard,
   FileText,
   Package,
@@ -11180,7 +11181,41 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [newPhone, setNewPhone] = useState('');
+  // MMS attachments: uploaded to Spaces first (public URL), sent to Twilio
+  // as mediaUrl. Images only — that's what carriers reliably deliver.
+  const [attachments, setAttachments] = useState<{ url: string; content_type: string | null }[]>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const attachInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+
+  async function uploadAttachment(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Images only — carriers reject other MMS types'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image too large for MMS (5MB max)'); return; }
+    if (attachments.length >= 5) { toast.error('5 attachments max per text'); return; }
+    setUploadingAttachment(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read file'));
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageBase64: dataUrl, filename: `sms-${Date.now()}-${file.name}` }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || 'Upload failed');
+      setAttachments((prev) => [...prev, { url: data.url, content_type: file.type || null }]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploadingAttachment(false);
+      if (attachInputRef.current) attachInputRef.current.value = '';
+    }
+  }
 
   const inboxQuery = useQuery({
     queryKey: ['admin', 'sms-inbox'],
@@ -11200,9 +11235,12 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
   const header = threads.find((t) => t.phone === activePhone);
 
   const sendMutation = useMutation({
-    mutationFn: (body: string) => sendCustomerSms({ phone: activePhone as string, body, quote_id: header?.quote_id ?? null }),
+    mutationFn: (body: string) => sendCustomerSms({
+      phone: activePhone as string, body, quote_id: header?.quote_id ?? null, media: attachments,
+    }),
     onSuccess: () => {
       setDraft('');
+      setAttachments([]);
       queryClient.invalidateQueries({ queryKey: ['admin', 'sms-thread', activePhone] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'sms-inbox'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'sms-unread'] });
@@ -11317,11 +11355,25 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
                           m.direction === 'out' ? 'rounded-br-sm bg-sky-600 text-white' : 'rounded-bl-sm bg-gray-100 text-gray-900'
                         }`}
                       >
-                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                        {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
                         {m.media?.map((att, i) => (
-                          <a key={i} href={att.url} target="_blank" rel="noreferrer" className="mt-1 block text-[10px] underline opacity-80">
-                            attachment {i + 1}
-                          </a>
+                          // Inbound Twilio media and our Spaces uploads are
+                          // both images in practice; show the picture, fall
+                          // back to a link for anything else (vcard, video…).
+                          !att.content_type || att.content_type.startsWith('image/') ? (
+                            <a key={i} href={att.url} target="_blank" rel="noreferrer" className="mt-1.5 block">
+                              <img
+                                src={att.url}
+                                alt={`Attachment ${i + 1}`}
+                                loading="lazy"
+                                className="max-h-56 max-w-full rounded-lg border border-black/10 bg-white object-contain"
+                              />
+                            </a>
+                          ) : (
+                            <a key={i} href={att.url} target="_blank" rel="noreferrer" className="mt-1 block text-[10px] underline opacity-80">
+                              attachment {i + 1} ({att.content_type})
+                            </a>
+                          )
                         ))}
                         <div className={`mt-0.5 text-[10px] ${m.direction === 'out' ? 'text-sky-100' : 'text-gray-400'}`}>
                           {new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
@@ -11332,6 +11384,23 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
                 )}
               </div>
               <div className="border-t border-gray-200 p-3">
+                {attachments.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {attachments.map((att, i) => (
+                      <div key={att.url} className="relative">
+                        <img src={att.url} alt={`Attachment ${i + 1}`} className="h-16 w-16 rounded-lg border border-gray-200 object-cover" />
+                        <button
+                          type="button"
+                          aria-label={`Remove attachment ${i + 1}`}
+                          onClick={() => setAttachments((prev) => prev.filter((a) => a.url !== att.url))}
+                          className="absolute -right-1.5 -top-1.5 rounded-full bg-gray-900 p-0.5 text-white shadow hover:bg-red-600"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -11341,10 +11410,30 @@ function TextsAdmin({ onOpenQuote }: { onOpenQuote: (quoteId: number) => void })
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[11px] text-gray-400">{draft.length}/1200</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={attachInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => uploadAttachment(e.target.files?.[0])}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => attachInputRef.current?.click()}
+                      disabled={uploadingAttachment || sendMutation.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {uploadingAttachment
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        : <ImageIcon className="h-3.5 w-3.5" aria-hidden />}
+                      {uploadingAttachment ? 'Uploading…' : 'Add photo'}
+                    </button>
+                    <span className="text-[11px] text-gray-400">{draft.length}/1200</span>
+                  </div>
                   <button
-                    onClick={() => draft.trim() && sendMutation.mutate(draft.trim())}
-                    disabled={!draft.trim() || sendMutation.isPending}
+                    onClick={() => (draft.trim() || attachments.length) && sendMutation.mutate(draft.trim())}
+                    disabled={(!draft.trim() && attachments.length === 0) || sendMutation.isPending || uploadingAttachment}
                     className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
                   >
                     {sendMutation.isPending ? 'Sending…' : 'Send Text'}

@@ -35,15 +35,17 @@ export async function sendSMS(to, body) {
 
 // Same as sendSMS but bubbles up errors instead of swallowing them — used
 // by the admin "share mockup" flow where the admin needs to know the SMS
-// actually went out.
-export async function sendSMSOrThrow(to, body) {
+// actually went out. mediaUrls (publicly fetchable https) turns the message
+// into an MMS; Twilio requires at least one of body / mediaUrl.
+export async function sendSMSOrThrow(to, body, mediaUrls = []) {
   if (!client || !FROM_PHONE) {
     throw new Error('Twilio not configured (set TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER).');
   }
   const message = await client.messages.create({
-    body,
+    ...(body ? { body } : {}),
     from: FROM_PHONE,
     to: toE164(to),
+    ...(mediaUrls.length ? { mediaUrl: mediaUrls } : {}),
   });
   console.log(`[SMS] Sent to ${to}: ${message.sid}`);
   return message.sid;

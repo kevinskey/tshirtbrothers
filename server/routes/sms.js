@@ -202,18 +202,27 @@ router.get('/unread-count', async (req, res, next) => {
   }
 });
 
-// POST /send — { phone, body, quote_id? }. Throws (rather than quietly
-// no-opping) when Twilio is unconfigured: an admin who hit Send needs to
-// know whether the customer actually got it.
+// POST /send — { phone, body, quote_id?, media? }. media is an array of
+// { url, content_type } (or bare url strings) pointing at publicly
+// fetchable https images — the admin UI uploads to Spaces first and passes
+// the URLs here; Twilio fetches them to build the MMS. Throws (rather than
+// quietly no-opping) when Twilio is unconfigured: an admin who hit Send
+// needs to know whether the customer actually got it.
 router.post('/send', async (req, res, next) => {
   try {
     const phone = toE164(req.body?.phone);
     const body = String(req.body?.body ?? '').trim();
     const quoteId = req.body?.quote_id ? Number(req.body.quote_id) : null;
+    const media = (Array.isArray(req.body?.media) ? req.body.media : [])
+      .map((m) => (typeof m === 'string'
+        ? { url: m, content_type: null }
+        : { url: String(m?.url || ''), content_type: m?.content_type ? String(m.content_type).slice(0, 100) : null }))
+      .filter((m) => /^https:\/\//.test(m.url) && m.url.length <= 600)
+      .slice(0, 10); // Twilio's per-message media cap
     if (!phone || phone.replace(/\D/g, '').length < 11) {
       return res.status(400).json({ error: 'A valid phone number is required' });
     }
-    if (!body) return res.status(400).json({ error: 'Message body is required' });
+    if (!body && !media.length) return res.status(400).json({ error: 'Message body or an attachment is required' });
     if (body.length > 1200) return res.status(400).json({ error: 'Message is too long (1200 characters max)' });
 
     let customerName = null;
@@ -224,16 +233,16 @@ router.post('/send', async (req, res, next) => {
 
     let sid;
     try {
-      sid = await sendSMSOrThrow(phone, body);
+      sid = await sendSMSOrThrow(phone, body, media.map((m) => m.url));
     } catch (err) {
       return res.status(502).json({ error: err.message || 'Twilio refused the message' });
     }
 
     const { rows } = await pool.query(
-      `INSERT INTO sms_messages (direction, phone, body, quote_id, customer_name, twilio_sid, sent_by)
-       VALUES ('out', $1, $2, $3, $4, $5, $6)
+      `INSERT INTO sms_messages (direction, phone, body, quote_id, customer_name, twilio_sid, sent_by, num_media, media)
+       VALUES ('out', $1, $2, $3, $4, $5, $6, $7, $8::jsonb)
        RETURNING id, direction, phone, body, quote_id, customer_name, num_media, media, read_at, created_at`,
-      [phone, body, quoteId, customerName, sid, req.user?.id ?? null],
+      [phone, body, quoteId, customerName, sid, req.user?.id ?? null, media.length, JSON.stringify(media)],
     );
     res.json(rows[0]);
   } catch (err) {

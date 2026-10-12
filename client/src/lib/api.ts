@@ -371,7 +371,13 @@ export async function fetchSmsThread(phone: string) {
   return authRequest<SmsMessage[]>(`/sms/thread?phone=${encodeURIComponent(phone)}`);
 }
 
-export async function sendCustomerSms(body: { phone: string; body: string; quote_id?: number | string | null }) {
+export async function sendCustomerSms(body: {
+  phone: string;
+  body: string;
+  quote_id?: number | string | null;
+  /** Public https image URLs (uploaded to Spaces first) — makes it an MMS. */
+  media?: { url: string; content_type: string | null }[];
+}) {
   return authRequest<SmsMessage>('/sms/send', { method: 'POST', body: JSON.stringify(body) });
 }
 
