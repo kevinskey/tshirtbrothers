@@ -194,11 +194,12 @@ router.get('/invoice-lines/:invoiceId', async (req, res, next) => {
 
 // POST /orders — place the PO with S&S and record it.
 // body: { lines: [{sku, qty, note?}], shipTo, shippingMethod?, poNumber?,
-//         testOrder?, quoteId?, notes?, warehouse? }
+//         quoteId?, notes?, warehouse? }
+// All orders are live — test ordering was removed 2026-10-12.
 router.post('/orders', async (req, res, next) => {
   try {
     const {
-      lines, shipTo, shippingMethod = '1', poNumber, testOrder = false,
+      lines, shipTo, shippingMethod = '1', poNumber,
       quoteId, invoiceId, notes, warehouse, paymentProfile,
     } = req.body;
 
@@ -227,7 +228,7 @@ router.post('/orders', async (req, res, next) => {
       },
       shippingMethod: String(shippingMethod || '1'),
       poNumber: po,
-      testOrder: !!testOrder,
+      testOrder: false,
       ...(paymentProfile?.profileID && paymentProfile?.email
         ? { paymentProfile: { email: paymentProfile.email, profileID: Number(paymentProfile.profileID) } }
         : {}),
@@ -277,8 +278,8 @@ router.post('/orders', async (req, res, next) => {
        VALUES ($1,$16,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        RETURNING *`,
       [
-        quoteId || null, po, !!testOrder,
-        testOrder ? 'test' : 'submitted',
+        quoteId || null, po, false,
+        'submitted',
         JSON.stringify(payload.shippingAddress), payload.shippingMethod,
         JSON.stringify(req.body.lines || cleanLines), JSON.stringify(sums),
         totals.subtotal, totals.shipping, totals.tax, totals.total,

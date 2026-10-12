@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Copy, Loader2, Package, Plus, RefreshCw, Search, Trash2, Truck, X, FlaskConical,
+  Copy, Loader2, Package, Plus, RefreshCw, Search, Trash2, Truck, X,
 } from 'lucide-react';
 
 // Blanks purchasing: build and place S&S Activewear orders, prefilled from a
@@ -175,7 +175,6 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [defaultShipTo, setDefaultShipTo] = useState<ShipTo | null>(null);
   const [shippingMethod, setShippingMethod] = useState('1');
   const [warehouse, setWarehouse] = useState('');
-  const [testOrder, setTestOrder] = useState(true);
   const [notes, setNotes] = useState('');
   // Payment: S&S accounts without Net terms must attach a saved payment
   // profile to every order. Email is the S&S website login the card is
@@ -567,7 +566,6 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           shipTo,
           shippingMethod,
           warehouse: warehouse || undefined,
-          testOrder,
           quoteId,
           invoiceId,
           paymentProfile: selectedProfileId
@@ -599,7 +597,6 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     setLinkTarget(null);
     setLinkSearch('');
     setNotes('');
-    setTestOrder(true);
     setPlacedResult(null);
     setPlaceError(null);
     setShipTo(defaultShipTo);
@@ -979,13 +976,6 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                   <span className="text-gray-600">Notes (internal)</span>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="mt-1 w-full border rounded px-3 py-2 text-sm" />
                 </label>
-                <label className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2 border ${testOrder ? 'bg-amber-50 border-amber-300' : 'bg-red-50 border-red-300'}`}>
-                  <input type="checkbox" checked={testOrder} onChange={(e) => setTestOrder(e.target.checked)} />
-                  <FlaskConical className="w-4 h-4" />
-                  {testOrder
-                    ? 'Test order — S&S validates then auto-cancels; nothing is charged'
-                    : 'LIVE ORDER — this will be charged to the S&S account'}
-                </label>
               </div>
             </div>
           )}
@@ -1070,10 +1060,10 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
             <button
               onClick={() => void placeOrder()}
               disabled={placing || readyLines.length === 0 || !selectedProfileId}
-              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 ${testOrder ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 bg-red-600 hover:bg-red-700"
             >
               {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
-              {testOrder ? 'Place test order' : 'Place LIVE order'}
+              Place order
             </button>
           </div>
 
