@@ -29,6 +29,19 @@ const config: Config = {
           charcoal: '#2b2420',
           stone: '#6f655c',
         },
+        // All Print Club (sister brand, allprintclub.com) — working-press
+        // blue + cool paper neutrals with a yellow accent. Scoped under
+        // apc-* so TSB and CGC pages are untouched.
+        apc: {
+          blue: '#2563eb',
+          'blue-dark': '#1d4ed8',
+          paper: '#f1f5f9',
+          'paper-deep': '#e2e8f0',
+          ink: '#0f172a',
+          charcoal: '#334155',
+          slate: '#64748b',
+          accent: '#facc15',
+        },
         brand: {
           black: '#0a0a0a',
           gray: {

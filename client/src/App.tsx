@@ -75,6 +75,8 @@ import PostOfficePage from '@/pages/admin/PostOfficePage';
 import { getStoreSubdomain } from '@/lib/storeSubdomain';
 import CgcStandaloneApp, { CgcRoutes } from '@/cgc/CgcApp';
 import { isCgcHost } from '@/cgc/lib/brand';
+import ApcStandaloneApp, { ApcRoutes } from '@/apc/ApcApp';
+import { isApcHost } from '@/apc/lib/brand';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -121,6 +123,9 @@ function App() {
   // checked before the store-subdomain branch so a CGC host under
   // *.tshirtbrothers.com can't be misread as a group store.
   if (isCgcHost()) return <CgcStandaloneApp />;
+  // All Print Club — same sister-brand pattern, also ahead of the
+  // store-subdomain branch for the same reason.
+  if (isApcHost()) return <ApcStandaloneApp />;
   if (getStoreSubdomain()) return <SubdomainApp />;
   return (
     <HelmetProvider>
@@ -154,6 +159,8 @@ function App() {
           <Route path="/gifts" element={<GiftsStorePage />} />
           {/* Custom Gift Club — sister-brand storefront (path mount). */}
           <Route path="/gift-club/*" element={<CgcRoutes base="/gift-club" />} />
+          {/* All Print Club — sister-brand storefront (path mount). */}
+          <Route path="/print-club/*" element={<ApcRoutes base="/print-club" />} />
           <Route path="/pro/login" element={<ProLoginPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.
