@@ -10914,7 +10914,13 @@ function MockupDetailsModal({ mockup, onClose, onSaved }: {
                 />
                 {customerPicker === field && debouncedTerm.length >= 2 && (
                   <div className="absolute z-10 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                    {customerMatches.isFetching && suggestions.length === 0 ? (
+                    {customerMatches.isError ? (
+                      // A failed request is not "no matches" — surfacing it
+                      // as such hid a 500 on /admin/customers for weeks.
+                      <p className="px-3 py-2 text-xs text-red-500">
+                        Customer search failed — what you typed is kept as-is.
+                      </p>
+                    ) : customerMatches.isFetching && suggestions.length === 0 ? (
                       <p className="px-3 py-2 text-xs text-gray-400">Searching…</p>
                     ) : suggestions.length === 0 ? (
                       <p className="px-3 py-2 text-xs text-gray-400">
