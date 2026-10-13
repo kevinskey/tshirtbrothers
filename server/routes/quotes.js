@@ -1,6 +1,7 @@
 import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
+import { tokenMatches } from '../lib/acceptToken.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
   sendQuoteRequestNotification,
@@ -383,7 +384,7 @@ router.get('/:id/public', async (req, res, next) => {
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const q = result.rows[0];
-    if (!q.accept_token || q.accept_token !== token) {
+    if (!tokenMatches(q.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
     // Don't echo the token back.
@@ -748,7 +749,7 @@ router.post('/accept/:id', async (req, res, next) => {
 
     const quote = lookup.rows[0];
 
-    if (quote.accept_token !== token) {
+    if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
@@ -793,7 +794,7 @@ router.post('/decline/:id', async (req, res, next) => {
     const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
     if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const quote = lookup.rows[0];
-    if (quote.accept_token !== token) return res.status(403).json({ error: 'Invalid token' });
+    if (!tokenMatches(quote.accept_token, token)) return res.status(403).json({ error: 'Invalid token' });
     if (quote.status === 'rejected') return res.json({ success: true, message: 'Quote already declined' });
     // Money has moved — declining is now a phone call, not a link click.
     if (quote.accepted_at || !['pending', 'reviewed', 'quoted'].includes(quote.status)) {
@@ -856,7 +857,7 @@ router.get('/artwork/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const q = rows[0];
-    if (!req.query.token || q.accept_token !== req.query.token) return res.status(403).json({ error: 'Invalid token' });
+    if (!tokenMatches(q.accept_token, req.query.token)) return res.status(403).json({ error: 'Invalid token' });
     res.json({
       id: q.id,
       customer_name: q.customer_name,
@@ -887,7 +888,7 @@ router.post('/artwork/:id', async (req, res, next) => {
     const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
     if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const quote = lookup.rows[0];
-    if (!token || quote.accept_token !== token) return res.status(403).json({ error: 'Invalid token' });
+    if (!tokenMatches(quote.accept_token, token)) return res.status(403).json({ error: 'Invalid token' });
 
     // First file becomes the primary design if the slot is empty; everything
     // else lands in extra_design_urls, same shape the admin uploader uses.
