@@ -2931,12 +2931,16 @@ export default function AdminPage() {
     setPriceItemsOpen(false);
     setPriceBase('');
     setPricePrinting('');
-    setPriceDesignFee('0');
-    setPriceRushFee('0');
-    setPriceShipping('0');
-    setPriceDiscountPct('0');
-    setPriceDiscountReason('');
-    setPriceTaxExempt(false);
+    // On a re-quote, start from what the customer was last sent. Pending
+    // quotes keep zero defaults: their breakdown (if any) is the auto
+    // estimate, not an admin decision.
+    const bd = quote.status === 'quoted' ? quote.price_breakdown : null;
+    setPriceDesignFee(String(bd?.designFee ?? 0));
+    setPriceRushFee(String(bd?.rushFee ?? 0));
+    setPriceShipping(String(bd?.shipping ?? 0));
+    setPriceDiscountPct(String(bd?.discountPct ?? 0));
+    setPriceDiscountReason(bd?.discountReason ?? '');
+    setPriceTaxExempt(bd?.taxExempt ?? false);
     setCostData(null);
     setCostError('');
     setCostStyleQ('');
