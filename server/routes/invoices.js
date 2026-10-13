@@ -6,6 +6,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
 import * as theme from '../services/emailTheme.js';
 import { mailRecipients, normalizeCcEmails } from '../services/recipients.js';
+import { ARCHIVE_BCC } from '../services/email.js';
 
 const router = Router();
 
@@ -746,6 +747,7 @@ router.post('/:id/send', async (req, res, next) => {
       ({ error: sendError } = await getResend().emails.send({
         from: FROM_EMAIL,
         to: mailRecipients(invoice),
+        bcc: ARCHIVE_BCC ? [ARCHIVE_BCC] : undefined,
         subject,
         html,
       }));
