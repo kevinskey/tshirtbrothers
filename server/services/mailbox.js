@@ -47,6 +47,21 @@ function addrList(obj) {
   return obj.value.map((v) => (v.address || '').toLowerCase()).filter(Boolean);
 }
 
+// Where archive copies of the site's transactional mail get filed. Resend
+// BCCs outbox@ on every send (services/email.js); the catch-all routes those
+// into this mailbox's INBOX, and Purelymail rewrites Delivered-To so the BCC
+// address is unrecoverable there. The copies are still recognizable by
+// shape: from our own domain but not addressed to the mailbox user in
+// To/Cc — real correspondence (admin notifications, customer replies)
+// always is.
+const ARCHIVE_FOLDER = 'Site Outbox';
+function isArchiveCopy(folder, fromAddr, to, cc) {
+  if (folder !== 'INBOX') return false;
+  if (!fromAddr || !fromAddr.endsWith(`@${MAIL_DOMAIN}`)) return false;
+  const user = (process.env.MAIL_IMAP_USER || '').toLowerCase();
+  return !to.includes(user) && !cc.includes(user);
+}
+
 // Pull new mail from a folder into mail_messages. Uses UID > max(stored)
 // per folder so each run only fetches what's new.
 async function syncFolder(client, folder, { outgoing = false } = {}) {
@@ -95,6 +110,27 @@ async function syncFolder(client, folder, { outgoing = false } = {}) {
 
         const seen = outgoing || (Array.isArray(msg.flags) ? msg.flags.includes('\\Seen') : msg.flags?.has?.('\\Seen')) || false;
 
+        // File archive copies out of INBOX on the server too, so IMAP
+        // clients (the iPhone) see them in the folder, not the inbox.
+        const fromAddr = (fromVal.address || '').toLowerCase();
+        let storeFolder = folder;
+        let storeUid = uid;
+        let storeSeen = seen;
+        if (isArchiveCopy(folder, fromAddr, to, cc)) {
+          try {
+            const moved = await client.messageMove(String(uid), ARCHIVE_FOLDER, { uid: true });
+            storeFolder = ARCHIVE_FOLDER;
+            storeUid = moved?.uidMap?.get?.(uid) ?? null;
+            storeSeen = true;
+          } catch (e) {
+            console.error('[mail sync] archive move failed:', e.message);
+          }
+        }
+
+        // Archive copies count as outgoing: they're our own transactional
+        // sends, so the admin Mail tab shows them under Sent, not Inbox.
+        const storeOutgoing = outgoing || storeFolder === ARCHIVE_FOLDER;
+
         await pool.query(
           `INSERT INTO mail_messages
              (folder, uid, message_id, in_reply_to, from_name, from_addr,
@@ -103,14 +139,14 @@ async function syncFolder(client, folder, { outgoing = false } = {}) {
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
            ON CONFLICT (message_id) DO NOTHING`,
           [
-            folder, uid, messageId, parsed.inReplyTo || null,
-            fromVal.name || null, (fromVal.address || '').toLowerCase() || null,
+            storeFolder, storeUid, messageId, parsed.inReplyTo || null,
+            fromVal.name || null, fromAddr || null,
             JSON.stringify(to), JSON.stringify(cc),
-            outgoing ? (fromVal.address || '').toLowerCase() : pickAlias(to, cc),
+            storeOutgoing ? fromAddr : pickAlias(to, cc),
             parsed.subject || '(no subject)', snippet,
             text || null, parsed.html || null,
             JSON.stringify(attachments),
-            parsed.date || new Date(), seen, outgoing,
+            parsed.date || new Date(), storeSeen, storeOutgoing,
           ]
         );
         added++;
