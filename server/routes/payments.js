@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Stripe from 'stripe';
 import crypto from 'crypto';
 import pool from '../db.js';
+import { tokenMatches } from '../lib/acceptToken.js';
 import {
   sendQuoteAcceptedNotification,
   sendDepositReceiptToCustomer,
@@ -305,7 +306,7 @@ router.post('/create-checkout', async (req, res, next) => {
     const quote = quoteResult.rows[0];
 
     // Validate accept token if provided
-    if (token && quote.accept_token && token !== quote.accept_token) {
+    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
@@ -388,7 +389,7 @@ router.post('/create-full-checkout', async (req, res, next) => {
 
     const quote = quoteResult.rows[0];
 
-    if (token && quote.accept_token && token !== quote.accept_token) {
+    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
@@ -450,7 +451,7 @@ router.post('/create-balance-checkout', async (req, res, next) => {
     const quote = quoteResult.rows[0];
 
     // Validate accept token if provided
-    if (token && quote.accept_token && token !== quote.accept_token) {
+    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
