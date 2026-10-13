@@ -15,6 +15,13 @@ const FROM_EMAIL_RAW = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
 const FROM_EMAIL = FROM_EMAIL_RAW.includes('<') ? FROM_EMAIL_RAW : `${FROM_NAME_RAW} <${FROM_EMAIL_RAW}>`;
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'kevin@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
+// Resend delivers straight to the recipient — nothing lands in the Purelymail
+// mailbox, so transactional mail is invisible to IMAP clients (iPhone Mail,
+// the admin Mail tab). BCC the catch-all so every send leaves a copy there.
+// Set MAIL_ARCHIVE_BCC="" to turn the archive copy off.
+export const ARCHIVE_BCC = process.env.MAIL_ARCHIVE_BCC !== undefined
+  ? process.env.MAIL_ARCHIVE_BCC.trim()
+  : 'outbox@tshirtbrothers.com';
 
 /**
  * Send through Resend, failing loudly.
@@ -30,6 +37,16 @@ const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
  * Returns the message id so callers can log something checkable.
  */
 async function sendMail(payload) {
+  if (ARCHIVE_BCC) {
+    const already = [payload.to, payload.cc, payload.bcc]
+      .flat()
+      .filter(Boolean)
+      .map((a) => String(a).toLowerCase());
+    if (!already.includes(ARCHIVE_BCC.toLowerCase())) {
+      const bcc = Array.isArray(payload.bcc) ? payload.bcc : payload.bcc ? [payload.bcc] : [];
+      payload = { ...payload, bcc: [...bcc, ARCHIVE_BCC] };
+    }
+  }
   const { data, error } = await resend.emails.send(payload);
   if (error) {
     const to = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
