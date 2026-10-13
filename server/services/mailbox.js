@@ -91,7 +91,11 @@ async function syncFolder(client, folder, { outgoing = false } = {}) {
         const to = addrList(parsed.to);
         const cc = addrList(parsed.cc);
         const fromVal = parsed.from?.value?.[0] || {};
-        const text = (parsed.text || '').trim();
+        // Postgres TEXT rejects NUL bytes, and spam occasionally carries
+        // them — one such message made every sync of its folder fail (and
+        // retry forever) with "invalid byte sequence for encoding UTF8".
+        const deNul = (s) => (s ? s.replace(/\u0000/g, '') : s);
+        const text = deNul((parsed.text || '').trim());
         const snippet = text.replace(/\s+/g, ' ').slice(0, 180);
 
         // Attachments -> DO Spaces (skip inline images over 15MB)
@@ -143,8 +147,8 @@ async function syncFolder(client, folder, { outgoing = false } = {}) {
             fromVal.name || null, fromAddr || null,
             JSON.stringify(to), JSON.stringify(cc),
             storeOutgoing ? fromAddr : pickAlias(to, cc),
-            parsed.subject || '(no subject)', snippet,
-            text || null, parsed.html || null,
+            deNul(parsed.subject) || '(no subject)', snippet,
+            text || null, deNul(parsed.html || '') || null,
             JSON.stringify(attachments),
             parsed.date || new Date(), storeSeen, storeOutgoing,
           ]
