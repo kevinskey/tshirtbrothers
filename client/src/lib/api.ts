@@ -589,6 +589,12 @@ export interface PriceBreakdown {
   total: number;
   shipping?: number;
   sizeMarkups?: Record<string, string>;
+  discountPct?: number;
+  discountReason?: string | null;
+  discountAmount?: number;
+  tax?: number;
+  taxExempt?: boolean;
+  taxRate?: number;
 }
 
 export interface SendQuotePricePayload {
