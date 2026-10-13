@@ -460,12 +460,14 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
         <div style="background:#fef3c7;border-radius:10px;padding:14px;margin-top:14px;text-align:center;">
           <span style="font-size:14px;font-weight:700;color:#92400e;">50% Deposit Required to Begin — due upon receipt:</span>
           <span style="font-size:18px;font-weight:800;color:${BRAND_DARK};"> ${formatCurrency(depositDue)}</span>
+          <div style="margin-top:6px;font-size:12px;color:#92400e;">…or pay the full ${formatCurrency(grandTotal)} today and skip the balance email later.</div>
         </div>
       `),
       promo ? theme.bodySection(theme.couponPanel(promo)) : '',
       theme.bodySection(`
         ${theme.buttonRow([
-          { label: '&#10003;&nbsp; Approve &amp; Pay Deposit', href: acceptUrl, style: 'primary' },
+          { label: `&#10003;&nbsp; Pay 50% Deposit (${formatCurrency(depositDue)})`, href: `${acceptUrl}&type=deposit`, style: 'primary' },
+          { label: `Pay in Full (${formatCurrency(grandTotal)})`, href: `${acceptUrl}&type=full`, style: 'navy' },
           { label: '&#63;&nbsp; Ask a Question', href: `mailto:${theme.SHOP_EMAIL}?subject=Question%20about%20Quote%20%23TSB-${quote.id}`, style: 'outline' },
         ])}
         <p style="text-align:center;margin:10px 0 0;">
