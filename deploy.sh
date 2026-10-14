@@ -12,6 +12,10 @@ cd "$APP_DIR"
 echo "==> Pulling latest from origin/main..."
 git fetch origin
 git checkout main
+# npm install on the droplet rewrites lockfiles (different npm/OS), and a
+# dirty lockfile aborts the pull the next time the repo's copy changes.
+# They're regenerated below anyway — discard local drift before pulling.
+git checkout -- package-lock.json client/package-lock.json server/package-lock.json 2>/dev/null || true
 if ! git pull --ff-only origin main; then
   # Local main diverged from origin/main (someone committed directly on the
   # droplet). Preserve the divergent HEAD as a tag so nothing is lost, then
