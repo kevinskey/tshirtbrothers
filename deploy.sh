@@ -77,5 +77,11 @@ else
     --update-env
 fi
 
+# npm install above rewrites lockfiles; left dirty they abort the NEXT
+# deploy's git pull (the workflow-level one, which runs before this
+# script's own pre-pull guard can help). Leave the tree clean.
+cd "$APP_DIR"
+git checkout -- package-lock.json client/package-lock.json server/package-lock.json 2>/dev/null || true
+
 echo "==> Done."
 pm2 status
