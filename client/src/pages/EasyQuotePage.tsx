@@ -79,7 +79,11 @@ function formatPhone(v: string): string {
   return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
 }
 
-const STEPS = ['name', 'phone', 'email', 'products', 'qty', 'color', 'quality', 'date', 'art', 'quote'] as const;
+// Product questions first, contact info last (Kevin, 2026-10-14: open on
+// "What do you want printed?" instead of name/phone). The customer invests
+// in describing the job before being asked who they are, and the contact
+// steps still sit before 'quote' so a priced quote always has a person on it.
+const STEPS = ['products', 'qty', 'color', 'quality', 'date', 'art', 'name', 'phone', 'email', 'quote'] as const;
 type Step = typeof STEPS[number];
 
 // Router state handed over by the Design Studio's "Get Price" button
