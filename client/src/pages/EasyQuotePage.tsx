@@ -866,18 +866,19 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
 
       {error && <p className="mt-4 text-sm font-semibold text-red-600 text-center">{error}</p>}
 
-      {/* Floating Next: fixed to the VISUAL viewport bottom, lifted above
-          the on-screen keyboard so typing steps never hide the button.
-          Spacer below keeps the card content scrollable past it. */}
+      {/* Floating Next, phones only. While the keyboard is up it HIDES
+          instead of riding above the keyboard: iOS scrolls the focused
+          input to sit just above the keyboard, which is exactly where a
+          "lifted" button lands — it was covering the field being typed
+          into (Kevin's screenshot, 2026-10-14). The return key already
+          advances the step, and closing the keyboard brings Next back.
+          Spacer keeps the card content scrollable past the button. */}
       {step !== 'quote' && (
         <>
-          {/* Phones: Next floats fixed above the on-screen keyboard.
-              sm+: it sits inside the card like a normal dialog button. */}
           <div className="sm:hidden" style={{ height: 84 }} />
-          <div className="sm:hidden fixed left-0 right-0 z-40 px-4 pb-4 pointer-events-none"
-            style={{ bottom: kbOffset }}>
-            <div className="max-w-md mx-auto pointer-events-auto">
-              <button type="button" disabled={!canNext} onClick={() => go(1)}
+          <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pointer-events-none transition-all duration-150 ${kbOffset > 80 ? 'opacity-0 translate-y-6' : ''}`}>
+            <div className={`max-w-md mx-auto ${kbOffset > 80 ? 'pointer-events-none' : 'pointer-events-auto'}`}>
+              <button type="button" disabled={!canNext} onClick={() => go(1)} tabIndex={kbOffset > 80 ? -1 : 0}
                 className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-xl transition-opacity disabled:opacity-40"
                 style={{ background: ORANGE }}>
                 {step === 'art' && artUrls.length === 0 ? tr('Skip for now', 'Saltar por ahora') : tr('Next', 'Siguiente')} <ArrowRight className="w-5 h-5" />
