@@ -55,6 +55,7 @@ import { seedApcDemoCatalog } from './services/apcCatalog.js';
 import mailRouter from './routes/mail.js';
 import smsRouter, { publicRouter as smsInboundRouter } from './routes/sms.js';
 import orderDetailRouter from './routes/orderDetail.js';
+import pushRouter from './routes/push.js';
 import { startMailSync } from './services/mailbox.js';
 import sitemapRouter from './routes/sitemap.js';
 import { startScheduler } from './services/scheduler.js';
@@ -138,6 +139,7 @@ app.use('/api/favorites', favoritesRouter);
 app.use('/api/hero-slides', heroSlidesRouter);
 app.use('/api/admin/hero-slides', heroSlidesAdminRouter);
 app.use('/api/admin/prospects', prospectsAdminRouter);
+app.use('/api/push', pushRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
