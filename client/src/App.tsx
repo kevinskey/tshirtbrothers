@@ -57,6 +57,7 @@ import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
 import CityLandingPage from '@/pages/CityLandingPage';
 import VerticalLandingPage from '@/pages/VerticalLandingPage';
 import AboutPage from '@/pages/AboutPage';
+import PrivacyPage from '@/pages/PrivacyPage';
 import FaqPage from '@/pages/FaqPage';
 import HomePageEs from '@/pages/HomePageEs';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
@@ -137,6 +138,7 @@ function App() {
           <Route path="/es" element={<HomePageEs />} />
           <Route path="/services" element={<ServicesPage />} />
           <Route path="/about" element={<AboutPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/faq" element={<FaqPage />} />
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/sale" element={<SalePage />} />
