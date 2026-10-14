@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
   sendQuoteRequestNotification,
@@ -268,6 +269,11 @@ router.post('/', async (req, res, next) => {
     // Fire-and-forget: notify admin of new quote
     sendQuoteRequestNotification(quote).catch(() => {});
     smsNewQuoteToAdmin(quote).catch(() => {});
+    sendPushToAdmins({
+      title: 'New quote request',
+      body: `${quote.customer_name || 'Customer'} — ${quote.product_name || 'custom order'}${quote.quantity ? ` ×${quote.quantity}` : ''}`,
+      data: { type: 'quote', id: quote.id },
+    }).catch(() => {});
 
     // Fire-and-forget: auto-triage the quote with AI (debounced helper —
     // the same one item edits use, so triage stays current after changes).
@@ -720,6 +726,11 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       message,
     });
     smsQuotePriceToCustomer(quote, total).catch(() => {});
+    sendPushToUser(quote.user_id, {
+      title: 'Your quote is ready',
+      body: `Quote #${quote.id} — $${Number(total).toFixed(2)}. Tap to review and accept.`,
+      data: { type: 'quote-priced', id: quote.id },
+    }).catch(() => {});
 
     res.json({ success: true, quote });
   } catch (err) {
@@ -1263,6 +1274,20 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
       }
     } else if (status === 'awaiting_approval') {
       smsStatusUpdateToCustomer(quote, status).catch(() => {});
+    }
+    // App push mirrors the SMS-worthy set — same spam calculus applies.
+    const PUSH_COPY = {
+      awaiting_approval: 'Your mockup is ready — take a look and approve it.',
+      in_production: 'Your order is on the press!',
+      ready: 'Your order is ready — the remaining balance is due.',
+      completed: 'Your order is complete. Thanks for choosing T-Shirt Brothers!',
+    };
+    if (PUSH_COPY[status]) {
+      sendPushToUser(quote.user_id, {
+        title: `Order update — Quote #${quote.id}`,
+        body: PUSH_COPY[status],
+        data: { type: 'status', id: quote.id, status },
+      }).catch(() => {});
     }
 
     // 'ready' is the money hop: the work is done, the remaining 50% is due,

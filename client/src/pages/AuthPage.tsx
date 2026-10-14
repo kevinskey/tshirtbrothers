@@ -4,6 +4,7 @@ import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import { login, register, getSignupToken } from '@/lib/api';
 import { rememberEmail } from '@/lib/activity';
+import { initPushRegistration } from '@/lib/pushRegistration';
 
 type Tab = 'login' | 'register';
 
@@ -54,6 +55,7 @@ export default function AuthPage() {
     try {
       const { token } = await login({ email: loginEmail, password: loginPassword });
       localStorage.setItem('tsb_token', token);
+      void initPushRegistration();
       rememberEmail(loginEmail);
       navigate(loginEmail === 'kevin@tshirtbrothers.com' ? '/admin' : redirectTo);
     } catch (err) {
@@ -95,6 +97,7 @@ export default function AuthPage() {
       // belongs to someone else.
       const { token } = await login({ email: regEmail, password: regPassword });
       localStorage.setItem('tsb_token', token);
+      void initPushRegistration();
       rememberEmail(regEmail);
       navigate(redirectTo);
     } catch (err) {

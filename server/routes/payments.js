@@ -15,6 +15,7 @@ import {
   quoteLang,
 } from '../services/email.js';
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
+import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
 import { generateInvoiceNumber } from './invoices.js';
 import { recordActivity } from './events.js';
@@ -1147,6 +1148,11 @@ async function handleCheckoutSessionCompleted(session) {
           await createPaidInvoiceForQuote(quote, session.amount_total);
           sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
           sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
+          sendPushToAdmins({
+            title: 'Balance paid 💰',
+            body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Paid in full.`,
+            data: { type: 'payment', id: quote.id },
+          }).catch(() => {});
         }
       } else if (paymentType === 'full') {
         // Full payment from the choice screen — accept the quote AND
@@ -1170,6 +1176,11 @@ async function handleCheckoutSessionCompleted(session) {
           await createPaidInvoiceForQuote(quote, session.amount_total);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
+          sendPushToAdmins({
+            title: 'Quote paid in full 💰',
+            body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Work can begin.`,
+            data: { type: 'payment', id: quote.id },
+          }).catch(() => {});
         }
       } else {
         // Backfill accept_token for orders that went through the instant-quote
@@ -1193,6 +1204,11 @@ async function handleCheckoutSessionCompleted(session) {
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
+          sendPushToAdmins({
+            title: 'Deposit paid 💰',
+            body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} deposit from ${quote.customer_name || 'customer'}. Mockup is next.`,
+            data: { type: 'payment', id: quote.id },
+          }).catch(() => {});
           // Deposit paid IS the starting gun: work begins, and the first
           // piece of that work is the mockup. Both sides get told what
           // happens next, not just that money moved. Applied on both
