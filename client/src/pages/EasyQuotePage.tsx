@@ -119,7 +119,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const tr = (en: string, esStr: string) => (es ? esStr : en);
   const pLabel = (p: { label: string; labelEs?: string }) => (es && p.labelEs ? p.labelEs : p.label);
   const qLabel = (t: { label: string; labelEs: string }) => (es ? t.labelEs : t.label);
-  const [step, setStep] = useState<Step>('name');
+  const [step, setStep] = useState<Step>(STEPS[0]);
   const [settings, setSettings] = useState<Settings | null>(null);
 
   const location = useLocation();
@@ -155,15 +155,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((me: { name?: string; email?: string; phone?: string } | null) => {
         if (cancelled || !me?.email) return;
+        // Contact steps come last now (product-first order) and arrive
+        // prefilled from the profile, so signed-in users just tap Next
+        // through them — the old fast-forward jump is gone.
         setName((v) => v || me.name || '');
         setEmail((v) => v || me.email || '');
         setPhone((v) => v || me.phone || '');
-        // Fast-forward only if they haven't begun the interview themselves.
-        setStep((s) => {
-          if (s !== 'name') return s;
-          if (!me.name) return s;
-          return me.phone ? 'products' : 'phone';
-        });
       })
       .catch(() => { /* logged-out token or network blip — normal flow */ });
     return () => { cancelled = true; };
