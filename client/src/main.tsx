@@ -1,3 +1,4 @@
+import './lib/nativeApi'; // must run before anything that fetches (iOS app)
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
