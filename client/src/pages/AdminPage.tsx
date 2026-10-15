@@ -45,6 +45,7 @@ import {
   MessageSquare,
   Copy,
   Check,
+  Printer,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -153,6 +154,7 @@ import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
+import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
 import ShipLabelModal from '@/components/admin/ShipLabelModal';
@@ -9021,6 +9023,16 @@ export default function AdminPage() {
                         Mark Ready{balance > 0 ? ' — emails balance request' : ''}
                       </button>
                     )}
+                    {/* The slip that goes in the box or the pickup bag. Any
+                        status, so it can be printed ahead of the job or
+                        reprinted later; it carries no prices or admin notes. */}
+                    <button
+                      onClick={() => printQuotePackingSlip(q, q.items || [])}
+                      className="w-full py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-800 flex items-center justify-center gap-2"
+                      title="Prints the customer's packing slip — no prices or internal notes on it"
+                    >
+                      <Printer className="w-4 h-4" /> Print Packing Slip
+                    </button>
                     {/* The order leaves the building: pickup completes with the
                         standard completed email/SMS; ship asks for tracking and
                         emails the customer a tracking link. Both fire the

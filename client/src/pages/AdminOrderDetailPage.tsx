@@ -4,7 +4,7 @@ import {
   ArrowLeft, CheckCircle2, Circle, ClipboardList, DollarSign, Loader2, Mail,
   Package, Paperclip, Printer, Send, StickyNote, Trash2,
 } from 'lucide-react';
-import { printPackingSlip } from '@/lib/packingSlip';
+import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
 
 // Full order dossier: one page with everything about an order (keyed by
 // quote id) — status timeline, items, money, blanks POs, vendor sends,
@@ -54,48 +54,6 @@ interface Detail {
   emails: EmailRow[];
   activity: ActivityRow[];
   notes: NoteRow[];
-}
-
-// The customer's packing slip: garments, colours and size breakdown, no
-// prices, internal notes or payment status.
-function printOrderPackingSlip(quote: Detail['quote'], items: QuoteItem[]) {
-  const a = quote.shipping_address;
-  const method = quote.fulfillment_method || quote.shipping_method;
-  const isPickup = !!method && /pickup|pick up|will call/i.test(method);
-  printPackingSlip({
-    orderNumber: quote.id,
-    orderType: 'Custom Order',
-    date: quote.accepted_at || quote.created_at,
-    customer: { name: quote.customer_name, email: quote.customer_email, phone: quote.customer_phone },
-    fulfillment: isPickup ? 'pickup' : method ? 'ship' : null,
-    shipTo: !isPickup && a
-      ? [a.name || quote.customer_name, a.address, a.address2,
-         [a.city, a.state].filter(Boolean).join(', ') + (a.zip ? ` ${a.zip}` : '')]
-          .filter((l): l is string => !!l && l.trim() !== '')
-      : undefined,
-    shippingMethod: !isPickup && method && method !== 'ship' ? method : null,
-    tracking: quote.tracking_number ? { carrier: quote.tracking_carrier, number: quote.tracking_number } : null,
-    items: items.length > 0
-      ? items.map((it) => {
-          const sizes: SizeCount[] = typeof it.sizes === 'string' ? JSON.parse(it.sizes) : (it.sizes || []);
-          return {
-            title: it.product_name || it.catalog_name || 'Item',
-            detail: [
-              [it.brand, it.color].filter(Boolean).join(' · '),
-              sizes.filter((sz) => sz.quantity > 0).map((sz) => `${sz.size} × ${sz.quantity}`).join(', '),
-            ].filter(Boolean).join(' — '),
-            qty: it.quantity,
-          };
-        })
-      : [{ title: 'Custom apparel order', qty: quote.quantity }],
-    gallery: quote.mockup_image_url || quote.mockup_image_url_back ? {
-      title: 'Your design',
-      images: [
-        quote.mockup_image_url && { src: quote.mockup_image_url, caption: 'Front' },
-        quote.mockup_image_url_back && { src: quote.mockup_image_url_back, caption: 'Back' },
-      ].filter((g): g is { src: string; caption: string } => !!g),
-    } : null,
-  });
 }
 
 function authHeaders(): Record<string, string> {
@@ -356,7 +314,7 @@ export default function AdminOrderDetailPage() {
           </div>
           <div className="text-right text-sm">
             <button
-              onClick={() => printOrderPackingSlip(quote, items)}
+              onClick={() => printQuotePackingSlip(quote, items)}
               className="mb-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-orange-300 rounded-md text-sm font-semibold text-orange-700 hover:bg-orange-50"
               title="Prints the branded slip for the box — no prices on it"
             >
