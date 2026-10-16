@@ -230,13 +230,15 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
       {/* Schedule + Attention */}
       <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <CardHeader icon={CalendarDays} title="Open Orders" linkText="View All" onLink={() => onOpenQuotes('accepted')} />
+          <CardHeader icon={CalendarDays} title={`Open Orders${d.schedule.length ? ` (${d.schedule.length})` : ''}`} linkText="View All" onLink={() => onOpenQuotes('accepted')} />
           {d.schedule.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-400">No open orders — this fills in as quotes are accepted.</p>
           ) : (
-            <div className="overflow-x-auto">
+            // Scrolls inside the card so a long open list doesn't push the
+            // blanks panel and the Attention column off screen.
+            <div className="max-h-[420px] overflow-y-auto overflow-x-auto overscroll-contain">
               <table className="w-full text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white">
                   <tr className="border-b border-gray-100 text-left text-xs text-gray-500">
                     <th className="py-2 pr-3 font-medium">Customer</th>
                     <th className="py-2 pr-3 font-medium">Job</th>

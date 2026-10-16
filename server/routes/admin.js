@@ -1640,7 +1640,9 @@ router.get('/dashboard-ops', async (req, res, next) => {
       },
       pipeline,
       methods,
-      schedule: schedule.slice(0, 12),
+      // The whole open list — the dashboard card scrolls, so the previous
+      // 12-row cut-off just hid orders. The source queries are bounded above.
+      schedule,
       blanks: blanksR.rows.map((b) => ({
         id: b.id,
         po_number: b.po_number,
