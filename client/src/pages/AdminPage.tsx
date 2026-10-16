@@ -1051,6 +1051,12 @@ export default function AdminPage() {
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>('all');
   // Free-text search over the invoice list: invoice #, customer, email.
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  // Column sort for the invoice table. null keeps the server order (newest
+  // first). Clicking a header sorts by it; clicking again flips direction.
+  type InvoiceSortKey = 'invoice_number' | 'quote_id' | 'created_at' | 'customer_name' | 'customer_email' | 'total' | 'amount_paid' | 'amount_due' | 'status';
+  const [invoiceSort, setInvoiceSort] = useState<{ key: InvoiceSortKey; dir: 'asc' | 'desc' } | null>(null);
+  const toggleInvoiceSort = (key: InvoiceSortKey) => setInvoiceSort((cur) =>
+    cur?.key === key ? (cur.dir === 'asc' ? { key, dir: 'desc' } : null) : { key, dir: key === 'created_at' || key === 'total' || key === 'amount_paid' || key === 'amount_due' ? 'desc' : 'asc' });
   const [invoiceView, setInvoiceView] = useState<InvoiceView>('list');
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   // Full invoice record (status / amount_paid / amount_due / payments) for the
@@ -3152,11 +3158,46 @@ export default function AdminPage() {
   const invoices = invoicesQuery.data ?? [];
   // List-view rows after the free-text search (invoice #, customer, email).
   const invoiceSearchQ = invoiceSearch.trim().toLowerCase();
-  const visibleInvoices = invoiceSearchQ
+  const searchedInvoices = invoiceSearchQ
     ? invoices.filter((inv: Invoice) =>
         [inv.invoice_number, orderNumber(inv.quote_id), inv.quote_id, inv.customer_name, inv.customer_email]
           .some((v) => String(v || '').toLowerCase().includes(invoiceSearchQ)))
     : invoices;
+  const visibleInvoices = useMemo(() => {
+    if (!invoiceSort) return searchedInvoices;
+    const { key, dir } = invoiceSort;
+    const sign = dir === 'asc' ? 1 : -1;
+    const val = (inv: Invoice): number | string => {
+      switch (key) {
+        case 'created_at': return new Date(inv.created_at).getTime() || 0;
+        case 'quote_id': return inv.quote_id == null ? -Infinity : Number(inv.quote_id);
+        case 'total': case 'amount_paid': case 'amount_due': return Number(inv[key]) || 0;
+        default: return String(inv[key] ?? '').toLowerCase();
+      }
+    };
+    return [...searchedInvoices].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      if (av === bv) return 0;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * sign;
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * sign;
+    });
+  }, [searchedInvoices, invoiceSort]);
+  const invoiceSortTh = (key: InvoiceSortKey, label: string, right = false) => {
+    const active = invoiceSort?.key === key;
+    return (
+      <th
+        onClick={() => toggleInvoiceSort(key)}
+        aria-sort={active ? (invoiceSort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+        title={`Sort by ${label.toLowerCase()}`}
+        className={`px-3 py-2 font-medium whitespace-nowrap cursor-pointer select-none hover:text-gray-900 ${right ? 'text-right' : ''} ${active ? 'text-gray-900' : ''}`}
+      >
+        <span className={`inline-flex items-center gap-1 ${right ? 'flex-row-reverse' : ''}`}>
+          {label}
+          <ChevronDown className={`w-3 h-3 transition-transform ${active ? (invoiceSort!.dir === 'asc' ? 'rotate-180' : '') : 'opacity-25'}`} />
+        </span>
+      </th>
+    );
+  };
   const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
   const customProducts = customProductsQuery.data ?? [];
   const matchingCustomProducts = invoiceProductSearchTerm.length >= 2
@@ -5559,15 +5600,15 @@ export default function AdminPage() {
                     <table className="hidden md:table w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 text-left text-gray-500 text-xs">
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Invoice #</th>
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Order #</th>
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Customer</th>
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
-                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Total</th>
-                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Paid</th>
-                          <th className="px-3 py-2 font-medium text-right whitespace-nowrap">Due</th>
-                          <th className="px-3 py-2 font-medium whitespace-nowrap">Status</th>
+                          {invoiceSortTh('invoice_number', 'Invoice #')}
+                          {invoiceSortTh('quote_id', 'Order #')}
+                          {invoiceSortTh('created_at', 'Date')}
+                          {invoiceSortTh('customer_name', 'Customer')}
+                          {invoiceSortTh('customer_email', 'Email')}
+                          {invoiceSortTh('total', 'Total', true)}
+                          {invoiceSortTh('amount_paid', 'Paid', true)}
+                          {invoiceSortTh('amount_due', 'Due', true)}
+                          {invoiceSortTh('status', 'Status')}
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
