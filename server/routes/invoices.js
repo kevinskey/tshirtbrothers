@@ -305,6 +305,8 @@ router.get('/public/:id', async (req, res, next) => {
       mockup_id: i.mockup_id,
       mockup_preview_url: i.mockup_preview_url,
       mockup_preview_url_back: i.mockup_preview_url_back,
+      // Linked order, shown as TSB-<id> next to the invoice number.
+      quote_id: i.quote_id,
     });
   } catch (err) { next(err); }
 });

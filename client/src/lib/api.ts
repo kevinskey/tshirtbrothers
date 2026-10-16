@@ -635,6 +635,7 @@ export interface Customer {
 export interface CustomerInvoiceSummary {
   id: number;
   invoice_number: string;
+  quote_id?: number | string | null;
   total: number | string;
   amount_paid: number | string;
   amount_due: number | string;
@@ -1212,6 +1213,13 @@ export interface Invoice {
 }
 
 export type ExtraMockup = { mockup_id: number | null; front: string; back: string | null };
+
+/** Customer-facing order number for an invoice's linked quote/order — the
+ *  same "TSB-<id>" the emailed invoice prints. Null when the invoice stands
+ *  alone (no quote behind it). */
+export function orderNumber(quoteId: string | number | null | undefined): string | null {
+  return quoteId == null || quoteId === '' ? null : `TSB-${quoteId}`;
+}
 
 export interface CreateInvoiceData {
   customer_name: string;

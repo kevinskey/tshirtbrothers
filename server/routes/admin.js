@@ -614,7 +614,7 @@ router.get('/customers/:id', async (req, res, next) => {
     // Invoices link by email (no FK to users), so we match on the lowered email.
     const invoicesResult = await pool.query(
       `SELECT id, invoice_number, total, amount_paid, amount_due, status, payments,
-              created_at, due_date, sent_at
+              created_at, due_date, sent_at, quote_id
        FROM invoices WHERE LOWER(customer_email) = LOWER($1) ORDER BY created_at DESC`,
       [customer.email]
     );

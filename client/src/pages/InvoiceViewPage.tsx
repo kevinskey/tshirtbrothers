@@ -31,6 +31,7 @@ interface PublicInvoice {
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
   extra_mockups?: Array<{ mockup_id: number | null; front: string; back: string | null }> | null;
+  quote_id?: number | string | null;
 }
 
 // Line total for one invoice item. The admin editor never stores a per-line
@@ -176,6 +177,9 @@ export default function InvoiceViewPage() {
           <div className="text-left sm:text-right">
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-wide">INVOICE</h2>
             <p className="text-sm text-gray-500">{inv.invoice_number}</p>
+            {inv.quote_id != null && (
+              <p className="text-sm text-gray-500">Order # TSB-{inv.quote_id}</p>
+            )}
             {isPaid && (
               <span className="inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full bg-green-100 text-green-800 text-xs font-bold uppercase">
                 <CheckCircle2 className="w-3 h-3" /> Paid
