@@ -1085,6 +1085,13 @@ export default function AdminPage() {
   // Drives the spinner / disabled state for the "Design Mockup in Studio"
   // launch — covers the save-as-draft round-trip before navigating away.
   const [openingStudio, setOpeningStudio] = useState(false);
+  // Print the invoice exactly as the customer sees it: open the public
+  // /invoice/view page in a new tab with ?print=1, which fires the print
+  // dialog once the invoice and its mockup images have loaded.
+  function printInvoice(id: string | number) {
+    window.open(`/invoice/view/${id}?print=1`, '_blank', 'noopener');
+  }
+
   function convertQuoteToInvoice(q: Quote) {
     const total = Number(q.estimated_price || 0);
     const qty = Number(q.quantity || 1);
@@ -5498,6 +5505,7 @@ export default function AdminPage() {
                             </button>
                           )}
                           {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
+                          <button onClick={() => printInvoice(inv.id)} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Print</button>
                           <button onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Order blanks</button>
                           <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
                         </div>
@@ -5574,6 +5582,13 @@ export default function AdminPage() {
                                   </button>
                                 )}
                                 <button
+                                  title="Print invoice"
+                                  onClick={() => printInvoice(inv.id)}
+                                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                                >
+                                  <Printer className="w-4 h-4" />
+                                </button>
+                                <button
                                   title="Order blanks (S&S)"
                                   onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }}
                                   className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
@@ -5603,6 +5618,16 @@ export default function AdminPage() {
                 <div className="flex items-center gap-4 mb-6">
                   <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
                   <h2 className="text-2xl font-display font-bold text-gray-900">{editingInvoiceId ? 'Edit Invoice' : 'New Invoice'}</h2>
+                  {editingInvoiceId && (
+                    <button
+                      type="button"
+                      onClick={() => printInvoice(editingInvoiceId)}
+                      title="Print the invoice as the customer sees it"
+                      className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <Printer className="w-4 h-4" /> Print
+                    </button>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
