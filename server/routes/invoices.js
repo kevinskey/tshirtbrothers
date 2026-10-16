@@ -616,7 +616,7 @@ router.put('/:id', async (req, res, next) => {
     const {
       customer_name, customer_email, customer_phone, customer_address,
       items, subtotal, tax, shipping, discount, total, notes, due_date, status,
-      deposit_percent, mockup_id, extra_mockups, cc_emails,
+      deposit_percent, mockup_id, extra_mockups, cc_emails, quote_id,
     } = req.body;
 
     // Additional addresses that ride along on every customer-facing send
@@ -666,6 +666,8 @@ router.put('/:id', async (req, res, next) => {
         mockup_id = COALESCE($17, mockup_id),
         extra_mockups = COALESCE($18::jsonb, extra_mockups),
         cc_emails = COALESCE($19::jsonb, cc_emails),
+        -- Order link: only touched when the request names it (null unlinks).
+        quote_id = CASE WHEN $21::boolean THEN $20::integer ELSE quote_id END,
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
@@ -681,6 +683,8 @@ router.put('/:id', async (req, res, next) => {
         mockup_id !== undefined ? (mockup_id ? Number(mockup_id) : null) : null,
         extra_mockups !== undefined ? JSON.stringify(cleanExtraMockups(extra_mockups)) : null,
         ccJson,
+        quote_id !== undefined && quote_id !== null && quote_id !== '' ? (parseInt(quote_id, 10) || null) : null,
+        quote_id !== undefined,
       ]
     );
 
