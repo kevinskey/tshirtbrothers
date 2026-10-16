@@ -86,6 +86,7 @@ import {
   type Invoice,
   type InvoiceItem,
   type CreateInvoiceData,
+  orderNumber,
   fetchInvoices,
   fetchInvoice,
   fetchCustomProducts,
@@ -939,6 +940,7 @@ export default function AdminPage() {
           const inv = await fetchInvoice(editInvoice);
           setEditingInvoiceId(inv.id);
           setEditingInvoiceFull(inv);
+          setInvoiceQuoteId(inv.quote_id != null ? Number(inv.quote_id) : null);
           setInvoiceForm({
             customer_name: inv.customer_name || '',
             customer_email: inv.customer_email || '',
@@ -1055,6 +1057,10 @@ export default function AdminPage() {
   // one being edited. Kept separate from the form fields so the Payments block
   // still renders when the list is filtered and `invoices.find` would miss it.
   const [editingInvoiceFull, setEditingInvoiceFull] = useState<Invoice | null>(null);
+  // Quote/order the invoice being built or edited belongs to. Carried from
+  // "Convert to invoice" on a quote and from a saved invoice's quote_id so
+  // the order number rides along on save and shows in the editor/preview.
+  const [invoiceQuoteId, setInvoiceQuoteId] = useState<number | null>(null);
   const [invoiceForm, setInvoiceForm] = useState<{
     customer_name: string;
     customer_email: string;
@@ -1112,6 +1118,7 @@ export default function AdminPage() {
       due_date: '',
       mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
+    setInvoiceQuoteId(Number(q.id) || null);
     setActiveSection('invoices');
     setInvoiceView('create');
     toast(`Quote #${q.id} loaded — review and Save & Send`);
@@ -2139,6 +2146,7 @@ export default function AdminPage() {
     setInvoiceProductSearch('');
     setEditingInvoiceId(null);
     setEditingInvoiceFull(null);
+    setInvoiceQuoteId(null);
     setMockupAttachToInvoice(false);
   }
 
@@ -2335,6 +2343,7 @@ export default function AdminPage() {
   function openInvoiceEditor(inv: Invoice) {
     setEditingInvoiceId(inv.id);
     setEditingInvoiceFull(inv);
+    setInvoiceQuoteId(inv.quote_id != null ? Number(inv.quote_id) : null);
     setInvoiceForm({
       customer_name: inv.customer_name || '',
       customer_email: inv.customer_email || '',
@@ -2374,6 +2383,7 @@ export default function AdminPage() {
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
       extra_mockups: invoiceForm.extra_mockups,
+      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : undefined,
     };
     if (editingInvoiceId) {
       updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
@@ -2402,6 +2412,7 @@ export default function AdminPage() {
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
       extra_mockups: invoiceForm.extra_mockups,
+      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : undefined,
     };
     setPreviewInvoice(data);
     setInvoiceView('preview');
@@ -3125,7 +3136,7 @@ export default function AdminPage() {
   const invoiceSearchQ = invoiceSearch.trim().toLowerCase();
   const visibleInvoices = invoiceSearchQ
     ? invoices.filter((inv: Invoice) =>
-        [inv.invoice_number, inv.customer_name, inv.customer_email]
+        [inv.invoice_number, orderNumber(inv.quote_id), inv.quote_id, inv.customer_name, inv.customer_email]
           .some((v) => String(v || '').toLowerCase().includes(invoiceSearchQ)))
     : invoices;
   const invoiceSearchProducts = invoiceProductsQuery.data?.products ?? [];
@@ -4984,7 +4995,10 @@ export default function AdminPage() {
                               <tbody className="divide-y divide-gray-100">
                                 {customerDetail.invoices.map((inv) => (
                                   <tr key={inv.id}>
-                                    <td className="px-4 py-2 text-gray-900 font-mono text-xs">{inv.invoice_number}</td>
+                                    <td className="px-4 py-2 text-gray-900 font-mono text-xs">
+                                      {inv.invoice_number}
+                                      {orderNumber(inv.quote_id) && <div className="text-gray-500">{orderNumber(inv.quote_id)}</div>}
+                                    </td>
                                     <td className="px-4 py-2 text-gray-600">${Number(inv.total).toFixed(2)}</td>
                                     <td className="px-4 py-2 text-gray-600">${Number(inv.amount_paid).toFixed(2)}</td>
                                     <td className="px-4 py-2">
@@ -5478,7 +5492,10 @@ export default function AdminPage() {
                     ) : visibleInvoices.map((inv: Invoice) => (
                       <div key={inv.id} className="rounded-xl border border-gray-200 bg-white p-4 space-y-2 shadow-sm">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-gray-900 text-sm">{inv.invoice_number}</span>
+                          <span className="font-medium text-gray-900 text-sm">
+                            {inv.invoice_number}
+                            {orderNumber(inv.quote_id) && <span className="ml-2 font-normal text-xs text-gray-500">Order {orderNumber(inv.quote_id)}</span>}
+                          </span>
                           <StatusBadge status={inv.status} />
                         </div>
                         <div className="text-sm text-gray-700">{inv.customer_name}</div>
@@ -5492,7 +5509,7 @@ export default function AdminPage() {
                           <span className="text-red-600 font-medium">Due: ${Number(inv.amount_due).toFixed(2)}</span>
                         </div>
                         <div className="flex flex-wrap gap-2 pt-1">
-                          <button onClick={() => { setEditingInvoiceId(inv.id); setEditingInvoiceFull(inv); setInvoiceForm({ customer_name: inv.customer_name || '', customer_email: inv.customer_email || '', customer_phone: inv.customer_phone || '', cc_emails: (inv.cc_emails || []).join(', '), customer_address: '', items: Array.isArray(inv.items) ? inv.items : [{ description: '', quantity: 1, unit_price: 0 }], tax: String(inv.tax || 0), shipping: String(inv.shipping || 0), discount: String(inv.discount || 0), notes: inv.notes || '', due_date: inv.due_date || '', mockup_id: inv.mockup_id ?? null, mockup_preview_url: inv.mockup_preview_url ?? null, mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []) }); setInvoiceView('create'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
+                          <button onClick={() => openInvoiceEditor(inv)} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Edit</button>
                           {inv.status === 'draft' && <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">Send</button>}
                           {inv.status !== 'paid' && inv.status !== 'draft' && Number(inv.amount_due) > 0 && (
                             <button onClick={() => sendInvoiceMutation.mutate(inv.id)} disabled={sendInvoiceMutation.isPending} className="text-xs font-medium text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -5518,6 +5535,7 @@ export default function AdminPage() {
                       <thead>
                         <tr className="bg-gray-50 text-left text-gray-500 text-xs">
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Invoice #</th>
+                          <th className="px-3 py-2 font-medium whitespace-nowrap">Order #</th>
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Customer</th>
                           <th className="px-3 py-2 font-medium whitespace-nowrap">Email</th>
@@ -5530,12 +5548,19 @@ export default function AdminPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {invoicesQuery.isLoading ? (
-                          <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
+                          <tr><td colSpan={10} className="px-3 py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></td></tr>
                         ) : visibleInvoices.length === 0 ? (
-                          <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400">No invoices found</td></tr>
+                          <tr><td colSpan={10} className="px-3 py-12 text-center text-gray-400">No invoices found</td></tr>
                         ) : visibleInvoices.map((inv: Invoice) => (
                           <tr key={inv.id} onClick={() => openInvoiceEditor(inv)} className="hover:bg-gray-50 cursor-pointer">
                             <td className="px-3 py-2 font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</td>
+                            <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
+                              {inv.quote_id != null ? (
+                                <a href={`/admin/order/${inv.quote_id}`} onClick={(e) => e.stopPropagation()} className="hover:underline" title="Open the order">
+                                  {orderNumber(inv.quote_id)}
+                                </a>
+                              ) : <span className="text-gray-300">—</span>}
+                            </td>
                             <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
                             <td className="px-3 py-2 text-gray-900"><div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div></td>
                             <td className="px-3 py-2 text-gray-500"><div className="max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
@@ -5618,6 +5643,14 @@ export default function AdminPage() {
                 <div className="flex items-center gap-4 mb-6">
                   <button onClick={() => { setInvoiceView('list'); resetInvoiceForm(); }} className="text-gray-400 hover:text-gray-600"><ArrowLeft className="w-5 h-5" /></button>
                   <h2 className="text-2xl font-display font-bold text-gray-900">{editingInvoiceId ? 'Edit Invoice' : 'New Invoice'}</h2>
+                  {(editingInvoiceFull?.invoice_number || invoiceQuoteId != null) && (
+                    <div className="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
+                      {editingInvoiceFull?.invoice_number && <span className="font-medium text-gray-700">{editingInvoiceFull.invoice_number}</span>}
+                      {invoiceQuoteId != null && (
+                        <a href={`/admin/order/${invoiceQuoteId}`} className="hover:underline" title="Open the order">Order {orderNumber(invoiceQuoteId)}</a>
+                      )}
+                    </div>
+                  )}
                   {editingInvoiceId && (
                     <button
                       type="button"
@@ -6356,7 +6389,8 @@ export default function AdminPage() {
                         {previewInvoice.customer_phone && <p className="text-sm text-gray-500">{previewInvoice.customer_phone}</p>}
                       </div>
                       <div className="text-right text-sm">
-                        <p className="text-gray-500">Invoice #: <span className="font-medium text-gray-900">INV-DRAFT</span></p>
+                        <p className="text-gray-500">Invoice #: <span className="font-medium text-gray-900">{editingInvoiceFull?.invoice_number || 'INV-DRAFT'}</span></p>
+                        {invoiceQuoteId != null && <p className="text-gray-500">Order #: <span className="font-medium text-gray-900">{orderNumber(invoiceQuoteId)}</span></p>}
                         <p className="text-gray-500">Date: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                         {previewInvoice.due_date && <p className="text-gray-500">Due: {new Date(previewInvoice.due_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                       </div>
@@ -11858,6 +11892,7 @@ function InvoicePipelineRow({ inv, onOpen, onArchived }: { inv: Invoice; onOpen:
         <div className="flex items-center gap-1.5">
           <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Invoice</span>
           <span className="font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</span>
+          {orderNumber(inv.quote_id) && <span className="text-xs text-gray-500 whitespace-nowrap">· {orderNumber(inv.quote_id)}</span>}
         </div>
         {firstDesc && <div className="text-[11px] text-gray-500 truncate max-w-[180px]">{firstDesc}</div>}
       </td>
@@ -11926,6 +11961,7 @@ function InvoicePipelineCard({ inv, onOpen }: { inv: Invoice; onOpen: (inv: Invo
       <div className="text-sm text-gray-700 flex items-center gap-1.5">
         <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase">Invoice</span>
         {inv.invoice_number}
+        {orderNumber(inv.quote_id) && <span className="text-xs text-gray-500">· {orderNumber(inv.quote_id)}</span>}
       </div>
       <div className="text-sm">
         <span className="font-semibold text-gray-900">${Number(inv.total).toFixed(2)}</span>
