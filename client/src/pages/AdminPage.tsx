@@ -1061,20 +1061,6 @@ export default function AdminPage() {
   // "Convert to invoice" on a quote and from a saved invoice's quote_id so
   // the order number rides along on save and shows in the editor/preview.
   const [invoiceQuoteId, setInvoiceQuoteId] = useState<number | null>(null);
-  // Orders on file for the customer being invoiced, for the "Order" picker
-  // in the editor. Searches by the email typed into the form; the quotes
-  // list the dashboard loads is not fetched while the Invoices section is
-  // open, so this is its own small query.
-  const invoiceOrderEmail = invoiceForm.customer_email.replace(/^mailto:/i, '').trim().toLowerCase();
-  const invoiceOrdersQuery = useQuery({
-    queryKey: ['admin', 'invoice-orders', invoiceOrderEmail],
-    queryFn: () => fetchQuotes('all', invoiceOrderEmail),
-    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceOrderEmail.includes('@'),
-    staleTime: 30000,
-  });
-  const invoiceOrderOptions = (invoiceOrdersQuery.data ?? [])
-    .filter((q: Quote) => (q.customer_email || q.customerEmail || '').toLowerCase() === invoiceOrderEmail)
-    .sort((a: Quote, b: Quote) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
   const [invoiceForm, setInvoiceForm] = useState<{
     customer_name: string;
     customer_email: string;
@@ -1098,6 +1084,21 @@ export default function AdminPage() {
     tax: '0', shipping: '0', discount: '0', notes: '', due_date: '',
     mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
   });
+  // Orders on file for the customer being invoiced, for the "Order" picker
+  // in the editor. Searches by the email typed into the form; the quotes
+  // list the dashboard loads is not fetched while the Invoices section is
+  // open, so this is its own small query.
+  const invoiceOrderEmail = invoiceForm.customer_email.replace(/^mailto:/i, '').trim().toLowerCase();
+  const invoiceOrdersQuery = useQuery({
+    queryKey: ['admin', 'invoice-orders', invoiceOrderEmail],
+    queryFn: () => fetchQuotes('all', invoiceOrderEmail),
+    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceOrderEmail.includes('@'),
+    staleTime: 30000,
+  });
+  const invoiceOrderOptions = (invoiceOrdersQuery.data ?? [])
+    .filter((q: Quote) => (q.customer_email || q.customerEmail || '').toLowerCase() === invoiceOrderEmail)
+    .sort((a: Quote, b: Quote) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
+
   // When the admin clicks "Create Mockup" on the invoice screen, this flag
   // tells handleSaveMockup to write the resulting mockup id + preview URL
   // back into invoiceForm so the invoice carries the linkage.
