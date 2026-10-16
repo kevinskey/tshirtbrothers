@@ -1235,7 +1235,8 @@ export interface CreateInvoiceData {
   total: number;
   notes?: string;
   due_date?: string;
-  quote_id?: string;
+  /** Linked order. null on update explicitly unlinks; undefined leaves it alone. */
+  quote_id?: string | null;
   deposit_percent?: number;
   mockup_id?: number | null;
   extra_mockups?: ExtraMockup[];

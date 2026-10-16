@@ -1061,6 +1061,20 @@ export default function AdminPage() {
   // "Convert to invoice" on a quote and from a saved invoice's quote_id so
   // the order number rides along on save and shows in the editor/preview.
   const [invoiceQuoteId, setInvoiceQuoteId] = useState<number | null>(null);
+  // Orders on file for the customer being invoiced, for the "Order" picker
+  // in the editor. Searches by the email typed into the form; the quotes
+  // list the dashboard loads is not fetched while the Invoices section is
+  // open, so this is its own small query.
+  const invoiceOrderEmail = invoiceForm.customer_email.replace(/^mailto:/i, '').trim().toLowerCase();
+  const invoiceOrdersQuery = useQuery({
+    queryKey: ['admin', 'invoice-orders', invoiceOrderEmail],
+    queryFn: () => fetchQuotes('all', invoiceOrderEmail),
+    enabled: activeSection === 'invoices' && invoiceView === 'create' && invoiceOrderEmail.includes('@'),
+    staleTime: 30000,
+  });
+  const invoiceOrderOptions = (invoiceOrdersQuery.data ?? [])
+    .filter((q: Quote) => (q.customer_email || q.customerEmail || '').toLowerCase() === invoiceOrderEmail)
+    .sort((a: Quote, b: Quote) => new Date(b.created_at || b.createdAt).getTime() - new Date(a.created_at || a.createdAt).getTime());
   const [invoiceForm, setInvoiceForm] = useState<{
     customer_name: string;
     customer_email: string;
@@ -2383,7 +2397,7 @@ export default function AdminPage() {
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
       extra_mockups: invoiceForm.extra_mockups,
-      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : undefined,
+      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : (editingInvoiceId ? null : undefined),
     };
     if (editingInvoiceId) {
       updateInvoiceMutation.mutate({ id: editingInvoiceId, ...data });
@@ -2412,7 +2426,7 @@ export default function AdminPage() {
       deposit_percent: invoiceRequireDeposit ? (parseInt(invoiceDepositPercent, 10) || 50) : 0,
       mockup_id: invoiceForm.mockup_id,
       extra_mockups: invoiceForm.extra_mockups,
-      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : undefined,
+      quote_id: invoiceQuoteId != null ? String(invoiceQuoteId) : (editingInvoiceId ? null : undefined),
     };
     setPreviewInvoice(data);
     setInvoiceView('preview');
@@ -5738,6 +5752,27 @@ export default function AdminPage() {
                         <label className="block text-xs text-gray-500 mb-1">Also email (CC)</label>
                         <input value={invoiceForm.cc_emails} onChange={e => setInvoiceForm(p => ({ ...p, cc_emails: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="ap@company.com, manager@company.com (max 5)" />
                         <p className="mt-1 text-[11px] text-gray-500">Copied on the invoice and every payment email. The address above stays the primary.</p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs text-gray-500 mb-1">Order</label>
+                        <select
+                          value={invoiceQuoteId != null ? String(invoiceQuoteId) : ''}
+                          onChange={e => setInvoiceQuoteId(e.target.value ? Number(e.target.value) : null)}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                        >
+                          <option value="">{invoiceOrderEmail.includes('@') ? 'No order linked' : 'Enter the customer email to pick an order'}</option>
+                          {invoiceQuoteId != null && !invoiceOrderOptions.some((q: Quote) => Number(q.id) === invoiceQuoteId) && (
+                            <option value={String(invoiceQuoteId)}>{orderNumber(invoiceQuoteId)}</option>
+                          )}
+                          {invoiceOrderOptions.map((q: Quote) => (
+                            <option key={q.id} value={String(q.id)}>
+                              {orderNumber(q.id)} · {q.product_name || q.productName || 'Custom order'} · {new Date(q.created_at || q.createdAt).toLocaleDateString()} · {q.status.replace(/_/g, ' ')}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[11px] text-gray-500">
+                          {invoiceOrdersQuery.isFetching ? 'Looking up this customer\u2019s orders\u2026' : 'Puts the order number (TSB-#) on the invoice and shows the invoice on the order page.'}
+                        </p>
                       </div>
                     </div>
                     <div className="mt-3">
