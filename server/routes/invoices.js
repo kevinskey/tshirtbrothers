@@ -4,6 +4,7 @@ import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
+import { ensureOrderForInvoice } from '../lib/orderFromInvoice.js';
 import * as theme from '../services/emailTheme.js';
 import { mailRecipients, normalizeCcEmails } from '../services/recipients.js';
 import { ARCHIVE_BCC } from '../services/email.js';
@@ -603,7 +604,20 @@ router.post('/', async (req, res, next) => {
       ]
     );
 
-    res.status(201).json(rows[0]);
+    // Every invoice carries an order number (TSB-<quote id>). One written
+    // without a quote behind it gets an order opened for it now, so the
+    // number is on the invoice from the first send.
+    const invoice = rows[0];
+    if (invoice.quote_id == null) {
+      try {
+        invoice.quote_id = await ensureOrderForInvoice(invoice);
+      } catch (err) {
+        // The invoice is saved either way; the admin can link an order by hand.
+        console.error(`[invoices] could not open an order for ${invoice.invoice_number}:`, err.message);
+      }
+    }
+
+    res.status(201).json(invoice);
   } catch (err) {
     next(err);
   }

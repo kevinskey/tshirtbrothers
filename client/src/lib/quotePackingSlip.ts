@@ -92,7 +92,7 @@ export function printQuotePackingSlip(quote: SlipQuote, items: SlipItem[] = []):
   const isPickup = !method || /pickup|pick up|will call/i.test(method);
   const shipTo = isPickup ? undefined : addressLines(quote.shipping_address, name);
   printPackingSlip({
-    orderNumber: quote.id,
+    orderNumber: `TSB-${quote.id}`,
     orderType: 'Custom Order',
     date: quote.accepted_at || quote.created_at || quote.createdAt || null,
     customer: {
