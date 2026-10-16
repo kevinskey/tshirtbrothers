@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Printer, Loader2, XCircle, CheckCircle2, CreditCard } from 'lucide-react';
 
 interface PublicInvoice {
@@ -40,6 +40,11 @@ function fmt(v: unknown): string {
 
 export default function InvoiceViewPage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  // ?print=1 is how the admin "Print" buttons open this page: fire the print
+  // dialog once the invoice has rendered and its mockup images have loaded,
+  // so the printed sheet is exactly what the customer sees.
+  const autoPrint = searchParams.get('print') === '1';
   const [inv, setInv] = useState<PublicInvoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -57,6 +62,22 @@ export default function InvoiceViewPage() {
       .then(setInv)
       .catch((e) => setError(e?.message || 'Failed to load invoice'));
   }, [id]);
+
+  useEffect(() => {
+    if (!autoPrint || !inv) return;
+    let cancelled = false;
+    const imgs = Array.from(document.images).filter((im) => !im.complete);
+    const waits = imgs.map((im) => new Promise<void>((resolve) => {
+      im.addEventListener('load', () => resolve(), { once: true });
+      im.addEventListener('error', () => resolve(), { once: true });
+    }));
+    // Don't hang forever on a slow CDN image — print after 4s regardless.
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4000));
+    Promise.race([Promise.all(waits), timeout]).then(() => {
+      if (!cancelled) setTimeout(() => window.print(), 150);
+    });
+    return () => { cancelled = true; };
+  }, [autoPrint, inv]);
 
   // Ask the server for a fresh Checkout session every time. Nothing about the
   // payment link is stored or reused, so this works whether the customer got
