@@ -164,7 +164,7 @@ export function packingSlipHtml(d: PackingSlipData): string {
     </div>
     <div style="text-align:right;">
       <div style="display:inline-block;background:${ORANGE};color:#fff;font-size:11px;font-weight:800;letter-spacing:.18em;padding:4px 10px;border-radius:999px;">PACKING SLIP</div>
-      <div style="font-size:28px;font-weight:900;margin-top:6px;letter-spacing:-.02em;">#${esc(d.orderNumber)}</div>
+      <div style="font-size:28px;font-weight:900;margin-top:6px;letter-spacing:-.02em;">${/^\d+$/.test(String(d.orderNumber)) ? '#' : ''}${esc(d.orderNumber)}</div>
       <div style="font-size:12px;color:#cbd5e1;">${esc(d.orderType)} · ${esc(fmtDate(d.date))}</div>
     </div>
   </div>

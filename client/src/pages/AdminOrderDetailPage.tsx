@@ -5,6 +5,7 @@ import {
   Package, Paperclip, Printer, Send, StickyNote, Trash2,
 } from 'lucide-react';
 import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
+import { orderNumber } from '@/lib/api';
 
 // Full order dossier: one page with everything about an order (keyed by
 // quote id) — status timeline, items, money, blanks POs, vendor sends,
@@ -302,7 +303,7 @@ export default function AdminOrderDetailPage() {
               <ArrowLeft className="w-4 h-4" /> Pipeline
             </Link>
             <h1 className="text-2xl font-bold">
-              Order #{quote.id} — {quote.customer_name}
+              Order {orderNumber(quote.id)} — {quote.customer_name}
               <span className={`ml-3 align-middle inline-block px-2.5 py-1 rounded-full text-xs font-medium ${QUOTE_STATUS_STYLE[quote.status] || 'bg-gray-200 text-gray-700'}`}>
                 {quote.status}
               </span>

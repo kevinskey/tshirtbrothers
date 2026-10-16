@@ -2066,8 +2066,11 @@ export default function AdminPage() {
 
   const createInvoiceMutation = useMutation({
     mutationFn: (data: CreateInvoiceData) => createInvoice(data),
-    onSuccess: () => {
+    onSuccess: (inv) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+      const order = orderNumber(inv?.quote_id);
+      toast(`${inv?.invoice_number || 'Invoice'} saved${order ? ` · Order ${order}` : ''}`);
       setInvoiceView('list');
       resetInvoiceForm();
     },
@@ -5761,7 +5764,11 @@ export default function AdminPage() {
                           onChange={e => setInvoiceQuoteId(e.target.value ? Number(e.target.value) : null)}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
                         >
-                          <option value="">{invoiceOrderEmail.includes('@') ? 'No order linked' : 'Enter the customer email to pick an order'}</option>
+                          <option value="">
+                            {editingInvoiceId
+                              ? (invoiceOrderEmail.includes('@') ? 'No order linked' : 'Enter the customer email to pick an order')
+                              : 'New order (TSB-# assigned on save)'}
+                          </option>
                           {invoiceQuoteId != null && !invoiceOrderOptions.some((q: Quote) => Number(q.id) === invoiceQuoteId) && (
                             <option value={String(invoiceQuoteId)}>{orderNumber(invoiceQuoteId)}</option>
                           )}
@@ -5772,7 +5779,11 @@ export default function AdminPage() {
                           ))}
                         </select>
                         <p className="mt-1 text-[11px] text-gray-500">
-                          {invoiceOrdersQuery.isFetching ? 'Looking up this customer\u2019s orders\u2026' : 'Puts the order number (TSB-#) on the invoice and shows the invoice on the order page.'}
+                          {invoiceOrdersQuery.isFetching
+                            ? 'Looking up this customer\u2019s orders\u2026'
+                            : editingInvoiceId
+                              ? 'Puts the order number (TSB-#) on the invoice and shows the invoice on the order page.'
+                              : 'Every invoice gets an order number. Leave this on New order to open one, or pick an existing quote so the invoice joins that order.'}
                         </p>
                       </div>
                     </div>
