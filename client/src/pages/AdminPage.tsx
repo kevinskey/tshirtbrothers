@@ -3562,7 +3562,10 @@ export default function AdminPage() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-gray-900 truncate">{q.customer_name || q.customerName}</p>
+                      <p className="font-semibold text-gray-900 truncate">
+                        {q.customer_name || q.customerName}
+                        <span className="ml-2 font-mono font-normal text-xs text-gray-500">{orderNumber(q.id)}</span>
+                      </p>
                       <a href={`mailto:${q.customer_email || q.customerEmail}`} className="text-xs text-blue-600 truncate block">{q.customer_email || q.customerEmail}</a>
                       {(q.customer_phone || q.customerPhone) && (
                         <a href={`tel:${q.customer_phone || q.customerPhone}`} className="text-xs text-blue-600 block">{q.customer_phone || q.customerPhone}</a>
@@ -3737,6 +3740,7 @@ export default function AdminPage() {
                     <tr className="bg-gray-50 text-left text-gray-500 text-xs">
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Art</th>
                       <th className="px-3 py-2 font-medium whitespace-nowrap">Date</th>
+                      <th className="px-3 py-2 font-medium whitespace-nowrap">Order #</th>
                       {/* Due date, colour-coded by runway: red past due,
                           orange today, amber inside 2 days, yellow inside a
                           week, green beyond. Editable in place on quotes. */}
@@ -3778,6 +3782,9 @@ export default function AdminPage() {
                         </td>
                         <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
                           {new Date(q.created_at || q.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                          <a href={`/admin/order/${q.id}`} className="text-gray-700 hover:text-red-600 hover:underline" title="Open the order">{orderNumber(q.id)}</a>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <DueDateCell
@@ -4036,7 +4043,7 @@ export default function AdminPage() {
                     ); })())}
                     {dashboardRows.length === 0 && !quotesQuery.isLoading && (
                       <tr>
-                        <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                        <td colSpan={11} className="px-3 py-8 text-center text-gray-400">
                           No quotes found
                         </td>
                       </tr>
@@ -11921,6 +11928,11 @@ function InvoicePipelineRow({ inv, onOpen, onArchived }: { inv: Invoice; onOpen:
         )}
       </td>
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
+      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+        {inv.quote_id != null ? (
+          <a href={`/admin/order/${inv.quote_id}`} className="text-gray-700 hover:text-red-600 hover:underline" title="Open the order">{orderNumber(inv.quote_id)}</a>
+        ) : <span className="text-gray-300">—</span>}
+      </td>
       {/* An invoice's due date is owned by the invoice editor, so it reads
           here and is edited there (row click opens it). */}
       <td className="px-3 py-2 whitespace-nowrap">
@@ -12074,6 +12086,7 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
       <td className="px-3 py-2 text-gray-600 whitespace-nowrap">
         {new Date(when).toLocaleDateString()}
       </td>
+      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-500" title="Gang sheet order id">GS-{order.id}</td>
       {/* A gang sheet has no customer-entered date — its deadline is the
           turnaround tier it was bought under, counted from payment. */}
       <td className="px-3 py-2 whitespace-nowrap">
