@@ -9,7 +9,7 @@ interface PublicInvoice {
   customer_email: string | null;
   customer_phone: string | null;
   customer_address: unknown;
-  items: Array<{ description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string }> | string;
+  items: Array<{ description?: string; quantity?: number; unit_price?: number; total?: number; shipping_cost?: number; color?: string; size?: string }> | string;
   subtotal: number | string;
   tax: number | string;
   shipping: number | string;
@@ -31,6 +31,16 @@ interface PublicInvoice {
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
   extra_mockups?: Array<{ mockup_id: number | null; front: string; back: string | null }> | null;
+}
+
+// Line total for one invoice item. The admin editor never stores a per-line
+// total, so items usually arrive with only quantity + unit_price (+ optional
+// per-unit shipping_cost); reading `total` alone printed $0.00 on every row.
+// Mirrors the editor's own line math so the rows add up to the subtotal.
+function lineTotal(it: { quantity?: number; unit_price?: number; total?: number; shipping_cost?: number }): number {
+  if (it.total != null && Number(it.total) > 0) return Number(it.total);
+  const qty = Number(it.quantity) || 1;
+  return qty * (Number(it.unit_price) || 0) + qty * (Number(it.shipping_cost) || 0);
 }
 
 function fmt(v: unknown): string {
@@ -122,7 +132,7 @@ export default function InvoiceViewPage() {
   // Group identical design+color runs so a 27-row size breakdown reads as a
   // handful of summary lines with expandable size detail. Groups of one
   // render as plain rows.
-  type Item = { description?: string; quantity?: number; unit_price?: number; total?: number; color?: string; size?: string };
+  type Item = { description?: string; quantity?: number; unit_price?: number; total?: number; shipping_cost?: number; color?: string; size?: string };
   const groups: { key: string; description: string; color: string; items: Item[]; qty: number; total: number }[] = [];
   for (const it of items as Item[]) {
     const key = `${it.description || ''}|${it.color || ''}`;
@@ -133,7 +143,7 @@ export default function InvoiceViewPage() {
     }
     g.items.push(it);
     g.qty += Number(it.quantity) || 1;
-    g.total += Number(it.total) || (Number(it.quantity) || 1) * (Number(it.unit_price) || 0);
+    g.total += lineTotal(it);
   }
 
   return (
@@ -265,7 +275,7 @@ export default function InvoiceViewPage() {
                     {g.items.map((it, j) => (
                       <p key={j} className="text-xs text-gray-500 flex justify-between">
                         <span>{it.size || '—'} · {it.quantity || 1} × ${fmt(it.unit_price)}</span>
-                        <span>${fmt(it.total)}</span>
+                        <span>${fmt(lineTotal(it))}</span>
                       </p>
                     ))}
                   </div>
@@ -299,7 +309,7 @@ export default function InvoiceViewPage() {
                     <td className="py-3 text-gray-600">{it0.size || '—'}</td>
                     <td className="py-3 text-center text-gray-600">{it0.quantity || 1}</td>
                     <td className="py-3 text-right text-gray-600">${fmt(it0.unit_price)}</td>
-                    <td className="py-3 text-right font-medium text-gray-900">${fmt(it0.total)}</td>
+                    <td className="py-3 text-right font-medium text-gray-900">${fmt(lineTotal(it0))}</td>
                   </tr>
                 );
               }
@@ -320,7 +330,7 @@ export default function InvoiceViewPage() {
                     <td className="py-1.5 text-xs text-gray-600">{it.size || '—'}</td>
                     <td className="py-1.5 text-center text-xs text-gray-600">{it.quantity || 1}</td>
                     <td className="py-1.5 text-right text-xs text-gray-600">${fmt(it.unit_price)}</td>
-                    <td className="py-1.5 text-right text-xs text-gray-600">${fmt(it.total)}</td>
+                    <td className="py-1.5 text-right text-xs text-gray-600">${fmt(lineTotal(it))}</td>
                   </tr>
                 )),
               ];
