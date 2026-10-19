@@ -72,6 +72,7 @@ import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
 import AdminGroupStoresPage from '@/pages/admin/AdminGroupStoresPage';
 import AdminGroupStoreDetailPage from '@/pages/admin/AdminGroupStoreDetailPage';
 import AdminStoreOrderPage from '@/pages/admin/AdminStoreOrderPage';
+import AdminStoreOrdersPage from '@/pages/admin/AdminStoreOrdersPage';
 import PostOfficePage from '@/pages/admin/PostOfficePage';
 import { getStoreSubdomain } from '@/lib/storeSubdomain';
 import CgcStandaloneApp, { CgcRoutes } from '@/cgc/CgcApp';
@@ -216,6 +217,7 @@ function App() {
           <Route path="/stores/:slug/admin" element={<GroupStoreAdminPage />} />
           {/* TSB internal admin for group stores */}
           <Route path="/admin/group-stores" element={<AdminGroupStoresPage />} />
+          <Route path="/admin/store-orders" element={<AdminStoreOrdersPage />} />
           <Route path="/admin/store-order/:id" element={<AdminStoreOrderPage />} />
           <Route path="/admin/post-office" element={<PostOfficePage />} />
           <Route path="/admin/group-stores/:id" element={<AdminGroupStoreDetailPage />} />
