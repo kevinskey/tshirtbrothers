@@ -1632,6 +1632,30 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
   }
 });
 
+// POST /admin/:id/unfulfill — undo a fulfill (or a 'completed' picked from
+// the status dropdown) that was a mistake. Clears the pickup/ship stamps and
+// the method so the order page stops saying "picked up"; the status itself is
+// changed separately through PATCH /:id so the caller decides which stage the
+// job is really at. Tracking numbers are kept: a label that was bought is
+// still a label. Nothing is emailed or texted — the customer should not hear
+// about an admin correction.
+router.post('/admin/:id/unfulfill', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE quotes
+          SET picked_up_at = NULL,
+              shipped_at = NULL,
+              fulfillment_method = NULL
+        WHERE id = $1 RETURNING *`,
+      [req.params.id],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /admin/notify-update — email the customer the new total after the
 // admin edited the line items. Informational only — doesn't ask for
 // payment now; balance is collected when the order's ready to ship.
