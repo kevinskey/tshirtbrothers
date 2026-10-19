@@ -49,6 +49,7 @@ router.get('/', async (req, res, next) => {
               o.store_earnings_cents, o.tsb_earnings_cents,
               o.split_snapshot_json, o.tsb_order_ref, o.created_at, o.updated_at,
               o.buyer_name, o.buyer_phone, o.shipping_address,
+              o.tracking_number, o.tracking_carrier, o.shipped_at,
               -- Line titles for the pipeline row: the buyer bought named
               -- products, not an abstract "store order".
               (SELECT json_agg(json_build_object(
@@ -63,8 +64,8 @@ router.get('/', async (req, res, next) => {
          FROM store_orders o
          JOIN stores s ON s.id = o.store_id
         WHERE ${where}
-        ORDER BY o.created_at ASC
-        LIMIT 200`,
+        ORDER BY o.created_at ${status === 'open' ? 'ASC' : 'DESC'}
+        LIMIT 500`,
       params,
     );
     res.json({ orders: rows });

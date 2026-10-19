@@ -1710,6 +1710,9 @@ export interface AdminStoreOrder {
   tsb_earnings_cents: number;
   tsb_order_ref: string | null;
   created_at: string;
+  tracking_number?: string | null;
+  tracking_carrier?: string | null;
+  shipped_at?: string | null;
   buyer_name?: string | null;
   buyer_phone?: string | null;
   shipping_address?: {

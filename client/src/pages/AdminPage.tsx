@@ -41,6 +41,7 @@ import {
   GalleryHorizontal,
   Truck,
   Store,
+  ShoppingBag,
   Target,
   Mail,
   MessageSquare,
@@ -246,6 +247,9 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'texts',     label: 'Texts',        icon: MessageSquare },
     { key: 'customers', label: 'Customers',    icon: Users },
     { key: 'group-stores', label: 'Web Stores', icon: Store, to: '/admin/group-stores' },
+    // Every store order, whatever its status. The dashboard and Post Office
+    // only show open ones, so shipped/delivered orders need a home.
+    { key: 'store-orders', label: 'Store Orders', icon: ShoppingBag, to: '/admin/store-orders' },
   ]},
   { label: 'Catalog', items: [
     { key: 'products',    label: 'Products',     icon: Package },
