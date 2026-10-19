@@ -1554,7 +1554,9 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
     // A balance can be requested any time after the deposit — the job may
     // already be awaiting mockup approval, in production, or ready. Only
     // pre-deposit and terminal states are refused.
-    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+    // 'completed' included: marking a pickup done flips the status before
+    // the balance is always collected, and the request must still go out.
+    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'];
     if (!BALANCE_OK.includes(quote.status)) {
       return res.status(400).json({ error: 'Quote must be accepted (deposit paid) first' });
     }
