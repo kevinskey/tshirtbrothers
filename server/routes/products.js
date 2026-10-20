@@ -74,7 +74,9 @@ router.get('/', async (req, res, next) => {
     if (dbCount > 0) {
       // Use database
       const offset = (pageNum - 1) * limitNum;
-      const conditions = [];
+      // Sister-brand pseudo-blanks (lht:*) exist only to give store-shop
+      // checkout real shipping weights — never list them in the blanks shop.
+      const conditions = ["ss_id NOT LIKE 'lht:%'"];
       const params = [];
       let paramIndex = 1;
 
@@ -283,7 +285,7 @@ router.get('/brands', async (req, res, next) => {
         COUNT(*)::int as count,
         (array_agg(image_url ORDER BY name))[1] as image_url
       FROM products
-      WHERE brand IS NOT NULL AND brand != ''
+      WHERE brand IS NOT NULL AND brand != '' AND ss_id NOT LIKE 'lht:%'
       GROUP BY brand
       ORDER BY brand
     `);
@@ -374,8 +376,8 @@ router.get('/pricing/:styleId', async (req, res, next) => {
 router.get('/filters', async (req, res, next) => {
   try {
     const [brandsResult, categoriesResult] = await Promise.all([
-      pool.query("SELECT DISTINCT brand FROM products WHERE brand != '' ORDER BY brand"),
-      pool.query("SELECT DISTINCT category FROM products WHERE category != '' ORDER BY category"),
+      pool.query("SELECT DISTINCT brand FROM products WHERE brand != '' AND ss_id NOT LIKE 'lht:%' ORDER BY brand"),
+      pool.query("SELECT DISTINCT category FROM products WHERE category != '' AND ss_id NOT LIKE 'lht:%' ORDER BY category"),
     ]);
     res.json({
       brands: brandsResult.rows.map(r => r.brand),
