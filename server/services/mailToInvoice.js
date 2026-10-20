@@ -116,7 +116,7 @@ export async function createDraftInvoiceFromMail(mailId) {
         items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
         notes, status, deposit_percent)
      VALUES ($1,$2,$3,$4,$5,0,0,0,0,0,0,0,$6,'draft',50)
-     RETURNING id, invoice_number`,
+     RETURNING *`,
     [
       invoiceNumber,
       customerName,
@@ -126,5 +126,15 @@ export async function createDraftInvoiceFromMail(mailId) {
       noteLines.join('\n'),
     ],
   );
-  return { invoice: ins.rows[0], parsed_items: items.length, open_questions: questions };
+  // Open the order (TSB-<id>) right away, like every other invoice path —
+  // without this, the drawer for the order showed no line items because the
+  // order only came into being later, after other code touched the invoice.
+  const invoice = ins.rows[0];
+  try {
+    const { ensureOrderForInvoice } = await import('../lib/orderFromInvoice.js');
+    invoice.quote_id = await ensureOrderForInvoice(invoice);
+  } catch (err) {
+    console.error(`[mail-to-invoice] could not open an order for ${invoice.invoice_number}:`, err.message);
+  }
+  return { invoice: { id: invoice.id, invoice_number: invoice.invoice_number }, parsed_items: items.length, open_questions: questions };
 }

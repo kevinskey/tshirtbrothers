@@ -73,18 +73,30 @@ export async function ensureOrderForInvoice(invoice) {
         ]
       );
       orderId = ins.rows[0].id;
+    }
 
-      for (const [i, it] of items.entries()) {
-        const qty = Number(it.quantity) || 0;
-        const unit = it.unit_price != null && it.unit_price !== '' ? Number(it.unit_price) : null;
-        const lineTotal = it.total != null && it.total !== ''
-          ? Number(it.total)
-          : (unit != null ? Math.round(unit * qty * 100) / 100 : null);
-        await client.query(
-          `INSERT INTO quote_items (quote_id, position, product_name, quantity, unit_price, line_total)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [orderId, i, String(it.description || '').trim() || null, qty, unit, lineTotal]
-        );
+    // Copy the invoice's line items onto the order — also when the order
+    // already existed but opened empty (it happened: an order opened before
+    // the invoice carried items left the admin drawer with no line items at
+    // all). Self-healing: any later call with items present fills them in.
+    if (items.length) {
+      const hasItems = await client.query(
+        'SELECT 1 FROM quote_items WHERE quote_id = $1 LIMIT 1',
+        [orderId]
+      );
+      if (hasItems.rows.length === 0) {
+        for (const [i, it] of items.entries()) {
+          const qty = Number(it.quantity) || 0;
+          const unit = it.unit_price != null && it.unit_price !== '' ? Number(it.unit_price) : null;
+          const lineTotal = it.total != null && it.total !== ''
+            ? Number(it.total)
+            : (unit != null ? Math.round(unit * qty * 100) / 100 : null);
+          await client.query(
+            `INSERT INTO quote_items (quote_id, position, product_name, quantity, unit_price, line_total)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [orderId, i, String(it.description || '').trim() || null, qty, unit, lineTotal]
+          );
+        }
       }
     }
 
