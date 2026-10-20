@@ -79,6 +79,8 @@ import CgcStandaloneApp, { CgcRoutes } from '@/cgc/CgcApp';
 import { isCgcHost } from '@/cgc/lib/brand';
 import ApcStandaloneApp, { ApcRoutes } from '@/apc/ApcApp';
 import { isApcHost } from '@/apc/lib/brand';
+import LhtStandaloneApp, { LhtRoutes } from '@/lht/LhtApp';
+import { isLhtHost } from '@/lht/lib/brand';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -128,6 +130,9 @@ function App() {
   // All Print Club — same sister-brand pattern, also ahead of the
   // store-subdomain branch for the same reason.
   if (isApcHost()) return <ApcStandaloneApp />;
+  // Live Hard Truth — same sister-brand pattern, also ahead of the
+  // store-subdomain branch for the same reason.
+  if (isLhtHost()) return <LhtStandaloneApp />;
   if (getStoreSubdomain()) return <SubdomainApp />;
   return (
     <HelmetProvider>
@@ -164,6 +169,8 @@ function App() {
           <Route path="/gift-club/*" element={<CgcRoutes base="/gift-club" />} />
           {/* All Print Club — sister-brand storefront (path mount). */}
           <Route path="/print-club/*" element={<ApcRoutes base="/print-club" />} />
+          {/* Live Hard Truth — sister-brand storefront (path mount). */}
+          <Route path="/live-hard-truth/*" element={<LhtRoutes base="/live-hard-truth" />} />
           <Route path="/pro/login" element={<ProLoginPage />} />
           {/* /quote is now the live-pricing calculator (formerly /instant-quote).
               The old multi-step contact form was removed in favor of self-service.
