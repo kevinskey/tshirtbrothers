@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Reply, Send, Trash2, X,
+  FileText, Inbox, Loader2, Mail, Paperclip, PenSquare, RefreshCw, Reply, Send, Trash2, X,
 } from 'lucide-react';
 
 // Unified mailbox for *@tshirtbrothers.com — reads the Purelymail catch-all
@@ -56,6 +56,7 @@ export default function MailAdmin() {
   const [aliasFilter, setAliasFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [openMsg, setOpenMsg] = useState<MailFull | null>(null);
+  const [invoicing, setInvoicing] = useState(false);
   const [compose, setCompose] = useState<null | { from: string; to: string; cc: string; subject: string; body: string; replyToId?: number }>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -233,6 +234,23 @@ export default function MailAdmin() {
       setMessages((prev) => prev.filter((m) => m.id !== id));
       if (openMsg?.id === id) setOpenMsg(null);
       void loadAliases();
+    }
+  }
+
+  // Email → draft invoice: the server parses the message into $0 line
+  // items; we jump straight into the invoice editor to price and send it
+  // as the official branded quote.
+  async function createInvoiceFromMail(id: number) {
+    setInvoicing(true);
+    try {
+      const r = await fetch(`/api/mail/${id}/to-invoice`, { method: 'POST', headers: authHeaders() });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+      window.location.href = `/admin?section=invoices&editInvoice=${data.invoice.id}`;
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not create the invoice.');
+    } finally {
+      setInvoicing(false);
     }
   }
 
@@ -431,6 +449,17 @@ export default function MailAdmin() {
                   >
                     <Reply className="w-4 h-4" /> Reply
                   </button>
+                  {!openMsg.outgoing && (
+                    <button
+                      title="Draft an invoice from this email — review and price it before sending"
+                      disabled={invoicing}
+                      onClick={() => void createInvoiceFromMail(openMsg.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-orange-200 rounded-lg text-sm text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+                    >
+                      {invoicing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      Create invoice
+                    </button>
+                  )}
                   <button
                     title="Delete message"
                     onClick={() => void deleteMessage(openMsg.id)}
