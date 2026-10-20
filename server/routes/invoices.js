@@ -101,6 +101,18 @@ export function computeAmountOwed(invoice) {
 // Stripe's expired-session page with nothing to do about it. The email now
 // links to the invoice page and the button there calls this, so the link in
 // the customer's inbox keeps working for as long as the invoice is open.
+// Card processing fee passed to the customer on online card payments.
+// 3% keeps us inside the card networks' surcharge cap while approximately
+// covering Stripe's 2.9% + 30¢ (the fee is surcharged too, so exact
+// pass-through would need a gross-up; 3% is the industry-standard flat
+// figure). Disclosed on the invoice page before checkout and itemized as
+// its own line in the Stripe session and on the payment record.
+// Payments recorded by admins (cash / check / Zelle) carry no fee.
+export const CARD_FEE_PCT = 0.03;
+export function cardFeeCents(amountDollars) {
+  return Math.round(amountDollars * CARD_FEE_PCT * 100);
+}
+
 async function createInvoiceCheckoutSession(invoice, owed) {
   const stripe = getStripe();
   const productName =
@@ -109,6 +121,8 @@ async function createInvoiceCheckoutSession(invoice, owed) {
       : owed.paymentType === 'balance'
       ? `Balance - Invoice ${invoice.invoice_number}`
       : `Invoice ${invoice.invoice_number}`;
+
+  const feeCents = cardFeeCents(owed.amount);
 
   return stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -124,6 +138,17 @@ async function createInvoiceCheckoutSession(invoice, owed) {
         },
         quantity: 1,
       },
+      {
+        price_data: {
+          currency: 'usd',
+          product_data: {
+            name: 'Card processing fee (3%)',
+            description: 'Applies to online card payments only — waived for cash or check.',
+          },
+          unit_amount: feeCents,
+        },
+        quantity: 1,
+      },
     ],
     mode: 'payment',
     success_url: `${DOMAIN}/payment/success?invoice=${invoice.id}&session_id={CHECKOUT_SESSION_ID}`,
@@ -135,6 +160,9 @@ async function createInvoiceCheckoutSession(invoice, owed) {
       invoice_id: String(invoice.id),
       invoice_number: invoice.invoice_number,
       payment_type: owed.paymentType,
+      // The webhook subtracts this before crediting the invoice, so the fee
+      // never inflates amount_paid against the invoice total.
+      card_fee_cents: String(feeCents),
     },
   });
 }
@@ -303,6 +331,8 @@ router.get('/public/:id', async (req, res, next) => {
       // from the one the Stripe session is created for.
       amount_due_now: owed.amount,
       payment_type: owed.paymentType,
+      // Card-surcharge disclosure (network rules require it before payment).
+      card_fee_now: owed.amount > 0 ? cardFeeCents(owed.amount) / 100 : 0,
       mockup_id: i.mockup_id,
       mockup_preview_url: i.mockup_preview_url,
       mockup_preview_url_back: i.mockup_preview_url_back,
