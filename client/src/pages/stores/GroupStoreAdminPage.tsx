@@ -159,12 +159,57 @@ export default function GroupStoreAdminPage() {
 }
 
 // ── Login view ───────────────────────────────────────────────────────────
+// Wears the store's own branding (brand_json hero/logo/color) so an owner
+// signing in lands on THEIR brand, not a generic TSB form. Falls back to
+// the plain gray card for stores with no branding set.
+interface LoginBrand {
+  name?: string;
+  hero_url?: string;
+  logo_url?: string;
+  primary_color?: string;
+  tagline?: string;
+}
+
 function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (token: string, me: Me) => void; ssoError?: string | null }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [stage, setStage] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [brand, setBrand] = useState<LoginBrand>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/store-shop/${encodeURIComponent(slug)}`);
+        if (!res.ok) return;
+        const store = await res.json();
+        if (!cancelled) {
+          setBrand({
+            name: store.name,
+            hero_url: store.brand_json?.hero_url,
+            logo_url: store.brand_json?.logo_url,
+            primary_color: store.brand_json?.primary_color,
+            tagline: store.brand_json?.tagline,
+          });
+        }
+      } catch { /* plain card fallback */ }
+    })();
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  const branded = !!brand.hero_url;
+  const accent = brand.primary_color || '#111827';
+  // Dark text on light accents (e.g. LHT cyan), white on dark ones.
+  const accentText = (() => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(accent.trim());
+    if (!m?.[1]) return '#ffffff';
+    const n = parseInt(m[1], 16);
+    const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    return lum > 150 ? '#111827' : '#ffffff';
+  })();
+  const accentBtnStyle = branded ? { backgroundColor: accent, color: accentText } : undefined;
 
   const requestCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,11 +254,32 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-      <Seo title={`Admin sign in · ${slug}`} description="" path={`/stores/${slug}/admin`} />
-      <div className="w-full max-w-md bg-white rounded-lg border border-gray-200 p-6">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4 relative">
+      <Seo title={`Admin sign in · ${brand.name || slug}`} description="" path={`/stores/${slug}/admin`} />
+      {branded && (
+        <>
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url(${brand.hero_url})` }}
+            aria-hidden
+          />
+          <div className="absolute inset-0 bg-black/65" aria-hidden />
+        </>
+      )}
+      <div className={`relative w-full max-w-md rounded-lg p-6 ${branded ? 'bg-white/95 backdrop-blur shadow-2xl' : 'bg-white border border-gray-200'}`}>
         <Link to={storeLink(slug, "/")} className="text-xs text-gray-500 hover:text-gray-900">← Back to store</Link>
-        <h1 className="mt-3 text-xl font-bold text-gray-900">Store admin sign in</h1>
+        {branded && (
+          <div className="mt-4 flex items-center gap-3">
+            {brand.logo_url && (
+              <img src={brand.logo_url} alt="" className="h-12 w-12 rounded object-cover" />
+            )}
+            <div>
+              <div className="text-lg font-bold text-gray-900 leading-tight">{brand.name}</div>
+              {brand.tagline && <div className="text-xs text-gray-500">{brand.tagline}</div>}
+            </div>
+          </div>
+        )}
+        <h1 className="mt-3 text-xl font-bold text-gray-900">{branded ? 'Owner sign in' : 'Store admin sign in'}</h1>
         <p className="mt-1 text-sm text-gray-500">
           Enter the email address your organization gave TShirt Brothers. We'll send you a 6-digit code.
         </p>
@@ -233,7 +299,8 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
             />
             <button type="submit" disabled={busy || !email}
-              className="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+              style={accentBtnStyle}
+              className={`w-full py-2 rounded-md text-sm font-semibold disabled:opacity-50 ${branded ? 'hover:brightness-90' : 'bg-gray-900 text-white'}`}>
               {busy ? 'Sending…' : 'Send code'}
             </button>
           </form>
@@ -253,7 +320,8 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
               className="w-full border border-gray-300 rounded-md px-3 py-2 text-lg tracking-widest text-center font-mono"
             />
             <button type="submit" disabled={busy || code.length !== 6}
-              className="w-full py-2 bg-gray-900 text-white rounded-md text-sm font-semibold disabled:opacity-50">
+              style={accentBtnStyle}
+              className={`w-full py-2 rounded-md text-sm font-semibold disabled:opacity-50 ${branded ? 'hover:brightness-90' : 'bg-gray-900 text-white'}`}>
               {busy ? 'Verifying…' : 'Sign in'}
             </button>
             <button type="button" onClick={() => setStage('email')}
