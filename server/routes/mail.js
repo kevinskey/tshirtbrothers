@@ -85,6 +85,21 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// POST /:id/to-invoice — draft an invoice from a customer email. The AI
+// extracts customer + requested items; pricing stays $0 and status stays
+// 'draft' so nothing reaches the customer until an admin prices and sends
+// it (which emails the official branded invoice/quote as usual).
+router.post('/:id/to-invoice', async (req, res, next) => {
+  try {
+    const { createDraftInvoiceFromMail } = await import('../services/mailToInvoice.js');
+    const result = await createDraftInvoiceFromMail(parseInt(req.params.id, 10));
+    if (result.error) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /:id — toggle read/unread
 router.put('/:id', async (req, res, next) => {
   try {
