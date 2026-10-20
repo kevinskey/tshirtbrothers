@@ -46,7 +46,7 @@ INSERT INTO products (ss_id, name, brand, category, style_number, base_price,
 SELECT 'lht:joggers-set', 'LIVE HARD TRUTH Joggers Set (blank)', 'Live Hard Truth',
        'Live Hard Truth', 'LHT-SET', 55.00,
        '[]'::jsonb, '["XS","S","M","L","XL","2XL","3XL"]'::jsonb,
-       '/lht/set-espresso.jpg',
+       'https://tshirtbrothers.com/lht/set-espresso.jpg',
        '{"description": "Internal pseudo-blank for the Live Hard Truth store — heavyweight hoodie + tapered joggers set.", "weight": "Heavyweight"}'::jsonb,
        '[]'::jsonb, FALSE, 42
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE ss_id = 'lht:joggers-set');
@@ -57,7 +57,7 @@ INSERT INTO products (ss_id, name, brand, category, style_number, base_price,
 SELECT 'lht:journal', 'Hard Truth Journal (blank)', 'Live Hard Truth',
        'Live Hard Truth', 'LHT-JRNL', 9.00,
        '[]'::jsonb, '["A5"]'::jsonb,
-       '/lht/journal.jpg',
+       'https://tshirtbrothers.com/lht/journal.jpg',
        '{"description": "Internal pseudo-blank for the Live Hard Truth store — A5 hardcover journal."}'::jsonb,
        '[]'::jsonb, FALSE, 14
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE ss_id = 'lht:journal');
@@ -68,7 +68,7 @@ INSERT INTO products (ss_id, name, brand, category, style_number, base_price,
 SELECT 'lht:mug', 'Hard Truth Mug (blank)', 'Live Hard Truth',
        'Live Hard Truth', 'LHT-MUG', 6.50,
        '[]'::jsonb, '["11 oz","15 oz"]'::jsonb,
-       '/lht/mug.jpg',
+       'https://tshirtbrothers.com/lht/mug.jpg',
        '{"description": "Internal pseudo-blank for the Live Hard Truth store — matte stoneware mug."}'::jsonb,
        '[]'::jsonb, FALSE, 18
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE ss_id = 'lht:mug');
@@ -79,7 +79,7 @@ INSERT INTO products (ss_id, name, brand, category, style_number, base_price,
 SELECT 'lht:cap', 'Hard Truth Hat (blank)', 'Live Hard Truth',
        'Live Hard Truth', 'LHT-CAP', 8.00,
        '[]'::jsonb, '["One Size"]'::jsonb,
-       '/lht/cap-onyx.jpg',
+       'https://tshirtbrothers.com/lht/cap-onyx.jpg',
        '{"description": "Internal pseudo-blank for the Live Hard Truth store — structured embroidered cap."}'::jsonb,
        '[]'::jsonb, FALSE, 6
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE ss_id = 'lht:cap');
@@ -92,10 +92,10 @@ INSERT INTO stores
 SELECT 'live-hard-truth', 'Live Hard Truth', 'kevin@tshirtbrothers.com',
   'business', 'active',
   jsonb_build_object(
-    'logo_url', '/lht/logo.jpg',
+    'logo_url', 'https://tshirtbrothers.com/lht/logo.jpg',
     'primary_color', '#00d6e4',
     'tagline', 'Truth looks good on you.',
-    'hero_url', '/lht/campaign.jpg',
+    'hero_url', 'https://tshirtbrothers.com/lht/campaign.jpg',
     'website_url', 'https://livehardtruth.com',
     'business_address', '6010 Renaissance Parkway, Fairburn, GA 30213',
     'footer_note', 'Live Hard Truth — wear the truth. Fulfilled by T-Shirt Brothers.'
@@ -135,19 +135,19 @@ JOIN LATERAL (
 CROSS JOIN (VALUES
   ('lht:joggers-set', 'LIVE HARD TRUTH Joggers Set', 'live-hard-truth-joggers-set',
    'Heavyweight hoodie with matching classic tapered joggers and side pockets. Embossed tone-on-tone LIVE HARD TRUTH mark, cut heavyweight, made to be worn hard.',
-   '/lht/set-espresso.jpg', 12499,
+   'https://tshirtbrothers.com/lht/set-espresso.jpg', 12499,
    '{"sizes":["XS","S","M","L","XL","2XL","3XL"],"colors":["Espresso","Onyx","Ember","Merlot","Olive","Red","White","Pink","Blue","Green","Purple"]}'),
   ('lht:journal', 'Hard Truth Journal', 'hard-truth-journal',
    'Hardcover A5 journal with embossed crest and gilded edges. Merlot finish.',
-   '/lht/journal.jpg', 2600,
+   'https://tshirtbrothers.com/lht/journal.jpg', 2600,
    '{"sizes":["A5"]}'),
   ('lht:mug', 'Hard Truth Mug', 'hard-truth-mug',
    'Matte stoneware mug with debossed LIVE HARD TRUTH lettering. Espresso finish.',
-   '/lht/mug.jpg', 2200,
+   'https://tshirtbrothers.com/lht/mug.jpg', 2200,
    '{"sizes":["11 oz","15 oz"]}'),
   ('lht:cap', 'Hard Truth Hat', 'hard-truth-hat',
    'Structured hat with embroidered LIVE HARD TRUTH crest.',
-   '/lht/cap-onyx.jpg', 2999,
+   'https://tshirtbrothers.com/lht/cap-onyx.jpg', 2999,
    '{"sizes":["One Size"],"colors":["Onyx","Merlot","Olive"]}')
 ) AS v(ss_id, title, slug, description, cover_image, retail_price_cents, variants)
 WHERE s.slug = 'live-hard-truth'
