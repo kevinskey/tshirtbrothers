@@ -17,7 +17,24 @@ import {
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
-import { generateInvoiceNumber } from './invoices.js';
+import { generateInvoiceNumber, cardFeeCents } from './invoices.js';
+
+// Shared card-surcharge line for custom-job checkouts (quotes/invoices).
+// Retail storefronts (stores, DTF, gifts, CGC/APC/LHT) deliberately do NOT
+// surcharge — their fees are built into retail pricing, per industry norm.
+function cardFeeLineItem(feeCents) {
+  return {
+    price_data: {
+      currency: 'usd',
+      product_data: {
+        name: 'Card processing fee (3%)',
+        description: 'Applies to online card payments only — waived for cash or check.',
+      },
+      unit_amount: feeCents,
+    },
+    quantity: 1,
+  };
+}
 import { recordActivity } from './events.js';
 import { parcelOunces, tierForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
@@ -213,7 +230,7 @@ function getStripe() {
 // is one canonical list regardless of where the money came from.
 //
 // Idempotent: if the payment_intent_id is already in `payments`, no-op.
-async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, method = 'stripe' }) {
+async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, method = 'stripe', note = null }) {
   const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceId]);
   if (rows.length === 0) return null;
   const inv = rows[0];
@@ -238,6 +255,7 @@ async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, metho
       method,
       payment_intent_id: paymentIntentId || null,
       date: new Date().toISOString(),
+      ...(note ? { note } : {}),
     },
   ];
 
@@ -342,6 +360,7 @@ router.post('/create-checkout', async (req, res, next) => {
           },
           quantity: 1,
         },
+        cardFeeLineItem(cardFeeCents(depositAmount / 100)),
       ],
       custom_text: {
         submit: {
@@ -360,6 +379,7 @@ router.post('/create-checkout', async (req, res, next) => {
         customerName: quote.customer_name || '',
         depositPercent: String(depositPercent),
         type: 'deposit',
+        card_fee_cents: String(cardFeeCents(depositAmount / 100)),
       },
     });
 
@@ -417,6 +437,7 @@ router.post('/create-full-checkout', async (req, res, next) => {
           },
           quantity: 1,
         },
+        cardFeeLineItem(cardFeeCents(fullAmountCents / 100)),
       ],
       mode: 'payment',
       success_url: `${domain}/payment/success?quote=${quoteId}&session_id={CHECKOUT_SESSION_ID}&type=full`,
@@ -426,6 +447,7 @@ router.post('/create-full-checkout', async (req, res, next) => {
         quoteId: String(quote.id),
         customerName: quote.customer_name || '',
         type: 'full',
+        card_fee_cents: String(cardFeeCents(fullAmountCents / 100)),
       },
     });
 
@@ -511,6 +533,7 @@ router.post('/create-balance-checkout', async (req, res, next) => {
           },
           quantity: 1,
         },
+        cardFeeLineItem(cardFeeCents(balanceAmountCents / 100)),
       ],
       mode: 'payment',
       success_url: `${domain}/payment/success?quote=${quoteId}&session_id={CHECKOUT_SESSION_ID}&type=balance`,
@@ -520,6 +543,7 @@ router.post('/create-balance-checkout', async (req, res, next) => {
         quoteId: String(quote.id),
         customerName: quote.customer_name || '',
         type: 'balance',
+        card_fee_cents: String(cardFeeCents(balanceAmountCents / 100)),
       },
     });
 
@@ -992,6 +1016,11 @@ async function handleCheckoutSessionCompleted(session) {
   const cgcOrderId = session.metadata?.cgc_order_id;
   const apcOrderId = session.metadata?.apc_order_id;
   const paymentType = session.metadata?.type || session.metadata?.payment_type || 'deposit';
+  // Card-surcharge sessions carry the fee in metadata; every amount we
+  // record against a quote or invoice is the session total MINUS this fee
+  // (the fee is TSB revenue offsetting Stripe's cut, not customer credit).
+  const feeCents = parseInt(session.metadata?.card_fee_cents || '0', 10) || 0;
+  const netTotalCents = (session.amount_total || 0) - feeCents;
 
   // Custom Gift Club purchase (routes/cgc.js). The pending cgc_orders row
   // and its items were written at session creation; flip it to paid and
@@ -1114,11 +1143,15 @@ async function handleCheckoutSessionCompleted(session) {
   // even after a successful charge.
   if (invoiceId) {
     try {
-      const amount = (session.amount_total || 0) / 100;
+      // The session may include a card-processing-fee line; credit the
+      // invoice only for the invoice portion so the fee never shows as an
+      // overpayment against the invoice total.
+      const amount = netTotalCents / 100;
       const updated = await applyPaymentToInvoice({
         invoiceId: parseInt(invoiceId, 10),
         amount,
         paymentIntentId: session.payment_intent || null,
+        note: feeCents > 0 ? `+ $${(feeCents / 100).toFixed(2)} card processing fee collected` : null,
       });
       if (updated) {
         console.log('[Stripe] Invoice #' + invoiceId + ' payment recorded: $' + amount + ' (' + paymentType + ')');
@@ -1144,8 +1177,8 @@ async function handleCheckoutSessionCompleted(session) {
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
-          console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (session.amount_total / 100));
-          await createPaidInvoiceForQuote(quote, session.amount_total);
+          console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (netTotalCents / 100));
+          await createPaidInvoiceForQuote(quote, netTotalCents);
           sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
           sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
           sendPushToAdmins({
@@ -1172,8 +1205,8 @@ async function handleCheckoutSessionCompleted(session) {
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
-          console.log('[Stripe] Quote #' + quoteId + ' paid in full: $' + (session.amount_total / 100));
-          await createPaidInvoiceForQuote(quote, session.amount_total);
+          console.log('[Stripe] Quote #' + quoteId + ' paid in full: $' + (netTotalCents / 100));
+          await createPaidInvoiceForQuote(quote, netTotalCents);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
           sendPushToAdmins({
@@ -1195,12 +1228,12 @@ async function handleCheckoutSessionCompleted(session) {
             accept_token = COALESCE(accept_token, $3)
           WHERE id = $2
           RETURNING *`,
-          [session.amount_total / 100, quoteId, newToken]
+          [netTotalCents / 100, quoteId, newToken]
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
-          console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (session.amount_total / 100));
-          await createDepositInvoiceForQuote(quote, session.amount_total);
+          console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (netTotalCents / 100));
+          await createDepositInvoiceForQuote(quote, netTotalCents);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
@@ -1553,10 +1586,14 @@ router.get('/success', async (req, res, next) => {
       // payment now so the success page never shows "amount due > 0" right
       // after a paid checkout (in case the webhook is slow / not delivered).
       if (stripeDetails?.paid && stripeDetails.session?.metadata?.invoice_id === String(invoiceIdQuery)) {
+        // Mirror the webhook: strip the card-processing-fee line before
+        // crediting the invoice (idempotent with it via payment_intent_id).
+        const feeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
         await applyPaymentToInvoice({
           invoiceId: parseInt(invoiceIdQuery, 10),
-          amount: (stripeDetails.amount_total || 0) / 100,
+          amount: ((stripeDetails.amount_total || 0) - feeCents) / 100,
           paymentIntentId: stripeDetails.session.payment_intent?.id || stripeDetails.session.payment_intent || null,
+          note: feeCents > 0 ? `+ $${(feeCents / 100).toFixed(2)} card processing fee collected` : null,
         });
       }
 
@@ -1586,6 +1623,10 @@ router.get('/success', async (req, res, next) => {
     let paymentType = type || stripeDetails?.session?.metadata?.type || 'deposit';
 
     if (stripeDetails?.paid && stripeDetails.session?.metadata?.quoteId === String(quoteId)) {
+      // Mirror the webhook: amounts credited to the quote exclude any
+      // card-processing-fee line the session carried.
+      const fbFeeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
+      const fbNetCents = (stripeDetails.amount_total || 0) - fbFeeCents;
       if (paymentType === 'balance') {
         const updated = await pool.query(
           `UPDATE quotes SET
@@ -1597,10 +1638,10 @@ router.get('/success', async (req, res, next) => {
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
-          console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (stripeDetails.amount_total / 100));
-          invoiceForQuote = await createPaidInvoiceForQuote(quote, stripeDetails.amount_total);
+          console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (fbNetCents / 100));
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
           sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
-          sendBalancePaidToAdmin(quote, stripeDetails.amount_total / 100).catch(() => {});
+          sendBalancePaidToAdmin(quote, fbNetCents / 100).catch(() => {});
         } else {
           // Already balance-paid earlier — surface the existing invoice.
           const existing = await pool.query(
@@ -1628,8 +1669,8 @@ router.get('/success', async (req, res, next) => {
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
-          console.log('[Payment Success] Quote #' + quoteId + ' full payment verified: $' + (stripeDetails.amount_total / 100));
-          invoiceForQuote = await createPaidInvoiceForQuote(quote, stripeDetails.amount_total);
+          console.log('[Payment Success] Quote #' + quoteId + ' full payment verified: $' + (fbNetCents / 100));
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
         } else {
@@ -1650,12 +1691,12 @@ router.get('/success', async (req, res, next) => {
              accept_token = COALESCE(accept_token, $3)
            WHERE id = $2 AND status != 'accepted'
            RETURNING *`,
-          [stripeDetails.amount_total / 100, quoteId, newToken],
+          [fbNetCents / 100, quoteId, newToken],
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
-          console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (stripeDetails.amount_total / 100));
-          invoiceForQuote = await createDepositInvoiceForQuote(quote, stripeDetails.amount_total);
+          console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (fbNetCents / 100));
+          invoiceForQuote = await createDepositInvoiceForQuote(quote, fbNetCents);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});

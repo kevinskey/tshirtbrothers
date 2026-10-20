@@ -21,6 +21,7 @@ interface PublicInvoice {
   // outstanding, otherwise the remaining balance. Computed server-side so the
   // button and the Stripe session can never disagree.
   amount_due_now?: number;
+  card_fee_now?: number;
   payment_type?: 'deposit' | 'balance' | 'full';
   deposit_percent?: number | string | null;
   status: string;
@@ -393,6 +394,14 @@ export default function InvoiceViewPage() {
                 ? 'Opening secure checkout…'
                 : `Pay $${fmt(inv.amount_due_now ?? inv.amount_due)} Now`}
             </button>
+            {Number(inv.card_fee_now ?? 0) > 0 && (
+              <p className="text-center text-xs text-gray-500 mt-2">
+                A 3% card processing fee (${fmt(inv.card_fee_now ?? 0)}) is added at checkout for
+                online card payments — total charged: $
+                {fmt(Number(inv.amount_due_now ?? inv.amount_due) + Number(inv.card_fee_now ?? 0))}.
+                Paying by cash or check? No fee — contact us to arrange it.
+              </p>
+            )}
             {inv.payment_type === 'deposit' && (
               <p className="text-center text-xs text-gray-500 mt-2">
                 This is the {Number(inv.deposit_percent)}% deposit, due upon receipt. The balance of $

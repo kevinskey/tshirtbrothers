@@ -4,6 +4,7 @@ import pool from '../db.js';
 import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services/email.js';
 import { recordActivity } from './events.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
+import { cardFeeCents } from './invoices.js';
 
 const router = Router();
 
@@ -650,6 +651,16 @@ router.post('/lock-in', async (req, res, next) => {
           },
         },
         quantity: 1,
+      }, {
+        price_data: {
+          currency: 'usd',
+          unit_amount: cardFeeCents(depositCents / 100),
+          product_data: {
+            name: 'Card processing fee (3%)',
+            description: 'Applies to online card payments only — waived for cash or check.',
+          },
+        },
+        quantity: 1,
       }],
       custom_text: {
         submit: {
@@ -666,6 +677,7 @@ router.post('/lock-in', async (req, res, next) => {
         quoteId: String(quote.id),
         type: 'deposit',
         payment_type: 'instant-quote-deposit',
+        card_fee_cents: String(cardFeeCents(depositCents / 100)),
       },
       success_url: `${domain}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${domain}/instant-quote?quote=${quote.id}&cancelled=1`,
