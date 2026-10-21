@@ -17,6 +17,7 @@ import { CgcBaseContext } from './lib/base';
 import { CgcCartProvider } from './lib/cart';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import MobileTabBar from './components/MobileTabBar';
 import HomePage from './pages/HomePage';
 import ShopPage from './pages/ShopPage';
 import ProductPage from './pages/ProductPage';
@@ -38,7 +39,7 @@ export function CgcRoutes({ base }: { base: string }) {
       <CgcCartProvider>
         <div className="min-h-screen flex flex-col bg-white font-sans text-cgc-ink">
           <Header />
-          <main className="flex-1">
+          <main className="flex-1 pb-16 lg:pb-0">
             <Routes>
               <Route index element={<HomePage />} />
               <Route path="shop" element={<ShopPage />} />
@@ -62,6 +63,7 @@ export function CgcRoutes({ base }: { base: string }) {
             </Routes>
           </main>
           <Footer />
+          <MobileTabBar />
         </div>
       </CgcCartProvider>
     </CgcBaseContext.Provider>
