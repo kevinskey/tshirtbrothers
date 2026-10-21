@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticate, adminOnly } from '../middleware/auth.js';
-import { fetchProducts, fetchStyleSizes, fetchStyleSkuData } from '../services/ssActivewear.js';
+import { fetchProducts, fetchStyleSizes, fetchStyleSkuData, fetchAllStylePrices } from '../services/ssActivewear.js';
 import pool from '../db.js';
 
 const router = Router();
@@ -55,11 +55,47 @@ router.get('/debug-sizes-public/:styleId', async (req, res, next) => {
 router.use(authenticate, adminOnly);
 
 // POST /sync-products - Sync products from S&S Activewear
+// POST /backfill-prices — fill wholesale for the whole S&S catalog from ONE
+// bulk call, no full re-sync. Fast path for "why are prices missing?":
+// updates base_price for every product the bulk map covers, never nulling.
+router.post('/backfill-prices', async (req, res, next) => {
+  try {
+    const prices = await fetchAllStylePrices();
+    let updated = 0;
+    for (const [styleId, price] of prices) {
+      const r = await pool.query(
+        `UPDATE products
+            SET base_price = $2, last_synced = NOW()
+          WHERE ss_id = $1
+            AND (base_price IS NULL OR base_price <> $2)`,
+        [styleId, price],
+      );
+      updated += r.rowCount;
+    }
+    res.json({ styles_priced: prices.size, products_updated: updated });
+  } catch (err) { next(err); }
+});
+
 router.post('/sync-products', async (req, res, next) => {
   try {
     const result = await fetchProducts({ limit: 10000 });
     const products = result.products || [];
     console.log(`Syncing ${products.length} products...`);
+
+    // Wholesale for the WHOLE catalog in one call — the per-style loop below
+    // only rate-limited its way to ~230/6191 prices. Seed every product from
+    // the bulk map first; the loop just fills anything the bulk missed.
+    let bulkPrices = new Map();
+    try {
+      bulkPrices = await fetchAllStylePrices();
+      console.log(`[sync] bulk prices for ${bulkPrices.size} styles`);
+      for (const p of products) {
+        const bp = bulkPrices.get(String(p.ss_id));
+        if (bp != null) p.base_price = bp;
+      }
+    } catch (err) {
+      console.error('[sync] bulk price fetch failed, falling back to per-style:', err.message);
+    }
 
     // Backfill sizes + price per-style with bounded concurrency. S&S
     // rate-limits aggressively if you go too parallel — 3 in flight is
@@ -82,7 +118,7 @@ router.post('/sync-products', async (req, res, next) => {
             p.sizes = sizes;
             sizesFilled++;
           }
-          if (customer_price != null && customer_price > 0) {
+          if (customer_price != null && customer_price > 0 && p.base_price == null) {
             p.base_price = customer_price;
             pricesFilled++;
           }
@@ -105,7 +141,7 @@ router.post('/sync-products', async (req, res, next) => {
            brand = EXCLUDED.brand,
            category = EXCLUDED.category,
            style_number = EXCLUDED.style_number,
-           base_price = EXCLUDED.base_price,
+           base_price = COALESCE(EXCLUDED.base_price, products.base_price),
            colors = EXCLUDED.colors,
            sizes = EXCLUDED.sizes,
            image_url = EXCLUDED.image_url,

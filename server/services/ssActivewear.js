@@ -86,6 +86,37 @@ export async function fetchStyleSizes(styleId) {
 // customer_price is the price of the first SKU (typically all sizes
 // within a style share the same price; upcharges for 2XL+ are not
 // modeled here yet). customer_price is null when not returned.
+// Bulk price fetch: ONE call to /v2/products/ returns every SKU with its
+// styleID + customerPrice, so we can set wholesale for the whole catalog
+// at once instead of 6,000+ per-style calls (which S&S rate-limits — the
+// old sync only filled ~230 of 6,191). Returns Map<styleID string, min
+// non-zero customerPrice>.
+export async function fetchAllStylePrices() {
+  const credentials = getCredentials();
+  const response = await fetch(
+    'https://api.ssactivewear.com/v2/products/?fields=styleID,customerPrice',
+    {
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(120000),
+    }
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`S&S bulk price error ${response.status}: ${text.slice(0, 200)}`);
+  }
+  const data = await response.json().catch(() => []);
+  const items = Array.isArray(data) ? data : [];
+  const byStyle = new Map();
+  for (const it of items) {
+    const id = String(it.styleID ?? '');
+    const price = Number(it.customerPrice);
+    if (!id || !Number.isFinite(price) || price <= 0) continue;
+    const cur = byStyle.get(id);
+    if (cur == null || price < cur) byStyle.set(id, price);
+  }
+  return byStyle;
+}
+
 export async function fetchStyleSkuData(styleId) {
   const credentials = getCredentials();
   const response = await fetch(
