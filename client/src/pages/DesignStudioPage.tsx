@@ -870,6 +870,7 @@ export default function DesignStudioPage() {
   // designing their own artwork wants the blank. The server strips the
   // decoration with AI once per SKU (cached at cgc/blanks/<sku>.png).
   const [blankPhoto, setBlankPhoto] = useState({ busy: false, error: '' });
+  const [photoActionsOpen, setPhotoActionsOpen] = useState(false);
   // Holds the canvas photo hidden while the blank cache-check is in
   // flight (CGC mode, JDS products) so the decorated supplier shot never
   // blinks in ahead of the blank. Set pre-paint in the layout effect above.
@@ -4783,64 +4784,85 @@ export default function DesignStudioPage() {
             </div>
           ) : displayImage ? (
             <>
-              <img
-                ref={productImgRef}
-                data-product-photo
-                src={displayImage}
-                alt={selectedProduct?.name ?? 'Product'}
-                className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
-                draggable={false}
-              />
-              {/* Detected decorable area (JDS items) — a hint, not a fence. */}
-              {isJdsProduct && productZone && productZone.w < 0.92 && (
-                <div
-                  className="absolute border-2 border-dashed border-blue-400/60 rounded-md pointer-events-none"
-                  style={{
-                    left: `${productZone.x * 100}%`,
-                    top: `${productZone.y * 100}%`,
-                    width: `${productZone.w * 100}%`,
-                    height: `${productZone.h * 100}%`,
-                  }}
+              {/* JDS blanks get an inset frame so the product photo sits
+                  with air around it instead of filling the canvas edge to
+                  edge. The decorable-zone hint lives in the SAME frame so
+                  its percentages keep lining up with the photo. */}
+              <div className={isJdsProduct ? 'absolute inset-8 md:inset-14' : 'absolute inset-0'}>
+                <img
+                  ref={productImgRef}
+                  data-product-photo
+                  src={displayImage}
+                  alt={selectedProduct?.name ?? 'Product'}
+                  className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+                  style={mirrorGarment ? { transform: 'scaleX(-1)' } : undefined}
+                  draggable={false}
                 />
-              )}
+                {/* Detected decorable area (JDS items) — a hint, not a fence. */}
+                {isJdsProduct && productZone && productZone.w < 0.92 && (
+                  <div
+                    className="absolute border-2 border-dashed border-blue-400/60 rounded-md pointer-events-none"
+                    style={{
+                      left: `${productZone.x * 100}%`,
+                      top: `${productZone.y * 100}%`,
+                      width: `${productZone.w * 100}%`,
+                      height: `${productZone.h * 100}%`,
+                    }}
+                  />
+                )}
+              </div>
               {/* Sample-swap: the supplier photo's sample engraving is a
                   design idea — offer to re-render it with the customer's
                   own text. */}
+              {/* Photo actions live behind one compact corner pill so the
+                  product photo stays unobstructed — the old always-visible
+                  row of three pills sat right on top of the product. */}
               {isJdsProduct && displayImage && (
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-2 pointer-events-auto">
+                <div className="absolute bottom-2 right-2 z-20 flex flex-col items-end gap-2 pointer-events-auto">
+                  {photoActionsOpen && (
+                    <div className="flex flex-col items-stretch gap-1.5 rounded-xl bg-white/95 shadow-lg border border-gray-200 p-2">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setPhotoActionsOpen(false); setSampleSwap((s) => ({ ...s, open: true, error: '' })); }}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-800 text-left hover:bg-red-50"
+                      >
+                        ✨ Use this sample with your text
+                      </button>
+                      {/* AI-strip the supplier's sample decoration → blank canvas.
+                          Cached server-side per SKU, so repeats are instant. */}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); applyBlankPhoto(); }}
+                        disabled={blankPhoto.busy}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-800 text-left hover:bg-blue-50 disabled:opacity-60"
+                        title={blankPhoto.error || undefined}
+                      >
+                        {blankPhoto.busy ? 'Removing decoration… (~30s)' : '🧼 Start from a blank'}
+                      </button>
+                      {jdsOriginalImageRef.current && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); restoreSampleImage(); }}
+                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-gray-500 text-left hover:bg-gray-50 hover:text-gray-800"
+                        >
+                          Restore original
+                        </button>
+                      )}
+                      {blankPhoto.error && (
+                        <span className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600">
+                          {blankPhoto.error}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <button
                     type="button"
-                    onClick={(e) => { e.stopPropagation(); setSampleSwap((s) => ({ ...s, open: true, error: '' })); }}
-                    className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-red-400"
+                    onClick={(e) => { e.stopPropagation(); setPhotoActionsOpen((v) => !v); }}
+                    aria-expanded={photoActionsOpen}
+                    className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-blue-400"
                   >
-                    ✨ Use this sample with your text
+                    {photoActionsOpen ? '✕ Close' : '✨ Photo options'}
                   </button>
-                  {/* AI-strip the supplier's sample decoration → blank canvas.
-                      Cached server-side per SKU, so repeats are instant. */}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); applyBlankPhoto(); }}
-                    disabled={blankPhoto.busy}
-                    className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:border-blue-400 disabled:opacity-60"
-                    title={blankPhoto.error || undefined}
-                  >
-                    {blankPhoto.busy ? 'Removing decoration… (~30s)' : '🧼 Start from a blank'}
-                  </button>
-                  {jdsOriginalImageRef.current && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); restoreSampleImage(); }}
-                      className="rounded-full bg-white/95 shadow-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-500 hover:text-gray-800"
-                    >
-                      Restore original
-                    </button>
-                  )}
-                  {blankPhoto.error && (
-                    <span className="rounded-full bg-red-50 border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600">
-                      {blankPhoto.error}
-                    </span>
-                  )}
                 </div>
               )}
               {sampleSwap.open && (
@@ -5151,7 +5173,7 @@ export default function DesignStudioPage() {
               Approximations assume a standard adult shirt ~28in tall,
               rendered as ~90% of canvas height with the collar landing
               near ~13% of canvas from top. */}
-          {!useFabricRenderer && designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
+          {!useFabricRenderer && !isJdsProduct && designElements.filter(el => (el.side ?? 'front') === currentView).length === 0 && displayImage && (
             <div
               className="absolute inset-x-0 flex justify-center pointer-events-none"
               style={{
