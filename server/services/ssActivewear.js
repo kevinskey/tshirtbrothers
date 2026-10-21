@@ -91,7 +91,7 @@ export async function fetchStyleSizes(styleId) {
 // at once instead of 6,000+ per-style calls (which S&S rate-limits — the
 // old sync only filled ~230 of 6,191). Returns Map<styleID string, min
 // non-zero customerPrice>.
-export async function fetchAllStylePrices({ maxAttempts = 4 } = {}) {
+export async function fetchAllStylePrices({ maxAttempts = 6 } = {}) {
   const credentials = getCredentials();
   // S&S throttles the unfiltered Get Products call to roughly once per
   // window and returns 503 with the next-allowed time. Wait for that
@@ -111,13 +111,15 @@ export async function fetchAllStylePrices({ maxAttempts = 4 } = {}) {
     if (!throttled || attempt === maxAttempts) {
       throw new Error(`S&S bulk price error ${response.status}: ${text.slice(0, 200)}`);
     }
-    // Parse "call ... again at <time>"; fall back to 70s. Cap the wait so a
-    // bad clock can't stall us for minutes.
-    let waitMs = 70000;
+    // S&S's "again at <time>" has no timezone and the server runs UTC, so
+    // the parsed delta is unreliable — use a flat 90s window (the throttle
+    // resets on that order) and only honor a parsed time if it asks for
+    // MORE than that.
+    let waitMs = 90000;
     const m = text.match(/again at ([^."]+)/);
     if (m) {
       const until = Date.parse(m[1].trim());
-      if (Number.isFinite(until)) waitMs = Math.min(180000, Math.max(5000, until - Date.now() + 3000));
+      if (Number.isFinite(until)) waitMs = Math.min(240000, Math.max(waitMs, until - Date.now() + 3000));
     }
     console.log(`[ss] bulk prices throttled (attempt ${attempt}/${maxAttempts}) — waiting ${Math.round(waitMs/1000)}s`);
     await new Promise((r) => setTimeout(r, waitMs));
