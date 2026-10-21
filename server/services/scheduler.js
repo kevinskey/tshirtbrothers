@@ -11,6 +11,7 @@ import { sendAbandonedQuoteFollowUp } from './email.js';
 import { runPayoutJob } from './storePayoutJob.js';
 import { runNewsletterSchedules } from './newsletterBlast.js';
 import { refreshTracking } from './trackingRefresh.js';
+import { runJdsCatalogSync } from './jdsSync.js';
 import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
@@ -170,6 +171,12 @@ export function startScheduler() {
   // Newsletter schedules — every 5 minutes, claim-then-send.
   cron.schedule('*/5 * * * *', () => {
     runNewsletterSchedules().catch((err) => console.error('[scheduler] newsletter schedules failed:', err.message));
+  });
+
+  // Nightly at 5:50 AM: re-snapshot every active JDS SKU (cost / image /
+  // stock), deactivate discontinued ones, flag margin problems.
+  cron.schedule('50 5 * * *', () => {
+    runJdsCatalogSync();
   });
 
   cron.schedule('30 6 * * *', () => {
