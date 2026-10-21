@@ -279,10 +279,13 @@ export default function ProductPage() {
             <button
               type="button"
               onClick={addToBag}
-              className="flex-1 min-w-[200px] inline-flex items-center justify-center gap-2 rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold px-6 py-3.5 transition-colors"
+              disabled={product.available_quantity === 0}
+              className="flex-1 min-w-[200px] inline-flex items-center justify-center gap-2 rounded-lg bg-cgc-orange hover:bg-cgc-orange-dark text-white font-bold px-6 py-3.5 transition-colors disabled:bg-cgc-stone disabled:hover:bg-cgc-stone disabled:cursor-not-allowed"
             >
               {added ? <Check className="h-5 w-5" aria-hidden /> : <ShoppingBag className="h-5 w-5" aria-hidden />}
-              {added ? 'Added!' : `Add to Bag — ${money(unitCents * qty)}`}
+              {product.available_quantity === 0
+                ? 'Out of Stock'
+                : added ? 'Added!' : `Add to Bag — ${money(unitCents * qty)}`}
             </button>
             <button
               type="button"

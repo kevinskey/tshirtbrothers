@@ -31,7 +31,7 @@ const PERSONALIZATION_FEE_CENTS =
   parseInt(process.env.CGC_PERSONALIZATION_FEE_CENTS || '', 10) || 1000;
 
 const PRODUCT_COLS =
-  `id, sku, name, description, image_url, retail_price_cents, cgc_category, cgc_sport, weight_oz`;
+  `id, sku, name, description, image_url, retail_price_cents, cgc_category, cgc_sport, weight_oz, available_quantity`;
 
 // ── Config ───────────────────────────────────────────────────────────────
 router.get('/config', (_req, res) => {
@@ -523,12 +523,22 @@ router.post('/checkout', async (req, res, next) => {
     const jdsSkus = skus.filter((s) => !MOCKUP_TOKEN.test(s));
     const { rows: products } = jdsSkus.length
       ? await pool.query(
-        `SELECT sku, name, description, image_url, retail_price_cents, weight_oz
+        `SELECT sku, name, description, image_url, retail_price_cents, weight_oz, available_quantity
            FROM jds_products WHERE sku = ANY($1) AND active`,
         [jdsSkus],
       )
       : { rows: [] };
     const bySku = new Map(products.map((p) => [p.sku, p]));
+
+    // JDS stock is re-snapshotted nightly; zero on hand means an order we
+    // can't fill. Unknown (null) passes — better to sell than to block on
+    // a SKU the sync hasn't seen yet.
+    const soldOut = products.filter((p) => p.available_quantity === 0).map((p) => p.name || p.sku);
+    if (soldOut.length) {
+      return res.status(409).json({
+        error: `Sorry — out of stock right now: ${soldOut.join(', ')}. Remove from your bag to continue.`,
+      });
+    }
 
     // A published holiday product's launch selling price overrides the
     // catalog retail for its SKUs — the PDP already shows that price, so

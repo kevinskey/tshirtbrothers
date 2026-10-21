@@ -22,13 +22,18 @@ export default function ProductCard({ product }: { product: CgcProduct }) {
         <Heart className={`h-4 w-4 ${fav ? 'fill-cgc-orange text-cgc-orange' : 'text-cgc-charcoal'}`} />
       </button>
       <Link to={p(`/product/${encodeURIComponent(product.sku)}`)} className="block">
-        <div className="aspect-square bg-cgc-cream flex items-center justify-center p-4">
+        <div className="relative aspect-square bg-cgc-cream flex items-center justify-center p-4">
+          {product.available_quantity === 0 && (
+            <span className="absolute top-2 left-2 z-10 rounded-full bg-cgc-charcoal/90 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1">
+              Out of stock
+            </span>
+          )}
           {product.image_url ? (
             <img
               src={product.image_url}
               alt={product.name}
               loading="lazy"
-              className="max-h-full max-w-full object-contain mix-blend-multiply"
+              className={`max-h-full max-w-full object-contain mix-blend-multiply${product.available_quantity === 0 ? ' opacity-40 grayscale' : ''}`}
             />
           ) : (
             <span className="text-xs text-cgc-stone">No image</span>

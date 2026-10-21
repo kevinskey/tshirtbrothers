@@ -10,6 +10,7 @@ export interface CgcProduct {
   cgc_category: string | null;
   cgc_sport: string[] | null;
   weight_oz: string | null;
+  available_quantity: number | null; // null = unknown, 0 = out of stock at JDS
 }
 
 export interface CgcListResponse {
