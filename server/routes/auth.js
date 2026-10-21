@@ -177,7 +177,10 @@ router.post('/login', async (req, res, next) => {
     const token = jwt.sign(
       { id: user.id, email: user.email, role: user.role, name: user.name },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      // 90 days: a storefront session that rarely interrupts a customer
+      // mid-design. The inline re-login modal still catches the eventual
+      // expiry without losing work.
+      { expiresIn: '90d' }
     );
 
     res.json({
