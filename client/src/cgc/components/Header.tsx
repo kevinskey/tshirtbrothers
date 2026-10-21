@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import Logo from './Logo';
 import { useCgcPath } from '../lib/base';
+import { OCCASIONS } from '../lib/occasions';
 import { useCgcCart } from '../lib/cart';
 
 export const NAV_CATEGORIES = [
@@ -16,16 +17,9 @@ export const NAV_CATEGORIES = [
   { label: 'Blanks & Supplies', category: 'Blanks & Supplies' },
 ];
 
-export const OCCASION_LINKS = [
-  { key: 'birthday', label: 'Birthday' },
-  { key: 'wedding', label: 'Wedding & Anniversary' },
-  { key: 'graduation', label: 'Graduation' },
-  { key: 'retirement', label: 'Retirement' },
-  { key: 'recognition', label: 'Awards & Recognition' },
-  { key: 'holiday', label: 'Holiday' },
-  { key: 'housewarming', label: 'Housewarming' },
-  { key: 'sports', label: 'Sports & Fan Gifts' },
-];
+// Shop by Occasion — the curated collection pages at /occasions/:slug
+// (config in ../lib/occasions; legacy /shop?occasion=KEY links redirect).
+export const OCCASION_LINKS = OCCASIONS.map(({ key, label, slug }) => ({ key, label, slug }));
 
 export default function Header() {
   const p = useCgcPath();
@@ -203,7 +197,7 @@ export default function Header() {
                 {OCCASION_LINKS.map((o) => (
                   <Link
                     key={o.key}
-                    to={`${p('/shop')}?occasion=${o.key}`}
+                    to={p(`/occasions/${o.slug}`)}
                     onClick={() => setOccasionsOpen(false)}
                     className="block px-4 py-2 text-sm font-medium text-cgc-charcoal hover:bg-cgc-cream hover:text-cgc-orange"
                   >
@@ -239,7 +233,7 @@ export default function Header() {
           <div className="py-1 px-2">
             <div className="text-xs font-bold uppercase tracking-wide text-cgc-stone py-1">Shop by Occasion</div>
             {OCCASION_LINKS.map((o) => (
-              <Link key={o.key} to={`${p('/shop')}?occasion=${o.key}`} onClick={() => setMenuOpen(false)}
+              <Link key={o.key} to={p(`/occasions/${o.slug}`)} onClick={() => setMenuOpen(false)}
                 className="block py-2 px-2 rounded-lg text-cgc-charcoal hover:bg-cgc-cream">
                 {o.label}
               </Link>

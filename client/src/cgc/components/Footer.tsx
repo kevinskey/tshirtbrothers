@@ -17,7 +17,7 @@ export default function Footer() {
             Turn names, memories, and milestones into gifts worth keeping.
           </p>
         </div>
-        <nav aria-label="Shop">
+        <nav aria-label="Shop" className="min-w-0 [overflow-wrap:anywhere]">
           <h3 className="text-sm font-bold uppercase tracking-wide text-cgc-ink mb-3">Shop</h3>
           <ul className="space-y-2 text-sm text-cgc-charcoal">
             <li><Link to={shopHref()} className="hover:text-cgc-orange">Shop All</Link></li>
@@ -29,7 +29,7 @@ export default function Footer() {
             <li><Link to={shopHref('Blanks & Supplies')} className="hover:text-cgc-orange">Blanks & Supplies</Link></li>
           </ul>
         </nav>
-        <nav aria-label="Customer service">
+        <nav aria-label="Customer service" className="min-w-0 [overflow-wrap:anywhere]">
           <h3 className="text-sm font-bold uppercase tracking-wide text-cgc-ink mb-3">Customer Service</h3>
           <ul className="space-y-2 text-sm text-cgc-charcoal">
             <li><Link to={p('/account')} className="hover:text-cgc-orange">My Account & Orders</Link></li>
@@ -39,7 +39,7 @@ export default function Footer() {
             <li><a href="tel:+14706221392" className="hover:text-cgc-orange">(470) 622-1392</a></li>
           </ul>
         </nav>
-        <nav aria-label="Business orders">
+        <nav aria-label="Business orders" className="min-w-0 [overflow-wrap:anywhere]">
           <h3 className="text-sm font-bold uppercase tracking-wide text-cgc-ink mb-3">Business Orders</h3>
           <ul className="space-y-2 text-sm text-cgc-charcoal">
             <li><Link to={p('/business')} className="hover:text-cgc-orange">Business Gifting</Link></li>
