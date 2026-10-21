@@ -1718,6 +1718,11 @@ export default function DesignStudioPage() {
   }
 
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  // Inline re-login when a save hits an expired token — the design stays in
+  // memory and the save retries, so the customer never loses their work to
+  // a dead-end "Invalid or expired token" alert.
+  const [reauth, setReauth] = useState<{ open: boolean; email: string; password: string; busy: boolean; error: string }>(
+    { open: false, email: '', password: '', busy: false, error: '' });
   const [showShareMenu, setShowShareMenu] = useState(false);
 
   // Check if user is logged in
@@ -1805,6 +1810,12 @@ export default function DesignStudioPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
+      if (res.status === 401) {
+        // Expired/invalid token: open the inline re-login modal. The design
+        // is untouched in state; signing in retries the save automatically.
+        setReauth((r) => ({ ...r, open: true, busy: false, error: '' }));
+        return;
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Failed to save');
@@ -1816,6 +1827,34 @@ export default function DesignStudioPage() {
       alert(e instanceof Error ? e.message : 'Failed to save design');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Inline re-login: fetch a fresh token, then retry the save with the
+  // design still in memory.
+  const submitReauth = async () => {
+    const email = reauth.email.trim();
+    if (!email || !reauth.password) {
+      setReauth((r) => ({ ...r, error: 'Enter your email and password.' }));
+      return;
+    }
+    setReauth((r) => ({ ...r, busy: true, error: '' }));
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: reauth.password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) {
+        setReauth((r) => ({ ...r, busy: false, error: data.error || 'Sign in failed.' }));
+        return;
+      }
+      localStorage.setItem('tsb_token', data.token);
+      setReauth({ open: false, email: '', password: '', busy: false, error: '' });
+      await handleSave();
+    } catch {
+      setReauth((r) => ({ ...r, busy: false, error: 'Network error — try again.' }));
     }
   };
 
@@ -5909,6 +5948,39 @@ export default function DesignStudioPage() {
     </div>
   ) : null;
 
+  const reauthModal = reauth.open ? (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/50 p-4"
+      onClick={() => setReauth((r) => ({ ...r, open: false }))}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">Your session expired</h3>
+        <p className="text-sm text-gray-500 mb-4">Sign in again to save — your design is right here waiting, nothing is lost.</p>
+        <form onSubmit={(e) => { e.preventDefault(); void submitReauth(); }} className="space-y-3">
+          <input
+            type="email" autoFocus placeholder="Email" value={reauth.email}
+            onChange={(e) => setReauth((r) => ({ ...r, email: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            type="password" placeholder="Password" value={reauth.password}
+            onChange={(e) => setReauth((r) => ({ ...r, password: e.target.value }))}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {reauth.error && <p className="text-xs font-medium text-red-600">{reauth.error}</p>}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={() => setReauth((r) => ({ ...r, open: false }))}
+              className="flex-1 rounded-lg border border-gray-200 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+              Cancel
+            </button>
+            <button type="submit" disabled={reauth.busy}
+              className="flex-1 rounded-lg bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">
+              {reauth.busy ? 'Signing in…' : 'Sign in & save'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  ) : null;
+
   // Cross-renderer guard: a row saved through the Fabric (?canvas=fabric)
   // renderer can't be displayed by the legacy positioned-div code (the
   // shapes are incompatible). When that happens, show a small panel
@@ -5980,6 +6052,7 @@ export default function DesignStudioPage() {
       )}
       {bottomBar}
       {loginPromptModal}
+      {reauthModal}
 
       {/* Visual image cropper. Mounts only when an image is being cropped;
           Apply replaces el.content with the cropped data URL. Save flow
