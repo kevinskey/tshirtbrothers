@@ -38,37 +38,42 @@ export default function HolidayProductPage() {
   const feeCents = config?.personalization_fee_cents ?? 1000;
   const variant = product?.variants[variantIdx] ?? product?.variants[0];
   const design = product?.designs.find((d) => d.key === designKey) ?? null;
+  // Products with no engraving layouts (pre-designed apparel) skip the
+  // design picker and the engraving fee — the print is the product.
+  const engraved = (product?.designs.length ?? 0) > 0;
   // Mockup-backed variants have no price until the launch selling price
   // is set — such products are always unpublished, so the PDP just
   // withholds the price line rather than inventing one.
   const priced = variant != null && variant.retail_price_cents != null;
-  const unitCents = priced ? (variant!.retail_price_cents as number) + feeCents : 0;
+  const unitCents = priced ? (variant!.retail_price_cents as number) + (engraved ? feeCents : 0) : 0;
 
   const personalization: CgcPersonalization | null = useMemo(() => {
-    if (!product || !design) return null;
+    if (!product || (engraved && !design)) return null;
     const lines = product.fields
       .map((f) => {
         const v = (values[f.key] || '').trim().slice(0, f.max);
         return v ? `${f.label}: ${v}` : '';
       })
       .filter(Boolean);
-    if (!lines.length) return null;
+    if (!lines.length && !giftMessage.trim()) return null;
     return {
       lines,
       font: '',
       notes: '',
       artUrl: '',
-      design: design.label,
+      ...(design ? { design: design.label } : {}),
       ...(giftMessage.trim() ? { gift_message: giftMessage.trim().slice(0, 300) } : {}),
     };
-  }, [product, design, values, giftMessage]);
+  }, [product, engraved, design, values, giftMessage]);
 
   const addToBag = () => {
     if (!product || !variant || !product.available || !priced) return;
-    if (!design) { toast.error('Pick an engraving layout first.'); return; }
+    if (engraved && !design) { toast.error('Pick an engraving layout first.'); return; }
     const missing = product.fields.find((f) => f.required && !(values[f.key] || '').trim());
-    if (missing || !personalization) {
-      toast.error(`Add the ${(missing?.label || 'personalization').toLowerCase()} to engrave.`);
+    if (missing || (engraved && !personalization)) {
+      toast.error(engraved
+        ? `Add the ${(missing?.label || 'personalization').toLowerCase()} to engrave.`
+        : `Pick a ${(missing?.label || 'required option').toLowerCase()} first.`);
       return;
     }
     add({
@@ -132,9 +137,11 @@ export default function HolidayProductPage() {
           {priced && (
             <p className="mt-4 text-2xl font-extrabold text-cgc-ink">
               {money(unitCents)}
-              <span className="ml-2 text-sm font-medium text-cgc-stone">
-                (includes {money(feeCents)} engraving)
-              </span>
+              {engraved && (
+                <span className="ml-2 text-sm font-medium text-cgc-stone">
+                  (includes {money(feeCents)} engraving)
+                </span>
+              )}
             </p>
           )}
 
@@ -159,6 +166,7 @@ export default function HolidayProductPage() {
           )}
 
           {/* Engraving layout */}
+          {engraved && (
           <fieldset className="mt-6">
             <legend className="text-sm font-bold uppercase tracking-wide text-cgc-ink mb-2">Choose a design</legend>
             <div className="grid sm:grid-cols-3 gap-3">
@@ -176,8 +184,10 @@ export default function HolidayProductPage() {
               ))}
             </div>
           </fieldset>
+          )}
 
           {/* Personalization fields with visible limits */}
+          {(product.fields.length > 0 || Boolean(product.limits)) && (
           <div className="mt-5 space-y-3 rounded-xl border border-cgc-cream-deep p-4">
             {product.fields.map((f) => (
               <div key={f.key}>
@@ -199,8 +209,11 @@ export default function HolidayProductPage() {
                 <p className="mt-1 text-xs text-cgc-stone">{f.help}</p>
               </div>
             ))}
-            <p className="text-xs text-cgc-stone border-t border-cgc-cream-deep pt-3">{product.limits}</p>
+            {Boolean(product.limits) && (
+              <p className="text-xs text-cgc-stone border-t border-cgc-cream-deep pt-3">{product.limits}</p>
+            )}
           </div>
+          )}
 
           {/* Gift message — packed with the order, not engraved */}
           <div className="mt-4">

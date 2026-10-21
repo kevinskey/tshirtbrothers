@@ -2,8 +2,9 @@ import { Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Gift, Loader2 } from 'lucide-react';
-import { fetchHoliday, money } from '../lib/api';
+import { fetchHoliday, fetchProducts, money } from '../lib/api';
 import { useCgcPath } from '../lib/base';
+import ProductCard from '../components/ProductCard';
 
 // Holiday Gifts launch collection — curated products from
 // /api/cgc/holiday (cgc_holiday_products, managed at /admin/holiday).
@@ -12,6 +13,13 @@ export default function HolidayPage() {
   const p = useCgcPath();
   const { data, isLoading } = useQuery({ queryKey: ['cgc-holiday'], queryFn: fetchHoliday });
   const products = data?.products ?? [];
+
+  // Every ornament in the catalog — the 96 limit is the endpoint max and
+  // comfortably covers the full set (75 SKUs as of 2026-10-21).
+  const { data: ornaments } = useQuery({
+    queryKey: ['cgc-holiday-ornaments'],
+    queryFn: () => fetchProducts({ search: 'ornament', limit: 96, sort: 'price_asc' }),
+  });
 
   return (
     <>
@@ -80,7 +88,9 @@ export default function HolidayPage() {
                   {prod.from_cents != null && (
                     <p className="mt-2 text-sm font-bold text-cgc-ink">
                       From {money(prod.from_cents)}
-                      <span className="font-medium text-cgc-stone"> + engraving</span>
+                      {prod.designs.length > 0 && (
+                        <span className="font-medium text-cgc-stone"> + engraving</span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -89,6 +99,51 @@ export default function HolidayPage() {
           </div>
         )}
       </section>
+
+      {/* Christmas cards */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-4" aria-labelledby="holiday-cards-heading">
+        <Link
+          to={p('/holiday-cards')}
+          className="group flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-cgc-orange text-white px-6 sm:px-10 py-6"
+        >
+          <div>
+            <h2 id="holiday-cards-heading" className="text-xl sm:text-2xl font-extrabold tracking-tight">
+              Christmas Cards
+            </h2>
+            <p className="mt-1 text-white/90 text-sm sm:text-base">
+              Design a custom card for family, friends, or clients — printed and shipped.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 font-bold whitespace-nowrap group-hover:gap-3 transition-all">
+            Design Your Card <ArrowRight className="h-4 w-4" aria-hidden />
+          </span>
+        </Link>
+      </section>
+
+      {/* All ornaments from the catalog */}
+      {Boolean(ornaments?.products.length) && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 py-8" aria-labelledby="holiday-ornaments-heading">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 id="holiday-ornaments-heading" className="text-2xl sm:text-3xl font-extrabold tracking-tight text-cgc-ink">
+                Christmas Ornaments
+              </h2>
+              <p className="mt-1 text-cgc-stone">
+                Every ornament we make — crystal, glass, wood, and more, engraved or printed to order.
+              </p>
+            </div>
+            <Link
+              to={`${p('/shop')}?search=ornament`}
+              className="hidden sm:inline-flex items-center gap-2 font-bold text-cgc-orange hover:gap-3 transition-all whitespace-nowrap"
+            >
+              Shop all <ArrowRight className="h-4 w-4" aria-hidden />
+            </Link>
+          </div>
+          <div className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {ornaments!.products.map((prod) => <ProductCard key={prod.sku} product={prod} />)}
+          </div>
+        </section>
+      )}
 
       {/* Teams & clients */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 pb-12" aria-labelledby="holiday-teams-heading">
