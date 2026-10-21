@@ -559,7 +559,7 @@ router.get('/by-ssid/:ssId', async (req, res, next) => {
         id: `jds-${r.id}`,
         ss_id: `jds:${r.sku}`,
         name: r.name,
-        brand: 'JDS',
+        brand: '',  // supplier identity stays internal — customers just see gifts
         category: 'Gifts & Engraving',
         image_url: r.image_url,
         base_price: null,
@@ -603,12 +603,17 @@ function parseJdsDims(text) {
 router.get('/jds-search', async (req, res, next) => {
   try {
     const q = String(req.query.search || '').trim();
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 12));
+    const category = String(req.query.category || '').trim();
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 12));
     const params = [];
     let where = 'active = TRUE';
     if (q) {
       params.push(`%${q}%`);
-      where += ` AND (name ILIKE $1 OR sku ILIKE $1 OR description ILIKE $1)`;
+      where += ` AND (name ILIKE $${params.length} OR sku ILIKE $${params.length} OR description ILIKE $${params.length})`;
+    }
+    if (category) {
+      params.push(category);
+      where += ` AND cgc_category = $${params.length}`;
     }
     params.push(limit);
     const { rows } = await pool.query(
@@ -626,7 +631,7 @@ router.get('/jds-search', async (req, res, next) => {
           id: `jds-${r.id}`,
           ss_id: `jds:${r.sku}`,
           name: r.name,
-          brand: 'JDS',
+          brand: '',  // supplier identity stays internal — customers just see gifts
           category: 'Gifts & Engraving',
           image_url: r.image_url,
           base_price: null,

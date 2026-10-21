@@ -2134,6 +2134,7 @@ export default function DesignStudioPage() {
 
   // --- Product panel state ---
   const [productSearch, setProductSearch] = useState('');
+  const [productCategory, setProductCategory] = useState(''); // CGC picker filter — '' = all
   const [fontsReady, setFontsReady] = useState(0); // bumped when fonts load
 
   // Fonts also load from the render path (loadGoogleFont on first paint of
@@ -2263,19 +2264,24 @@ export default function DesignStudioPage() {
   /* ---------------------------------------------------------------- */
 
   const { data: productsData, isLoading: productsLoading } = useQuery({
-    queryKey: ['design-products', productSearch, cgcMode],
+    queryKey: ['design-products', productSearch, productCategory, cgcMode],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: '24' });
       if (productSearch) params.set('search', productSearch);
       // S&S apparel + JDS (drinkware / awards / engraving blanks) in one
       // picker. JDS rows carry pseudo ss_id "jds:<sku>" and no colorways.
       // In CGC mode the gift catalog leads — that's what CGC sells.
+      const jdsParams = new URLSearchParams({ limit: cgcMode ? '60' : '24' });
+      if (productSearch) jdsParams.set('search', productSearch);
+      if (productCategory) jdsParams.set('category', productCategory);
       const [ssRes, jdsRes] = await Promise.all([
-        fetch(`/api/products?${params}`),
-        fetch(`/api/products/jds-search?${params}`).catch(() => null),
+        // A chosen gift category means the person is browsing gifts, not
+        // apparel — skip the S&S fetch so the grid is purely that category.
+        productCategory ? Promise.resolve(null) : fetch(`/api/products?${params}`),
+        fetch(`/api/products/jds-search?${jdsParams}`).catch(() => null),
       ]);
-      if (!ssRes.ok) throw new Error('Failed');
-      const ss = await ssRes.json() as { products: Product[] };
+      if (ssRes && !ssRes.ok) throw new Error('Failed');
+      const ss = ssRes ? await ssRes.json() as { products: Product[] } : { products: [] };
       const jds = jdsRes?.ok ? await jdsRes.json() as { products: Product[] } : { products: [] };
       return {
         products: cgcMode
@@ -4112,6 +4118,24 @@ export default function DesignStudioPage() {
           className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
         />
       </div>
+      {cgcMode && (
+        <div className="flex flex-wrap gap-1.5">
+          {['', 'Personalized Gifts', 'Drinkware', 'Awards & Trophies', 'Leather & Leatherette', 'Hats & Patches', 'Blanks & Supplies'].map((c) => (
+            <button
+              key={c || 'all'}
+              type="button"
+              onClick={() => setProductCategory(c)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+                productCategory === c
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {c || 'All'}
+            </button>
+          ))}
+        </div>
+      )}
       {productsLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
@@ -4145,7 +4169,9 @@ export default function DesignStudioPage() {
                 )}
               </div>
               <div className="p-1.5">
-                <p className="text-[9px] uppercase tracking-wider text-gray-400">{product.brand}</p>
+                {product.brand && (
+                  <p className="text-[9px] uppercase tracking-wider text-gray-400">{product.brand}</p>
+                )}
                 <p className="text-[11px] font-semibold text-gray-900 truncate">{product.name}</p>
               </div>
             </button>
