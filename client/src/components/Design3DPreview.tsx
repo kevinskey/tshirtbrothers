@@ -70,6 +70,24 @@ export function tightCrop(cv: HTMLCanvasElement): HTMLCanvasElement {
   return out;
 }
 
+// Catalog two-tone names ("White/Green Sublimatable Ceramic Mug",
+// "Black/White Color Changing…") name the body and accent colors
+// outright — far more reliable than sampling a mostly-white photo.
+const NAMED_COLORS: Record<string, string> = {
+  white: '#f4f3f0', black: '#1d1d1f', green: '#1d7a43', blue: '#1e4f9c',
+  red: '#c0272d', navy: '#20304f', gold: '#c9a227', silver: '#c6c8ca',
+  orange: '#e8762c', purple: '#5b3b8c', pink: '#e394b8', maroon: '#6d2230',
+  gray: '#8a8d8f', grey: '#8a8d8f', yellow: '#e8c842', teal: '#1d7a82',
+};
+
+function namedTwoTone(name: string): { body: string; accent: string } | null {
+  const m = /([a-z]+)\s*\/\s*([a-z]+)/i.exec(name);
+  if (!m) return null;
+  const body = NAMED_COLORS[m[1]!.toLowerCase()];
+  const accent = NAMED_COLORS[m[2]!.toLowerCase()];
+  return body && accent ? { body, accent } : null;
+}
+
 // Average the center region of the product photo to tint the 3D body so
 // a blue mug previews blue. Needs CORS-readable images (our catalog CDNs
 // allow it); falls back to off-white when unreadable.
@@ -163,9 +181,15 @@ export default function Design3DPreview({
           import('three/examples/jsm/controls/OrbitControls.js'),
           import('three/examples/jsm/environments/RoomEnvironment.js'),
         ]);
-        const bodyHex = colorHex
+        const twoTone = namedTwoTone(productName);
+        const bodyHex = twoTone?.body
+          || colorHex
           || (imageUrl ? await sampleBodyColor(imageUrl) : null)
           || '#f1efea';
+        // Accent drives the mug handle / rim / interior ("White/Green"
+        // mugs have a green handle and inside). Single-color products
+        // keep the body color throughout.
+        const accentHex = twoTone?.accent || bodyHex;
         const designImg = designPng
           ? await new Promise<HTMLImageElement | null>((resolve) => {
             const im = new Image();
@@ -251,11 +275,11 @@ export default function Design3DPreview({
 
         if (spec.openTop) {
           // Rolled rim + darker interior so the mug reads hollow.
-          const rim = new THREE.Mesh(new THREE.TorusGeometry(spec.rTop - 1.6, 1.9, 20, 96), trimMat(bodyHex));
+          const rim = new THREE.Mesh(new THREE.TorusGeometry(spec.rTop - 1.6, 1.9, 20, 96), trimMat(accentHex));
           rim.rotation.x = Math.PI / 2;
           rim.position.y = spec.wall;
           group.add(rim);
-          const inner = new THREE.Mesh(new THREE.CircleGeometry(spec.rTop - 2.4, 96), trimMat(bodyHex, true));
+          const inner = new THREE.Mesh(new THREE.CircleGeometry(spec.rTop - 2.4, 96), trimMat(accentHex, true));
           inner.rotation.x = -Math.PI / 2;
           inner.position.y = spec.wall - 5;
           group.add(inner);
@@ -287,7 +311,7 @@ export default function Design3DPreview({
           // rotation.z turns the half-arc so it opens toward the wall,
           // with both ends landing on the wall surface.
           const handleGeo = new THREE.TorusGeometry(28, 7, 24, 48, Math.PI);
-          const handle = new THREE.Mesh(handleGeo, trimMat(bodyHex));
+          const handle = new THREE.Mesh(handleGeo, trimMat(accentHex));
           handle.rotation.z = -Math.PI / 2;
           handle.position.set(maxR - 3, spec.wall * 0.52, 0);
           group.add(handle);
