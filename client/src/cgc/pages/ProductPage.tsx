@@ -263,8 +263,8 @@ export default function ProductPage() {
             </div>
           )}
 
-          {/* Qty + actions */}
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          {/* Qty + actions (desktop; mobile uses the sticky bottom bar) */}
+          <div className="mt-6 hidden lg:flex flex-wrap items-center gap-3">
             <div className="flex items-center rounded-full border border-cgc-cream-deep">
               <button type="button" aria-label="Decrease quantity" onClick={() => setQty((q) => Math.max(1, q - 1))}
                 className="p-3 text-cgc-ink disabled:opacity-40" disabled={qty <= 1}>
@@ -295,6 +295,40 @@ export default function ProductPage() {
               className="p-3.5 rounded-lg border-2 border-cgc-cream-deep hover:border-cgc-orange transition-colors"
             >
               <Heart className={`h-5 w-5 ${fav ? 'fill-cgc-orange text-cgc-orange' : 'text-cgc-ink'}`} />
+            </button>
+          </div>
+
+          {/* Mobile sticky action bar — sits just above the tab bar so the
+              primary buy action is always a thumb away. */}
+          <div className="lg:hidden fixed inset-x-0 bottom-16 z-30 border-t border-cgc-cream-deep bg-white/95 backdrop-blur px-3 py-2.5 pb-[calc(0.625rem+env(safe-area-inset-bottom))] flex items-center gap-2">
+            <div className="flex items-center rounded-full border border-cgc-cream-deep shrink-0">
+              <button type="button" aria-label="Decrease quantity" onClick={() => setQty((q) => Math.max(1, q - 1))}
+                className="p-2.5 text-cgc-ink disabled:opacity-40" disabled={qty <= 1}>
+                <Minus className="h-4 w-4" />
+              </button>
+              <span className="w-8 text-center font-bold text-cgc-ink text-sm" aria-live="polite">{qty}</span>
+              <button type="button" aria-label="Increase quantity" onClick={() => setQty((q) => Math.min(100, q + 1))}
+                className="p-2.5 text-cgc-ink">
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggle(product.sku)}
+              aria-pressed={fav}
+              aria-label={fav ? 'Remove from favorites' : 'Add to favorites'}
+              className="p-2.5 rounded-lg border-2 border-cgc-cream-deep shrink-0"
+            >
+              <Heart className={`h-5 w-5 ${fav ? 'fill-cgc-orange text-cgc-orange' : 'text-cgc-ink'}`} />
+            </button>
+            <button
+              type="button"
+              onClick={addToBag}
+              disabled={product.available_quantity === 0}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-cgc-orange text-white font-bold px-4 py-3 text-sm disabled:bg-cgc-stone disabled:cursor-not-allowed"
+            >
+              {added ? <Check className="h-5 w-5" aria-hidden /> : <ShoppingBag className="h-5 w-5" aria-hidden />}
+              {product.available_quantity === 0 ? 'Out of Stock' : added ? 'Added!' : `Add — ${money(unitCents * qty)}`}
             </button>
           </div>
 
