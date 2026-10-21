@@ -12,6 +12,7 @@ import { runPayoutJob } from './storePayoutJob.js';
 import { runNewsletterSchedules } from './newsletterBlast.js';
 import { refreshTracking } from './trackingRefresh.js';
 import { runJdsCatalogSync } from './jdsSync.js';
+import { fetchAllStylePrices } from './ssActivewear.js';
 import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
 // Find quotes that were saved 24-72h ago but never moved past 'pending'
@@ -155,6 +156,28 @@ async function archiveNonResponsiveQuotes() {
   }
 }
 
+// Fill S&S wholesale (base_price) for the whole catalog from the bulk
+// price call. S&S throttles the unfiltered endpoint during the day, so
+// this runs pre-dawn when the window is usually open; COALESCE-style
+// per-row update means it only ever adds coverage, never wipes a price.
+async function runSsPriceBackfill() {
+  try {
+    const prices = await fetchAllStylePrices({ maxAttempts: 8 });
+    let updated = 0;
+    for (const [styleId, price] of prices) {
+      const r = await pool.query(
+        `UPDATE products SET base_price = $2, last_synced = NOW()
+          WHERE ss_id = $1 AND (base_price IS NULL OR base_price <> $2)`,
+        [styleId, price],
+      );
+      updated += r.rowCount;
+    }
+    console.log(`[ss-price-backfill] ${prices.size} styles priced, ${updated} products updated`);
+  } catch (err) {
+    console.error('[ss-price-backfill] failed (likely S&S throttle) — retries tomorrow:', err.message);
+  }
+}
+
 export function startScheduler() {
   // Every hour at :05. Hourly is plenty for a 24-72h window.
   cron.schedule('5 * * * *', () => {
@@ -171,6 +194,12 @@ export function startScheduler() {
   // Newsletter schedules — every 5 minutes, claim-then-send.
   cron.schedule('*/5 * * * *', () => {
     runNewsletterSchedules().catch((err) => console.error('[scheduler] newsletter schedules failed:', err.message));
+  });
+
+  // Pre-dawn S&S wholesale backfill — the unfiltered price window is
+  // usually open at this hour.
+  cron.schedule('20 4 * * *', () => {
+    runSsPriceBackfill();
   });
 
   // Nightly at 5:50 AM: re-snapshot every active JDS SKU (cost / image /
