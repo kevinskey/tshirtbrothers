@@ -91,20 +91,38 @@ export async function fetchStyleSizes(styleId) {
 // at once instead of 6,000+ per-style calls (which S&S rate-limits — the
 // old sync only filled ~230 of 6,191). Returns Map<styleID string, min
 // non-zero customerPrice>.
-export async function fetchAllStylePrices() {
+export async function fetchAllStylePrices({ maxAttempts = 4 } = {}) {
   const credentials = getCredentials();
-  const response = await fetch(
-    'https://api.ssactivewear.com/v2/products/?fields=styleID,customerPrice',
-    {
-      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(120000),
-    }
-  );
-  if (!response.ok) {
+  // S&S throttles the unfiltered Get Products call to roughly once per
+  // window and returns 503 with the next-allowed time. Wait for that
+  // time (capped) and retry rather than failing the whole backfill.
+  let data = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(
+      'https://api.ssactivewear.com/v2/products/?fields=styleID,customerPrice',
+      {
+        headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(120000),
+      }
+    );
+    if (response.ok) { data = await response.json().catch(() => []); break; }
     const text = await response.text().catch(() => '');
-    throw new Error(`S&S bulk price error ${response.status}: ${text.slice(0, 200)}`);
+    const throttled = response.status === 503 && /RateLimit|throttl/i.test(text);
+    if (!throttled || attempt === maxAttempts) {
+      throw new Error(`S&S bulk price error ${response.status}: ${text.slice(0, 200)}`);
+    }
+    // Parse "call ... again at <time>"; fall back to 70s. Cap the wait so a
+    // bad clock can't stall us for minutes.
+    let waitMs = 70000;
+    const m = text.match(/again at ([^."]+)/);
+    if (m) {
+      const until = Date.parse(m[1].trim());
+      if (Number.isFinite(until)) waitMs = Math.min(180000, Math.max(5000, until - Date.now() + 3000));
+    }
+    console.log(`[ss] bulk prices throttled (attempt ${attempt}/${maxAttempts}) — waiting ${Math.round(waitMs/1000)}s`);
+    await new Promise((r) => setTimeout(r, waitMs));
   }
-  const data = await response.json().catch(() => []);
+  if (data == null) throw new Error('S&S bulk price error: no data after retries');
   const items = Array.isArray(data) ? data : [];
   const byStyle = new Map();
   for (const it of items) {
