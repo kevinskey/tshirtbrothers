@@ -93,10 +93,10 @@ export default function HomePage() {
         >
           <div>
             <h2 id="holiday-strip-heading" className="text-xl sm:text-2xl font-extrabold tracking-tight">
-              The Holiday Collection is coming.
+              The Holiday Collection is here.
             </h2>
             <p className="mt-1 text-white/90 text-sm sm:text-base">
-              Personalized tumblers, cutting boards, ornaments &amp; journals — engraved to order.
+              Gift sets, mugs, cutting boards &amp; Christmas ornaments — engraved to order.
             </p>
           </div>
           <span className="inline-flex items-center gap-2 font-bold whitespace-nowrap group-hover:gap-3 transition-all">

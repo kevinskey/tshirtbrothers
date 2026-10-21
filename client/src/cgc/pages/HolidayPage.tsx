@@ -5,10 +5,9 @@ import { ArrowRight, Gift, Loader2 } from 'lucide-react';
 import { fetchHoliday, money } from '../lib/api';
 import { useCgcPath } from '../lib/base';
 
-// Holiday Gifts launch collection — four curated products from
-// /api/cgc/holiday. Products render as "launching soon" until Doc flips
-// `published` in server/lib/cgcHoliday.js (after supplier mapping,
-// pricing, sample approval, and fulfillment are confirmed).
+// Holiday Gifts launch collection — curated products from
+// /api/cgc/holiday (cgc_holiday_products, managed at /admin/holiday).
+// Unpublished products render as "launching soon".
 export default function HolidayPage() {
   const p = useCgcPath();
   const { data, isLoading } = useQuery({ queryKey: ['cgc-holiday'], queryFn: fetchHoliday });
@@ -18,7 +17,7 @@ export default function HolidayPage() {
     <>
       <Helmet>
         <title>Holiday Gifts — Custom Gift Club</title>
-        <meta name="description" content="Give something only you could give. Personalized tumblers, cutting boards, ornaments, and journals — engraved to order by Custom Gift Club." />
+        <meta name="description" content="Give something only you could give. Gift sets, mugs, cutting boards, and Christmas ornaments — engraved to order by Custom Gift Club." />
       </Helmet>
 
       {/* Campaign hero */}
@@ -31,9 +30,8 @@ export default function HolidayPage() {
             Give Something <span className="text-cgc-orange">Only You</span> Could Give<span className="text-cgc-orange">.</span>
           </h1>
           <p className="mt-4 text-base sm:text-lg text-white/80 max-w-xl mx-auto">
-            Four gifts, engraved to order — a tumbler, a family cutting board,
-            a Christmas ornament, and a journal, each made personal with a name
-            that matters.
+            Gift sets, mugs, cutting boards, and Christmas ornaments — each
+            engraved to order and made personal with a name that matters.
           </p>
         </div>
       </section>
