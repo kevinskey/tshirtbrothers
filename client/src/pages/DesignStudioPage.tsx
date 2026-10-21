@@ -2554,9 +2554,20 @@ export default function DesignStudioPage() {
           useCORS: true,
           scale: 2,
           logging: false,
-          // Drop the product photo AND the dashed decorable-area hint —
-          // only the design elements belong in the wrap texture.
-          ignoreElements: (el) => el === productImg || (el instanceof HTMLElement && 'zoneHint' in el.dataset),
+          // WHITELIST capture: only design elements belong in the wrap
+          // texture. The surface also hosts UI (the "Photo options" pill,
+          // the decorable-zone hint, size badges) that must never bake
+          // into the 3D wrap, so drop every subtree that neither contains
+          // nor sits inside a [data-el-wrapper]. The Fabric renderer draws
+          // to its own canvas with no wrappers — fall back to the photo
+          // blacklist there.
+          ignoreElements: (el) => {
+            if (el === productImg) return true;
+            if (useFabricRenderer) return el instanceof HTMLElement && 'zoneHint' in el.dataset;
+            if (el.closest('[data-el-wrapper]')) return false;
+            if (el.querySelector('[data-el-wrapper]')) return false;
+            return true;
+          },
           onclone: clearSurfaceBg,
         });
         png = tightCrop(cv).toDataURL('image/png');
