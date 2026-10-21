@@ -42,11 +42,14 @@ export default function ProductPage() {
   const [searchParams] = useSearchParams();
   const studioDesign = searchParams.get('design') || '';
   const studioMockup = searchParams.get('mockup') || '';
+  // ?personalize=1 (occasion pages' "Personalize" links) lands with the
+  // Personalized option already selected.
+  const wantsPersonalize = searchParams.get('personalize') === '1';
   useEffect(() => {
-    if (!studioDesign && !studioMockup) return;
+    if (!studioDesign && !studioMockup && !wantsPersonalize) return;
     setPersonalize(true);
     if (studioDesign) setArtUrl(studioDesign);
-  }, [studioDesign, studioMockup]);
+  }, [studioDesign, studioMockup, wantsPersonalize]);
 
   const product = data?.product;
   const feeCents = personalizationFeeCents(product?.retail_price_cents ?? 0, config);

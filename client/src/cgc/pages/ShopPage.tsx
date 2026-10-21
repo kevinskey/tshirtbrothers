@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { fetchConfig, fetchProducts } from '../lib/api';
 import ProductCard from '../components/ProductCard';
 import { useCgcPath } from '../lib/base';
+import { occasionByKey } from '../lib/occasions';
 
 const SORT_OPTIONS = [
   { value: 'name', label: 'Name A–Z' },
@@ -26,6 +27,25 @@ const PRICE_BANDS = [
 // gift-finder's recipient/occasion/budget keys straight from the URL, so
 // finder results, nav links, and searches are all shareable addresses.
 export default function ShopPage() {
+  const p = useCgcPath();
+  const [params] = useSearchParams();
+
+  // Legacy "Shop by Occasion" links (/shop?occasion=KEY) now open the
+  // dedicated occasion pages. Gift-finder combos that also pin a
+  // recipient or budget keep resolving here — the occasion page has no
+  // recipient axis to honor. A separate gate component so the inner
+  // page's hook order never depends on the redirect.
+  const occasionPage = !params.get('recipient') && !params.get('budget')
+    ? occasionByKey(params.get('occasion') ?? '')
+    : undefined;
+  if (occasionPage) {
+    const q = params.get('search');
+    return <Navigate to={`${p(`/occasions/${occasionPage.slug}`)}${q ? `?q=${encodeURIComponent(q)}` : ''}`} replace />;
+  }
+  return <ShopPageInner />;
+}
+
+function ShopPageInner() {
   const p = useCgcPath();
   const [params, setParams] = useSearchParams();
   const search = params.get('search') ?? '';

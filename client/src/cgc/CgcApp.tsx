@@ -19,6 +19,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import MobileTabBar from './components/MobileTabBar';
 import HomePage from './pages/HomePage';
+import OccasionPage from './pages/OccasionPage';
 import ShopPage from './pages/ShopPage';
 import ProductPage from './pages/ProductPage';
 import CartPage from './pages/CartPage';
@@ -43,6 +44,7 @@ export function CgcRoutes({ base }: { base: string }) {
             <Routes>
               <Route index element={<HomePage />} />
               <Route path="shop" element={<ShopPage />} />
+              <Route path="occasions/:slug" element={<OccasionPage />} />
               <Route path="product/:sku" element={<ProductPage />} />
               <Route path="holiday" element={<HolidayPage />} />
               <Route path="holiday-cards" element={<HolidayCardsPage />} />
