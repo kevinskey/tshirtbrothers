@@ -62,7 +62,9 @@ import {
   AlignCenter,
   Crop as CropIcon,
   Tag,
+  Rotate3d,
 } from 'lucide-react';
+import Design3DPreview, { tightCrop, wrapShapeFor } from '@/components/Design3DPreview';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -2525,6 +2527,49 @@ export default function DesignStudioPage() {
   });
 
   const productColors = colorsData?.colors ?? selectedProduct?.colors ?? [];
+
+  // ── 3D wrap preview (drinkware) ──────────────────────────────────────
+  // Cylindrical products (mugs, tumblers, bottles) get a "3D" button that
+  // captures the flat design overlay and shows it wrapped on a spinning
+  // parametric model. Preview only — the flat canvas stays the print file.
+  const wrapShape = selectedProduct ? wrapShapeFor(selectedProduct.name, selectedProduct.category) : null;
+  const [preview3D, setPreview3D] = useState<{ png: string | null } | null>(null);
+  const [preview3DBusy, setPreview3DBusy] = useState(false);
+  const openPreview3D = async () => {
+    if (preview3DBusy) return;
+    setPreview3DBusy(true);
+    const prevSelected3D = selectedElementId;
+    setSelectedElementId(null);
+    try {
+      const surface = designSurfaceRef.current;
+      const hasElements = designElements.some((e) => (e.side ?? 'front') === currentView);
+      let png: string | null = null;
+      if (surface && hasElements) {
+        await ensureImageFiltersBaked();
+        await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+        const html2canvas = (await import('html2canvas')).default;
+        const productImg = productImgRef.current;
+        const cv = await html2canvas(surface, {
+          backgroundColor: null,
+          useCORS: true,
+          scale: 2,
+          logging: false,
+          // Drop the product photo AND the dashed decorable-area hint —
+          // only the design elements belong in the wrap texture.
+          ignoreElements: (el) => el === productImg || (el instanceof HTMLElement && 'zoneHint' in el.dataset),
+          onclone: clearSurfaceBg,
+        });
+        png = tightCrop(cv).toDataURL('image/png');
+      }
+      setPreview3D({ png });
+    } catch (err) {
+      console.error('[preview3D] capture failed', err);
+      setPreview3D({ png: null });
+    } finally {
+      setSelectedElementId(prevSelected3D);
+      setPreview3DBusy(false);
+    }
+  };
   // Always prefer the per-color S&S colorFrontImage — it's the FLAT garment
   // photo. products.image_url is S&S's "styled product shot", which for many
   // styles is an on-model (person wearing it) photo that reads as noise on
@@ -3384,6 +3429,21 @@ export default function DesignStudioPage() {
             print rectangle W x H picker. The values still exist as state
             (canvasInches / canvasInchesH) and drive the dimension readout
             and inches math; they just aren't user-editable here anymore. */}
+        {/* 3D wrap preview — only for cylindrical drinkware. */}
+        {wrapShape && (
+          <button
+            type="button"
+            onClick={openPreview3D}
+            disabled={preview3DBusy}
+            title="See your design wrapped on the product in 3D"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-2.5 py-2 md:px-3 text-xs md:text-sm font-medium text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            {preview3DBusy
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : <Rotate3d className="h-4 w-4" />}
+            <span>3D</span>
+          </button>
+        )}
         {/* Zoom — multiplies the canvas surface width. > 100% overflows
             the canvas main and triggers horizontal + vertical scroll.
             UX-only, doesn't affect saved geometry. */}
@@ -4866,6 +4926,7 @@ export default function DesignStudioPage() {
                 {/* Detected decorable area (JDS items) — a hint, not a fence. */}
                 {isJdsProduct && productZone && productZone.w < 0.92 && (
                   <div
+                    data-zone-hint
                     className="absolute border-2 border-dashed border-blue-400/60 rounded-md pointer-events-none"
                     style={{
                       left: `${productZone.x * 100}%`,
@@ -6174,6 +6235,19 @@ export default function DesignStudioPage() {
             </div>
           </form>
         </div>
+      )}
+
+      {/* 3D wrap preview modal (drinkware only). */}
+      {wrapShape && preview3D && (
+        <Design3DPreview
+          open
+          onClose={() => setPreview3D(null)}
+          shape={wrapShape}
+          designPng={preview3D.png}
+          productName={selectedProduct?.name ?? 'Product'}
+          colorHex={productColors[selectedColorIdx]?.hex ?? null}
+          imageUrl={selectedColorImage || selectedProduct?.image_url || null}
+        />
       )}
     </div>
   );
