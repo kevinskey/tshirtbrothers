@@ -11,6 +11,9 @@ export const NAV_CATEGORIES = [
   { label: 'Personalized Gifts', category: 'Personalized Gifts' },
   { label: 'Drinkware', category: 'Drinkware' },
   { label: 'Awards & Trophies', category: 'Awards & Trophies' },
+  { label: 'Leather & Leatherette', category: 'Leather & Leatherette' },
+  { label: 'Hats & Patches', category: 'Hats & Patches' },
+  { label: 'Blanks & Supplies', category: 'Blanks & Supplies' },
 ];
 
 export const OCCASION_LINKS = [
@@ -33,11 +36,16 @@ export default function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [occasionsOpen, setOccasionsOpen] = useState(false);
   const occasionsRef = useRef<HTMLDivElement>(null);
+  const [shopOpen, setShopOpen] = useState(false);
+  const shopRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
       if (occasionsRef.current && !occasionsRef.current.contains(e.target as Node)) {
         setOccasionsOpen(false);
+      }
+      if (shopRef.current && !shopRef.current.contains(e.target as Node)) {
+        setShopOpen(false);
       }
     };
     document.addEventListener('mousedown', close);
@@ -58,7 +66,7 @@ export default function Header() {
 
   const iconLink = 'p-2 lg:p-2.5 rounded-full text-cgc-ink hover:bg-cgc-cream transition-colors';
   const iconSize = 'h-5 w-5 lg:h-6 lg:w-6';
-  const navLink = 'px-4 py-2.5 rounded-full hover:bg-cgc-cream hover:text-cgc-orange transition-colors';
+  const navLink = 'px-4 py-2.5 rounded-full whitespace-nowrap hover:bg-cgc-cream hover:text-cgc-orange transition-colors';
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-cgc-cream-deep">
@@ -148,14 +156,38 @@ export default function Header() {
       {/* Desktop nav */}
       <nav className="hidden lg:block border-t border-cgc-cream-deep" aria-label="Primary">
         <div className="max-w-screen-2xl mx-auto px-10 flex items-center justify-center gap-1 py-1.5 text-[15px] font-semibold text-cgc-ink">
-          <Link to={shopHref()} className={navLink}>Shop All</Link>
+          {/* One-line nav: product categories live under Shop, so the bar
+              never runs out of room and labels never wrap to two lines. */}
+          <div className="relative" ref={shopRef}>
+            <button
+              type="button"
+              className={`${navLink} flex items-center gap-1`}
+              aria-expanded={shopOpen}
+              onClick={() => setShopOpen((v) => !v)}
+            >
+              Shop
+              <ChevronDown className={`h-4 w-4 transition-transform ${shopOpen ? 'rotate-180' : ''}`} aria-hidden />
+            </button>
+            {shopOpen && (
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 w-64 rounded-xl border border-cgc-cream-deep bg-white shadow-lg py-2">
+                <Link to={shopHref()} onClick={() => setShopOpen(false)}
+                  className="block px-4 py-2 text-sm font-bold text-cgc-ink hover:bg-cgc-cream hover:text-cgc-orange">
+                  Shop All
+                </Link>
+                {NAV_CATEGORIES.map((c) => (
+                  <Link key={c.label} to={shopHref(c.category)} onClick={() => setShopOpen(false)}
+                    className="block px-4 py-2 text-sm font-medium text-cgc-charcoal hover:bg-cgc-cream hover:text-cgc-orange">
+                    {c.label}
+                  </Link>
+                ))}
+                <Link to={p('/holiday-cards')} onClick={() => setShopOpen(false)}
+                  className="block px-4 py-2 text-sm font-medium text-cgc-charcoal hover:bg-cgc-cream hover:text-cgc-orange">
+                  Christmas Cards
+                </Link>
+              </div>
+            )}
+          </div>
           <Link to={p('/holiday')} className={`${navLink} text-cgc-orange`}>Holiday Gifts</Link>
-          <Link to={p('/holiday-cards')} className={navLink}>Christmas Cards</Link>
-          {NAV_CATEGORIES.map((c) => (
-            <Link key={c.label} to={shopHref(c.category)} className={navLink}>
-              {c.label}
-            </Link>
-          ))}
           <div className="relative" ref={occasionsRef}>
             <button
               type="button"
@@ -187,7 +219,6 @@ export default function Header() {
           <Link to="/design?store=cgc" className={navLink}>Design Studio</Link>
           <Link to={p('/quote')} className={navLink}>Get a Quote</Link>
           <Link to={p('/business')} className={navLink}>Business & Bulk</Link>
-          <Link to={shopHref('Blanks & Supplies')} className={navLink}>Blanks & Supplies</Link>
         </div>
       </nav>
 
