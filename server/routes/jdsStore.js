@@ -185,9 +185,11 @@ admin.post('/publish', async (req, res, next) => {
 
 // Bulk publish with a markup rule. Skips SKUs that are already listed
 // (protecting hand-set prices), have no usable cost, or aren't found.
-// Body: { skus: string[], multiplier?: number (default 3),
+// Body: { skus: string[], multiplier?: number (default 2),
 //         min_price_cents?: number (default 999) }
 // Retail = one-piece cost × multiplier, rounded UP to the next .99.
+// Default is 100% markup (2×) per Doc, 2026-10-21 — the $10 printing/
+// personalization fee is charged on top at checkout, not baked in here.
 admin.post('/bulk-publish', async (req, res, next) => {
   try {
     const skus = Array.isArray(req.body?.skus)
@@ -195,7 +197,7 @@ admin.post('/bulk-publish', async (req, res, next) => {
       : [];
     if (!skus.length) return res.status(400).json({ error: 'skus is required' });
     if (skus.length > 500) return res.status(400).json({ error: 'max 500 SKUs per bulk publish' });
-    const multiplier = Number(req.body?.multiplier) > 0 ? Number(req.body.multiplier) : 3;
+    const multiplier = Number(req.body?.multiplier) > 0 ? Number(req.body.multiplier) : 2;
     const minCents = Number.isInteger(req.body?.min_price_cents) && req.body.min_price_cents > 0
       ? req.body.min_price_cents : 999;
 
