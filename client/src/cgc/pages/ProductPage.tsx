@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Heart, Loader2, Minus, Plus, ShoppingBag, Upload } from 'lucide-react';
-import { fetchConfig, fetchProduct, money } from '../lib/api';
+import { fetchConfig, fetchProduct, money, personalizationFeeCents } from '../lib/api';
 import type { CgcPersonalization } from '../lib/api';
 import ProductCard from '../components/ProductCard';
 import { useCgcPath } from '../lib/base';
@@ -49,7 +49,7 @@ export default function ProductPage() {
   }, [studioDesign, studioMockup]);
 
   const product = data?.product;
-  const feeCents = config?.personalization_fee_cents ?? 1000;
+  const feeCents = personalizationFeeCents(product?.retail_price_cents ?? 0, config);
 
   const personalization: CgcPersonalization | null = useMemo(() => {
     if (!personalize) return null;

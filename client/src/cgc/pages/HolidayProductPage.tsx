@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Loader2, Minus, Plus, ShoppingBag } from 'lucide-react';
-import { fetchConfig, fetchHolidayProduct, money } from '../lib/api';
+import { fetchConfig, fetchHolidayProduct, money, personalizationFeeCents } from '../lib/api';
 import type { CgcPersonalization } from '../lib/api';
 import { useCgcPath } from '../lib/base';
 import { useCgcCart } from '../lib/cart';
@@ -35,8 +35,8 @@ export default function HolidayProductPage() {
   const [added, setAdded] = useState(false);
 
   const product = data?.product;
-  const feeCents = config?.personalization_fee_cents ?? 1000;
   const variant = product?.variants[variantIdx] ?? product?.variants[0];
+  const feeCents = personalizationFeeCents(variant?.retail_price_cents ?? 0, config);
   const design = product?.designs.find((d) => d.key === designKey) ?? null;
   // Products with no engraving layouts (pre-designed apparel) skip the
   // design picker and the engraving fee — the print is the product.

@@ -25,10 +25,17 @@ import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js'
 
 const router = Router();
 
-// Flat per-item charge when a customer adds personalization (engraving /
-// sublimation of their text or artwork). Configurable per deployment.
-const PERSONALIZATION_FEE_CENTS =
-  parseInt(process.env.CGC_PERSONALIZATION_FEE_CENTS || '', 10) || 1000;
+// Per-item charge when a customer adds personalization (engraving /
+// sublimation of their text or artwork): max(floor, pct × item price).
+// A flat fee punished small items — competitors sell engraved keychains
+// for $13–15 all-in — while big engraving jobs still earn a real fee.
+// Doc's pricing call 2026-10-21. Configurable per deployment.
+const PERSONALIZATION_FEE_MIN_CENTS =
+  parseInt(process.env.CGC_PERSONALIZATION_FEE_MIN_CENTS || '', 10) || 500;
+const PERSONALIZATION_FEE_PCT =
+  parseFloat(process.env.CGC_PERSONALIZATION_FEE_PCT || '') || 0.25;
+const personalizationFeeCents = (retailCents) =>
+  Math.max(PERSONALIZATION_FEE_MIN_CENTS, Math.round((retailCents || 0) * PERSONALIZATION_FEE_PCT));
 
 const PRODUCT_COLS =
   `id, sku, name, description, image_url, retail_price_cents, cgc_category, cgc_sport, weight_oz, available_quantity`;
@@ -41,7 +48,8 @@ router.get('/config', (_req, res) => {
     recipients: CGC_RECIPIENTS.map(({ key, label }) => ({ key, label })),
     occasions: CGC_OCCASIONS.map(({ key, label }) => ({ key, label })),
     budgets: CGC_BUDGETS.map(({ key, label }) => ({ key, label })),
-    personalization_fee_cents: PERSONALIZATION_FEE_CENTS,
+    personalization_fee_min_cents: PERSONALIZATION_FEE_MIN_CENTS,
+    personalization_fee_pct: PERSONALIZATION_FEE_PCT,
   });
 });
 
@@ -552,13 +560,18 @@ router.post('/checkout', async (req, res, next) => {
 
     // A published holiday product's launch selling price overrides the
     // catalog retail for its SKUs — the PDP already shows that price, so
-    // checkout must charge it too.
+    // checkout must charge it too. Products with no engraving layouts
+    // (designs = []) are pre-designed prints: their personalization data
+    // (Size, gift message) carries no fee, matching the PDP's price.
+    const noFeeSkus = new Set();
     const { rows: pricedHoliday } = await pool.query(
-      `SELECT variants, selling_price_cents FROM cgc_holiday_products
+      `SELECT variants, designs, selling_price_cents FROM cgc_holiday_products
         WHERE published AND selling_price_cents IS NOT NULL`,
     );
     for (const hp of pricedHoliday) {
+      const printed = !Array.isArray(hp.designs) || hp.designs.length === 0;
       for (const v of (Array.isArray(hp.variants) ? hp.variants : [])) {
+        if (printed) noFeeSkus.add(v.sku);
         const existing = bySku.get(v.sku);
         if (existing) existing.retail_price_cents = hp.selling_price_cents;
       }
@@ -627,7 +640,9 @@ router.post('/checkout', async (req, res, next) => {
         product,
         qty,
         personalization,
-        personalizationCents: personalization ? PERSONALIZATION_FEE_CENTS : 0,
+        personalizationCents: personalization && !noFeeSkus.has(sku)
+          ? personalizationFeeCents(product.retail_price_cents)
+          : 0,
       });
     }
 

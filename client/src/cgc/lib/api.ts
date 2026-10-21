@@ -28,7 +28,16 @@ export interface CgcConfig {
   recipients: { key: string; label: string }[];
   occasions: { key: string; label: string }[];
   budgets: { key: string; label: string }[];
-  personalization_fee_cents: number;
+  personalization_fee_min_cents: number;
+  personalization_fee_pct: number;
+}
+
+// Personalization fee: max(floor, pct × item price) — mirrors the server
+// rule in server/routes/cgc.js so the PDP shows what checkout charges.
+export function personalizationFeeCents(retailCents: number, config?: CgcConfig) {
+  const min = config?.personalization_fee_min_cents ?? 500;
+  const pct = config?.personalization_fee_pct ?? 0.25;
+  return Math.max(min, Math.round((retailCents || 0) * pct));
 }
 
 export interface CgcPersonalization {
