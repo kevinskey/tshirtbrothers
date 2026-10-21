@@ -64,7 +64,17 @@ function buildCatalogQuery(query, { includeSport = true } = {}) {
     const alts = term.split('|').map((t) => t.trim()).filter(Boolean).slice(0, 12);
     if (!alts.length) continue;
     const ors = [];
+    // Catalog names are singular ("Mug"), so a plural term would match
+    // nothing; fold each plural form down to its singular as an extra OR.
+    const variants = new Set();
     for (const alt of alts) {
+      variants.add(alt);
+      const lower = alt.toLowerCase();
+      if (lower.endsWith('ies') && lower.length > 4) variants.add(alt.slice(0, -3) + 'y');
+      else if (lower.endsWith('es') && lower.length > 3) variants.add(alt.slice(0, -2));
+      if (lower.endsWith('s') && !lower.endsWith('ss') && lower.length > 3) variants.add(alt.slice(0, -1));
+    }
+    for (const alt of variants) {
       params.push(`%${alt}%`);
       ors.push(`(name ILIKE $${params.length} OR sku ILIKE $${params.length} OR description ILIKE $${params.length})`);
     }
