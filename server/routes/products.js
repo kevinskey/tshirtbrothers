@@ -10,6 +10,46 @@ import { expandRetailCategory, groupIntoRetailCategories } from '../lib/retailCa
 const router = Router();
 
 // Image proxy — serves external images from our domain so canvas/toPng can access them (avoids CORS)
+// Fetched-image cache. A blank-picker grid loads 80+ S&S thumbnails at once,
+// and the proxy used to re-fetch each one from www.ssactivewear.com on every
+// view — S&S throttles that burst with 429s, which the proxy passed straight
+// through as broken images. Cache bytes by URL (24h), dedupe concurrent
+// fetches of the same URL, retry once on a throttle, and serve a stale copy
+// rather than a broken image. Bounded to cap memory (~600 × ~60KB ≈ 36MB).
+const IMG_CACHE = new Map(); // url -> { buf, type, at }
+const IMG_INFLIGHT = new Map(); // url -> Promise<{ buf, type }>
+const IMG_TTL_MS = 24 * 60 * 60 * 1000;
+const IMG_CACHE_MAX = 600;
+
+async function fetchProxiedImage(url) {
+  const existing = IMG_INFLIGHT.get(url);
+  if (existing) return existing;
+  const task = (async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      if (response.ok) {
+        return {
+          type: response.headers.get('content-type') || 'image/jpeg',
+          buf: Buffer.from(await response.arrayBuffer()),
+        };
+      }
+      // One backoff retry for a throttle; otherwise fail fast.
+      if ((response.status === 429 || response.status === 503) && attempt === 0) {
+        await new Promise((r) => setTimeout(r, 900));
+        continue;
+      }
+      const err = new Error(`upstream ${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
+    const err = new Error('upstream throttled');
+    err.status = 429;
+    throw err;
+  })();
+  IMG_INFLIGHT.set(url, task);
+  try { return await task; } finally { IMG_INFLIGHT.delete(url); }
+}
+
 router.get('/image-proxy', async (req, res) => {
   const { url } = req.query;
   if (!url || typeof url !== 'string') {
@@ -20,16 +60,27 @@ router.get('/image-proxy', async (req, res) => {
   if (!allowed) {
     return res.status(400).json({ error: 'URL not allowed' });
   }
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!response.ok) return res.status(response.status).end();
-    res.set('Content-Type', response.headers.get('content-type') || 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=86400');
+
+  const serve = (img) => {
+    res.set('Content-Type', img.type);
+    res.set('Cache-Control', 'public, max-age=604800, immutable'); // 7d in the browser
     res.set('Access-Control-Allow-Origin', '*');
-    const buffer = Buffer.from(await response.arrayBuffer());
-    res.send(buffer);
-  } catch {
-    res.status(502).end();
+    res.send(img.buf);
+  };
+
+  const cached = IMG_CACHE.get(url);
+  if (cached && Date.now() - cached.at < IMG_TTL_MS) return serve(cached);
+
+  try {
+    const img = await fetchProxiedImage(url);
+    IMG_CACHE.set(url, { ...img, at: Date.now() });
+    if (IMG_CACHE.size > IMG_CACHE_MAX) IMG_CACHE.delete(IMG_CACHE.keys().next().value);
+    return serve(img);
+  } catch (e) {
+    // A throttle or transient upstream error: serve a stale cached copy if we
+    // have one rather than a broken image.
+    if (cached) return serve(cached);
+    return res.status(e.status === 429 ? 429 : 502).end();
   }
 });
 
