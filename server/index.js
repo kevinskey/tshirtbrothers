@@ -6,6 +6,7 @@ import { dirname, join } from 'path';
 import { readdir, readFile } from 'fs/promises';
 import pool from './db.js';
 
+import { storeOgHandler } from './lib/storeOg.js';
 import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
@@ -147,6 +148,13 @@ app.use('/api/push', pushRouter);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Public store pages: server-render per-store Open Graph tags so a shared
+// store link previews as that store, not generic TShirt Brothers. nginx
+// proxies /stores/ *document* requests here; static assets stay on nginx.
+// Deeper paths (product, cart, admin) also resolve so the SPA boots over them.
+app.get('/stores/:slug', storeOgHandler);
+app.get('/stores/:slug/*', storeOgHandler);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
