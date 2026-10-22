@@ -136,6 +136,10 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  // Order-detail modal + S&S cancellation (10-minute window).
+  const [detailPo, setDetailPo] = useState<PurchaseOrder | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelMsg, setCancelMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
 
@@ -627,6 +631,35 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
     if (r.ok) {
       const updated = await r.json();
       setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updated } : o)));
+    }
+  }
+
+  // Cancel the order at S&S (only works inside their 10-minute window — the
+  // server enforces it too). On success the PO flips to 'cancelled' both in
+  // the list and in the open detail modal.
+  async function cancelPo(id: number) {
+    setCancelling(true);
+    setCancelMsg(null);
+    try {
+      const r = await fetch(`/api/purchasing/orders/${id}/cancel`, { method: 'POST', headers: authHeaders() });
+      const body = await r.json().catch(() => ({}));
+      if (r.ok && body.cancelled) {
+        const updated = body.purchaseOrder;
+        setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...updated } : o)));
+        setDetailPo((prev) => (prev && prev.id === id ? { ...prev, ...updated } : prev));
+        setCancelMsg({ ok: true, text: 'Order cancelled at S&S.' });
+      } else {
+        setCancelMsg({ ok: false, text: body.error || 'Could not cancel — S&S may have already moved the order past the window.' });
+        // A partial/failed cancel may still have updated per-order statuses.
+        if (body.purchaseOrder) {
+          setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...body.purchaseOrder } : o)));
+          setDetailPo((prev) => (prev && prev.id === id ? { ...prev, ...body.purchaseOrder } : prev));
+        }
+      }
+    } catch (err) {
+      setCancelMsg({ ok: false, text: err instanceof Error ? err.message : 'Cancel failed.' });
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -1124,7 +1157,14 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                   {orders.map((po) => (
                     <tr key={po.id} className={`border-b last:border-0 ${po.is_test ? 'opacity-60' : ''}`}>
                       <td className="px-4 py-2">
-                        <div className="font-mono text-xs">{po.po_number}</div>
+                        <button
+                          type="button"
+                          onClick={() => { setCancelMsg(null); setDetailPo(po); }}
+                          title="Open order details"
+                          className="font-mono text-xs text-orange-600 hover:underline text-left"
+                        >
+                          {po.po_number}
+                        </button>
                         <div className="text-xs text-gray-500">
                           {(po.ss_orders || []).map((o) => o.orderNumber).filter(Boolean).join(', ')}
                         </div>
@@ -1179,6 +1219,168 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           )}
         </div>
       )}
+
+      {detailPo && (
+        <PoDetailModal
+          po={detailPo}
+          onClose={() => setDetailPo(null)}
+          onCancel={() => void cancelPo(detailPo.id)}
+          cancelling={cancelling}
+          cancelMsg={cancelMsg}
+        />
+      )}
+    </div>
+  );
+}
+
+// 10-minute S&S cancellation window, mirrored from the server guard.
+const SS_CANCEL_WINDOW_MS = 10 * 60 * 1000;
+
+function shippingLabel(code: string | null | undefined): string {
+  if (!code) return '—';
+  return SHIPPING_METHODS.find(([v]) => v === String(code))?.[1] || `Method ${code}`;
+}
+
+// Order-detail modal: the line items, shipping choice, S&S order status, and a
+// Cancel button wired to S&S's 10-minute window. A per-second ticker drives the
+// countdown so the button disables itself the moment the window closes.
+function PoDetailModal({
+  po, onClose, onCancel, cancelling, cancelMsg,
+}: {
+  po: PurchaseOrder;
+  onClose: () => void;
+  onCancel: () => void;
+  cancelling: boolean;
+  cancelMsg: { ok: boolean; text: string } | null;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const placedAt = new Date(po.created_at).getTime();
+  const remainingMs = SS_CANCEL_WINDOW_MS - (now - placedAt);
+  const withinWindow = remainingMs > 0;
+  const terminal = ['shipped', 'received', 'cancelled'].includes(po.status);
+  const hasSsOrders = (po.ss_orders || []).some((o) => o.orderNumber);
+  const cancellable = !po.is_test && !terminal && withinWindow && hasSsOrders;
+  const mm = Math.max(0, Math.floor(remainingMs / 60000));
+  const ss = Math.max(0, Math.floor((remainingMs % 60000) / 1000));
+  const shipMethod = (po as unknown as { shipping_method?: string }).shipping_method;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-auto rounded-xl bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between border-b px-5 py-4">
+          <div>
+            <h3 className="font-mono text-sm font-semibold">{po.po_number}</h3>
+            <p className="text-xs text-gray-500">
+              Placed {new Date(po.created_at).toLocaleString()}
+              {po.ss_orders?.length ? ` · S&S ${po.ss_orders.map((o) => o.orderNumber).filter(Boolean).join(', ')}` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[po.status] || 'bg-gray-100 text-gray-600'}`}>
+              {po.status.replace('_', ' ')}
+            </span>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Shipping choice */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-xs uppercase tracking-wide text-gray-400">Shipping method</div>
+              <div className="font-medium">{shippingLabel(shipMethod)}</div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wide text-gray-400">Ship to</div>
+              <div className="font-medium">
+                {po.ship_to?.customer || '—'}
+                {po.ship_to?.city ? ` · ${po.ship_to.city}, ${po.ship_to.state ?? ''}` : ''}
+              </div>
+            </div>
+          </div>
+
+          {/* Line items */}
+          <div>
+            <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">Items</div>
+            <div className="rounded-lg border divide-y">
+              {(po.lines || []).length === 0 && <div className="px-3 py-2 text-sm text-gray-500">No line snapshot stored.</div>}
+              {(po.lines || []).map((l, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">{l.productName || l.sku || 'Item'}</div>
+                    <div className="text-xs text-gray-500">
+                      {[l.color, l.size].filter(Boolean).join(' · ')}
+                      {l.sku ? ` · ${l.sku}` : ''}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-gray-700">×{l.qty ?? 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* S&S order statuses + total */}
+          <div className="flex items-center justify-between text-sm">
+            <div className="space-y-0.5">
+              {(po.ss_orders || []).map((o) => (
+                <div key={o.orderNumber} className="text-xs text-gray-600">
+                  #{o.orderNumber} <span className="text-gray-400">{o.warehouseAbbr}</span> — {o.orderStatus || '—'}
+                </div>
+              ))}
+            </div>
+            <div className="text-right">
+              <div className="text-xs uppercase tracking-wide text-gray-400">Total</div>
+              <div className="font-semibold">{money(po.total)}</div>
+            </div>
+          </div>
+
+          {po.notes && (
+            <div className="text-sm">
+              <div className="text-xs uppercase tracking-wide text-gray-400">Notes</div>
+              <div className="whitespace-pre-wrap text-gray-700">{po.notes}</div>
+            </div>
+          )}
+        </div>
+
+        {/* Cancel — synced to S&S's 10-minute window */}
+        <div className="border-t px-5 py-4">
+          {cancelMsg && (
+            <div className={`mb-3 rounded-md px-3 py-2 text-sm ${cancelMsg.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>
+              {cancelMsg.text}
+            </div>
+          )}
+          {po.status === 'cancelled' ? (
+            <div className="text-sm font-medium text-gray-500">This order is cancelled.</div>
+          ) : po.is_test ? (
+            <div className="text-sm text-gray-500">Test order — auto-cancelled by S&S, nothing charged.</div>
+          ) : terminal ? (
+            <div className="text-sm text-gray-500">Too late to cancel — this order is already {po.status}.</div>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-xs text-gray-500">
+                {withinWindow
+                  ? <>S&S allows cancellation for <span className="font-mono font-semibold text-gray-800">{mm}:{String(ss).padStart(2, '0')}</span> more.</>
+                  : 'The 10-minute S&S cancellation window has passed.'}
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={!cancellable || cancelling}
+                className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                title={cancellable ? 'Cancel this order at S&S' : 'Outside the 10-minute S&S cancellation window'}
+              >
+                {cancelling ? <Loader2 className="w-4 h-4 animate-spin" /> : <X className="w-4 h-4" />}
+                Cancel order
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

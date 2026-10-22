@@ -322,6 +322,33 @@ export async function placeSsOrder(payload) {
   return Array.isArray(data) ? data : [data];
 }
 
+// S&S lets an order be cancelled only within 10 MINUTES of placement, via
+// DELETE /v2/orders/{orderNumber}. Returns the list of orders S&S actually
+// cancelled (each with orderStatus "Cancelled"); an order past the window is
+// simply absent from that list rather than erroring, so callers must check the
+// returned statuses, not just the HTTP code.
+export async function cancelSsOrder(orderNumber) {
+  const credentials = getCredentials();
+  const response = await fetch(
+    `https://api.ssactivewear.com/v2/orders/${encodeURIComponent(orderNumber)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(30000),
+    },
+  );
+  const text = await response.text().catch(() => '');
+  let data = null;
+  try { data = JSON.parse(text); } catch { /* non-JSON body */ }
+  if (!response.ok) {
+    const detail = data?.errors?.map?.((e) => e.message).join('; ') || text.slice(0, 300);
+    const err = new Error(`S&S cancel error ${response.status}: ${detail}`);
+    err.ssResponse = data ?? text.slice(0, 500);
+    throw err;
+  }
+  return Array.isArray(data) ? data : data ? [data] : [];
+}
+
 // Invoiced order history for a date window (yyyy-MM-dd), lines included.
 // Returns [] when the window has no invoices.
 export async function fetchSsOrderHistory(startDate, endDate) {
