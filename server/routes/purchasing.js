@@ -77,7 +77,7 @@ router.get('/quote-lines/:quoteId', async (req, res, next) => {
     if (quote.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
 
     const { rows: items } = await pool.query(
-      `SELECT qi.product_name, qi.color, qi.sizes, qi.quantity, p.ss_id
+      `SELECT qi.product_name, qi.color, qi.sizes, qi.quantity, p.ss_id, p.image_url
          FROM quote_items qi
          LEFT JOIN products p ON p.id = qi.product_id
         WHERE qi.quote_id = $1
@@ -89,7 +89,7 @@ router.get('/quote-lines/:quoteId', async (req, res, next) => {
     if (source.length === 0) {
       // Legacy single-product quotes: derive one item from the quote row.
       const { rows } = await pool.query(
-        `SELECT COALESCE(p.name, 'Product') AS product_name, q.color, q.sizes, q.quantity, p.ss_id
+        `SELECT COALESCE(p.name, 'Product') AS product_name, q.color, q.sizes, q.quantity, p.ss_id, p.image_url
            FROM quotes q LEFT JOIN products p ON p.id = q.product_id
           WHERE q.id = $1`,
         [quoteId]
@@ -106,6 +106,7 @@ router.get('/quote-lines/:quoteId', async (req, res, next) => {
           lines.push({
             styleId: item.ss_id || null,
             productName: item.product_name || '',
+            image_url: item.image_url || null,
             color: item.color || '',
             size: s.size,
             qty: Number(s.quantity),
@@ -115,6 +116,7 @@ router.get('/quote-lines/:quoteId', async (req, res, next) => {
         lines.push({
           styleId: item.ss_id || null,
           productName: item.product_name || '',
+          image_url: item.image_url || null,
           color: item.color || '',
           size: '',
           qty: Number(item.quantity),
@@ -145,7 +147,7 @@ router.get('/invoice-lines/:invoiceId', async (req, res, next) => {
     const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
 
     const { rows: catalog } = await pool.query(
-      "SELECT ss_id, name, brand FROM products WHERE ss_id IS NOT NULL AND ss_id <> ''"
+      "SELECT ss_id, name, brand, image_url FROM products WHERE ss_id IS NOT NULL AND ss_id <> ''"
     );
     const matchStyle = (description) => {
       const desc = (description || '').toLowerCase();
@@ -167,7 +169,7 @@ router.get('/invoice-lines/:invoiceId', async (req, res, next) => {
           }
         }
       }
-      return best ? { styleId: best.ss_id, matchedName: `${best.brand ? `${best.brand} ` : ''}${best.name}` } : null;
+      return best ? { styleId: best.ss_id, matchedName: `${best.brand ? `${best.brand} ` : ''}${best.name}`, image_url: best.image_url || null } : null;
     };
 
     const lines = [];
@@ -178,6 +180,7 @@ router.get('/invoice-lines/:invoiceId', async (req, res, next) => {
       lines.push({
         styleId: match?.styleId || null,
         productName: match?.matchedName || item.description || '',
+        image_url: match?.image_url || null,
         color: (item.color || '').trim(),
         size: (item.size || '').trim(),
         qty,

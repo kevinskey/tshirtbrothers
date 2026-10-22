@@ -367,10 +367,11 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
       const r = await fetch(`/api/purchasing/quote-lines/${prefillQuoteId}`, { headers: authHeaders() });
       if (!r.ok) return;
       const data = await r.json();
-      const newLines: PoLine[] = (data.lines || []).map((l: { styleId: string | null; productName: string; color: string; size: string; qty: number }) => ({
+      const newLines: PoLine[] = (data.lines || []).map((l: { styleId: string | null; productName: string; image_url?: string | null; color: string; size: string; qty: number }) => ({
         key: nextKey(),
         styleId: l.styleId,
         productName: l.productName,
+        imageUrl: l.image_url ?? null,
         color: l.color,
         size: l.size,
         qty: l.qty,
@@ -403,10 +404,11 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
       const r = await fetch(`/api/purchasing/invoice-lines/${prefillInvoiceId}`, { headers: authHeaders() });
       if (!r.ok) return;
       const data = await r.json();
-      const newLines: PoLine[] = (data.lines || []).map((l: { styleId: string | null; productName: string; color: string; size: string; qty: number }) => ({
+      const newLines: PoLine[] = (data.lines || []).map((l: { styleId: string | null; productName: string; image_url?: string | null; color: string; size: string; qty: number }) => ({
         key: nextKey(),
         styleId: l.styleId,
         productName: l.productName,
+        imageUrl: l.image_url ?? null,
         color: l.color,
         size: l.size,
         qty: l.qty,
