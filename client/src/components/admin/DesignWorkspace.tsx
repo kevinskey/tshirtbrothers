@@ -52,6 +52,10 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
   const [removingColor, setRemovingColor] = useState(false);
   const [colorToRemove, setColorToRemove] = useState('#000000');
   const [colorFuzz, setColorFuzz] = useState(25);
+  const [recoloring, setRecoloring] = useState(false);
+  const [recolorFrom, setRecolorFrom] = useState('#000000');
+  const [recolorTo, setRecolorTo] = useState('#ffffff');
+  const [recolorFuzz, setRecolorFuzz] = useState(30);
   const [preppingVinyl, setPreppingVinyl] = useState(false);
   const [vectorizing, setVectorizing] = useState(false);
   const [vinylColors, setVinylColors] = useState(1);
@@ -409,6 +413,55 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
     } finally { setRemovingColor(false); }
   }
 
+
+  // Client-side color swap — e.g. turn a black logo white/red/blue. Matches
+  // pixels near the "from" color (tolerance-based), rewrites their RGB to the
+  // "to" color, and keeps each pixel's alpha so anti-aliased edges stay smooth.
+  async function handleRecolor() {
+    if (!generatedImage || recoloring) return;
+    setRecoloring(true);
+    try {
+      const img = document.createElement('img');
+      img.crossOrigin = 'anonymous';
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('image load failed'));
+        img.src = generatedImage;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('canvas context unavailable');
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imageData.data;
+      const hex = (s: string, i: number) => parseInt(s.slice(i, i + 2), 16);
+      const fr = hex(recolorFrom, 1), fg = hex(recolorFrom, 3), fb = hex(recolorFrom, 5);
+      const tr = hex(recolorTo, 1), tg = hex(recolorTo, 3), tb = hex(recolorTo, 5);
+      // Max possible RGB distance is sqrt(3) * 255 ≈ 441.7
+      const maxDist = (recolorFuzz / 100) * 441.7;
+      // Pixels past the hard cutoff still blend out to 1.4x so edges don't band
+      const softDist = maxDist * 1.4;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3] ?? 0;
+        if (a === 0) continue;
+        const r = d[i] ?? 0, g = d[i + 1] ?? 0, b = d[i + 2] ?? 0;
+        const dist = Math.sqrt((r - fr) ** 2 + (g - fg) ** 2 + (b - fb) ** 2);
+        if (dist > softDist) continue;
+        const t = dist <= maxDist ? 1 : 1 - (dist - maxDist) / (softDist - maxDist);
+        d[i] = Math.round(r + (tr - r) * t);
+        d[i + 1] = Math.round(g + (tg - g) * t);
+        d[i + 2] = Math.round(b + (tb - b) * t);
+      }
+      ctx.putImageData(imageData, 0, 0);
+      const dataUrl = canvas.toDataURL('image/png');
+      setGeneratedImage(dataUrl);
+      setImageHistory(prev => [...prev, dataUrl]);
+    } catch (err: any) {
+      alert(`Color change failed: ${err?.message || err}`);
+    } finally { setRecoloring(false); }
+  }
 
   async function _handlePrepVinyl() {
     if (!generatedImage || preppingVinyl) return;
@@ -1109,6 +1162,37 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
                       className="px-3 py-1.5 bg-pink-50 text-pink-700 text-xs font-medium rounded-lg hover:bg-pink-100 disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap">
                       {removingColor ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Remove
                     </button>
+                  </div>
+                </div>
+
+                {/* Color swap — e.g. recolor a black logo to white/red/blue */}
+                <div className="border-t border-gray-200 pt-2 mt-2">
+                  <p className="text-[11px] text-gray-500 mb-1">Change a color (e.g. black logo → white, red, blue)</p>
+                  <div className="flex gap-2 items-center">
+                    <label className="text-[11px] text-gray-600 flex flex-col items-center">
+                      From
+                      <input type="color" value={recolorFrom} onChange={(e) => setRecolorFrom(e.target.value)} className="w-10 h-8 rounded border border-gray-200 p-0.5 cursor-pointer" />
+                    </label>
+                    <label className="text-[11px] text-gray-600 flex flex-col items-center">
+                      To
+                      <input type="color" value={recolorTo} onChange={(e) => setRecolorTo(e.target.value)} className="w-10 h-8 rounded border border-gray-200 p-0.5 cursor-pointer" />
+                    </label>
+                    <label className="text-[11px] text-gray-600 flex-1">
+                      Tolerance: {recolorFuzz}%
+                      <input type="range" min={0} max={60} value={recolorFuzz} onChange={(e) => setRecolorFuzz(Number(e.target.value))} className="w-full" />
+                    </label>
+                    <button onClick={handleRecolor} disabled={recoloring}
+                      className="px-3 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-lg hover:bg-indigo-100 disabled:opacity-50 flex items-center justify-center gap-1 whitespace-nowrap">
+                      {recoloring ? <Loader2 className="w-3 h-3 animate-spin" /> : null} Recolor
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 mt-1.5 items-center">
+                    <span className="text-[11px] text-gray-500">Quick:</span>
+                    {[['#ffffff', 'White'], ['#000000', 'Black'], ['#dc2626', 'Red'], ['#2563eb', 'Blue'], ['#16a34a', 'Green'], ['#f59e0b', 'Gold']].map(([c, name]) => (
+                      <button key={c} title={name} onClick={() => setRecolorTo(c as string)}
+                        className={`w-6 h-6 rounded-full border ${recolorTo === c ? 'ring-2 ring-indigo-400 border-white' : 'border-gray-300'}`}
+                        style={{ backgroundColor: c as string }} />
+                    ))}
                   </div>
                 </div>
 
