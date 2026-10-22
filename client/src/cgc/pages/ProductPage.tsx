@@ -3,7 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, Heart, Loader2, Minus, Plus, ShoppingBag, Upload } from 'lucide-react';
+import { ArrowRight, Check, Heart, Loader2, Minus, Palette, Plus, ShoppingBag, Upload } from 'lucide-react';
 import { fetchConfig, fetchProduct, money, personalizationFeeCents } from '../lib/api';
 import type { CgcPersonalization } from '../lib/api';
 import ProductCard from '../components/ProductCard';
@@ -135,6 +135,12 @@ export default function ProductPage() {
   const fav = has(product.sku);
   const previewText = [line1, line2].map((l) => l.trim()).filter(Boolean).join('\n');
 
+  // Deep link into the Design Studio for this blank: ?product=jds:<sku>
+  // preselects it, ?store=cgc rebrands the chrome as Custom Gift Club, ?back
+  // returns here (where ?design=/&mockup= reattach the finished art). Site-
+  // relative so CGC hosts stay on-domain and TSB hosts hit /design directly.
+  const studioHref = `/design?product=${encodeURIComponent(`jds:${product.sku}`)}&store=cgc&back=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://customgiftclub.com')}`;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
       <Helmet><title>{`${product.name.trim()} — Custom Gift Club`}</title></Helmet>
@@ -209,13 +215,33 @@ export default function ProductPage() {
                 className={`rounded-xl border-2 p-3 text-left text-sm font-semibold transition-colors ${personalize ? 'border-cgc-orange bg-cgc-cream text-cgc-ink' : 'border-cgc-cream-deep text-cgc-charcoal hover:border-cgc-stone'}`}
               >
                 Personalized (+{money(feeCents)})
-                <span className="block font-normal text-xs mt-1 text-cgc-stone">Your text or artwork, added by our shop</span>
+                <span className="block font-normal text-xs mt-1 text-cgc-stone">Design it yourself, or we'll add your text/artwork</span>
               </button>
             </div>
           </fieldset>
 
           {personalize && (
             <div className="mt-4 space-y-3 rounded-xl border border-cgc-cream-deep p-4">
+              {/* Primary path: design it yourself in the Studio (live preview,
+                  full artwork control). The simple text form below stays as the
+                  quick "just add this name" option. */}
+              <a
+                href={studioHref}
+                className="flex items-center justify-between gap-3 rounded-xl border-2 border-cgc-orange bg-cgc-cream px-4 py-3 text-cgc-ink transition-colors hover:bg-cgc-cream-deep"
+              >
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 font-bold">
+                    <Palette className="h-4 w-4 shrink-0 text-cgc-orange" aria-hidden /> Design it yourself
+                  </span>
+                  <span className="mt-0.5 block text-xs font-normal text-cgc-charcoal">
+                    Full control — add text &amp; artwork with a live preview in the Design Studio
+                  </span>
+                </span>
+                <ArrowRight className="h-5 w-5 shrink-0 text-cgc-orange" aria-hidden />
+              </a>
+              <div className="flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-cgc-stone">
+                <span className="h-px flex-1 bg-cgc-cream-deep" aria-hidden /> or tell us what to add <span className="h-px flex-1 bg-cgc-cream-deep" aria-hidden />
+              </div>
               <div>
                 <label htmlFor="pz-line1" className="block text-sm font-semibold text-cgc-ink mb-1">Line 1</label>
                 <input id="pz-line1" type="text" maxLength={60} value={line1} onChange={(e) => setLine1(e.target.value)}
@@ -337,13 +363,8 @@ export default function ProductPage() {
 
           <p className="mt-4 text-sm text-cgc-stone">
             Want full design control?{' '}
-            {/* Deep link: ?product=jds:<sku> preselects this blank (handled
-                by /api/products/by-ssid), ?store=cgc rebrands the studio
-                chrome as Custom Gift Club, ?back returns here. Site-relative
-                so CGC hosts stay on-domain (CgcApp mounts /design) and TSB
-                hosts hit the main app's /design route. */}
             <a
-              href={`/design?product=${encodeURIComponent(`jds:${product.sku}`)}&store=cgc&back=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : 'https://customgiftclub.com')}`}
+              href={studioHref}
               className="font-semibold text-cgc-orange hover:text-cgc-orange-dark"
             >
               Open this in the Design Studio
