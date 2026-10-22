@@ -138,8 +138,12 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   // Order-detail modal + S&S cancellation (10-minute window).
   const [detailPo, setDetailPo] = useState<PurchaseOrder | null>(null);
-  const [cancelling, setCancelling] = useState(false);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [cancelMsg, setCancelMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Ticks once a second ONLY while some order is still inside its 10-minute
+  // cancel window, so the row-level Cancel button appears/disappears live
+  // without re-rendering the whole table when every order is already old.
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
 
@@ -637,8 +641,10 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   // Cancel the order at S&S (only works inside their 10-minute window — the
   // server enforces it too). On success the PO flips to 'cancelled' both in
   // the list and in the open detail modal.
-  async function cancelPo(id: number) {
-    setCancelling(true);
+  // `fromRow`: when cancelling straight from the table (no modal open) there is
+  // no in-modal banner to read, so surface a failure as an alert instead.
+  async function cancelPo(id: number, fromRow = false) {
+    setCancellingId(id);
     setCancelMsg(null);
     try {
       const r = await fetch(`/api/purchasing/orders/${id}/cancel`, { method: 'POST', headers: authHeaders() });
@@ -649,19 +655,53 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
         setDetailPo((prev) => (prev && prev.id === id ? { ...prev, ...updated } : prev));
         setCancelMsg({ ok: true, text: 'Order cancelled at S&S.' });
       } else {
-        setCancelMsg({ ok: false, text: body.error || 'Could not cancel — S&S may have already moved the order past the window.' });
+        const msg = body.error || 'Could not cancel — S&S may have already moved the order past the window.';
+        setCancelMsg({ ok: false, text: msg });
         // A partial/failed cancel may still have updated per-order statuses.
         if (body.purchaseOrder) {
           setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, ...body.purchaseOrder } : o)));
           setDetailPo((prev) => (prev && prev.id === id ? { ...prev, ...body.purchaseOrder } : prev));
         }
+        if (fromRow) alert(msg);
       }
     } catch (err) {
-      setCancelMsg({ ok: false, text: err instanceof Error ? err.message : 'Cancel failed.' });
+      const msg = err instanceof Error ? err.message : 'Cancel failed.';
+      setCancelMsg({ ok: false, text: msg });
+      if (fromRow) alert(msg);
     } finally {
-      setCancelling(false);
+      setCancellingId(null);
     }
   }
+
+  // Is this PO still cancellable at S&S right now? (not test/terminal, has an
+  // S&S order number, and inside the 10-minute window measured from placement.)
+  function rowCancellable(po: PurchaseOrder): boolean {
+    if (po.is_test || ['shipped', 'received', 'cancelled'].includes(po.status)) return false;
+    if (!(po.ss_orders || []).some((o) => o.orderNumber)) return false;
+    return nowTick - new Date(po.created_at).getTime() < SS_CANCEL_WINDOW_MS;
+  }
+  function remainingLabel(po: PurchaseOrder): string {
+    const ms = Math.max(0, SS_CANCEL_WINDOW_MS - (nowTick - new Date(po.created_at).getTime()));
+    return `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+  }
+
+  // Drive a 1-second ticker only while at least one order is still inside its
+  // window; it clears itself once the last window closes, so an all-old table
+  // isn't re-rendering every second.
+  useEffect(() => {
+    const anyFresh = () => orders.some(rowCancellable);
+    if (!anyFresh()) return undefined;
+    const t = setInterval(() => {
+      setNowTick(Date.now());
+      if (!orders.some((o) => !o.is_test && !['shipped', 'received', 'cancelled'].includes(o.status)
+        && (o.ss_orders || []).some((s) => s.orderNumber)
+        && Date.now() - new Date(o.created_at).getTime() < SS_CANCEL_WINDOW_MS)) {
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
 
   // Options for a line's color/size selects, from its style's loaded SKUs
   function styleOptions(styleId: string | null) {
@@ -1208,6 +1248,17 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                                 Mark received
                               </button>
                             )}
+                            {rowCancellable(po) && (
+                              <button
+                                onClick={() => { if (window.confirm('Cancel this order at S&S? This cannot be undone.')) void cancelPo(po.id, true); }}
+                                disabled={cancellingId === po.id}
+                                title="Cancel at S&S — only works within 10 minutes of placing"
+                                className="inline-flex items-center gap-1 text-xs text-red-600 hover:underline ml-3 disabled:opacity-50"
+                              >
+                                {cancellingId === po.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                Cancel ({remainingLabel(po)})
+                              </button>
+                            )}
                           </>
                         )}
                       </td>
@@ -1225,7 +1276,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
           po={detailPo}
           onClose={() => setDetailPo(null)}
           onCancel={() => void cancelPo(detailPo.id)}
-          cancelling={cancelling}
+          cancelling={cancellingId === detailPo.id}
           cancelMsg={cancelMsg}
         />
       )}
