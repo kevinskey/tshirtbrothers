@@ -5,6 +5,7 @@ import {
   fetchStyleSkus,
   fetchStyleInventory,
   placeSsOrder,
+  cancelSsOrder,
   fetchPaymentProfiles,
   fetchSsOrderHistory,
 } from '../services/ssActivewear.js';
@@ -418,6 +419,76 @@ router.post('/orders/:id/refresh', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
     const { po } = await refreshPurchaseOrder(rows[0]);
     res.json(po);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// S&S only honors a cancellation within 10 minutes of placing the order.
+const SS_CANCEL_WINDOW_MS = 10 * 60 * 1000;
+
+// POST /orders/:id/cancel — cancel the order(s) at S&S, synced to their
+// 10-minute window. Guarded server-side (not just in the UI): past the window,
+// or for a test/already-cancelled/shipped PO, we refuse before calling S&S.
+// Each S&S order number is DELETEd; the PO is marked cancelled only when S&S
+// confirms every one of them came back "Cancelled".
+router.post('/orders/:id/cancel', async (req, res, next) => {
+  try {
+    const { rows } = await pool.query('SELECT * FROM purchase_orders WHERE id = $1', [req.params.id]);
+    const po = rows[0];
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+    if (po.is_test) return res.status(400).json({ error: 'Test orders are auto-cancelled by S&S already.' });
+    if (po.status === 'cancelled') return res.status(400).json({ error: 'This order is already cancelled.' });
+    if (['shipped', 'received'].includes(po.status)) {
+      return res.status(409).json({ error: `Too late — this order is already ${po.status}.`, expired: true });
+    }
+
+    const ageMs = Date.now() - new Date(po.created_at).getTime();
+    const remainingMs = SS_CANCEL_WINDOW_MS - ageMs;
+    if (remainingMs <= 0) {
+      return res.status(409).json({
+        error: 'S&S only allows cancellation within 10 minutes of placing the order; that window has passed.',
+        expired: true,
+      });
+    }
+
+    const orderNumbers = (Array.isArray(po.ss_orders) ? po.ss_orders : [])
+      .map((o) => o && o.orderNumber).filter(Boolean).map(String);
+    if (orderNumbers.length === 0) {
+      return res.status(400).json({ error: 'No S&S order numbers on this PO to cancel.' });
+    }
+
+    const results = [];
+    for (const num of orderNumbers) {
+      try {
+        const cancelled = await cancelSsOrder(num);
+        results.push(...cancelled.map((c) => ({ orderNumber: String(c.orderNumber ?? num), orderStatus: c.orderStatus })));
+        if (!cancelled.length) results.push({ orderNumber: num, orderStatus: null, note: 'Not returned by S&S (may be past the window at their end).' });
+      } catch (err) {
+        results.push({ orderNumber: num, orderStatus: null, error: err.message });
+      }
+    }
+
+    const isCancelled = (num) => results.some(
+      (r) => String(r.orderNumber) === String(num) && /cancel/i.test(r.orderStatus || ''),
+    );
+    const allCancelled = orderNumbers.every(isCancelled);
+
+    // Mirror S&S's per-order status back into ss_orders so the row reflects it.
+    const nextSsOrders = (Array.isArray(po.ss_orders) ? po.ss_orders : []).map((o) =>
+      isCancelled(o.orderNumber) ? { ...o, orderStatus: 'Cancelled' } : o,
+    );
+    const nextStatus = allCancelled ? 'cancelled' : po.status;
+    const updated = await pool.query(
+      'UPDATE purchase_orders SET status = $2, ss_orders = $3 WHERE id = $1 RETURNING *',
+      [po.id, nextStatus, JSON.stringify(nextSsOrders)],
+    );
+
+    res.status(allCancelled ? 200 : 207).json({
+      purchaseOrder: updated.rows[0],
+      cancelled: allCancelled,
+      results,
+    });
   } catch (err) {
     next(err);
   }
