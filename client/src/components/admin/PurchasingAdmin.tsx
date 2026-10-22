@@ -121,6 +121,17 @@ function authHeaders(): Record<string, string> {
   };
 }
 
+// S&S style photos (www.ssactivewear.com/Images/…) 301-redirect to HTML when
+// hotlinked from another origin, so a raw <img src> breaks. Route them through
+// our server proxy (same one the storefront/studio use) which fetches them
+// server-side and re-serves with CORS. Non-S&S URLs pass through untouched.
+const proxyImg = (url: string | null | undefined): string => {
+  if (!url) return '';
+  return url.includes('ssactivewear.com')
+    ? `/api/products/image-proxy?url=${encodeURIComponent(url)}`
+    : url;
+};
+
 const money = (n: number | string | null | undefined) =>
   n === null || n === undefined || n === '' ? '—' : `$${Number(n).toFixed(2)}`;
 
@@ -816,7 +827,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                           <td className="px-4 py-2 max-w-[240px]">
                             <div className="flex items-center gap-2">
                               {l.imageUrl && (
-                                <img src={l.imageUrl} alt="" loading="lazy" className="w-9 h-9 object-contain rounded border border-gray-100 bg-white flex-shrink-0" />
+                                <img src={proxyImg(l.imageUrl)} alt="" loading="lazy" className="w-9 h-9 object-contain rounded border border-gray-100 bg-white flex-shrink-0" />
                               )}
                               <div className="truncate" title={l.productName}>{l.productName || '—'}</div>
                             </div>
@@ -947,7 +958,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                       >
                         <div className="aspect-square rounded-lg overflow-hidden flex items-center justify-center mb-2 bg-white">
                           {p.image_url ? (
-                            <img src={p.image_url} alt="" loading="lazy" className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
+                            <img src={proxyImg(p.image_url)} alt="" loading="lazy" className="w-full h-full object-contain group-hover:scale-105 transition-transform" />
                           ) : (
                             <Package className="w-8 h-8 text-gray-200" />
                           )}
