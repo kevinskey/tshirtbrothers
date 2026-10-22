@@ -173,8 +173,13 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
   const [linkHits, setLinkHits] = useState<ProductHit[]>([]);
   const [shipTo, setShipTo] = useState<ShipTo | null>(null);
   const [defaultShipTo, setDefaultShipTo] = useState<ShipTo | null>(null);
-  const [shippingMethod, setShippingMethod] = useState('1');
-  const [warehouse, setWarehouse] = useState('');
+  // Default to Will Call / Pickup ('6') — most S&S blank orders are picked up
+  // at the McDonough warehouse rather than shipped (Kevin, 2026-10-22).
+  const [shippingMethod, setShippingMethod] = useState('6');
+  // Pin McDonough (local) by default so the Will-Call default above is a
+  // complete pickup — otherwise the empty value merely *shows* McDonough (the
+  // first option) while nothing is actually pinned on the order.
+  const [warehouse, setWarehouse] = useState('GA');
   const [notes, setNotes] = useState('');
   // Payment: S&S accounts without Net terms must attach a saved payment
   // profile to every order. Email is the S&S website login the card is
@@ -472,7 +477,7 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
       styleId: p.ss_id,
       productName: `${p.brand ? `${p.brand} ` : ''}${p.name}`,
       imageUrl: p.image_url || null,
-      color: '', size: '', qty: 12,
+      color: '', size: '', qty: 1,
       sku: null, price: null, stock: null,
     }]);
   }
