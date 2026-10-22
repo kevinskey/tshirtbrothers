@@ -29,11 +29,15 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
-// Rewrite the content="" of a single meta tag identified by its
-// property="…" or name="…" key. Leaves the html untouched if the tag isn't
-// present, so a change to index.html can't throw here.
+// Rewrite the content="" of EVERY meta tag identified by its property="…" or
+// name="…" key. The build prerenders a second react-helmet copy of the OG
+// tags (marked data-rh="true") near the end of <head>, so index.html carries
+// two og:title/og:image/etc.; a non-global replace would leave the duplicate
+// generic and some crawlers read the later one. Global flag covers both.
+// Leaves the html untouched if the tag isn't present, so a change to
+// index.html can't throw here.
 function setMeta(html, attr, key, value) {
-  const re = new RegExp(`(<meta\\s+${attr}="${key}"\\s+content=")[^"]*(")`, 'i');
+  const re = new RegExp(`(<meta\\s+${attr}="${key}"\\s+content=")[^"]*(")`, 'gi');
   return html.replace(re, `$1${esc(value)}$2`);
 }
 
