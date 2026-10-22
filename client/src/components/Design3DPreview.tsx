@@ -88,6 +88,19 @@ function namedTwoTone(name: string): { body: string; accent: string } | null {
   return body && accent ? { body, accent } : null;
 }
 
+// Single color word in the name — JDS drinkware names the body color right
+// after the size ("Polar Camel 12 oz. Orange Stemless Wine Tumbler"), so the
+// FIRST color word is the body. Far more reliable than sampling a photo that
+// is mostly white backdrop, which is why "Orange" tumblers used to preview
+// off-white (and a white design then vanished on a white body). Returns the
+// first NAMED_COLORS match, or null when the name carries no color word.
+function namedSingleColor(name: string): string | null {
+  for (const word of name.toLowerCase().split(/[^a-z]+/)) {
+    if (NAMED_COLORS[word]) return NAMED_COLORS[word]!;
+  }
+  return null;
+}
+
 // Average the center region of the product photo to tint the 3D body so
 // a blue mug previews blue. Needs CORS-readable images (our catalog CDNs
 // allow it); falls back to off-white when unreadable.
@@ -184,6 +197,7 @@ export default function Design3DPreview({
         const twoTone = namedTwoTone(productName);
         const bodyHex = twoTone?.body
           || colorHex
+          || namedSingleColor(productName)
           || (imageUrl ? await sampleBodyColor(imageUrl) : null)
           || '#f1efea';
         // Accent drives the mug handle / rim / interior ("White/Green"
