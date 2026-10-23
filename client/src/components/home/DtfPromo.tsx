@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { DTF_GANG_SHEET } from '@/data/businessFacts';
 
 // Homepage band announcing the DTF transfer service. The horizontal
 // gang-sheet ribbon (film + white-ink-haloed art + foot ruler) mirrors the
@@ -18,9 +19,14 @@ export default function DtfPromo() {
             We print DTF.
             <span className="block text-orange-500">By the foot.</span>
           </h2>
+          {/* Rate comes from businessFacts (DTF_GANG_SHEET), which is
+              checked against the live pricing API by
+              scripts/check-business-facts.mjs. This read "$9/ft" until
+              2026-10-23 — the original DB default — while checkout
+              charged $11.99/ft. Don't hard-code the number again. */}
           <p className="mt-3 max-w-md text-sm leading-relaxed text-gray-300">
-            22″ gang sheets from $9/ft — upload your art or build a sheet online,
-            with same-day rush available. Press them yourself, or we'll press them for you.
+            {DTF_GANG_SHEET.sheetWidthInches}″ gang sheets from {DTF_GANG_SHEET.fromPriceLabel} — upload your art or
+            build a sheet online, with same-day rush available. Press them yourself, or we'll press them for you.
           </p>
           <div className="mt-5 flex flex-wrap gap-3">
             <Link

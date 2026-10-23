@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import { logActivityOnce } from '@/lib/activity';
+import { DTF_GANG_SHEET } from '@/data/businessFacts';
 import {
   Shirt,
   Palette,
@@ -1313,7 +1314,7 @@ function ItemCard({
                 Pressing is priced live at ${PRESS_ONLY_RATE.toFixed(2)}/each. If you also need transfers printed,
                 that part is quoted after we review your art. Need the transfers printed?{' '}
                 <Link to="/dtf" className="font-semibold underline hover:text-amber-950">
-                  Order a gang sheet from $9/ft →
+                  Order a gang sheet from {DTF_GANG_SHEET.fromPriceLabel} →
                 </Link>
               </>
             ) : (

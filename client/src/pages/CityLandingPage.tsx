@@ -1,9 +1,10 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import GoogleRatingChip from '@/components/GoogleRatingChip';
 import { CITY_LANDINGS, findCityLanding } from '@/data/cityLandings';
 import {
-  Shirt, Sparkles, MapPin, Clock, CheckCircle2, Star, Tag,
+  Shirt, Sparkles, MapPin, Clock, CheckCircle2, Tag,
 } from 'lucide-react';
 
 /**
@@ -64,7 +65,8 @@ export default function CityLandingPage() {
           <div className="mt-5 flex items-center justify-center gap-5 text-xs sm:text-sm text-gray-400 flex-wrap">
             <span className="flex items-center gap-1.5"><CheckCircle2 className="h-4 w-4 text-orange-500" /> No minimums</span>
             <span className="flex items-center gap-1.5"><Clock className="h-4 w-4 text-orange-500" /> 2–7 day turnaround</span>
-            <span className="flex items-center gap-1.5"><Star className="h-4 w-4 text-orange-500 fill-orange-500" /> 5.0 on Google</span>
+            {/* Live rating, not a literal — see GoogleRatingChip. */}
+            <GoogleRatingChip />
           </div>
         </div>
       </section>

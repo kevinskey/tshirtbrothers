@@ -15,7 +15,7 @@ const steps = [
     num: '3',
     title: 'We Print & Deliver',
     description:
-      'Professional printing with same-day local pickup available in Tyrone, GA. Or we ship right to your door.',
+      'Professional printing with same-day local pickup available at our Fairburn, GA shop. Or we ship right to your door.',
   },
 ];
 

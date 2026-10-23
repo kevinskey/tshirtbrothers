@@ -7,7 +7,7 @@ const props = [
   {
     emoji: '\u26A1',
     title: 'Same-Day Rush',
-    description: 'Need it fast? We offer same-day production and pickup for qualifying orders in Tyrone, GA.',
+    description: 'Need it fast? We offer same-day production and pickup for qualifying orders at our Fairburn, GA shop.',
   },
   {
     emoji: '\uD83C\uDFC6',
@@ -17,7 +17,7 @@ const props = [
   {
     emoji: '\uD83D\uDCCD',
     title: 'Local & National',
-    description: 'Free local delivery in Tyrone, GA and surrounding areas. We also ship nationwide.',
+    description: 'Free local pickup at our Fairburn, GA shop, serving the south Atlanta metro. We also ship nationwide.',
   },
 ];
 

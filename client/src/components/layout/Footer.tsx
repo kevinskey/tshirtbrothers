@@ -46,6 +46,10 @@ const T = {
       { slug: 'greek-life', name: 'Greek Life' },
       { slug: 'fundraisers', name: 'Fundraisers' },
       { slug: 'birthdays', name: 'Birthdays' },
+      { slug: 'rush-orders', name: 'Rush Orders' },
+      { slug: 'hbcu-homecoming', name: 'HBCU & Homecoming' },
+      { slug: 'embroidered-polos', name: 'Embroidered Polos' },
+      { slug: 'small-orders', name: 'Small Orders' },
     ],
   },
   es: {
@@ -87,6 +91,10 @@ const T = {
       { slug: 'greek-life', name: 'Vida Griega' },
       { slug: 'fundraisers', name: 'Recaudación de Fondos' },
       { slug: 'birthdays', name: 'Cumpleaños' },
+      { slug: 'rush-orders', name: 'Pedidos Urgentes' },
+      { slug: 'hbcu-homecoming', name: 'HBCU y Homecoming' },
+      { slug: 'embroidered-polos', name: 'Polos Bordados' },
+      { slug: 'small-orders', name: 'Pedidos Pequeños' },
     ],
   },
 } as const;

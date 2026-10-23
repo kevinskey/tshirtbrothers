@@ -18,6 +18,7 @@ import puppeteer from 'puppeteer';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +39,47 @@ const SKIP_PREFIXES = [
   '/invoice/view',
 ];
 
+/**
+ * Routes declared by the sitemap source in THIS checkout.
+ *
+ * Why this is needed on top of the production sitemap: the route list
+ * came only from the DEPLOYED sitemap, so a brand-new page could never
+ * be prerendered by the deploy that introduced it. The sequence is
+ * pull → build (prerender fetches the OLD server's sitemap, which has
+ * an hour-long cache) → restart. A new URL was therefore missing from
+ * that response, got skipped, and shipped as a client-rendered-only
+ * route until somebody happened to deploy again — exactly the pages
+ * most in need of crawlable HTML, invisible for an unpredictable
+ * window. Four new landing pages on 2026-10-23 would have hit this.
+ *
+ * Parsed by regex rather than imported: server/routes/sitemap.js pulls
+ * in the DB pool at module load, which the client build has no business
+ * doing. Best-effort — the production sitemap remains the primary
+ * source, and this only ever ADDS routes.
+ */
+function localRoutes() {
+  try {
+    const src = readFileSync(join(CLIENT_DIR, '..', 'server', 'routes', 'sitemap.js'), 'utf8');
+    const paths = new Set();
+
+    const staticBlock = src.match(/const STATIC_PAGES = \[([\s\S]*?)\n\];/);
+    if (staticBlock) {
+      for (const m of staticBlock[1].matchAll(/path:\s*'([^']+)'/g)) paths.add(m[1]);
+    }
+    const listOf = (name) => {
+      const block = src.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\];`));
+      return block ? [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : [];
+    };
+    for (const slug of listOf('VERTICAL_SLUGS')) paths.add(`/shirts-for/${slug}`);
+    for (const slug of listOf('CITY_SLUGS')) paths.add(`/custom-shirts/${slug}`);
+
+    return [...paths];
+  } catch (err) {
+    console.warn(`[prerender] could not read local sitemap routes: ${err.message}`);
+    return [];
+  }
+}
+
 async function fetchRoutes() {
   const res = await fetch(SITEMAP_URL);
   if (!res.ok) throw new Error(`sitemap fetch failed: ${res.status}`);
@@ -55,12 +97,58 @@ async function fetchRoutes() {
       paths.add(p);
     } catch { /* skip malformed */ }
   }
+
+  // Union in routes this checkout knows about but the live sitemap
+  // hasn't caught up to yet. Blog posts and group stores still come
+  // only from production — they live in the DB, not in the source.
+  const fromProd = paths.size;
+  for (const p of localRoutes()) {
+    if (SKIP_PREFIXES.some((pre) => p.startsWith(pre))) continue;
+    paths.add(p);
+  }
+  const added = paths.size - fromProd;
+  if (added > 0) {
+    console.log(`[prerender] ${added} route(s) new in this checkout, not yet in the live sitemap`);
+  }
+
   return [...paths].sort();
 }
 
 function pathToFile(routePath) {
   if (routePath === '/') return join(DIST, 'index.html');
   return join(DIST, routePath.replace(/^\//, ''), 'index.html');
+}
+
+/**
+ * Guarantee every prerendered page carries a self-referencing canonical.
+ *
+ * Normally the Seo component (react-helmet-async) supplies it, and this
+ * is a no-op. But Helmet manages its tags from a MOUNTED component: if a
+ * page's Seo unmounts on some late render path, Helmet removes the
+ * canonical and description it had added while leaving document.title
+ * alone. /design does exactly that during prerender — it falls to a
+ * different branch in headless Chrome and the captured HTML has the
+ * right title and no canonical.
+ *
+ * Previously this was masked, badly: index.html hard-coded a canonical
+ * pointing at the HOMEPAGE, so such a page shipped claiming to BE the
+ * homepage — a signal to drop it from the index entirely. Removing that
+ * static tag fixed the wrong-canonical problem and exposed the missing
+ * one, which this closes.
+ *
+ * Only ever ADDS a canonical when none is present; a page that rendered
+ * its own is left untouched.
+ */
+function ensureCanonical(html, route) {
+  if (/<link[^>]+rel="canonical"/i.test(html)) return html;
+  const href = `https://tshirtbrothers.com${route === '/' ? '/' : route}`;
+  const tag = `<link rel="canonical" href="${href}" data-prerender-fallback="true">`;
+  if (html.includes('</head>')) {
+    console.log(`    (injected fallback canonical for ${route})`);
+    return html.replace('</head>', `  ${tag}\n</head>`);
+  }
+  console.warn(`    ! ${route} has no </head>; could not inject a canonical`);
+  return html;
 }
 
 async function main() {
@@ -132,7 +220,7 @@ async function main() {
       // last data-dependent render.
       await new Promise((r) => setTimeout(r, settleMs));
 
-      const html = await page.content();
+      const html = ensureCanonical(await page.content(), route);
       const outPath = pathToFile(route);
       await mkdir(dirname(outPath), { recursive: true });
       await writeFile(outPath, html, 'utf8');

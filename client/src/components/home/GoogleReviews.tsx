@@ -146,6 +146,11 @@ export default function GoogleReviews() {
             __html: JSON.stringify({
               '@context': 'https://schema.org',
               '@type': 'LocalBusiness',
+              // Same @id as the LocalBusiness node in index.html so the
+              // two merge into ONE entity. Without it the page declared
+              // two same-named businesses and this rating floated free
+              // of the one carrying the address, hours and services.
+              '@id': 'https://tshirtbrothers.com/#business',
               name: 'TShirt Brothers',
               url: 'https://tshirtbrothers.com',
               aggregateRating: {
