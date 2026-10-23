@@ -25,7 +25,11 @@ const HERO_FIELDS: SlotField[] = [
   { name: 'subcopy',  label: 'Subcopy',    type: 'textarea' },
   { name: 'cta_label', label: 'Button text' },
   { name: 'cta_href',  label: 'Button link', hint: 'Where the button goes, e.g. #shop' },
-  { name: 'image_url', label: 'Background image URL' },
+  // Not "background" any more: the LHT hero renders this in its own
+  // column beside the copy rather than as a faded backdrop behind it,
+  // so an owner no longer has to pick a photo whose empty space happens
+  // to fall where the headline lands.
+  { name: 'image_url', label: 'Hero image URL', hint: 'Shown beside the headline. Any shape works — it is cropped to a 4:3 frame from the left.' },
 ];
 
 export default function StorefrontTab({ slug, authHeaders }: {
