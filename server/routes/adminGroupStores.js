@@ -13,6 +13,8 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { fetchProducts, fetchStyleColors, fetchStyleSkuData } from '../services/ssActivewear.js';
 import { uploadObject } from '../services/spaces.js';
+import * as backoffice from '../services/storeBackoffice.js';
+import { BackofficeError } from '../services/storeBackoffice.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -1212,6 +1214,71 @@ router.post('/:id/design-drafts/:draftId/reject', async (req, res, next) => {
     if (rowCount === 0) return res.status(404).json({ error: 'Draft not found or not pending' });
     res.json(rows[0]);
   } catch (err) { next(err); }
+});
+
+// ── Back office (staff side of the parity) ───────────────────────────────
+// Same implementation the store's own owner drives from
+// /api/group-store-admin/:slug, so staff acting on a store's behalf get
+// identical validation and identical results.
+//
+// :id here is the numeric store id; the store-side routes resolve a slug to
+// the same thing. Staff see inactive rows — they are often fixing a store
+// that has something switched off.
+
+function backofficeError(err, res, next) {
+  if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+  return next(err);
+}
+
+router.get('/:id/content', async (req, res, next) => {
+  try {
+    res.json({ content: await backoffice.listContent(Number(req.params.id), { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:id/content', async (req, res, next) => {
+  try {
+    const block = await backoffice.upsertContent(Number(req.params.id), req.body, req.user?.email);
+    res.json({ block });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:id/content/:contentId', async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteContent(Number(req.params.id), req.params.contentId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.get('/:id/categories', async (req, res, next) => {
+  try {
+    res.json({ categories: await backoffice.listCategories(Number(req.params.id), { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:id/categories', async (req, res, next) => {
+  try {
+    res.json({ category: await backoffice.upsertCategory(Number(req.params.id), req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:id/categories/:categoryId', async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteCategory(Number(req.params.id), req.params.categoryId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.put('/:id/products/:productId/categories', async (req, res, next) => {
+  try {
+    res.json(await backoffice.setProductCategories(
+      Number(req.params.id), req.params.productId, req.body?.category_ids,
+    ));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.post('/:id/products/reorder', async (req, res, next) => {
+  try {
+    res.json(await backoffice.reorderProducts(Number(req.params.id), req.body?.product_ids));
+  } catch (err) { backofficeError(err, res, next); }
 });
 
 export default router;

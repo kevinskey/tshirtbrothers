@@ -24,6 +24,8 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeAdminSession.js';
+import * as backoffice from '../services/storeBackoffice.js';
+import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
 
 const router = Router();
@@ -573,6 +575,91 @@ router.get('/:slug/design-drafts', async (req, res, next) => {
     );
     res.json({ drafts: rows });
   } catch (err) { next(err); }
+});
+
+// ── Back office ──────────────────────────────────────────────────────────
+// The store's own owner editing its storefront. Everything below shares an
+// implementation with the TSB staff routes in adminGroupStores.js, so the
+// two surfaces stay in step.
+//
+// Gated on 'owner': viewer and bulk_buyer keep the read-only contract this
+// file documents at the top. requireRole has no hierarchy, so owner is
+// listed explicitly.
+
+function backofficeError(err, res, next) {
+  if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+  return next(err);
+}
+
+const owner = requireRole('owner');
+
+// Content blocks (hero, promo bar, about …)
+router.get('/:slug/content', async (req, res, next) => {
+  try {
+    // Owners need the inactive blocks too, to turn one back on.
+    const includeInactive = req.store_admin.role === 'owner';
+    res.json({ content: await backoffice.listContent(req.store_admin.store_id, { includeInactive }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/content', owner, async (req, res, next) => {
+  try {
+    const block = await backoffice.upsertContent(
+      req.store_admin.store_id, req.body, req.store_admin.email,
+    );
+    res.json({ block });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/content/:contentId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteContent(req.store_admin.store_id, req.params.contentId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Categories
+router.get('/:slug/categories', async (req, res, next) => {
+  try {
+    const includeInactive = req.store_admin.role === 'owner';
+    res.json({ categories: await backoffice.listCategories(req.store_admin.store_id, { includeInactive }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/categories', owner, async (req, res, next) => {
+  try {
+    res.json({ category: await backoffice.upsertCategory(req.store_admin.store_id, req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/categories/:categoryId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteCategory(req.store_admin.store_id, req.params.categoryId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Product merchandising — presentation and shopper-facing price only.
+// Blank cost and the S&S SKU stay with TSB.
+router.patch('/:slug/products/:productId', owner, async (req, res, next) => {
+  try {
+    const product = await backoffice.updateProductMerch(
+      req.store_admin.store_id, req.params.productId, req.body ?? {},
+    );
+    res.json({ product });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.put('/:slug/products/:productId/categories', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.setProductCategories(
+      req.store_admin.store_id, req.params.productId, req.body?.category_ids,
+    ));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.post('/:slug/products/reorder', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.reorderProducts(req.store_admin.store_id, req.body?.product_ids));
+  } catch (err) { backofficeError(err, res, next); }
 });
 
 export default router;
