@@ -119,43 +119,61 @@ export default function HomePage() {
           to sit on. Same treatment the showroom section below already
           gives its photos. */}
       <section id="top" className="relative overflow-hidden">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-16 sm:py-20 lg:py-24">
-          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-            <div>
-              <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
-                {hero.eyebrow}
-              </p>
-              <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl">
-                {hero.headline}
-              </h1>
-              <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
-                {hero.subcopy}
-              </p>
-              <div className="mt-9 flex flex-wrap gap-3">
-                <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
-                  className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
-                  {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
-                </a>
-                <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
-                  Start your Truth Session
-                </Link>
-              </div>
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-16 sm:py-20 lg:py-28">
+          {/* Capped at half width on desktop so the copy never runs
+              under the full-bleed image pinned to the right. */}
+          <div className="lg:w-1/2 lg:pr-12">
+            <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
+              {hero.eyebrow}
+            </p>
+            <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl">
+              {hero.headline}
+            </h1>
+            <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
+              {hero.subcopy}
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
+                className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
+                {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
+              </a>
+              <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
+                Start your Truth Session
+              </Link>
             </div>
+          </div>
 
-            {/* object-left rather than centred: the owner-supplied image
-                is cropped to this column's 4:3, and campaign photography
-                tends to put the product on one side with negative space
-                on the other (the Fall 2026 default is product-left, wide
-                empty cream to the right). Anchoring left fills the frame
-                with product instead of blank wall. */}
-            <div className="aspect-[4/3] overflow-hidden bg-lht-ink-soft">
-              <img
-                src={hero.imageUrl}
-                alt={hero.headline}
-                fetchPriority="high"
-                className="h-full w-full object-cover object-left"
-              />
-            </div>
+          {/* Full-bleed, not a framed column.
+              Sat in a grid cell before, which meant four visible edges —
+              it read as a card pasted onto the black rather than part of
+              the page. Now it runs to the right edge of the VIEWPORT and
+              the full height of the section, so only the edge facing the
+              copy remains.
+
+              One element, two layouts. Below lg it stays in flow under
+              the copy, with negative margins cancelling the container
+              padding so it still bleeds side to side. At lg it goes
+              absolute against the section (the section is the nearest
+              positioned ancestor; this div sits inside the padded
+              container but positions against the section regardless) and
+              takes the right half. The copy is capped at lg:w-1/2 so the
+              two never overlap.
+
+              object-left: campaign photography tends to put the product
+              on one side and negative space on the other — the Fall 2026
+              default is product-left with a wide sweep of empty cream to
+              the right — so anchoring left fills the frame with product
+              instead of blank wall. */}
+          <div
+            className="mt-10 -mx-4 sm:-mx-6 aspect-[4/3] overflow-hidden bg-lht-ink-soft
+                       lg:mt-0 lg:mx-0 lg:aspect-auto lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2"
+          >
+            <img
+              src={hero.imageUrl}
+              alt={hero.headline}
+              fetchPriority="high"
+              className="h-full w-full object-cover object-left"
+            />
           </div>
         </div>
       </section>
