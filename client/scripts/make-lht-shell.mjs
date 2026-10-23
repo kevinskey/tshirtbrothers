@@ -22,6 +22,26 @@ function swap(label, pattern, replacement, { required = true } = {}) {
   html = next;
 }
 
+// Insert markup immediately after </title> in the head.
+//
+// Why this exists: index.html used to hard-code TSB's canonical,
+// description and og:/twitter: tags, and this script swapped each one
+// for the brand's version. Those static tags were removed from
+// index.html on 2026-10-23 — every TSB page renders <Seo> (Helmet),
+// so the shell copies were duplicating them (two canonicals, two
+// descriptions, two of every OG tag on all 68 prerendered pages).
+//
+// The sister-brand shells still need them STATICALLY, though: unlike
+// the TSB routes, dist/index-lht.html is not prerendered, and the
+// Facebook/X/iMessage scrapers that build link previews do not run
+// JavaScript — they would see no OG tags at all. So we inject rather
+// than swap.
+function inject(label, markup) {
+  const marker = '</title>';
+  if (!html.includes(marker)) { failures.push(label); return; }
+  html = html.replace(marker, `${marker}\n${markup}`);
+}
+
 // ── Strip TSB analytics (their GA property / Clarity project / Umami id) ─
 swap('google-analytics',
   /\s*<!-- Google Analytics -->[\s\S]*?<\/script>\s*<script>[\s\S]*?gtag\('config'[\s\S]*?<\/script>/, '');
@@ -40,33 +60,28 @@ const TITLE = 'Live Hard Truth — Streetwear Worn Loud';
 const DESC = 'Live Hard Truth luxury streetwear. Shop the Fall 2026 heavyweight '
   + 'hoodie and jogger collection in eleven colors, take the Truth Session, and wear the truth.';
 
+const IMAGE = 'https://livehardtruth.com/lht/campaign.jpg';
+
 swap('title', /<title>[\s\S]*?<\/title>/, `<title>${TITLE}</title>`);
-swap('description', /<meta name="description" content="[^"]*" \/>/,
-  `<meta name="description" content="${DESC}" />`);
-swap('keywords', /<meta name="keywords" content="[^"]*" \/>/,
-  '<meta name="keywords" content="streetwear, hoodie and jogger set, heavyweight hoodie, matching sets, Live Hard Truth, truth session, motivational apparel" />');
 swap('author', /<meta name="author" content="[^"]*" \/>/,
   '<meta name="author" content="Live Hard Truth" />');
-swap('canonical', /<link rel="canonical" href="[^"]*" \/>/,
-  '<link rel="canonical" href="https://livehardtruth.com" />');
 
-// ── Open Graph / Twitter ─────────────────────────────────────────────────
-swap('og:title', /<meta property="og:title" content="[^"]*" \/>/,
-  `<meta property="og:title" content="${TITLE}" />`);
-swap('og:description', /<meta property="og:description" content="[^"]*" \/>/,
-  `<meta property="og:description" content="${DESC}" />`);
-swap('og:image', /<meta property="og:image" content="[^"]*" \/>/,
-  '<meta property="og:image" content="https://livehardtruth.com/lht/campaign.jpg" />');
-swap('og:url', /<meta property="og:url" content="[^"]*" \/>/,
-  '<meta property="og:url" content="https://livehardtruth.com" />');
-swap('og:site_name', /<meta property="og:site_name" content="[^"]*" \/>/,
-  '<meta property="og:site_name" content="Live Hard Truth" />');
-swap('twitter:title', /<meta name="twitter:title" content="[^"]*" \/>/,
-  `<meta name="twitter:title" content="${TITLE}" />`);
-swap('twitter:description', /<meta name="twitter:description" content="[^"]*" \/>/,
-  `<meta name="twitter:description" content="${DESC}" />`);
-swap('twitter:image', /<meta name="twitter:image" content="[^"]*" \/>/,
-  '<meta name="twitter:image" content="https://livehardtruth.com/lht/campaign.jpg" />');
+// Brand description, canonical, Open Graph and Twitter tags. Injected
+// (see inject() above) because index.html no longer carries TSB copies
+// of these to overwrite.
+inject('brand-seo', `    <meta name="description" content="${DESC}" />
+    <link rel="canonical" href="https://livehardtruth.com" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${TITLE}" />
+    <meta property="og:description" content="${DESC}" />
+    <meta property="og:image" content="${IMAGE}" />
+    <meta property="og:url" content="https://livehardtruth.com" />
+    <meta property="og:site_name" content="Live Hard Truth" />
+    <meta property="og:locale" content="en_US" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${TITLE}" />
+    <meta name="twitter:description" content="${DESC}" />
+    <meta name="twitter:image" content="${IMAGE}" />`);
 
 // ── Structured data: replace TSB's LocalBusiness with an LHT Store ───────
 const lhtSchema = {
@@ -86,17 +101,23 @@ const lhtSchema = {
   },
   parentOrganization: { '@type': 'Organization', name: 'T-Shirt Brothers', url: 'https://tshirtbrothers.com' },
 };
+// Matches the TSB structured-data block and its preceding comment. TSB
+// now emits an @graph of Organization + WebSite + LocalBusiness, so the
+// old '<!-- Local Business Schema -->' marker is gone; anchor on the
+// ld+json script itself (it is the only one in the shell).
 swap('json-ld',
-  /<!-- Local Business Schema -->\s*<script type="application\/ld\+json">[\s\S]*?<\/script>/,
+  /(?:<!--[^>]*?Structured data[\s\S]*?-->\s*)?<script type="application\/ld\+json">[\s\S]*?<\/script>/,
   `<script type="application/ld+json">\n    ${JSON.stringify(lhtSchema, null, 2).replace(/\n/g, '\n    ')}\n    </script>`);
 
 // ── Noscript SEO fallback in the body ────────────────────────────────────
 // (index.html has TWO noscript blocks — the first is the font-loading
-// fallback in <head>; match the SEO one by its TSB h1.)
+// fallback in <head>; match the SEO one by its TSB branding line.)
+// No <h1> here: this block is inlined into the shell, so a heading
+// would compete with each page's real <h1>. Mirrors the TSB fix.
 swap('noscript',
-  /<noscript>\s*<h1>TShirt Brothers[\s\S]*?<\/noscript>/,
+  /<noscript>\s*<p><strong>T-Shirt Brothers[\s\S]*?<\/noscript>/,
   `<noscript>
-      <h1>Live Hard Truth — Streetwear Worn Loud</h1>
+      <p><strong>Live Hard Truth — Streetwear Worn Loud</strong></p>
       <p>The Fall 2026 heavyweight hoodie and jogger collection in eleven colors, plus the Hard Truth hat, mug and journal.</p>
       <p>Fulfilled by T-Shirt Brothers, Fairburn, GA.</p>
       <p>Contact: info@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>

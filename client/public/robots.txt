@@ -1,7 +1,132 @@
+# T-Shirt Brothers — robots.txt
+#
+# Policy: welcome crawlers that can SEND US CUSTOMERS (traditional
+# search indexes and the retrieval crawlers behind AI answer engines).
+# Keep customer/account surfaces and the admin app out of all indexes.
+# Model-TRAINING-only crawlers are listed separately at the bottom so
+# the decision for each is explicit rather than inherited from "*".
+#
+# The distinction matters and is easy to get wrong, because several
+# vendors run two or three differently-named bots:
+#
+#   OpenAI    OAI-SearchBot  -> indexes for ChatGPT search results (ALLOW)
+#             ChatGPT-User   -> live fetch when a user's prompt needs
+#                               the page right now (ALLOW)
+#             GPTBot         -> training corpus collection (see below)
+#   Google    Googlebot      -> web search + AI Overviews (ALLOW)
+#             Google-Extended-> Gemini training/grounding (see below)
+#   Anthropic ClaudeBot      -> training (see below)
+#             Claude-User / Claude-SearchBot -> user-driven fetch and
+#                               search indexing (ALLOW)
+#   Perplexity PerplexityBot -> search index (ALLOW)
+#             Perplexity-User-> live user-driven fetch (ALLOW)
+#   Microsoft bingbot        -> Bing + Copilot grounding (ALLOW)
+#
+# Blocking GPTBot does NOT remove us from ChatGPT's search results —
+# that is OAI-SearchBot's job. Likewise blocking Google-Extended does
+# not affect Google Search or AI Overviews ranking.
+
+# ---------------------------------------------------------------
+# Default: everything else
+# ---------------------------------------------------------------
+# NOTE ON ORDERING: every Disallow is listed BEFORE the closing
+# "Allow: /" in each group. Google and Bing resolve conflicts by
+# longest-match so order is irrelevant to them, but simpler parsers go
+# first-match-wins — with "Allow: /" at the top of the group they
+# treated every path as crawlable and silently ignored every Disallow
+# below it. Keep "Allow: /" last when editing these groups.
 User-agent: *
-Allow: /
 Disallow: /admin
 Disallow: /auth
 Disallow: /api/
+# Authenticated / transactional surfaces. These were previously
+# crawlable: they carry no public service information, and letting a
+# search or answer engine surface a cart or payment URL is a bad
+# customer experience. The prerenderer already skips them.
+Disallow: /account
+Disallow: /favorites
+Disallow: /payment
+Disallow: /mockup
+Disallow: /invoice/
+Disallow: /cart
+Disallow: /*/cart
+Disallow: /*/success
+Disallow: /quote/decline/
+Disallow: /quote/artwork/
+Disallow: /quote/accepted/
+Disallow: /embroidery/thanks/
+Disallow: /dtf/success
+Allow: /
+
+# ---------------------------------------------------------------
+# AI answer-engine RETRIEVAL + SEARCH crawlers — explicitly allowed.
+# These are how customers discover us through ChatGPT, Perplexity,
+# Copilot and Gemini. Same path exclusions as above.
+# ---------------------------------------------------------------
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Claude-User
+User-agent: Claude-SearchBot
+User-agent: Applebot
+Disallow: /admin
+Disallow: /auth
+Disallow: /api/
+Disallow: /account
+Disallow: /favorites
+Disallow: /payment
+Disallow: /mockup
+Disallow: /invoice/
+Disallow: /cart
+Disallow: /*/cart
+Disallow: /*/success
+Allow: /
+
+# ---------------------------------------------------------------
+# Model-TRAINING crawlers.
+#
+# Currently ALLOWED on public marketing pages. Rationale: our public
+# service, location and pricing pages are the exact content we want an
+# assistant to have learned about us, and customers are already
+# reporting that ChatGPT recommends the shop. There is no proprietary
+# content on these URLs — the catalog, pricing engine, Design Studio
+# and all customer data sit behind /api/ and the disallowed paths,
+# which stay blocked for these bots too.
+#
+# To opt OUT of training while KEEPING AI search visibility, change the
+# "Allow: /" below to "Disallow: /". The retrieval crawlers above are
+# unaffected, so ChatGPT/Perplexity/Copilot can still find and cite us.
+# ---------------------------------------------------------------
+User-agent: GPTBot
+User-agent: Google-Extended
+User-agent: ClaudeBot
+User-agent: Applebot-Extended
+User-agent: meta-externalagent
+Disallow: /admin
+Disallow: /auth
+Disallow: /api/
+Disallow: /account
+Disallow: /favorites
+Disallow: /payment
+Disallow: /mockup
+Disallow: /invoice/
+Disallow: /cart
+Disallow: /*/cart
+Disallow: /*/success
+Allow: /
+
+# ---------------------------------------------------------------
+# Bulk scrapers with no discovery value — disallowed.
+#
+# These send no referral traffic and answer no customer questions;
+# CCBot in particular republishes a crawl archive we have no
+# relationship with, and Bytespider has a history of ignoring crawl
+# budgets and hammering small origins. Excluding them costs us zero
+# visibility in any system a customer actually uses.
+# ---------------------------------------------------------------
+User-agent: CCBot
+User-agent: Bytespider
+Disallow: /
 
 Sitemap: https://tshirtbrothers.com/sitemap.xml
