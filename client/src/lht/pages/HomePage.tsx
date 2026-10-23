@@ -83,7 +83,10 @@ export default function HomePage() {
       + 'photographed exactly as it is and built to be worn loud.'),
     ctaLabel: slotField(content, 'hero', 'cta_label', 'Shop the drop'),
     ctaHref: slotField(content, 'hero', 'cta_href', '#shop'),
-    imageUrl: slotField(content, 'hero', 'image_url', '/lht/campaign.jpg'),
+    // Fall 2026 campaign shot. A 99KB JPEG re-encode of the 1.9MB PNG
+    // Doc uploaded through the Branding panel — this is the hero, so it
+    // is the page's LCP element and the PNG would have been felt.
+    imageUrl: slotField(content, 'hero', 'image_url', '/lht/hero-fall-2026.jpg'),
   };
 
   return (
@@ -94,32 +97,65 @@ export default function HomePage() {
       </Helmet>
 
       {/* Hero — copy and image come from the back office when the owner has
-          set them, otherwise from the defaults below. */}
+          set them, otherwise from the defaults below.
+
+          Split layout (copy left, image right) rather than the image
+          full-bleed behind the text at opacity-50.
+
+          The old treatment only worked for one specific photo. It
+          assumed the product sat on the RIGHT of the frame with empty
+          space on the left for the headline to land on — true of the
+          original chestnut campaign shot, and false of almost anything
+          else. Point the back office at a photo composed the other way
+          (the Fall 2026 plinth shot, product on the left) and the
+          headline washes straight over the garment.
+
+          Since the whole point of the content slot is that the owner
+          can change this image without a deploy, the layout must not
+          have an opinion about where the product sits in the frame.
+          Giving the photo its own column removes that coupling: any
+          image works, it renders at full opacity instead of as a
+          50%-faded backdrop, and the copy keeps a clean ink background
+          to sit on. Same treatment the showroom section below already
+          gives its photos. */}
       <section id="top" className="relative overflow-hidden">
-        <img
-          src={hero.imageUrl}
-          alt="Live Hard Truth hoodie and classic joggers in chestnut brown"
-          className="absolute inset-0 h-full w-full object-cover opacity-50"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-lht-ink via-lht-ink/60 to-transparent" />
-        <div className="relative max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-28 sm:py-40 lg:py-52">
-          <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
-            {hero.eyebrow}
-          </p>
-          <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl max-w-4xl">
-            {hero.headline}
-          </h1>
-          <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
-            {hero.subcopy}
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
-              className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
-              {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
-            </a>
-            <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
-              Start your Truth Session
-            </Link>
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-16 sm:py-20 lg:py-24">
+          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
+            <div>
+              <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
+                {hero.eyebrow}
+              </p>
+              <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl">
+                {hero.headline}
+              </h1>
+              <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
+                {hero.subcopy}
+              </p>
+              <div className="mt-9 flex flex-wrap gap-3">
+                <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
+                  className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
+                  {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
+                </a>
+                <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
+                  Start your Truth Session
+                </Link>
+              </div>
+            </div>
+
+            {/* object-left rather than centred: the owner-supplied image
+                is cropped to this column's 4:3, and campaign photography
+                tends to put the product on one side with negative space
+                on the other (the Fall 2026 default is product-left, wide
+                empty cream to the right). Anchoring left fills the frame
+                with product instead of blank wall. */}
+            <div className="aspect-[4/3] overflow-hidden bg-lht-ink-soft">
+              <img
+                src={hero.imageUrl}
+                alt={hero.headline}
+                fetchPriority="high"
+                className="h-full w-full object-cover object-left"
+              />
+            </div>
           </div>
         </div>
       </section>
