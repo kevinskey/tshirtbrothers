@@ -2,10 +2,14 @@
 // `sandycreekpto.tshirtbrothers.com` and, if so, exposes the leftmost
 // label as the "store handle" the storefront should render.
 //
-// A single wildcard DNS + wildcard TLS record on *.tshirtbrothers.com
-// gives every store its own subdomain at zero per-store ops cost. This
-// helper is what lets the SPA figure out which store to show without
+// This helper is what lets the SPA figure out which store to show without
 // any URL prefix.
+//
+// NOTE: there is no wildcard DNS and no wildcard TLS on *.tshirtbrothers.com
+// (verified 2026-10-23 — shop.tshirtbrothers.com has its own single-name
+// cert). Each store subdomain needs a hand-made A record, vhost, and certbot
+// cert; see deploy/nginx/. Setting `stores.subdomain` alone only makes the
+// admin UI advertise a hostname that does not resolve.
 import { useParams } from 'react-router-dom';
 
 const ROOT_DOMAINS = new Set([
