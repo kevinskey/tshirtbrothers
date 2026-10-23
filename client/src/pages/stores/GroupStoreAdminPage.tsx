@@ -171,6 +171,7 @@ export default function GroupStoreAdminPage({ slug: slugProp }: { slug?: string 
 interface LoginBrand {
   name?: string;
   hero_url?: string;
+  login_image_url?: string;
   logo_url?: string;
   primary_color?: string;
   tagline?: string;
@@ -195,6 +196,7 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
           setBrand({
             name: store.name,
             hero_url: store.brand_json?.hero_url,
+            login_image_url: store.brand_json?.login_image_url,
             logo_url: store.brand_json?.logo_url,
             primary_color: store.brand_json?.primary_color,
             tagline: store.brand_json?.tagline,
@@ -205,7 +207,10 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
     return () => { cancelled = true; };
   }, [slug]);
 
-  const branded = !!brand.hero_url;
+  // A store can give its sign-in page its own image. Falling back to the
+  // storefront hero keeps every store that hasn't set one looking as before.
+  const loginImage = brand.login_image_url || brand.hero_url;
+  const branded = !!loginImage;
   const accent = brand.primary_color || '#111827';
   // Dark text on light accents (e.g. LHT cyan), white on dark ones.
   const accentText = (() => {
@@ -266,10 +271,10 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
         <>
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${brand.hero_url})` }}
+            style={{ backgroundImage: `url(${loginImage})` }}
             aria-hidden
           />
-          <div className="absolute inset-0 bg-black/65" aria-hidden />
+          <div className="absolute inset-0 bg-black/45" aria-hidden />
         </>
       )}
       <div className={`relative w-full max-w-md rounded-lg p-6 ${branded ? 'bg-white/95 backdrop-blur shadow-2xl' : 'bg-white border border-gray-200'}`}>
