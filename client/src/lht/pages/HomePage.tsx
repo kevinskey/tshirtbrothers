@@ -5,8 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchProducts, postLead } from '../lib/api';
-import { JOGGERS_SLUG, colorsFor, photoFor, usd } from '../lib/catalog';
+import { JOGGERS_SLUG, STORE_SLUG, colorsFor, photoFor, usd } from '../lib/catalog';
 import { useLhtPath } from '../lib/base';
+import { useStoreContent, slotField } from '@/lib/useStoreContent';
 import ProductCard from '../components/ProductCard';
 
 const VALUES = [
@@ -29,6 +30,7 @@ const FILTERS: { key: string; label: string; match: (slug: string) => boolean }[
 export default function HomePage() {
   const p = useLhtPath();
   const location = useLocation();
+  const { content } = useStoreContent(STORE_SLUG);
   const { data } = useQuery({ queryKey: ['lht-products'], queryFn: fetchProducts });
   const products = useMemo(() => data?.products ?? [], [data]);
 
@@ -70,6 +72,20 @@ export default function HomePage() {
   const shown = activeFilter ? products.filter((x) => activeFilter.match(x.slug)) : products;
   const heroPhoto = photoFor(JOGGERS_SLUG, selectedColor, joggers?.cover_image ?? '/lht/set-espresso.jpg');
 
+  // Every string below is the fallback the page shipped with, so clearing a
+  // field in the back office restores this wording rather than blanking the
+  // banner.
+  const hero = {
+    eyebrow: slotField(content, 'hero', 'eyebrow', 'Fall 2026 · Now shipping'),
+    headline: slotField(content, 'hero', 'headline', 'Live Hard Truth'),
+    subcopy: slotField(content, 'hero', 'subcopy',
+      'Truth looks good on you. The heavyweight hoodie and jogger collection, '
+      + 'photographed exactly as it is and built to be worn loud.'),
+    ctaLabel: slotField(content, 'hero', 'cta_label', 'Shop the drop'),
+    ctaHref: slotField(content, 'hero', 'cta_href', '#shop'),
+    imageUrl: slotField(content, 'hero', 'image_url', '/lht/campaign.jpg'),
+  };
+
   return (
     <div className="bg-lht-ink text-lht-cream font-lht-sans">
       <Helmet>
@@ -77,28 +93,29 @@ export default function HomePage() {
         <meta name="description" content="Live Hard Truth luxury streetwear. Shop the Fall 2026 heavyweight hoodie and jogger collection in eleven colors, and find your Truth Color." />
       </Helmet>
 
-      {/* Hero */}
+      {/* Hero — copy and image come from the back office when the owner has
+          set them, otherwise from the defaults below. */}
       <section id="top" className="relative overflow-hidden">
         <img
-          src="/lht/campaign.jpg"
+          src={hero.imageUrl}
           alt="Live Hard Truth hoodie and classic joggers in chestnut brown"
           className="absolute inset-0 h-full w-full object-cover opacity-50"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-lht-ink via-lht-ink/60 to-transparent" />
         <div className="relative max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-28 sm:py-40 lg:py-52">
           <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
-            Fall 2026 · Now shipping
+            {hero.eyebrow}
           </p>
           <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl max-w-4xl">
-            Live Hard Truth
+            {hero.headline}
           </h1>
           <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
-            Truth looks good on you. The heavyweight hoodie and jogger
-            collection, photographed exactly as it is and built to be worn loud.
+            {hero.subcopy}
           </p>
           <div className="mt-9 flex flex-wrap gap-3">
-            <a href={p('/#shop')} className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
-              Shop the drop <ArrowRight className="h-4 w-4" aria-hidden />
+            <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
+              className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
+              {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
             </a>
             <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
               Start your Truth Session
