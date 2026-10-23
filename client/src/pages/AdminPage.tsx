@@ -316,6 +316,12 @@ const STATUS_COLORS: Record<string, string> = {
 // all of them, not just 'accepted'.
 const POST_DEPOSIT_STATUSES = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
 
+// Fairburn, GA combined sales tax — matches the quote engine's TAX_RATE.
+// Used as the invoice editor's starting rate for hand-built invoices only;
+// anything derived from a quote opens at 0 because quote estimated_price is
+// already tax-inclusive.
+const DEFAULT_INVOICE_TAX_RATE = '7.75';
+
 type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
 type InvoiceView = 'list' | 'create' | 'preview';
 
@@ -1143,13 +1149,19 @@ export default function AdminPage() {
       due_date: '',
       mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
+    // A quote's estimated_price already contains its sales tax
+    // (price_breakdown.tax), so the line items we just built are
+    // tax-inclusive. Leaving the rate at the default would make the
+    // auto-recompute effect add tax a second time — that's how quote #215
+    // picked up $147.85 of phantom tax on a $1,848.17 order.
+    setInvoiceTaxRate('0');
     setInvoiceQuoteId(Number(q.id) || null);
     setActiveSection('invoices');
     setInvoiceView('create');
     toast(`Quote #${q.id} loaded — review and Save & Send`);
   }
 
-  const [invoiceTaxRate, setInvoiceTaxRate] = useState('8');
+  const [invoiceTaxRate, setInvoiceTaxRate] = useState(DEFAULT_INVOICE_TAX_RATE);
   const [invoiceRequireDeposit, setInvoiceRequireDeposit] = useState(true);
   const [invoiceDepositPercent, setInvoiceDepositPercent] = useState('50');
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
@@ -2176,6 +2188,8 @@ export default function AdminPage() {
     setEditingInvoiceFull(null);
     setInvoiceQuoteId(null);
     setMockupAttachToInvoice(false);
+    // Don't inherit the rate recovered from whichever invoice was open last.
+    setInvoiceTaxRate(DEFAULT_INVOICE_TAX_RATE);
   }
 
   function calcInvoiceSubtotal() {
@@ -2372,6 +2386,18 @@ export default function AdminPage() {
     setEditingInvoiceId(inv.id);
     setEditingInvoiceFull(inv);
     setInvoiceQuoteId(inv.quote_id != null ? Number(inv.quote_id) : null);
+    // Recover the rate this invoice was actually taxed at, so merely opening
+    // it (and saving/re-sending) doesn't rewrite its tax at the default rate.
+    // Derived from the item subtotal rather than inv.subtotal because that's
+    // what the auto-recompute effect multiplies.
+    const itemSubtotal = (Array.isArray(inv.items) ? inv.items : []).reduce(
+      (sum, it) => sum + ((it.quantity || 0) * (it.unit_price || 0)) + ((it.shipping_cost || 0) * (it.quantity || 0)),
+      0,
+    );
+    const storedTax = Number(inv.tax) || 0;
+    // Blank rate when there's nothing to divide by: the effect bails on a
+    // non-finite rate, which leaves the stored tax exactly as it was.
+    setInvoiceTaxRate(itemSubtotal > 0 ? String(+((storedTax / itemSubtotal) * 100).toFixed(4)) : '');
     setInvoiceForm({
       customer_name: inv.customer_name || '',
       customer_email: inv.customer_email || '',
