@@ -41,9 +41,49 @@ import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 const router = Router();
 
-// ── Create a paid invoice record + email a receipt when a balance payment
-// succeeds. Idempotent: if an invoice for this quote already exists it just
-// marks it paid. Returns the invoice row (or null if creation failed).
+// Decide what an invoice reads after a charge clears, from money we can
+// actually account for: the payments already recorded plus this charge.
+//
+// Extracted and exported so the rule is testable. The bug it guards against
+// (routes/payments.test.js): this used to synthesize a deposit entry for
+// (total - chargeAmount) whenever a charge came in short, assuming a deposit
+// must have been collected earlier. Quotes #215 and #221 (2026-10-13) each
+// paid a single 50% charge through the balance route, had the other half
+// invented, and were booked paid in full — ~$1,094 of revenue that never
+// existed, plus a paid-in-full receipt to each customer.
+//
+// A genuinely collected deposit is always already on the invoice: Stripe
+// deposits via createDepositInvoiceForQuote, offline cash/check via
+// POST /invoices/:id/record-payment. So priorPayments IS the record. If it
+// is empty, nothing was collected.
+export function reconcileInvoicePayments({ total, priorPayments = [], chargeAmount, chargeDate }) {
+  const invoiceTotal = +(Number(total) || 0).toFixed(2);
+  const charge = +(Number(chargeAmount) || 0).toFixed(2);
+  const prior = (Array.isArray(priorPayments) ? priorPayments : []).filter(
+    (p) => p && Number.isFinite(Number(p.amount)),
+  );
+  const payments = [
+    ...prior,
+    { amount: charge, method: 'stripe', date: chargeDate || new Date().toISOString() },
+  ];
+  const amountPaid = +payments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2);
+  const amountDue = Math.max(0, +(invoiceTotal - amountPaid).toFixed(2));
+  return {
+    payments,
+    amountPaid,
+    amountDue,
+    settled: amountDue <= 0,
+    status: amountDue <= 0 ? 'paid' : 'partial',
+    depositPercent: invoiceTotal > 0
+      ? Math.max(0, Math.min(100, Math.round((amountPaid / invoiceTotal) * 100)))
+      : 0,
+  };
+}
+
+// ── Create/advance the invoice for a quote when a balance or full payment
+// clears, and email a receipt IF the order is actually settled. Idempotent:
+// an existing linked invoice just gets this charge appended.
+// Returns the invoice row (or null if creation failed).
 async function createPaidInvoiceForQuote(quote, amountPaidCents) {
   try {
     const total = Number(quote.estimated_price || 0);
@@ -57,26 +97,10 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
       },
     ];
 
-    // This helper only runs when the quote is settled in full (balance or
-    // full payment), so the invoice must show amount_paid = total, with the
-    // payment history reconstructed: the charge that just cleared, plus a
-    // deposit entry for whatever was collected before it. Recording only the
-    // final charge used to leave invoices reading "Paid $371 / Due $0" on a
-    // $788 order.
     const chargedNow = amountPaid || total;
     const nowIso = new Date().toISOString();
-    const historyEntries = [];
-    if (chargedNow < total) {
-      historyEntries.push({
-        amount: +(total - chargedNow).toFixed(2),
-        method: 'stripe',
-        note: 'deposit',
-        date: quote.accepted_at ? new Date(quote.accepted_at).toISOString() : nowIso,
-      });
-    }
-    historyEntries.push({ amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso });
 
-    // If we already created an invoice for this quote, just mark it paid.
+    // If we already created an invoice for this quote, append to it.
     const existing = await pool.query(
       'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
       [quote.id],
@@ -87,28 +111,40 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
       const priorPayments = Array.isArray(inv.payments)
         ? inv.payments
         : (typeof inv.payments === 'string' ? JSON.parse(inv.payments || '[]') : []);
-      // Keep any payments already on the invoice; only backfill the deposit
-      // entry when nothing was recorded, so we never double-list a deposit
-      // that came through applyPaymentToInvoice.
-      const newPayments = priorPayments.length > 0
-        ? [...priorPayments, { amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso }]
-        : historyEntries;
-      const invTotal = Number(inv.total) || total;
+      const book = reconcileInvoicePayments({
+        total: Number(inv.total) || total,
+        priorPayments,
+        chargeAmount: chargedNow,
+        chargeDate: nowIso,
+      });
       const { rows } = await pool.query(
-        `UPDATE invoices SET amount_paid = $1, amount_due = GREATEST(0, total - $1), payments = $2,
-           status = CASE WHEN total - $1 <= 0 THEN 'paid' ELSE 'partial' END, updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [Math.min(total, invTotal), JSON.stringify(newPayments), inv.id],
+        `UPDATE invoices SET amount_paid = $1, amount_due = $2, payments = $3,
+           status = $4,
+           paid_at = CASE WHEN $4 = 'paid' THEN COALESCE(paid_at, NOW()) ELSE NULL END,
+           updated_at = NOW()
+         WHERE id = $5 RETURNING *`,
+        [book.amountPaid, book.amountDue, JSON.stringify(book.payments), book.status, inv.id],
       );
       invoice = rows[0];
     } else {
+      // No invoice yet means no deposit was ever recorded, so this charge is
+      // all we can book. subtotal = total with tax 0 because quote
+      // estimated_price is already tax-inclusive (price_breakdown.tax is
+      // folded into it) — adding tax here would double-charge it.
       const invoiceNumber = await generateInvoiceNumber();
+      const book = reconcileInvoicePayments({
+        total,
+        priorPayments: [],
+        chargeAmount: chargedNow,
+        chargeDate: nowIso,
+      });
       const { rows } = await pool.query(
         `INSERT INTO invoices
            (invoice_number, customer_name, customer_email, customer_phone,
             items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-            payments, quote_id, status)
-         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,0,$9,$10,'paid')
+            payments, quote_id, status, deposit_percent, paid_at)
+         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,$9,$10,$11,$12,$13,
+                 CASE WHEN $12 = 'paid' THEN NOW() ELSE NULL END)
          RETURNING *`,
         [
           invoiceNumber,
@@ -118,28 +154,43 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
           JSON.stringify(items),
           total,
           total,
-          total,
-          JSON.stringify(historyEntries),
+          book.amountPaid,
+          book.amountDue,
+          JSON.stringify(book.payments),
           quote.id,
+          book.status,
+          book.depositPercent,
         ],
       );
       invoice = rows[0];
     }
 
-    // Best-effort notifications (don't block or fail the webhook)
-    try {
-      if (typeof sendPaidInvoiceReceipt === 'function' && invoice.customer_email) {
-        await sendPaidInvoiceReceipt(invoice);
-      }
-    } catch (emailErr) {
-      console.error('[invoice receipt email] failed:', emailErr.message);
+    // Best-effort notifications (don't block or fail the webhook).
+    // Only on a genuinely settled invoice — a paid-in-full receipt for a
+    // partial payment tells the customer they owe nothing when they do.
+    const settled = Number(invoice.amount_due) <= 0;
+    if (!settled) {
+      console.warn(
+        `[createPaidInvoiceForQuote] Quote #${quote.id} → ${invoice.invoice_number} still owes ` +
+        `$${Number(invoice.amount_due).toFixed(2)} of $${Number(invoice.total).toFixed(2)} — ` +
+        `balance charge came in short, suppressing paid-in-full receipt`,
+      );
     }
-    try {
-      if (typeof smsInvoiceReceiptToCustomer === 'function' && invoice.customer_phone) {
-        await smsInvoiceReceiptToCustomer(invoice);
+    if (settled) {
+      try {
+        if (typeof sendPaidInvoiceReceipt === 'function' && invoice.customer_email) {
+          await sendPaidInvoiceReceipt(invoice);
+        }
+      } catch (emailErr) {
+        console.error('[invoice receipt email] failed:', emailErr.message);
       }
-    } catch (smsErr) {
-      console.error('[invoice receipt sms] failed:', smsErr.message);
+      try {
+        if (typeof smsInvoiceReceiptToCustomer === 'function' && invoice.customer_phone) {
+          await smsInvoiceReceiptToCustomer(invoice);
+        }
+      } catch (smsErr) {
+        console.error('[invoice receipt sms] failed:', smsErr.message);
+      }
     }
 
     return invoice;
@@ -507,8 +558,33 @@ router.post('/create-balance-checkout', async (req, res, next) => {
     }
 
     const total = parseFloat(quote.estimated_price || 0);
-    const depositPaid = parseFloat(quote.deposit_amount || 0);
-    const balanceDue = total - depositPaid;
+
+    // Charge total minus what we can PROVE was collected: the payments
+    // recorded on this quote's invoice (Stripe deposits land there via
+    // createDepositInvoiceForQuote, offline cash/check via
+    // POST /invoices/:id/record-payment). quote.deposit_amount is not
+    // evidence of collection — admins set it as the *requested* deposit
+    // when building a quote, so trusting it let quote #215 pay $924.09
+    // against a $1,848.17 order and be booked as settled (2026-10-13).
+    const invRes = await pool.query(
+      'SELECT id, payments FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+      [quoteId],
+    );
+    let collected = 0;
+    if (invRes.rows.length > 0) {
+      const raw = invRes.rows[0].payments;
+      const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []);
+      collected = +list.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toFixed(2);
+    }
+    const requested = parseFloat(quote.deposit_amount || 0);
+    if (requested > collected) {
+      console.warn(
+        `[balance-checkout] Quote #${quoteId}: deposit_amount $${requested.toFixed(2)} exceeds ` +
+        `recorded payments $${collected.toFixed(2)} — billing against recorded payments. ` +
+        `If a deposit was taken offline, record it on the invoice first.`,
+      );
+    }
+    const balanceDue = +(total - collected).toFixed(2);
 
     if (balanceDue <= 0) {
       return res.status(400).json({ error: 'No balance due — already paid in full' });
@@ -1167,25 +1243,50 @@ async function handleCheckoutSessionCompleted(session) {
         // balance_paid_at IS NULL makes webhook and success-page fallback
         // mutually exclusive (the fallback already guards) — whichever runs
         // first does the bookkeeping AND the paid-in-full notifications.
+        //
+        // Credit only what cleared. This used to set
+        // deposit_amount = estimated_price and stamp balance_paid_at
+        // unconditionally, so a short charge through the balance route
+        // marked the whole order settled (quotes #215/#221, 2026-10-13).
+        // createPaidInvoiceForQuote is the arbiter: if the invoice still
+        // shows a balance, the quote stays unsettled and the customer gets
+        // no paid-in-full confirmation.
         const result = await pool.query(
           `UPDATE quotes SET
-            deposit_amount = estimated_price,
-            balance_paid_at = NOW()
+            deposit_amount = LEAST(estimated_price, COALESCE(deposit_amount, 0) + $2)
           WHERE id = $1 AND balance_paid_at IS NULL
           RETURNING *`,
-          [quoteId]
+          [quoteId, netTotalCents / 100]
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
-          console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (netTotalCents / 100));
-          await createPaidInvoiceForQuote(quote, netTotalCents);
-          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
-          sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
-          sendPushToAdmins({
-            title: 'Balance paid 💰',
-            body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Paid in full.`,
-            data: { type: 'payment', id: quote.id },
-          }).catch(() => {});
+          console.log('[Stripe] Quote #' + quoteId + ' balance payment: $' + (netTotalCents / 100));
+          const invoice = await createPaidInvoiceForQuote(quote, netTotalCents);
+          const settled = invoice ? Number(invoice.amount_due) <= 0 : false;
+          if (!settled) {
+            const owed = invoice ? Number(invoice.amount_due).toFixed(2) : '?';
+            console.warn(
+              `[Stripe] Quote #${quoteId} balance route charged $${(netTotalCents / 100).toFixed(2)} ` +
+              `but $${owed} is still due — leaving the quote unsettled`,
+            );
+            sendPushToAdmins({
+              title: 'Partial payment ⚠️',
+              body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Still owes $${owed}.`,
+              data: { type: 'payment', id: quote.id },
+            }).catch(() => {});
+          } else {
+            await pool.query(
+              'UPDATE quotes SET balance_paid_at = COALESCE(balance_paid_at, NOW()) WHERE id = $1',
+              [quoteId],
+            );
+            sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+            sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
+            sendPushToAdmins({
+              title: 'Balance paid 💰',
+              body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Paid in full.`,
+              data: { type: 'payment', id: quote.id },
+            }).catch(() => {});
+          }
         }
       } else if (paymentType === 'full') {
         // Full payment from the choice screen — accept the quote AND
@@ -1628,20 +1729,32 @@ router.get('/success', async (req, res, next) => {
       const fbFeeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
       const fbNetCents = (stripeDetails.amount_total || 0) - fbFeeCents;
       if (paymentType === 'balance') {
+        // Credit only what cleared, and let the invoice decide whether the
+        // order is settled — same rule as the webhook branch above.
         const updated = await pool.query(
           `UPDATE quotes SET
-             deposit_amount = estimated_price,
-             balance_paid_at = NOW()
+             deposit_amount = LEAST(estimated_price, COALESCE(deposit_amount, 0) + $2)
            WHERE id = $1 AND balance_paid_at IS NULL
            RETURNING *`,
-          [quoteId],
+          [quoteId, fbNetCents / 100],
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
-          console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (fbNetCents / 100));
+          console.log('[Payment Success] Quote #' + quoteId + ' balance payment verified: $' + (fbNetCents / 100));
           invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
-          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
-          sendBalancePaidToAdmin(quote, fbNetCents / 100).catch(() => {});
+          if (invoiceForQuote && Number(invoiceForQuote.amount_due) <= 0) {
+            await pool.query(
+              'UPDATE quotes SET balance_paid_at = COALESCE(balance_paid_at, NOW()) WHERE id = $1',
+              [quoteId],
+            );
+            sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+            sendBalancePaidToAdmin(quote, fbNetCents / 100).catch(() => {});
+          } else {
+            console.warn(
+              `[Payment Success] Quote #${quoteId} still owes ` +
+              `$${invoiceForQuote ? Number(invoiceForQuote.amount_due).toFixed(2) : '?'} — not marking settled`,
+            );
+          }
         } else {
           // Already balance-paid earlier — surface the existing invoice.
           const existing = await pool.query(
