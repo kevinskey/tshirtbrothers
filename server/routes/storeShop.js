@@ -149,7 +149,11 @@ router.get('/:handle/products', async (req, res, next) => {
                 ON c.id = pc.store_category_id AND c.active
         WHERE ${where}
         GROUP BY p.id
-        ORDER BY p.sort_order, p.published_at DESC
+        -- p.id last so the order is deterministic. Seeded stores share one
+        -- published_at to the microsecond, which left sort_order and
+        -- published_at both tied and the result order up to the planner —
+        -- it visibly reshuffled when this query gained its GROUP BY.
+        ORDER BY p.sort_order, p.published_at DESC, p.id
         LIMIT 200`,
       params,
     );
