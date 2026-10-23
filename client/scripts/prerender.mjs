@@ -119,6 +119,38 @@ function pathToFile(routePath) {
   return join(DIST, routePath.replace(/^\//, ''), 'index.html');
 }
 
+/**
+ * Guarantee every prerendered page carries a self-referencing canonical.
+ *
+ * Normally the Seo component (react-helmet-async) supplies it, and this
+ * is a no-op. But Helmet manages its tags from a MOUNTED component: if a
+ * page's Seo unmounts on some late render path, Helmet removes the
+ * canonical and description it had added while leaving document.title
+ * alone. /design does exactly that during prerender — it falls to a
+ * different branch in headless Chrome and the captured HTML has the
+ * right title and no canonical.
+ *
+ * Previously this was masked, badly: index.html hard-coded a canonical
+ * pointing at the HOMEPAGE, so such a page shipped claiming to BE the
+ * homepage — a signal to drop it from the index entirely. Removing that
+ * static tag fixed the wrong-canonical problem and exposed the missing
+ * one, which this closes.
+ *
+ * Only ever ADDS a canonical when none is present; a page that rendered
+ * its own is left untouched.
+ */
+function ensureCanonical(html, route) {
+  if (/<link[^>]+rel="canonical"/i.test(html)) return html;
+  const href = `https://tshirtbrothers.com${route === '/' ? '/' : route}`;
+  const tag = `<link rel="canonical" href="${href}" data-prerender-fallback="true">`;
+  if (html.includes('</head>')) {
+    console.log(`    (injected fallback canonical for ${route})`);
+    return html.replace('</head>', `  ${tag}\n</head>`);
+  }
+  console.warn(`    ! ${route} has no </head>; could not inject a canonical`);
+  return html;
+}
+
 async function main() {
   const routes = await fetchRoutes();
   console.log(`[prerender] ${routes.length} routes to render`);
@@ -188,7 +220,7 @@ async function main() {
       // last data-dependent render.
       await new Promise((r) => setTimeout(r, settleMs));
 
-      const html = await page.content();
+      const html = ensureCanonical(await page.content(), route);
       const outPath = pathToFile(route);
       await mkdir(dirname(outPath), { recursive: true });
       await writeFile(outPath, html, 'utf8');
