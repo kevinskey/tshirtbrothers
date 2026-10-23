@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Seo from '@/components/Seo';
 import { logActivity, logActivityOnce, rememberEmail } from '@/lib/activity';
+import { getAttribution, type DiscoveryChannel } from '@/lib/referral';
 import {
   ArrowLeft, ArrowRight, Check, Loader2, AlertTriangle, Mail, CreditCard,
   CalendarDays, Sparkles,
@@ -86,6 +87,54 @@ function formatPhone(v: string): string {
 const STEPS = ['products', 'qty', 'color', 'quality', 'date', 'art', 'name', 'phone', 'email', 'quote'] as const;
 type Step = typeof STEPS[number];
 
+/**
+ * "How did you hear about us?" options, shown on the email step.
+ *
+ * AI assistants are listed FIRST and individually, not merged into one
+ * "AI / chatbot" line, because the point of asking is to find out which
+ * assistants recommend the shop — a single bucket answers "some AI"
+ * and nothing more. They lead the list because customers are already
+ * reporting ChatGPT referrals that no analytics tool can see: an
+ * assistant's recommendation usually arrives as a direct visit.
+ *
+ * `value` strings are stable identifiers — they get written into quote
+ * notes and activity_events, so changing one orphans existing data.
+ * Add new options; don't rename old ones.
+ */
+const HEARD_FROM_OPTIONS = [
+  { value: 'chatgpt',       label: 'ChatGPT',                      labelEs: 'ChatGPT' },
+  { value: 'google_ai',     label: 'Google AI / AI Overview',      labelEs: 'Google AI / Resumen de IA' },
+  { value: 'gemini',        label: 'Gemini',                       labelEs: 'Gemini' },
+  { value: 'perplexity',    label: 'Perplexity',                   labelEs: 'Perplexity' },
+  { value: 'copilot',       label: 'Microsoft Copilot',            labelEs: 'Microsoft Copilot' },
+  { value: 'other_ai',      label: 'Another AI assistant',         labelEs: 'Otro asistente de IA' },
+  { value: 'google_search', label: 'Google search',                labelEs: 'Búsqueda de Google' },
+  { value: 'google_maps',   label: 'Google Maps',                  labelEs: 'Google Maps' },
+  { value: 'referral',      label: 'Friend or family recommended us', labelEs: 'Me recomendó un amigo o familiar' },
+  { value: 'repeat',        label: "I'm a returning customer",     labelEs: 'Soy cliente habitual' },
+  { value: 'social',        label: 'Facebook or Instagram',        labelEs: 'Facebook o Instagram' },
+  { value: 'drove_by',      label: 'Saw the shop or a sign',       labelEs: 'Vi la tienda o un letrero' },
+  { value: 'shirt',         label: 'Saw a shirt you printed',      labelEs: 'Vi una camisa que imprimieron' },
+  { value: 'other',         label: 'Something else',               labelEs: 'Otra cosa' },
+] as const;
+
+/**
+ * Maps a detected referrer channel onto a HEARD_FROM_OPTIONS value, so
+ * the dropdown can be PRE-SELECTED when we already know the answer.
+ * The customer can always override it — their answer is better evidence
+ * than our guess, which is why the field stays editable.
+ */
+const CHANNEL_TO_HEARD_FROM: Partial<Record<DiscoveryChannel, string>> = {
+  chatgpt: 'chatgpt',
+  gemini: 'gemini',
+  perplexity: 'perplexity',
+  copilot: 'copilot',
+  claude: 'other_ai',
+  other_ai: 'other_ai',
+  organic_search: 'google_search',
+  social: 'social',
+};
+
 // Router state handed over by the Design Studio's "Get Price" button
 // (DesignStudioPage handleGetPrice). The studio has already uploaded the
 // captures to Spaces; only the URLs travel here. This page took over
@@ -141,6 +190,18 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+
+  // "How did you hear about us?" — optional, never gates submission.
+  // Pre-selected from the detected referrer when we can infer it (a
+  // visitor who arrived from chatgpt.com gets ChatGPT already chosen),
+  // but always editable: the customer's own answer is better evidence
+  // than our inference, especially since an AI recommendation most
+  // often arrives as a direct visit we cannot detect at all.
+  const attribution = useMemo(() => getAttribution(), []);
+  const [heardFrom, setHeardFrom] = useState(
+    () => (attribution ? CHANNEL_TO_HEARD_FROM[attribution.channel] ?? '' : ''),
+  );
+  const [heardFromOther, setHeardFromOther] = useState('');
 
   // Known customers skip the interview (Kevin 2026-10-06): a signed-in
   // visitor's name/phone/email come from their account and the wizard
@@ -401,6 +462,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     setSubmitBusy(mode);
     setError(null);
     try {
+      // Human-readable label for the shop, so whoever reads the quote
+      // sees "Heard about us: ChatGPT" rather than a raw enum value.
+      const heardFromLabel = heardFrom === 'other'
+        ? (heardFromOther.trim() || 'Something else')
+        : HEARD_FROM_OPTIONS.find((o) => o.value === heardFrom)?.label;
+
       const notes = [
         `Easy Quote wizard`,
         studio && 'Designed in Design Studio',
@@ -410,6 +477,11 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
         `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
         needBy && `Need by: ${needBy}${isRush ? ' (RUSH)' : ''}`,
+        // Appended to the existing notes string rather than added as a
+        // new quotes column: it reaches the shop immediately with no
+        // schema migration, and the structured copy for analysis goes
+        // to activity_events below. Only included when answered.
+        heardFromLabel && `Heard about us: ${heardFromLabel}`,
       ].filter(Boolean).join(' · ');
       const res = await fetch('/api/quote/save', {
         method: 'POST',
@@ -429,6 +501,26 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       // who they are. quote_submitted itself is logged server-side.
       rememberEmail(email.trim());
       logActivity('quote_wizard_submitted', { quote_id: data.id, mode });
+
+      // Structured attribution for this quote, so the admin DB can answer
+      // "which discovery channels produce quotes, and which of those
+      // become revenue" by joining activity_events to quotes on
+      // quote_id. Logged as its own event (not merged into the one
+      // above) so it stays queryable even when the customer skipped the
+      // question — `self_reported` is then null while `detected_channel`
+      // still carries what the referrer told us.
+      logActivity('quote_attribution', {
+        quote_id: data.id,
+        self_reported: heardFrom || null,
+        self_reported_detail: heardFrom === 'other' ? heardFromOther.trim().slice(0, 120) || null : null,
+        detected_channel: attribution?.channel ?? null,
+        detected_source: attribution?.source || null,
+        detected_landing_path: attribution?.landingPath ?? null,
+        // True when the customer told us an AI assistant sent them. This
+        // is the number that answers Doc's actual question, and the only
+        // one that catches AI referrals arriving as direct visits.
+        self_reported_ai: ['chatgpt', 'google_ai', 'gemini', 'perplexity', 'copilot', 'other_ai'].includes(heardFrom),
+      });
       if (mode === 'draft') {
         setDraftDone(data.id);
         return;
@@ -537,6 +629,47 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             sub={tr('Your quote lands here.', 'Aquí llegará tu cotización.')}>
             <BigInput autoFocus type="email" value={email} onChange={setEmail} placeholder={tr('you@email.com', 'tu@correo.com')}
               onEnter={() => canNext && go(1)} />
+
+            {/* "How did you hear about us?" — deliberately placed on the
+                existing last contact step rather than as an eleventh
+                STEP. Adding a step to a conversion funnel costs real
+                quotes, and this question is for us, not the customer.
+                Optional: it never blocks `canNext`, and skipping it
+                submits exactly as before.
+
+                It exists because referrer-based attribution cannot see
+                most AI referrals — a ChatGPT answer usually produces a
+                DIRECT visit, since people read the recommendation and
+                then type the domain. See lib/referral.ts. This field is
+                the only way to catch those, which is the whole question
+                Doc is trying to answer. */}
+            <div className="mt-6 border-t border-gray-200 pt-5">
+              <label htmlFor="heard-from" className="block text-sm font-bold text-gray-800">
+                {tr('How did you hear about us?', '¿Cómo nos conociste?')}
+                <span className="ml-1.5 font-normal text-gray-400">{tr('(optional)', '(opcional)')}</span>
+              </label>
+              <select
+                id="heard-from"
+                value={heardFrom}
+                onChange={(e) => setHeardFrom(e.target.value)}
+                className="mt-2 w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-base text-gray-900 focus:border-orange-500 focus:outline-none"
+              >
+                <option value="">{tr('Select one…', 'Selecciona una…')}</option>
+                {HEARD_FROM_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{es ? o.labelEs : o.label}</option>
+                ))}
+              </select>
+              {heardFrom === 'other' && (
+                <input
+                  type="text"
+                  value={heardFromOther}
+                  onChange={(e) => setHeardFromOther(e.target.value)}
+                  maxLength={120}
+                  placeholder={tr('Where did you hear about us?', '¿Dónde nos conociste?')}
+                  className="mt-2 w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-base text-gray-900 focus:border-orange-500 focus:outline-none"
+                />
+              )}
+            </div>
           </Card>
         )}
 

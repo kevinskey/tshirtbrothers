@@ -54,6 +54,11 @@ const CITY_SLUGS = [
 const VERTICAL_SLUGS = [
   'churches', 'family-reunions', 'teams', 'schools',
   'businesses', 'greek-life', 'fundraisers', 'birthdays',
+  // Added 2026-10-23. These must also exist in
+  // client/src/data/verticalLandings.ts — a slug listed here but not
+  // there renders a redirect to /, which would put a soft-404 in the
+  // sitemap and get the prerenderer to bake the homepage into it.
+  'rush-orders', 'hbcu-homecoming', 'embroidered-polos', 'small-orders',
 ];
 
 function xmlEscape(s) {

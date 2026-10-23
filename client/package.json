@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build && node scripts/make-cgc-shell.mjs && node scripts/make-apc-shell.mjs && node scripts/make-lht-shell.mjs && npm run prerender",
     "build:nopre": "tsc -b && vite build",
     "prerender": "node scripts/prerender.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "validate:schema": "node scripts/validate-structured-data.mjs",
+    "test:referral": "node --test scripts/referral.test.mjs"
   },
   "dependencies": {
     "@capacitor/cli": "^8.5.3",
