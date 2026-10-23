@@ -53,8 +53,11 @@ interface Product {
 
 function usd(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
 
-export default function GroupStoreAdminPage() {
-  const slug = useStoreSlug();
+export default function GroupStoreAdminPage({ slug: slugProp }: { slug?: string } = {}) {
+  const detected = useStoreSlug();
+  // Sister-brand hosts render this page outside both the /stores/:slug and
+  // store-subdomain route trees, so they name their store explicitly.
+  const slug = slugProp || detected;
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY(slug)));
   const [me, setMe] = useState<Me | null>(null);
   const [checking, setChecking] = useState(true);
