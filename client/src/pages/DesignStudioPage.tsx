@@ -1448,7 +1448,9 @@ export default function DesignStudioPage() {
   const [savingInvoiceMockup, setSavingInvoiceMockup] = useState(false);
   async function handleSaveMockupToInvoice() {
     if (!attachToInvoiceId || savingInvoiceMockup) return;
-    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    const productImg = selectedProduct
+      ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
+      : null;
     if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
@@ -1524,7 +1526,9 @@ export default function DesignStudioPage() {
   const [savingQuoteMockup, setSavingQuoteMockup] = useState(false);
   async function handleSaveMockupToQuote() {
     if (!attachToQuoteId || savingQuoteMockup) return;
-    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    const productImg = selectedProduct
+      ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
+      : null;
     if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
@@ -1599,7 +1603,9 @@ export default function DesignStudioPage() {
   const [savingNewMockup, setSavingNewMockup] = useState(false);
   async function handleSaveNewMockup() {
     if (!newMockupMode || savingNewMockup) return;
-    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    const productImg = selectedProduct
+      ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
+      : null;
     if (!productImg) { alert('Pick a product first.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
@@ -1652,7 +1658,9 @@ export default function DesignStudioPage() {
 
   async function handleSaveMockupEdit() {
     if (!editMockupId || savingMockupEdit) return;
-    const productImg = selectedProduct ? (productColors[selectedColorIdx]?.image || selectedProduct.image_url) : null;
+    const productImg = selectedProduct
+      ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
+      : null;
     if (!productImg) { alert('Pick a product first.'); return; }
     setSavingMockupEdit(true);
     try {
@@ -2228,6 +2236,14 @@ export default function DesignStudioPage() {
   // captured PNG is just the design elements on a transparent background.
   const productImgRef = useRef<HTMLImageElement | null>(null);
 
+  // Admin-supplied garment photo, per view. Overrides the S&S catalog shot
+  // when set — for house blanks, styled flat-lays, or anything the catalog
+  // photographs badly. Keyed by view so a custom front doesn't silently
+  // become the back as well.
+  const [customBlanks, setCustomBlanks] = useState<Record<string, string>>({});
+  const [blankUploading, setBlankUploading] = useState(false);
+  const blankFileRef = useRef<HTMLInputElement | null>(null);
+
   // Live width of the design surface (productBg) in px. Text font-size used
   // to derive from CSS cqw units (1% of container width), but html2canvas
   // doesn't resolve cqw correctly — it falls back to a default rem, blowing
@@ -2592,15 +2608,73 @@ export default function DesignStudioPage() {
   // Non-S&S items never load colors (query disabled) — without the guard the
   // canvas would spin forever waiting on colorsData.
   const colorsLoading = !!selectedProduct?.ss_id && !selectedProduct.ss_id.includes(':') && colorsData === undefined;
-  const frontImage = selectedColorImage || selectedProduct?.image_url || null;
-  const backImage = productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
+  // An uploaded photo outranks the catalog for that view only; the others
+  // keep falling back to S&S exactly as before.
+  const frontImage = customBlanks.front || selectedColorImage || selectedProduct?.image_url || null;
+  const backImage = customBlanks.back
+    || productColors[selectedColorIdx]?.backImage || selectedProduct?.back_image_url || frontImage;
   // S&S's flat side shot backs the sleeve view when available.
-  const sideImage = productColors[selectedColorIdx]?.sideImage || frontImage;
+  const sideImage = customBlanks[currentView === 'sleeve_left' ? 'sleeve_left' : 'sleeve']
+    || productColors[selectedColorIdx]?.sideImage || frontImage;
   const isSleeveView = currentView === 'sleeve' || currentView === 'sleeve_left';
   // The S&S side photo shows the RIGHT sleeve toward the camera; the left
   // sleeve view mirrors the same shot.
   const mirrorGarment = currentView === 'sleeve_left';
   const displayImage = currentView === 'back' ? backImage : isSleeveView ? sideImage : frontImage;
+
+  // Upload a garment photo for the current view. Goes to Spaces through the
+  // same endpoint the studio already uses for design art, so there is no new
+  // storage path to secure.
+  const uploadCustomBlank = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Pick an image file.');
+      return;
+    }
+    // 20 MB is the express.json limit on the upload route, and base64
+    // inflates by a third — fail here with a readable message instead of
+    // letting the request bounce off the body parser.
+    if (file.size > 12 * 1024 * 1024) {
+      alert('That image is over 12MB — please shrink it first.');
+      return;
+    }
+    setBlankUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read that file'));
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch('/api/quotes/upload-design', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: dataUrl,
+          filename: `product-photo-${currentView}`,
+          customerEmail: 'admin-studio-blank',
+        }),
+      });
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+      const { url } = await res.json();
+      if (!url) throw new Error('Upload returned no URL');
+      // No success message: the canvas swaps to the new photo, which is
+      // the confirmation.
+      setCustomBlanks((prev) => ({ ...prev, [currentView]: url }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not upload that photo');
+    } finally {
+      setBlankUploading(false);
+      if (blankFileRef.current) blankFileRef.current.value = '';
+    }
+  };
+
+  const clearCustomBlank = () => {
+    setCustomBlanks((prev) => {
+      const next = { ...prev };
+      delete next[currentView];
+      return next;
+    });
+  };
 
   // When loading the default product (no ?product= override) and the user
   // hasn't picked a color yet, snap to "Black" once the colorways resolve.
@@ -5439,6 +5513,34 @@ export default function DesignStudioPage() {
               >
                 Change Product Color
               </button>
+              {/* Swap the catalog photo for your own shot of this view. */}
+              <input
+                ref={blankFileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void uploadCustomBlank(file);
+                }}
+              />
+              <button
+                type="button"
+                disabled={blankUploading}
+                onClick={() => blankFileRef.current?.click()}
+                className="text-xs font-medium text-blue-600 hover:underline whitespace-nowrap disabled:opacity-50"
+              >
+                {blankUploading ? 'Uploading…' : customBlanks[currentView] ? 'Replace Photo' : 'Use My Photo'}
+              </button>
+              {customBlanks[currentView] && (
+                <button
+                  type="button"
+                  onClick={clearCustomBlank}
+                  className="text-xs font-medium text-gray-500 hover:underline whitespace-nowrap"
+                >
+                  Use Catalog Photo
+                </button>
+              )}
             </div>
           </div>
         </div>
