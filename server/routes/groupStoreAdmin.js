@@ -637,6 +637,14 @@ router.delete('/:slug/categories/:categoryId', owner, async (req, res, next) => 
   } catch (err) { backofficeError(err, res, next); }
 });
 
+// Every product including hidden ones — the editor needs to show what the
+// storefront doesn't.
+router.get('/:slug/products', async (req, res, next) => {
+  try {
+    res.json({ products: await backoffice.listProducts(req.store_admin.store_id) });
+  } catch (err) { next(err); }
+});
+
 // Product merchandising — presentation and shopper-facing price only.
 // Blank cost and the S&S SKU stay with TSB.
 router.patch('/:slug/products/:productId', owner, async (req, res, next) => {

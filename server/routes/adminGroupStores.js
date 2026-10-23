@@ -1267,6 +1267,12 @@ router.delete('/:id/categories/:categoryId', async (req, res, next) => {
   } catch (err) { backofficeError(err, res, next); }
 });
 
+router.get('/:id/backoffice-products', async (req, res, next) => {
+  try {
+    res.json({ products: await backoffice.listProducts(Number(req.params.id)) });
+  } catch (err) { next(err); }
+});
+
 router.put('/:id/products/:productId/categories', async (req, res, next) => {
   try {
     res.json(await backoffice.setProductCategories(
