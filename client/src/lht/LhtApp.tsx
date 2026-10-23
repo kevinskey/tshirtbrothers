@@ -11,7 +11,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Helmet, HelmetProvider } from 'react-helmet-async';
 import { Toaster } from 'sonner';
 
+import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
 import { LhtBaseContext } from './lib/base';
+import { STORE_SLUG } from './lib/catalog';
 import { LhtCartProvider } from './lib/cart';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -75,6 +77,9 @@ export default function LhtStandaloneApp() {
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <Routes>
+            {/* Taking over an LHT host displaces the generic store-subdomain
+                route tree, so keep its store-admin door open. */}
+            <Route path="/admin" element={<GroupStoreAdminPage slug={STORE_SLUG} />} />
             <Route path="/*" element={<LhtRoutes base="" />} />
           </Routes>
         </BrowserRouter>

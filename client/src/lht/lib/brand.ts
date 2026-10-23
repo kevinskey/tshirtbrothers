@@ -4,7 +4,14 @@
 // configurable (VITE_LHT_HOSTS, comma-separated) so no domain ownership is
 // assumed at build time.
 
-const DEFAULT_HOSTS = ['livehardtruth.com', 'www.livehardtruth.com'];
+// livehardtruth.tshirtbrothers.com is a store subdomain by DNS, so it must
+// be listed here or App.tsx falls through to the generic group-store
+// storefront instead of the LHT brand app.
+const DEFAULT_HOSTS = [
+  'livehardtruth.com',
+  'www.livehardtruth.com',
+  'livehardtruth.tshirtbrothers.com',
+];
 
 export function lhtHosts(): string[] {
   const env = (import.meta.env.VITE_LHT_HOSTS as string | undefined) || '';
