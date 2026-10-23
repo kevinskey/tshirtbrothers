@@ -236,6 +236,31 @@ export async function setProductCategories(storeId, productId, categoryIds) {
 // set how its products present and what they cost a shopper, but not the
 // blank cost or the S&S SKU, which drive TSB's margin and fulfilment.
 
+// The back office must list hidden products too — the public storefront
+// endpoint only returns live ones, so an owner who hid something would have
+// no way to find it again and turn it back on.
+export async function listProducts(storeId) {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.title, p.slug, p.description, p.cover_image,
+            p.retail_price_cents, p.compare_at_cents, p.gallery_json,
+            p.variants_json, p.campaign_ref, p.sort_order, p.is_active,
+            p.opens_at, p.closes_at, p.published_at,
+            COALESCE(
+              ARRAY_REMOVE(ARRAY_AGG(c.slug ORDER BY pc.sort_order), NULL),
+              '{}'
+            ) AS category_slugs
+       FROM store_products p
+       LEFT JOIN store_product_categories pc ON pc.store_product_id = p.id
+       LEFT JOIN store_categories c ON c.id = pc.store_category_id AND c.active
+      WHERE p.store_id = $1
+      GROUP BY p.id
+      ORDER BY p.sort_order, p.published_at DESC, p.id
+      LIMIT 500`,
+    [storeId],
+  );
+  return rows;
+}
+
 const MERCH_FIELDS = {
   title: (v) => {
     const s = String(v ?? '').trim();
