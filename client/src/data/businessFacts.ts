@@ -27,14 +27,17 @@
 /** Verified 2026-10-23 — business identity. */
 export const BUSINESS = {
   /**
-   * Legal/display name. NOTE: much of the older copy and the
-   * index.html JSON-LD used "TShirt Brothers" (no hyphen). The hyphenated
-   * form is the one Doc uses for the business and it should match the
-   * Google Business Profile exactly — a name mismatch between site and
-   * GBP weakens entity matching for both Google and AI answer engines.
+   * Machine-readable business name.
+   *
+   * Confirmed by Doc on 2026-10-23: the Google Business Profile reads
+   * "TShirt Brothers" with no hyphen, so that is the canonical form for
+   * every title, OG tag and schema `name`. The site must match GBP
+   * exactly — a name mismatch weakens entity matching for both Google
+   * and AI answer engines. Prose/body copy may still read "T-Shirt
+   * Brothers"; this field is specifically the machine-readable name.
    */
-  name: 'T-Shirt Brothers',
-  legalName: 'T-Shirt Brothers',
+  name: 'TShirt Brothers',
+  legalName: 'TShirt Brothers',
   tagline: 'Custom Apparel, Printing & Embroidery Serving South Atlanta',
   url: 'https://tshirtbrothers.com',
   logo: 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png',

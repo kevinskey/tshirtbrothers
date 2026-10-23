@@ -26,11 +26,27 @@ export const GRID_COLOR_MAJOR = '#e5e7eb'; // 1-foot lines
 export const GRID_COLOR_MINOR = '#f3f4f6'; // 1-inch lines
 export const GRID_LABEL_COLOR = '#9ca3af';
 
-// Pricing (KolorMatrix)
+// Customer-facing DTF tier rates — DISPLAY FALLBACK ONLY.
+//
+// The builder fetches live rates from /api/gangsheet-store/config (the
+// admin-editable settings) and prices every order server-side. These
+// constants are used only for the tier labels/descriptions and as a
+// last-resort fallback if that fetch fails.
+//
+// They used to read $6 / $8 / $12 — KolorMatrix's VENDOR COST, not our
+// retail price — and the descriptions contradicted the configured
+// turnaround promises. So a customer who hit a config-fetch failure was
+// shown $6/ft and a "same day to next day" promise while checkout
+// charged $11.99/ft on a 2-business-day standard. Realigned to the live
+// retail settings on 2026-10-23 so the degraded path is merely stale,
+// never cheaper than we charge.
+//
+// Keep in sync with client/src/data/businessFacts.ts (DTF_GANG_SHEET);
+// scripts/check-business-facts.mjs diffs that file against production.
 export const PRICING = {
-  standard: { rate: 6.00, label: 'Standard', desc: 'ASAP same day to next day (Mon–Fri)' },
-  rush: { rate: 8.00, label: 'Rush', desc: '5-hr rush, M–F same day, cutoff 11am' },
-  hotRush: { rate: 12.00, label: 'Hot Rush', desc: '5-hr HOT RUSH, M–F same day, cutoff 10am' },
+  standard: { rate: 11.99, label: 'Standard', desc: 'Ready in 2 business days' },
+  rush: { rate: 12.99, label: 'Rush', desc: 'Next business day — order by 11am (Mon–Fri)' },
+  hotRush: { rate: 17.00, label: 'Hot Rush', desc: 'Same day — order by 10am (Mon–Fri)' },
 } as const;
 
 export type PricingTier = keyof typeof PRICING;

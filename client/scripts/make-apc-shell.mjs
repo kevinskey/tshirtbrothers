@@ -99,7 +99,7 @@ const apcSchema = {
     postalCode: '30213',
     addressCountry: 'US',
   },
-  parentOrganization: { '@type': 'Organization', name: 'T-Shirt Brothers', url: 'https://tshirtbrothers.com' },
+  parentOrganization: { '@type': 'Organization', name: 'TShirt Brothers', url: 'https://tshirtbrothers.com' },
 };
 // Matches the TSB structured-data block and its preceding comment.
 // TSB now emits an @graph of Organization + WebSite + LocalBusiness, so
@@ -115,11 +115,11 @@ swap('json-ld',
 // No <h1> here: this block is inlined into the shell, so a heading
 // would compete with each page's real <h1>. Mirrors the TSB fix.
 swap('noscript',
-  /<noscript>\s*<p><strong>T-Shirt Brothers[\s\S]*?<\/noscript>/,
+  /<noscript>\s*<p><strong>TShirt Brothers[\s\S]*?<\/noscript>/,
   `<noscript>
       <p><strong>All Print Club — Business Cards, Flyers, Signs &amp; More</strong></p>
       <p>Trade-quality commercial printing at club prices. Business cards, flyers, postcards, banners, yard signs, and stickers, shipped nationwide.</p>
-      <p>A sister company of T-Shirt Brothers.</p>
+      <p>A sister company of TShirt Brothers.</p>
       <p>Contact: (470) 622-1392 | info@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>
     </noscript>`);
 

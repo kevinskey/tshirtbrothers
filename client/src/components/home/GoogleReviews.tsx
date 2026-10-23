@@ -151,7 +151,7 @@ export default function GoogleReviews() {
               // two same-named businesses and this rating floated free
               // of the one carrying the address, hours and services.
               '@id': 'https://tshirtbrothers.com/#business',
-              name: 'T-Shirt Brothers',
+              name: 'TShirt Brothers',
               url: 'https://tshirtbrothers.com',
               aggregateRating: {
                 '@type': 'AggregateRating',

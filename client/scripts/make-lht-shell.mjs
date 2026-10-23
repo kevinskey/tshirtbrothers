@@ -99,7 +99,7 @@ const lhtSchema = {
     postalCode: '30213',
     addressCountry: 'US',
   },
-  parentOrganization: { '@type': 'Organization', name: 'T-Shirt Brothers', url: 'https://tshirtbrothers.com' },
+  parentOrganization: { '@type': 'Organization', name: 'TShirt Brothers', url: 'https://tshirtbrothers.com' },
 };
 // Matches the TSB structured-data block and its preceding comment. TSB
 // now emits an @graph of Organization + WebSite + LocalBusiness, so the
@@ -115,11 +115,11 @@ swap('json-ld',
 // No <h1> here: this block is inlined into the shell, so a heading
 // would compete with each page's real <h1>. Mirrors the TSB fix.
 swap('noscript',
-  /<noscript>\s*<p><strong>T-Shirt Brothers[\s\S]*?<\/noscript>/,
+  /<noscript>\s*<p><strong>TShirt Brothers[\s\S]*?<\/noscript>/,
   `<noscript>
       <p><strong>Live Hard Truth — Streetwear Worn Loud</strong></p>
       <p>The Fall 2026 heavyweight hoodie and jogger collection in eleven colors, plus the Hard Truth hat, mug and journal.</p>
-      <p>Fulfilled by T-Shirt Brothers, Fairburn, GA.</p>
+      <p>Fulfilled by TShirt Brothers, Fairburn, GA.</p>
       <p>Contact: info@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>
     </noscript>`);
 
