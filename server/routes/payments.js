@@ -18,6 +18,8 @@ import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceive
 import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
 import { applyStoreRefund } from '../services/storeOrderRefund.js';
+import { checkoutConnectParams, syncAccount } from '../services/stripeConnect.js';
+import { computeLineSplit } from '../services/storeOrderCapture.js';
 import {
   validatePromotion,
   buildShippingOptions,
@@ -715,6 +717,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
               sp.retail_price_cents, sp.is_active, sp.campaign_ref,
               sp.opens_at, sp.closes_at,
               s.brand_json,
+              s.stripe_account_id, s.stripe_charges_enabled, s.stripe_payouts_enabled,
               s.name AS store_name, s.slug AS store_slug, s.fulfillment_mode,
               p.weight_oz
          FROM store_products sp
@@ -907,8 +910,27 @@ router.post('/create-store-checkout', async (req, res, next) => {
       });
     }
 
+    // Destination charge when the store is connected and payable: Stripe
+    // moves their share at charge time instead of TSB holding it for the
+    // monthly ACH run. Returns null for every store that isn't, which is
+    // all of them until one completes onboarding — so this is inert.
+    //
+    // The share is computed with the SAME function the capture webhook uses,
+    // so what Stripe transfers and what the order records can't disagree.
+    const connectShare = computeLineSplit({
+      retail_cents: product.retail_price_cents + upchargeCents,
+      qty,
+      fee_config: product.fee_config_json,
+      store_product_id: product.product_id,
+    }).store_earnings_cents;
+    const connect = checkoutConnectParams(product, {
+      grossCents: lineRetailCents,
+      storeShareCents: Math.max(0, connectShare - (promo.discounts ? Number(promo.metadata.promo_amount_off || 0) : 0)),
+    });
+
     const sessionParams = {
       payment_method_types: ['card'],
+      ...(connect ? { payment_intent_data: connect.payment_intent_data } : {}),
       // NOT allow_promotion_codes — that switch is account-wide and let any
       // store's code work at any other store's checkout. Store codes come
       // in as `promo_code` and are validated against this store_id.
@@ -943,6 +965,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
         product_slug,
         qty: String(qty),
         ...promo.metadata,
+        ...(connect ? connect.metadata : {}),
         ...(variant ? { variant: JSON.stringify(variant).slice(0, 500) } : {}),
         ...(upsells.length
           ? { upsell_map: JSON.stringify(Object.fromEntries(upsells.map((u) => [u.price_id, u.store_product_id]))).slice(0, 500) }
@@ -1004,7 +1027,8 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
     }
 
     const { rows: storeRows } = await pool.query(
-      `SELECT id, name, slug, brand_json, fulfillment_mode
+      `SELECT id, name, slug, brand_json, fulfillment_mode,
+              stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled
          FROM stores
         WHERE status = 'active' AND (slug = $1 OR lower(subdomain) = lower($1))`,
       [store_slug],
@@ -1146,8 +1170,31 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
     }
 
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    // Same destination-charge treatment as the single-product path. The
+    // partner's share is the sum of each line's split under the agreement
+    // frozen on its product.
+    let cartShare = 0;
+    for (const l of priced) {
+      const { rows: agr } = await pool.query(
+        `SELECT sa.fee_config_json f FROM store_products sp
+           JOIN store_agreements sa ON sa.id = sp.active_agreement_id
+          WHERE sp.id = $1`, [l.product.product_id]);
+      if (!agr[0]) continue;
+      cartShare += computeLineSplit({
+        retail_cents: l.product.retail_price_cents + l.upcharge,
+        qty: l.qty,
+        fee_config: agr[0].f,
+        store_product_id: l.product.product_id,
+      }).store_earnings_cents;
+    }
+    const connect = checkoutConnectParams(store, {
+      grossCents: subtotalCents,
+      storeShareCents: cartShare,
+    });
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
+      ...(connect ? { payment_intent_data: connect.payment_intent_data } : {}),
       // Store-scoped codes only — see storePromoForCheckout.
       ...(promo.discounts ? { discounts: promo.discounts } : {}),
       shipping_address_collection: { allowed_countries: ['US'] },
@@ -1185,6 +1232,7 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
         store_product_id: String(priced[0].product.product_id),
         qty: String(priced[0].qty),
         ...promo.metadata,
+        ...(connect ? connect.metadata : {}),
       },
     });
 
@@ -1715,8 +1763,16 @@ router.post('/webhook', (req, res) => {
       console.error('[Stripe Webhook] Signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    // Fail CLOSED in production. This branch used to accept unverified
+    // events whenever the secret was missing, which meant a single absent
+    // env var turned the endpoint into "anyone who can POST here can
+    // fabricate a paid order" — on a path that credits partner ledgers and,
+    // now, moves money to connected accounts.
+    console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET missing in production — refusing event');
+    return res.status(500).send('Webhook not configured');
   } else {
-    // No secret configured — accept events unverified (dev/staging only).
+    // Dev/staging only, and now explicitly only there.
     console.warn('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not set; skipping signature verification');
     try {
       event = JSON.parse(req.body.toString('utf8'));
@@ -1752,6 +1808,18 @@ router.post('/webhook', (req, res) => {
         .catch((err) => {
           console.error('[Stripe Webhook] refund handler crashed for ' + event.id + ':', err);
         });
+    });
+  }
+
+  // A partner finished (or failed) Stripe onboarding. Mirrored onto the
+  // store so the dashboard can say whether they are payable without calling
+  // Stripe on every render — and so checkout stops routing transfers if an
+  // account ever loses its capabilities.
+  if (event.type === 'account.updated') {
+    setImmediate(() => {
+      syncAccount(event.data.object).catch((err) => {
+        console.error('[Stripe Webhook] account sync crashed for ' + event.id + ':', err);
+      });
     });
   }
 });
