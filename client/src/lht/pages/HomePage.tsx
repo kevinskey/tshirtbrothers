@@ -75,6 +75,8 @@ export default function HomePage() {
   // Every string below is the fallback the page shipped with, so clearing a
   // field in the back office restores this wording rather than blanking the
   // banner.
+  // Our own cut-outs are transparent and need no edge treatment; an
+  // owner-uploaded photo does.
   const hero = {
     eyebrow: slotField(content, 'hero', 'eyebrow', 'Fall 2026 · Now shipping'),
     headline: slotField(content, 'hero', 'headline', 'Live Hard Truth'),
@@ -83,12 +85,19 @@ export default function HomePage() {
       + 'photographed exactly as it is and built to be worn loud.'),
     ctaLabel: slotField(content, 'hero', 'cta_label', 'Shop the drop'),
     ctaHref: slotField(content, 'hero', 'cta_href', '#shop'),
-    // The espresso studio set — hoodie and joggers, whole garment, on a
-    // vignette that melts into the ink background. The previous default
-    // (the plinth campaign shot) put the product on the LEFT, which is
-    // the one place this layout gives to the headline.
-    imageUrl: slotField(content, 'hero', 'image_url', '/lht/studio/set-espresso.jpg'),
+    // The espresso set, cut out of its background so it sits ON the hero
+    // gradient instead of inside a photo. Doc's shot (2026-10-24) is a
+    // richer brown than the studio vignette and reads properly against
+    // the ink; the vignette version is still what the showroom swatches
+    // below use, so all eleven colorways stay consistent down there.
+    //
+    // WebP because alpha rules out JPEG and the source PNG was 1.6MB —
+    // this is the page's LCP element, and 79KB is the difference between
+    // the hero appearing and the hero arriving.
+    imageUrl: slotField(content, 'hero', 'image_url', '/lht/hero-set-espresso.webp'),
   };
+
+  const cutout = hero.imageUrl.endsWith('.webp') || hero.imageUrl.endsWith('.png');
 
   return (
     <div className="bg-lht-ink text-lht-cream font-lht-sans">
@@ -131,9 +140,15 @@ export default function HomePage() {
         {/* Product. Pinned right and full height; on small screens it
             sits behind the copy at reduced opacity rather than stacking,
             so the hero stays one image tall instead of two screens. */}
+        {/* No mask on a cut-out: there is no background edge to hide, and
+            fading from the left ate the hoodie's shoulder. An uploaded
+            photo still needs one, so the fade only applies when the image
+            is not our own transparent asset. Padding keeps the garment
+            clear of the viewport edge. */}
         <div
-          className="absolute inset-y-0 right-0 w-full lg:w-[58%] opacity-30 lg:opacity-100
-                     [mask-image:linear-gradient(to_right,transparent,black_38%)]"
+          className={`absolute inset-y-0 right-0 w-full lg:w-[58%] opacity-25 lg:opacity-100
+                      py-10 lg:py-14 pr-4 sm:pr-8 lg:pr-12
+                      ${cutout ? '' : '[mask-image:linear-gradient(to_right,transparent,black_38%)]'}`}
         >
           <img
             src={hero.imageUrl}
