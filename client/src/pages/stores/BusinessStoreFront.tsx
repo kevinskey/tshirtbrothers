@@ -13,6 +13,7 @@ import Seo from '@/components/Seo';
 import StoreMark from '@/components/stores/StoreMark';
 import PoweredByFooter from '@/components/stores/PoweredByFooter';
 import { storeLink } from '@/lib/storeSubdomain';
+import { useStoreContent, slotField } from '@/lib/useStoreContent';
 import { MapPin, ExternalLink, ShoppingBag, PenTool, ArrowRight } from 'lucide-react';
 
 interface BusinessStoreProfile {
@@ -20,6 +21,7 @@ interface BusinessStoreProfile {
   name: string;
   brand_json: {
     logo_url?: string;
+    hero_url?: string;
     primary_color?: string;
     tagline?: string;
     footer_note?: string;
@@ -50,6 +52,20 @@ export default function BusinessStoreFront({
 }) {
   const brand = store.brand_json;
   const primary = brand.primary_color || '#1f2a44';
+
+  // Owner-editable banner. Each falls back to exactly what this page
+  // rendered before the Storefront tab existed, so a store that has never
+  // opened the editor is unchanged.
+  const { content } = useStoreContent(slug);
+  const eyebrow  = slotField(content, 'hero', 'eyebrow', 'TSB Pro Business Store');
+  const headline = slotField(content, 'hero', 'headline', store.name);
+  const subcopy  = slotField(content, 'hero', 'subcopy', brand.tagline ?? '');
+  const heroImage = slotField(content, 'hero', 'image_url', brand.hero_url ?? '');
+
+  // 10% of the store's colour — enough to read as theirs, light enough to
+  // keep near-black body text above the contrast floor. A full-strength
+  // brand colour behind gray-900 text is how a store ends up unreadable.
+  const tint = `color-mix(in srgb, ${primary} 10%, white)`;
   const website = brand.website_url;
   const websiteLabel = website?.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
@@ -62,21 +78,42 @@ export default function BusinessStoreFront({
         image={brand.logo_url || undefined}
       />
 
-      {/* ── Business identity band ─────────────────────────────────────── */}
-      <section className="border-b border-gray-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      {/* ── Identity band ──────────────────────────────────────────────
+          Full-bleed and tinted with the store's own colour rather than a
+          white strip inside the page gutters. A store's banner is the
+          first thing a shopper sees, and the contained version read as a
+          row of the TSB site that happened to mention them.
+
+          The headline, eyebrow and tagline come from the Storefront tab
+          when the owner has set them. Before this they were saved and
+          then ignored here — this page only ever rendered the store's
+          name — so an owner could fill the form in and watch nothing
+          happen. Every field falls back to what the page showed before.
+
+          A feature image, if there is one, sits on the RIGHT at the same
+          full height, masked into the band on its left edge so the copy
+          can run under it without a seam. */}
+      <section className="relative overflow-hidden border-b border-gray-200"
+        style={{ backgroundColor: tint }}>
+        {heroImage && (
+          <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[42%] sm:block
+                          [mask-image:linear-gradient(to_right,transparent,black_45%)]">
+            <img src={heroImage} alt="" className="h-full w-full object-cover object-center" />
+          </div>
+        )}
+        <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
           <div className="flex flex-col sm:flex-row sm:items-center gap-5">
             <StoreMark name={store.name} logoUrl={brand.logo_url} color={primary} size="lg"
               className={brand.logo_url ? 'border border-gray-100 shadow-sm p-2' : 'shadow-sm'} />
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-bold uppercase tracking-widest text-orange-600">
-                TSB Pro Business Store
+                {eyebrow}
               </p>
-              <h1 className="mt-1 text-3xl sm:text-4xl font-black tracking-tight text-gray-900">
-                {store.name}
+              <h1 className="mt-1 text-3xl sm:text-5xl font-black tracking-tight text-gray-900">
+                {headline}
               </h1>
-              {brand.tagline && (
-                <p className="mt-1 text-gray-600">{brand.tagline}</p>
+              {subcopy && (
+                <p className="mt-2 max-w-xl text-gray-600">{subcopy}</p>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                 {brand.business_address && (
