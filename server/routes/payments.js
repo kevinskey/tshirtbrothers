@@ -17,6 +17,7 @@ import {
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import { applyStoreRefund } from '../services/storeOrderRefund.js';
 import {
   validatePromotion,
   buildShippingOptions,
@@ -1739,7 +1740,35 @@ router.post('/webhook', (req, res) => {
       });
     });
   }
+
+  // A refund in the Stripe dashboard used to change nothing here: the order
+  // still read 'paid' and the partner was still credited their share of
+  // money the buyer had got back, which the next payout run would have paid
+  // out. Fires again on each additional partial refund, carrying the
+  // cumulative total — applyStoreRefund works out what is new.
+  if (event.type === 'charge.refunded') {
+    setImmediate(() => {
+      applyStoreRefund(event.data.object, { findSessionId: sessionIdForPaymentIntent })
+        .catch((err) => {
+          console.error('[Stripe Webhook] refund handler crashed for ' + event.id + ':', err);
+        });
+    });
+  }
 });
+
+// A Charge knows its payment intent; store_orders are keyed by the checkout
+// session id. Stripe has no direct charge → session link, so this is the
+// hop between them.
+async function sessionIdForPaymentIntent(paymentIntentId) {
+  try {
+    const stripe = getStripe();
+    const list = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+    return list.data[0]?.id ?? null;
+  } catch (err) {
+    console.error('[Stripe Webhook] could not map payment intent to session:', err.message);
+    return null;
+  }
+}
 
 // Pull the bits of a Stripe Checkout session the customer-facing success
 // page needs (receipt URL, card brand + last4 / wallet, transaction id).
