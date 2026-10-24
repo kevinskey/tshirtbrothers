@@ -83,10 +83,11 @@ export default function HomePage() {
       + 'photographed exactly as it is and built to be worn loud.'),
     ctaLabel: slotField(content, 'hero', 'cta_label', 'Shop the drop'),
     ctaHref: slotField(content, 'hero', 'cta_href', '#shop'),
-    // Fall 2026 campaign shot. A 99KB JPEG re-encode of the 1.9MB PNG
-    // Doc uploaded through the Branding panel — this is the hero, so it
-    // is the page's LCP element and the PNG would have been felt.
-    imageUrl: slotField(content, 'hero', 'image_url', '/lht/hero-fall-2026.jpg'),
+    // The espresso studio set — hoodie and joggers, whole garment, on a
+    // vignette that melts into the ink background. The previous default
+    // (the plinth campaign shot) put the product on the LEFT, which is
+    // the one place this layout gives to the headline.
+    imageUrl: slotField(content, 'hero', 'image_url', '/lht/studio/set-espresso.jpg'),
   };
 
   return (
@@ -96,40 +97,68 @@ export default function HomePage() {
         <meta name="description" content="Live Hard Truth luxury streetwear. Shop the Fall 2026 heavyweight hoodie and jogger collection in eleven colors, and find your Truth Color." />
       </Helmet>
 
-      {/* Hero — copy and image come from the back office when the owner has
-          set them, otherwise from the defaults below.
+      {/* Hero — full-bleed, product right, headline over the top.
 
-          Split layout (copy left, image right) rather than the image
-          full-bleed behind the text at opacity-50.
+          Doc's reference (2026-10-24): the garment stands on the RIGHT
+          against a gradient, and the display type runs across it from
+          the left at a size that would be absurd in a contained column.
+          That overlap is the whole look — the words in front of the
+          clothes, not beside them.
 
-          The old treatment only worked for one specific photo. It
-          assumed the product sat on the RIGHT of the frame with empty
-          space on the left for the headline to land on — true of the
-          original chestnut campaign shot, and false of almost anything
-          else. Point the back office at a photo composed the other way
-          (the Fall 2026 plinth shot, product on the left) and the
-          headline washes straight over the garment.
+          Three things follow from it:
 
-          Since the whole point of the content slot is that the owner
-          can change this image without a deploy, the layout must not
-          have an opinion about where the product sits in the frame.
-          Giving the photo its own column removes that coupling: any
-          image works, it renders at full opacity instead of as a
-          50%-faded backdrop, and the copy keeps a clean ink background
-          to sit on. Same treatment the showroom section below already
-          gives its photos. */}
-      <section id="top" className="relative overflow-hidden">
-        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-16 sm:py-20 lg:py-28">
-          {/* Capped at half width on desktop so the copy never runs
-              under the full-bleed image pinned to the right. */}
-          <div className="lg:w-1/2 lg:pr-12">
+          * The section is full-bleed and tall. It is the page, not a
+            band at the top of the page.
+          * The photo is object-contain, not cover. These are studio
+            cut-outs of a whole garment; cropping a hoodie to fill a
+            column is the one thing the shot cannot survive. Contain
+            also means the layout has no opinion about the composition
+            of whatever the owner uploads, which is what the previous
+            split layout was protecting.
+          * The image gets a left-edge mask instead of an edge. The
+            studio shots sit on a near-black vignette that blends into
+            the ink background on its own, but an owner's photo will
+            not, and a hard vertical seam under the headline looks like
+            a mistake. The mask fades whatever is there into the page.
+
+          Copy stays capped at lg:max-w-[46rem] so the headline crosses
+          the product without burying it. */}
+      <section
+        id="top"
+        className="relative overflow-hidden min-h-[36rem] lg:min-h-[44rem] flex items-center
+                   bg-[radial-gradient(105%_115%_at_78%_48%,#5a5250_0%,#332e2d_38%,#1d1a1a_70%,#141212_100%)]"
+      >
+        {/* Product. Pinned right and full height; on small screens it
+            sits behind the copy at reduced opacity rather than stacking,
+            so the hero stays one image tall instead of two screens. */}
+        <div
+          className="absolute inset-y-0 right-0 w-full lg:w-[58%] opacity-30 lg:opacity-100
+                     [mask-image:linear-gradient(to_right,transparent,black_38%)]"
+        >
+          <img
+            src={hero.imageUrl}
+            alt={hero.headline}
+            fetchPriority="high"
+            className="h-full w-full object-contain object-right"
+          />
+        </div>
+
+        {/* Copy. z-10 to sit in front of the garment — the overlap is
+            deliberate, see above. */}
+        <div className="relative z-10 w-full max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-20 lg:py-24">
+          <div className="lg:max-w-[46rem]">
             <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
               {hero.eyebrow}
             </p>
-            <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl">
+            {/* Bigger than a contained hero would allow, because it is
+                no longer sharing a row with the photo. drop-shadow keeps
+                it legible where it crosses the garment. */}
+            <h1 className="mt-5 font-lht-display uppercase leading-[0.88] tracking-tight
+                           text-6xl sm:text-8xl lg:text-9xl
+                           [text-shadow:0_2px_40px_rgba(0,0,0,0.55)]">
               {hero.headline}
             </h1>
-            <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
+            <p className="mt-7 max-w-xl text-base sm:text-lg text-lht-cream/85">
               {hero.subcopy}
             </p>
             <div className="mt-9 flex flex-wrap gap-3">
@@ -141,39 +170,10 @@ export default function HomePage() {
                 Start your Truth Session
               </Link>
             </div>
-          </div>
-
-          {/* Full-bleed, not a framed column.
-              Sat in a grid cell before, which meant four visible edges —
-              it read as a card pasted onto the black rather than part of
-              the page. Now it runs to the right edge of the VIEWPORT and
-              the full height of the section, so only the edge facing the
-              copy remains.
-
-              One element, two layouts. Below lg it stays in flow under
-              the copy, with negative margins cancelling the container
-              padding so it still bleeds side to side. At lg it goes
-              absolute against the section (the section is the nearest
-              positioned ancestor; this div sits inside the padded
-              container but positions against the section regardless) and
-              takes the right half. The copy is capped at lg:w-1/2 so the
-              two never overlap.
-
-              object-left: campaign photography tends to put the product
-              on one side and negative space on the other — the Fall 2026
-              default is product-left with a wide sweep of empty cream to
-              the right — so anchoring left fills the frame with product
-              instead of blank wall. */}
-          <div
-            className="mt-10 -mx-4 sm:-mx-6 aspect-[4/3] overflow-hidden bg-lht-ink-soft
-                       lg:mt-0 lg:mx-0 lg:aspect-auto lg:absolute lg:inset-y-0 lg:right-0 lg:w-1/2"
-          >
-            <img
-              src={hero.imageUrl}
-              alt={hero.headline}
-              fetchPriority="high"
-              className="h-full w-full object-cover object-left"
-            />
+            <a href={p('/#fall')}
+              className="mt-12 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-lht-stone hover:text-lht-cyan transition-colors">
+              Enter the showroom <span aria-hidden>↓</span>
+            </a>
           </div>
         </div>
       </section>
