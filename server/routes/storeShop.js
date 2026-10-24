@@ -13,6 +13,7 @@
 
 import { Router } from 'express';
 import pool from '../db.js';
+import { validatePromotion, BackofficeError } from '../services/storeBackoffice.js';
 
 const router = Router();
 
@@ -86,6 +87,39 @@ router.get('/:handle/content', async (req, res, next) => {
     res.set('Cache-Control', 'public, max-age=30');
     res.json({ content });
   } catch (err) { next(err); }
+});
+
+// POST /api/store-shop/:handle/validate-promo
+// Lets the cart show "SAVE10 applied — −$12.50" before the shopper is sent
+// to Stripe. Advisory only: checkout re-validates against the same code
+// path, so a code that expires between the two calls is still caught.
+//
+// Body: { code, subtotal_cents?, buyer_email? }
+router.post('/:handle/validate-promo', async (req, res, next) => {
+  try {
+    const store = await findActiveStore(req.params.handle);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    const subtotalCents = Math.max(0, parseInt(String(req.body?.subtotal_cents ?? '0'), 10) || 0);
+    const promo = await validatePromotion(store.id, req.body?.code, {
+      subtotalCents,
+      buyerEmail: req.body?.buyer_email ?? null,
+    });
+    // promotion_id is internal; the shopper only needs the money.
+    res.json({
+      valid: true,
+      code: promo.code,
+      headline: promo.headline,
+      discount_type: promo.discount_type,
+      amount_off_cents: promo.amount_off_cents,
+      free_shipping: promo.free_shipping,
+    });
+  } catch (err) {
+    if (err instanceof BackofficeError) {
+      return res.status(err.status).json({ valid: false, error: err.message });
+    }
+    next(err);
+  }
 });
 
 // A store's own categories, with the count of live products in each so the

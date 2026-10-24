@@ -329,3 +329,380 @@ export async function reorderProducts(storeId, orderedIds) {
   );
   return { reordered: rowCount };
 }
+
+// ── Promotions ───────────────────────────────────────────────────────────
+// A store's own promo codes. These exist because Stripe's
+// `allow_promotion_codes: true` is account-wide: it offers EVERY promo code
+// on the TSB account at EVERY store's checkout. Codes live here instead, are
+// validated server-side against one store_id, and reach Stripe as a
+// single-use coupon minted for that one session.
+
+const DISCOUNT_TYPES = ['percent', 'amount', 'free_shipping'];
+
+function normalizeCode(raw) {
+  return String(raw ?? '').trim().toUpperCase().slice(0, 64);
+}
+
+function asTimestamp(value, field) {
+  if (value === null || value === undefined || value === '') return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw bad(`${field} is not a valid date`);
+  return d.toISOString();
+}
+
+export async function listPromotions(storeId, { includeInactive = false } = {}) {
+  const { rows } = await pool.query(
+    `SELECT p.id, p.code, p.headline, p.subtext, p.discount_type, p.discount_value,
+            p.min_order_cents, p.max_uses, p.max_uses_per_email, p.times_used,
+            p.active, p.starts_at, p.expires_at, p.created_by, p.created_at,
+            COALESCE(SUM(r.amount_off_cents), 0)::int AS total_discount_cents
+       FROM store_promotions p
+       LEFT JOIN store_promotion_redemptions r ON r.promotion_id = p.id
+      WHERE p.store_id = $1 ${includeInactive ? '' : 'AND p.active'}
+      GROUP BY p.id
+      ORDER BY p.active DESC, p.created_at DESC`,
+    [storeId],
+  );
+  return rows;
+}
+
+export async function upsertPromotion(storeId, payload, actorEmail) {
+  const code = normalizeCode(payload?.code);
+  if (!code) throw bad('code is required');
+  if (!/^[A-Z0-9][A-Z0-9_-]*$/.test(code)) {
+    throw bad('code may only contain letters, digits, hyphens and underscores');
+  }
+
+  const discountType = String(payload?.discount_type ?? '').trim();
+  if (!DISCOUNT_TYPES.includes(discountType)) {
+    throw bad(`discount_type must be one of ${DISCOUNT_TYPES.join(', ')}`);
+  }
+
+  // percent is 0-100; amount is cents. free_shipping ignores the value, so
+  // it is stored as 0 rather than whatever the form happened to submit.
+  let discountValue = 0;
+  if (discountType === 'percent') {
+    discountValue = asInt(payload?.discount_value, 'discount_value', { min: 1, max: 100 });
+  } else if (discountType === 'amount') {
+    discountValue = asInt(payload?.discount_value, 'discount_value', { min: 1 });
+  }
+
+  const minOrder = asInt(payload?.min_order_cents ?? 0, 'min_order_cents', { min: 0 });
+  const maxUses = asInt(payload?.max_uses, 'max_uses', { min: 1, allowNull: true });
+  const maxPerEmail = asInt(payload?.max_uses_per_email, 'max_uses_per_email', { min: 1, allowNull: true });
+  const active = payload?.active === undefined ? true : Boolean(payload.active);
+  const startsAt = asTimestamp(payload?.starts_at, 'starts_at');
+  const expiresAt = asTimestamp(payload?.expires_at, 'expires_at');
+  if (startsAt && expiresAt && new Date(expiresAt) <= new Date(startsAt)) {
+    throw bad('expires_at must be after starts_at');
+  }
+  // A fixed-amount code worth more than the minimum order can take an order
+  // to zero, which Stripe rejects at checkout rather than at save time.
+  if (discountType === 'amount' && minOrder > 0 && discountValue >= minOrder) {
+    throw bad('discount_value must be less than min_order_cents');
+  }
+
+  const cols = [
+    payload?.headline ?? null, payload?.subtext ?? null, discountType, discountValue,
+    minOrder, maxUses, maxPerEmail, active, startsAt, expiresAt,
+  ];
+
+  try {
+    if (payload?.id) {
+      const id = asInt(payload.id, 'id');
+      const { rows } = await pool.query(
+        `UPDATE store_promotions
+            SET code = $1, headline = $2, subtext = $3, discount_type = $4,
+                discount_value = $5, min_order_cents = $6, max_uses = $7,
+                max_uses_per_email = $8, active = $9, starts_at = $10,
+                expires_at = $11, updated_at = NOW()
+          WHERE id = $12 AND store_id = $13
+          RETURNING id, code, headline, subtext, discount_type, discount_value,
+                    min_order_cents, max_uses, max_uses_per_email, times_used,
+                    active, starts_at, expires_at`,
+        [code, ...cols, id, storeId],
+      );
+      if (!rows[0]) throw new BackofficeError(404, 'Promotion not found');
+      return rows[0];
+    }
+
+    const { rows } = await pool.query(
+      `INSERT INTO store_promotions
+         (store_id, code, headline, subtext, discount_type, discount_value,
+          min_order_cents, max_uses, max_uses_per_email, active, starts_at,
+          expires_at, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id, code, headline, subtext, discount_type, discount_value,
+                 min_order_cents, max_uses, max_uses_per_email, times_used,
+                 active, starts_at, expires_at`,
+      [storeId, code, ...cols, actorEmail ?? null],
+    );
+    return rows[0];
+  } catch (err) {
+    if (err.code === '23505') throw new BackofficeError(409, `Code "${code}" already exists for this store`);
+    throw err;
+  }
+}
+
+export async function deletePromotion(storeId, promotionId) {
+  const id = asInt(promotionId, 'promotion id');
+  // Redemptions cascade with the promo. That loses the audit trail, so a
+  // code that has been used is deactivated instead of deleted.
+  const { rows } = await pool.query(
+    `SELECT times_used FROM store_promotions WHERE id = $1 AND store_id = $2`,
+    [id, storeId],
+  );
+  if (!rows[0]) throw new BackofficeError(404, 'Promotion not found');
+
+  if (rows[0].times_used > 0) {
+    await pool.query(
+      `UPDATE store_promotions SET active = FALSE, updated_at = NOW()
+        WHERE id = $1 AND store_id = $2`,
+      [id, storeId],
+    );
+    return { deleted: false, deactivated: true };
+  }
+
+  await pool.query(`DELETE FROM store_promotions WHERE id = $1 AND store_id = $2`, [id, storeId]);
+  return { deleted: true };
+}
+
+/**
+ * What a promo takes off a given subtotal, in cents. Pure, so the money
+ * arithmetic is testable without a database.
+ *
+ * Capped at subtotal − 1: Stripe rejects a card session that totals zero,
+ * and "100% off" codes are a real thing stores set up.
+ */
+export function discountCentsFor(promo, subtotalCents) {
+  let amountOff = 0;
+  if (promo.discount_type === 'percent') {
+    amountOff = Math.round(subtotalCents * (Number(promo.discount_value) / 100));
+  } else if (promo.discount_type === 'amount') {
+    amountOff = Math.round(Number(promo.discount_value));
+  }
+  return Math.max(0, Math.min(amountOff, Math.max(0, subtotalCents - 1)));
+}
+
+/**
+ * Price a store's shipping rules against one order. Pure — the DB-reading
+ * buildShippingOptions below is a thin wrapper so this can be tested.
+ */
+export function priceShippingRules(rules, { subtotalCents = 0, itemCount = 1, freeShipping = false } = {}) {
+  const priced = [];
+  for (const rule of rules) {
+    let cents;
+    switch (rule.rule_type) {
+      case 'flat':     cents = rule.amount_cents; break;
+      case 'per_item': cents = rule.amount_cents * Math.max(1, itemCount); break;
+      case 'pickup':   cents = 0; break;
+      case 'free_over':
+        // Below the threshold this rule still ships, it just isn't free —
+        // dropping it entirely would leave a small order with no option at
+        // all when free_over is the store's only rule.
+        cents = subtotalCents >= (rule.threshold_cents ?? 0) ? 0 : rule.amount_cents;
+        break;
+      default: continue;
+    }
+    priced.push({ cents, label: rule.label });
+  }
+  if (!priced.length) return [];
+
+  if (freeShipping) {
+    const cheapest = priced.reduce((min, o) => (o.cents < min.cents ? o : min), priced[0]);
+    if (cheapest.cents > 0) {
+      cheapest.cents = 0;
+      cheapest.label = `${cheapest.label} — free with your code`;
+    }
+  }
+  return priced;
+}
+
+/**
+ * Check a shopper-typed code against one store's promos.
+ *
+ * Returns { promotion_id, code, discount_type, amount_off_cents,
+ *           free_shipping, headline } — amount_off_cents is already capped
+ * at the subtotal, so the caller can hand it straight to Stripe.
+ *
+ * Throws BackofficeError(404/400) with a shopper-readable message. The
+ * caller decides whether to surface it or just drop the code.
+ */
+export async function validatePromotion(storeId, rawCode, { subtotalCents = 0, buyerEmail = null } = {}) {
+  const code = normalizeCode(rawCode);
+  if (!code) throw bad('Enter a promo code');
+
+  const { rows } = await pool.query(
+    `SELECT id, code, headline, discount_type, discount_value, min_order_cents,
+            max_uses, max_uses_per_email, times_used, active, starts_at, expires_at
+       FROM store_promotions
+      WHERE store_id = $1 AND lower(code) = lower($2)`,
+    [storeId, code],
+  );
+  const promo = rows[0];
+  // Same message for "no such code" and "switched off" — telling a shopper
+  // a code exists but is disabled invites guessing at the next one.
+  if (!promo || !promo.active) throw new BackofficeError(404, `"${code}" is not a valid code for this store`);
+
+  const now = new Date();
+  if (promo.starts_at && now < new Date(promo.starts_at)) {
+    throw bad(`"${code}" is not active yet`);
+  }
+  if (promo.expires_at && now >= new Date(promo.expires_at)) {
+    throw bad(`"${code}" has expired`);
+  }
+  if (promo.max_uses != null && promo.times_used >= promo.max_uses) {
+    throw bad(`"${code}" has been fully redeemed`);
+  }
+  if (promo.min_order_cents > 0 && subtotalCents < promo.min_order_cents) {
+    const dollars = (promo.min_order_cents / 100).toFixed(2);
+    throw bad(`"${code}" needs an order of $${dollars} or more`);
+  }
+  if (promo.max_uses_per_email != null && buyerEmail) {
+    const { rows: used } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM store_promotion_redemptions
+        WHERE promotion_id = $1 AND lower(buyer_email) = lower($2)`,
+      [promo.id, buyerEmail],
+    );
+    if (used[0].n >= promo.max_uses_per_email) {
+      throw bad(`"${code}" has already been used on this email address`);
+    }
+  }
+
+  const amountOff = discountCentsFor(promo, subtotalCents);
+
+  return {
+    promotion_id: promo.id,
+    code: promo.code,
+    headline: promo.headline,
+    discount_type: promo.discount_type,
+    amount_off_cents: amountOff,
+    free_shipping: promo.discount_type === 'free_shipping',
+  };
+}
+
+/**
+ * Log a redemption and bump the counter. Takes an optional pg client so the
+ * caller can run it inside the order-capture transaction — the counter and
+ * the order must land together or max_uses drifts.
+ */
+export async function recordRedemption(
+  { promotionId, storeOrderId = null, buyerEmail = null, amountOffCents = 0 },
+  client = pool,
+) {
+  const id = asInt(promotionId, 'promotion id');
+  await client.query(
+    `INSERT INTO store_promotion_redemptions
+       (promotion_id, store_order_id, buyer_email, amount_off_cents)
+     VALUES ($1, $2, $3, $4)`,
+    [id, storeOrderId, buyerEmail, Math.max(0, Math.round(amountOffCents))],
+  );
+  await client.query(
+    `UPDATE store_promotions SET times_used = times_used + 1, updated_at = NOW()
+      WHERE id = $1`,
+    [id],
+  );
+}
+
+// ── Shipping rules ───────────────────────────────────────────────────────
+// What the SHOPPER is charged. TSB is merchant of record and buys the real
+// label later through EasyPost, so these are the store's pricing policy,
+// not carrier rates. A store with no rules keeps the weight-tier defaults.
+
+const SHIPPING_TYPES = ['flat', 'per_item', 'free_over', 'pickup'];
+
+export async function listShippingRules(storeId, { includeInactive = false } = {}) {
+  const { rows } = await pool.query(
+    `SELECT id, label, rule_type, amount_cents, threshold_cents, sort_order, active
+       FROM store_shipping_rules
+      WHERE store_id = $1 ${includeInactive ? '' : 'AND active'}
+      ORDER BY sort_order, id`,
+    [storeId],
+  );
+  return rows;
+}
+
+export async function upsertShippingRule(storeId, payload) {
+  const label = String(payload?.label ?? '').trim();
+  if (!label) throw bad('label is required');
+  if (label.length > 120) throw bad('label must be 120 characters or fewer');
+
+  const ruleType = String(payload?.rule_type ?? '').trim();
+  if (!SHIPPING_TYPES.includes(ruleType)) {
+    throw bad(`rule_type must be one of ${SHIPPING_TYPES.join(', ')}`);
+  }
+
+  // pickup is always free; a threshold only means something for free_over.
+  const amountCents = ruleType === 'pickup'
+    ? 0
+    : asInt(payload?.amount_cents ?? 0, 'amount_cents', { min: 0 });
+  let thresholdCents = null;
+  if (ruleType === 'free_over') {
+    thresholdCents = asInt(payload?.threshold_cents, 'threshold_cents', { min: 1 });
+  }
+
+  const sortOrder = asInt(payload?.sort_order ?? 0, 'sort_order', { min: 0 });
+  const active = payload?.active === undefined ? true : Boolean(payload.active);
+
+  if (payload?.id) {
+    const id = asInt(payload.id, 'id');
+    const { rows } = await pool.query(
+      `UPDATE store_shipping_rules
+          SET label = $1, rule_type = $2, amount_cents = $3, threshold_cents = $4,
+              sort_order = $5, active = $6, updated_at = NOW()
+        WHERE id = $7 AND store_id = $8
+        RETURNING id, label, rule_type, amount_cents, threshold_cents, sort_order, active`,
+      [label, ruleType, amountCents, thresholdCents, sortOrder, active, id, storeId],
+    );
+    if (!rows[0]) throw new BackofficeError(404, 'Shipping rule not found');
+    return rows[0];
+  }
+
+  const { rows } = await pool.query(
+    `INSERT INTO store_shipping_rules
+       (store_id, label, rule_type, amount_cents, threshold_cents, sort_order, active)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, label, rule_type, amount_cents, threshold_cents, sort_order, active`,
+    [storeId, label, ruleType, amountCents, thresholdCents, sortOrder, active],
+  );
+  return rows[0];
+}
+
+export async function deleteShippingRule(storeId, ruleId) {
+  const id = asInt(ruleId, 'shipping rule id');
+  const { rowCount } = await pool.query(
+    `DELETE FROM store_shipping_rules WHERE id = $1 AND store_id = $2`,
+    [id, storeId],
+  );
+  if (!rowCount) throw new BackofficeError(404, 'Shipping rule not found');
+  return { deleted: true };
+}
+
+/**
+ * Turn a store's rules into Stripe shipping_options.
+ *
+ * Returns null when the store has configured none, which means "use the
+ * weight-tier defaults" — the caller owns that fallback so a store that has
+ * never opened this screen behaves exactly as it did before.
+ *
+ * `freeShipping` comes from a free_shipping promo and zeroes the cheapest
+ * option only: a code that says "free shipping" should not also hand the
+ * shopper free overnight air.
+ */
+export async function buildShippingOptions(
+  storeId, { subtotalCents = 0, itemCount = 1, freeShipping = false } = {},
+) {
+  const rules = await listShippingRules(storeId);
+  if (!rules.length) return null;
+
+  const priced = priceShippingRules(rules, { subtotalCents, itemCount, freeShipping });
+  if (!priced.length) return null;
+
+  return priced.map((o) => ({
+    shipping_rate_data: {
+      type: 'fixed_amount',
+      fixed_amount: { amount: o.cents, currency: 'usd' },
+      display_name: o.label.slice(0, 100),
+    },
+  }));
+}
