@@ -303,6 +303,17 @@ export async function captureStoreOrder(session) {
     } : {}),
   };
 
+  // Was the partner's share already moved by Stripe at charge time?
+  //
+  // A destination charge transfers their money the moment the card clears,
+  // so crediting store_ledger as well would pay them twice: once by Stripe,
+  // once by the next payout run handing over money TSB never held. The
+  // metadata is written by checkoutConnectParams at session creation.
+  const connectDestination = session.metadata?.connect_destination || null;
+  const connectTransfer = connectDestination
+    ? parseInt(String(session.metadata?.connect_transfer ?? '0'), 10) || 0
+    : null;
+
   // ── 3. Insert order + ledger credit atomically ──────────────────────────
   const client = await pool.connect();
   try {
@@ -312,8 +323,9 @@ export async function captureStoreOrder(session) {
          (store_id, tsb_order_ref, buyer_email,
           subtotal_cents, shipping_cents, tax_cents, gross_total_cents,
           split_snapshot_json, store_earnings_cents, tsb_earnings_cents, status,
-          buyer_name, buyer_phone, shipping_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13::jsonb)
+          buyer_name, buyer_phone, shipping_address,
+          stripe_destination, stripe_transfer_cents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13::jsonb, $14, $15)
        RETURNING id, created_at`,
       [
         storeId, session.id, buyerEmail,
@@ -322,19 +334,25 @@ export async function captureStoreOrder(session) {
         tsb_earnings_total + shipping_cents + tax_cents - discount_from_tsb,
         buyerName, buyerPhone,
         shippingAddress ? JSON.stringify(shippingAddress) : null,
+        connectDestination, connectTransfer,
       ],
     );
     const orderId = orderRes.rows[0].id;
 
+    // Zero when Stripe already paid them. The entry is still written, at
+    // zero, so the ledger remains a complete record of every order rather
+    // than silently skipping the Connect ones — a partner reconciling their
+    // Stripe payouts against this list should find the same orders.
     await client.query(
       `INSERT INTO store_ledger (store_id, entry_type, amount_cents, order_id, memo)
        VALUES ($1, 'sale', $2, $3, $4)`,
       [
         storeId,
-        store_earnings_net,
+        connectDestination ? 0 : store_earnings_net,
         orderId,
         `Sale: ${lines.map((l) => `store_product ${l.store_product_id} × ${l.qty}`).join(', ')}`
-          + (discount_from_store ? ` (less ${session.metadata?.promo_code || 'promo'} −$${(discount_from_store / 100).toFixed(2)})` : ''),
+          + (discount_from_store ? ` (less ${session.metadata?.promo_code || 'promo'} −$${(discount_from_store / 100).toFixed(2)})` : '')
+          + (connectDestination ? ` — $${((connectTransfer || 0) / 100).toFixed(2)} paid direct to Stripe account ${connectDestination}` : ''),
       ],
     );
 

@@ -25,6 +25,7 @@ import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeAdminSession.js';
 import * as backoffice from '../services/storeBackoffice.js';
+import * as connect from '../services/stripeConnect.js';
 import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
 import { uploadObject } from '../services/spaces.js';
@@ -778,6 +779,62 @@ router.post('/:slug/branding/upload', owner, async (req, res, next) => {
     res.status(201).json({ url, filename: filename ?? null });
   } catch (err) {
     console.error('[groupStoreAdmin] branding upload failed:', err.message);
+    next(err);
+  }
+});
+
+// ── Stripe Connect ───────────────────────────────────────────────────────
+// Getting paid directly instead of waiting for TSB's monthly ACH run.
+//
+// Owner-only, and deliberately so: this links a bank account and runs a
+// partner's identity through Stripe's KYC. TSB never sees those details —
+// Express accounts mean Stripe hosts the whole form.
+
+router.get('/:slug/stripe', owner, async (req, res, next) => {
+  try {
+    res.json(await connect.getConnectStatus(req.store_admin.store_id));
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /:slug/stripe/onboard — returns a one-time Stripe-hosted URL.
+// Account links expire within minutes, so this is called on each click
+// rather than stored anywhere.
+router.post('/:slug/stripe/onboard', owner, async (req, res, next) => {
+  try {
+    const origin = req.get('origin') || `https://${req.get('host')}`;
+    const base = `${origin}/stores/${encodeURIComponent(req.params.slug)}/admin`;
+    const link = await connect.startOnboarding(req.store_admin.store_id, {
+      returnUrl: `${base}?stripe=done`,
+      // Stripe sends the owner here if the link expired before they finished.
+      refreshUrl: `${base}?stripe=retry`,
+    });
+    res.json({ url: link.url, account_id: link.accountId });
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
+    // A key without Connect permissions is a TSB configuration problem, not
+    // something the partner can act on — say so rather than leaking a raw
+    // Stripe permissions error into their dashboard.
+    if (err?.code === 'more_permissions_required') {
+      console.error('[stripe connect] key lacks Connect permissions:', err.message);
+      return res.status(503).json({
+        error: 'Direct payouts are not switched on yet. Contact T-Shirt Brothers.',
+      });
+    }
+    next(err);
+  }
+});
+
+// Pull the latest from Stripe. The account.updated webhook keeps this
+// current on its own; this is the "I just finished, show me" button.
+router.post('/:slug/stripe/refresh', owner, async (req, res, next) => {
+  try {
+    await connect.refreshAccountStatus(req.store_admin.store_id);
+    res.json(await connect.getConnectStatus(req.store_admin.store_id));
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
