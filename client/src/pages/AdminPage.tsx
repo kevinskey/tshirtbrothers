@@ -48,6 +48,7 @@ import {
   Copy,
   Check,
   Printer,
+  Gem,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -233,9 +234,11 @@ function CustomerSortTh({ label, k, sort, onSort, align, title }: {
 // sidebar manageable (was 16 flat items; now 11 in 4 groups).
 // Items can either flip activeSection (internal admin section) or navigate
 // to a route via `to` (e.g. the customer-facing Design Studio at /design).
+// `external: true` means `to` is a full URL on another host (StoneCut lives at
+// rhinestones.tshirtbrothers.com), so it renders as an <a> in a new tab.
 type NavItem =
-  | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never }
-  | { key: string; label: string; icon: typeof LayoutDashboard; to: string };
+  | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never; external?: never }
+  | { key: string; label: string; icon: typeof LayoutDashboard; to: string; external?: boolean };
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   // Dashboard + Pipeline merged into one landing: the Pipeline page now
   // shows the four stat cards above the search/filter list.
@@ -267,6 +270,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'post-office', label: 'Post Office', icon: Truck, to: '/admin/post-office' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
+    { key: 'stonecut',  label: 'StoneCut',         icon: Gem, to: 'https://rhinestones.tshirtbrothers.com', external: true },
     { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
     { key: 'jds',        label: 'Blanks (JDS)',    icon: Package },
   ]},
@@ -3269,6 +3273,22 @@ export default function AdminPage() {
                 // External-route items (e.g. Design Studio → /design) are
                 // rendered as Link, not button — they navigate away from /admin.
                 if ('to' in item && item.to) {
+                  if (item.external) {
+                    return (
+                      <a
+                        key={key}
+                        href={item.to}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setSidebarOpen(false)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="flex-1 text-left">{label}</span>
+                        <ArrowLeft className="w-3 h-3 rotate-180 opacity-50" />
+                      </a>
+                    );
+                  }
                   return (
                     <Link
                       key={key}
@@ -3382,6 +3402,22 @@ export default function AdminPage() {
                   {group.items.map((item) => {
                     const { key, label, icon: Icon } = item;
                     if ('to' in item && item.to) {
+                      if (item.external) {
+                        return (
+                          <a
+                            key={key}
+                            href={item.to}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setOpenNavGroup(null)}
+                            className="flex w-full items-center gap-3 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                          >
+                            <Icon className="h-4 w-4" />
+                            <span className="flex-1 text-left">{label}</span>
+                            <ArrowLeft className="h-3 w-3 rotate-180 opacity-50" />
+                          </a>
+                        );
+                      }
                       return (
                         <Link
                           key={key}
