@@ -221,15 +221,115 @@ router.patch('/:id', async (req, res, next) => {
     }
     if (patches.length === 0) return res.status(400).json({ error: 'no fields to update' });
     params.push(id);
-    const { rows } = await pool.query(
-      `UPDATE stores SET ${patches.join(', ')}
-        WHERE id = $${params.length} AND store_type IN ('group', 'business')
-      RETURNING id, slug, name, status, brand_json, fulfillment_mode,
-                pickup_location_json, is_fundraiser, fundraiser_json`,
-      params,
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Group store not found' });
-    res.json(rows[0]);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `UPDATE stores SET ${patches.join(', ')}
+          WHERE id = $${params.length} AND store_type IN ('group', 'business')
+        RETURNING id, slug, name, status, brand_json, fulfillment_mode,
+                  pickup_location_json, is_fundraiser, fundraiser_json`,
+        params,
+      );
+      if (!rows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Group store not found' });
+      }
+
+      // ── Make a split edit actually change the split ──────────────────
+      // fundraiser_json on `stores` is DISPLAY ONLY. captureStoreOrder
+      // computes every payout from store_agreements.fee_config_json, read
+      // through the agreement each product froze at publish time — so
+      // before this, editing the split here changed the number on the
+      // admin screen and nothing about the money. Same class of bug as the
+      // Sensory Seasons split trap.
+      //
+      // store_agreements is an immutable acceptance record, so the edit
+      // writes a NEW agreement and repoints the store's products at it.
+      // Orders already captured keep their own frozen split_snapshot_json,
+      // so past payouts are untouched; only future orders move.
+      let agreement = null;
+      if (req.body?.fundraiser_json !== undefined) {
+        const fj = req.body.fundraiser_json ?? {};
+        const contribPct = fj?.contribution_type === 'percent'
+          ? Math.min(100, Math.max(0, Number(fj.contribution_value) || 0))
+          : 0;
+        // A flat per-item contribution is TSB's retail minus the org's cut,
+        // expressed as the min TSB keeps — the same translation the create
+        // path does, which only handled the percent case.
+        const contribFlatCents = fj?.contribution_type === 'flat'
+          ? Math.max(0, Math.round(Number(fj.contribution_value) || 0))
+          : 0;
+
+        const prev = await client.query(
+          `SELECT fee_config_json, payout_terms_json, accepted_by_email
+             FROM store_agreements
+            WHERE store_id = $1 AND kind = 'store'
+            ORDER BY id DESC LIMIT 1`,
+          [id],
+        );
+        const base = prev.rows[0];
+
+        const feeConfig = {
+          percent_of_retail: 100 - contribPct,
+          min_per_item_cents: 0,
+          contribution_type: fj?.contribution_type ?? 'percent',
+          contribution_value: fj?.contribution_type === 'flat' ? contribFlatCents : contribPct,
+        };
+
+        // A FLAT per-item contribution has no store-wide expression:
+        // computeLineSplit works in percent-of-retail and a TSB minimum,
+        // and "the org gets $6 a shirt" depends on each product's retail.
+        // It becomes per_product minimums of (retail − contribution) with
+        // percent_of_retail 0, which is the Sensory Seasons shape.
+        if (fj?.contribution_type === 'flat') {
+          feeConfig.percent_of_retail = 0;
+          const { rows: prods } = await client.query(
+            `SELECT id, retail_price_cents FROM store_products WHERE store_id = $1`,
+            [id],
+          );
+          feeConfig.per_product = Object.fromEntries(prods.map((p) => [
+            String(p.id),
+            { min_per_item_cents: Math.max(0, p.retail_price_cents - contribFlatCents) },
+          ]));
+        }
+
+        // Setting a store-wide split REPLACES the deal, including any
+        // hand-tuned per-product terms. Reported back so an admin who
+        // didn't mean to flatten them can see that they went.
+        const droppedOverrides = Object.keys(base?.fee_config_json?.per_product ?? {}).length;
+
+        const ins = await client.query(
+          `INSERT INTO store_agreements
+             (store_id, kind, fee_config_json, payout_terms_json, accepted_by_email)
+           VALUES ($1, 'store', $2, $3, $4)
+           RETURNING id, fee_config_json`,
+          [
+            id, feeConfig,
+            base?.payout_terms_json ?? { cadence: 'monthly', method: 'ach' },
+            base?.accepted_by_email ?? req.user?.email ?? 'admin@tshirtbrothers.com',
+          ],
+        );
+        agreement = ins.rows[0];
+        agreement.per_product_overrides_dropped = droppedOverrides;
+
+        const repoint = await client.query(
+          `UPDATE store_products SET active_agreement_id = $1
+            WHERE store_id = $2 AND active_agreement_id <> $1`,
+          [agreement.id, id],
+        );
+        agreement.products_repointed = repoint.rowCount;
+      }
+
+      await client.query('COMMIT');
+      res.json({ ...rows[0], ...(agreement ? { agreement } : {}) });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) { next(err); }
 });
 
@@ -1278,6 +1378,43 @@ router.put('/:id/products/:productId/categories', async (req, res, next) => {
 router.post('/:id/products/reorder', async (req, res, next) => {
   try {
     res.json(await backoffice.reorderProducts(Number(req.params.id), req.body?.product_ids));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.get('/:id/promotions', async (req, res, next) => {
+  try {
+    res.json({ promotions: await backoffice.listPromotions(Number(req.params.id), { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:id/promotions', async (req, res, next) => {
+  try {
+    const promotion = await backoffice.upsertPromotion(Number(req.params.id), req.body, req.user?.email);
+    res.json({ promotion });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:id/promotions/:promotionId', async (req, res, next) => {
+  try {
+    res.json(await backoffice.deletePromotion(Number(req.params.id), req.params.promotionId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.get('/:id/shipping-rules', async (req, res, next) => {
+  try {
+    res.json({ rules: await backoffice.listShippingRules(Number(req.params.id), { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:id/shipping-rules', async (req, res, next) => {
+  try {
+    res.json({ rule: await backoffice.upsertShippingRule(Number(req.params.id), req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:id/shipping-rules/:ruleId', async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteShippingRule(Number(req.params.id), req.params.ruleId));
   } catch (err) { backofficeError(err, res, next); }
 });
 

@@ -17,7 +17,55 @@ import {
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import {
+  validatePromotion,
+  buildShippingOptions,
+  BackofficeError,
+} from '../services/storeBackoffice.js';
 import { generateInvoiceNumber, cardFeeCents } from './invoices.js';
+
+// ── Store promo codes ────────────────────────────────────────────────────
+// Store checkouts used to set `allow_promotion_codes: true`, which is an
+// account-wide switch: every promotion code on the TSB Stripe account was
+// redeemable at every store's checkout, and at JDS/APC/CGC. Codes are now
+// validated server-side against the ONE store being checked out, then
+// minted as a single-use Stripe coupon for that session.
+//
+// Returns { discounts, metadata, freeShipping } to spread into the session,
+// or nulls when no (valid) code was supplied. An invalid code is a 400 —
+// silently dropping it charges full price to a shopper who believes they
+// got a discount.
+async function storePromoForCheckout(stripe, storeId, rawCode, { subtotalCents, buyerEmail }) {
+  const empty = { discounts: null, metadata: {}, freeShipping: false };
+  if (!rawCode || !String(rawCode).trim()) return empty;
+
+  const promo = await validatePromotion(storeId, rawCode, { subtotalCents, buyerEmail });
+
+  const metadata = {
+    promo_id: String(promo.promotion_id),
+    promo_code: promo.code,
+    promo_amount_off: String(promo.amount_off_cents),
+  };
+
+  // free_shipping discounts the shipping option, not the goods, so it
+  // carries no coupon.
+  if (promo.free_shipping || promo.amount_off_cents <= 0) {
+    return { discounts: null, metadata, freeShipping: promo.free_shipping };
+  }
+
+  // duration 'once' + a per-session coupon means a leaked coupon id can't
+  // be replayed against another store's checkout the way a shared
+  // promotion code could.
+  const coupon = await stripe.coupons.create({
+    amount_off: promo.amount_off_cents,
+    currency: 'usd',
+    duration: 'once',
+    name: `${promo.code}${promo.headline ? ` — ${promo.headline}` : ''}`.slice(0, 40),
+    metadata: { store_id: String(storeId), store_promotion_id: String(promo.promotion_id) },
+  });
+
+  return { discounts: [{ coupon: coupon.id }], metadata, freeShipping: false };
+}
 
 // Shared card-surcharge line for custom-job checkouts (quotes/invoices).
 // Retail storefronts (stores, DTF, gifts, CGC/APC/LHT) deliberately do NOT
@@ -573,7 +621,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
   try {
     const {
       store_slug, product_slug, qty: qtyRaw, variant,
-      buyer_email, success_url, cancel_url,
+      buyer_email, success_url, cancel_url, promo_code,
     } = req.body ?? {};
 
     if (!store_slug || !product_slug) {
@@ -707,14 +755,41 @@ router.post('/create-store-checkout', async (req, res, next) => {
     const rushPriorityCents = Math.round(lineRetailCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
     const sameDayRushCents = Math.round(lineRetailCents * rushCfg.sameDayPct);
 
+    // Promo code (store-scoped) — validated before shipping is priced so a
+    // free_shipping code can zero the cheapest option.
+    let promo;
+    try {
+      promo = await storePromoForCheckout(stripe, product.store_id, promo_code, {
+        subtotalCents: lineRetailCents,
+        buyerEmail: buyer_email ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+
+    // A store that has configured its own shipping rules uses them; one
+    // that never opened that screen keeps the weight-tier behaviour below.
+    const ruleOptions = await buildShippingOptions(product.store_id, {
+      subtotalCents: lineRetailCents,
+      itemCount: qty,
+      freeShipping: promo.freeShipping,
+    });
+
     const totalOz = parcelOunces([{ weightOz: product.weight_oz, qty }]);
     const tier = tierForOunces(totalOz);
     const shippingOptions = [];
-    if (product.fulfillment_mode !== 'pickup_only') {
+    if (ruleOptions) {
+      shippingOptions.push(...ruleOptions);
+    } else if (product.fulfillment_mode !== 'pickup_only') {
       const speeds = [
         {
-          cents: tier.ground,
-          label: 'Standard — USPS Ground',
+          // A free_shipping code covers the standard service only — it
+          // should not also buy the shopper free overnight air.
+          cents: promo.freeShipping ? 0 : tier.ground,
+          label: promo.freeShipping
+            ? 'Standard — USPS Ground (free with your code)'
+            : 'Standard — USPS Ground',
           minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7,
         },
         {
@@ -742,7 +817,10 @@ router.post('/create-store-checkout', async (req, res, next) => {
         });
       }
     }
-    if (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both') {
+    // Configured rules already say whether pickup is offered (rule_type
+    // 'pickup'), so this default only applies to the weight-tier path.
+    if (!ruleOptions
+        && (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both')) {
       shippingOptions.push({
         shipping_rate_data: {
           type: 'fixed_amount',
@@ -754,7 +832,10 @@ router.post('/create-store-checkout', async (req, res, next) => {
 
     const sessionParams = {
       payment_method_types: ['card'],
-      allow_promotion_codes: true,
+      // NOT allow_promotion_codes — that switch is account-wide and let any
+      // store's code work at any other store's checkout. Store codes come
+      // in as `promo_code` and are validated against this store_id.
+      ...(promo.discounts ? { discounts: promo.discounts } : {}),
       shipping_address_collection: { allowed_countries: ['US'] },
       shipping_options: shippingOptions,
       line_items: [
@@ -784,6 +865,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
         store_product_id: String(product.product_id),
         product_slug,
         qty: String(qty),
+        ...promo.metadata,
         ...(variant ? { variant: JSON.stringify(variant).slice(0, 500) } : {}),
         ...(upsells.length
           ? { upsell_map: JSON.stringify(Object.fromEntries(upsells.map((u) => [u.price_id, u.store_product_id]))).slice(0, 500) }
@@ -835,7 +917,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
 // }
 router.post('/create-store-cart-checkout', async (req, res, next) => {
   try {
-    const { store_slug, items, buyer_email, success_url, cancel_url } = req.body ?? {};
+    const { store_slug, items, buyer_email, success_url, cancel_url, promo_code } = req.body ?? {};
     if (!store_slug || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'store_slug + items required' });
     }
@@ -909,12 +991,40 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
     const rushPriorityCents = Math.round(subtotalCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
     const sameDayRushCents = Math.round(subtotalCents * rushCfg.sameDayPct);
 
+    const stripe = getStripe();
+
+    // Store-scoped promo code — see storePromoForCheckout. Validated
+    // before shipping so a free_shipping code can zero the cheapest option.
+    let promo;
+    try {
+      promo = await storePromoForCheckout(stripe, store.id, promo_code, {
+        subtotalCents,
+        buyerEmail: buyer_email ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+
+    const itemCount = priced.reduce((n, l) => n + l.qty, 0);
+    const ruleOptions = await buildShippingOptions(store.id, {
+      subtotalCents, itemCount, freeShipping: promo.freeShipping,
+    });
+
     const totalOz = parcelOunces(priced.map((l) => ({ weightOz: l.product.weight_oz, qty: l.qty })));
     const tier = tierForOunces(totalOz);
     const shippingOptions = [];
-    if (store.fulfillment_mode !== 'pickup_only') {
+    if (ruleOptions) {
+      shippingOptions.push(...ruleOptions);
+    } else if (store.fulfillment_mode !== 'pickup_only') {
       const speeds = [
-        { cents: tier.ground, label: 'Standard — USPS Ground', minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7 },
+        {
+          cents: promo.freeShipping ? 0 : tier.ground,
+          label: promo.freeShipping
+            ? 'Standard — USPS Ground (free with your code)'
+            : 'Standard — USPS Ground',
+          minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7,
+        },
         {
           cents: tier.priority + rushPriorityCents,
           label: `Rush — prints in ${rushCfg.rushDays} business days, ships USPS Priority`,
@@ -936,7 +1046,8 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
         });
       }
     }
-    if (store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both') {
+    if (!ruleOptions
+        && (store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both')) {
       shippingOptions.push({
         shipping_rate_data: {
           type: 'fixed_amount',
@@ -957,11 +1068,11 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
       return res.status(400).json({ error: 'Too many different items — please check out in two orders.' });
     }
 
-    const stripe = getStripe();
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      allow_promotion_codes: true,
+      // Store-scoped codes only — see storePromoForCheckout.
+      ...(promo.discounts ? { discounts: promo.discounts } : {}),
       shipping_address_collection: { allowed_countries: ['US'] },
       shipping_options: shippingOptions,
       line_items: priced.map((l) => {
@@ -996,6 +1107,7 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
         // older consumer of this metadata still sees a valid order.
         store_product_id: String(priced[0].product.product_id),
         qty: String(priced[0].qty),
+        ...promo.metadata,
       },
     });
 

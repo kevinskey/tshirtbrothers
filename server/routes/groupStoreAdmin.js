@@ -662,4 +662,46 @@ router.post('/:slug/products/reorder', owner, async (req, res, next) => {
   } catch (err) { backofficeError(err, res, next); }
 });
 
+// Promo codes. Scoped to this store — see the note in storeBackoffice.js
+// about why Stripe's own promotion codes can't be used here.
+router.get('/:slug/promotions', owner, async (req, res, next) => {
+  try {
+    res.json({ promotions: await backoffice.listPromotions(req.store_admin.store_id, { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/promotions', owner, async (req, res, next) => {
+  try {
+    const promotion = await backoffice.upsertPromotion(
+      req.store_admin.store_id, req.body, req.store_admin.email,
+    );
+    res.json({ promotion });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/promotions/:promotionId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deletePromotion(req.store_admin.store_id, req.params.promotionId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Shipping the store charges its shoppers. TSB still buys the real label.
+router.get('/:slug/shipping-rules', owner, async (req, res, next) => {
+  try {
+    res.json({ rules: await backoffice.listShippingRules(req.store_admin.store_id, { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/shipping-rules', owner, async (req, res, next) => {
+  try {
+    res.json({ rule: await backoffice.upsertShippingRule(req.store_admin.store_id, req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/shipping-rules/:ruleId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteShippingRule(req.store_admin.store_id, req.params.ruleId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
 export default router;
