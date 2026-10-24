@@ -1182,9 +1182,14 @@ function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
 
           Same-origin path, not the store's subdomain: the site sends
           X-Frame-Options: SAMEORIGIN, so tshirtbrothers.com/… frames and
-          livehardtruth.tshirtbrothers.com does not. Scaled to 25% in a
-          1600px-wide frame so a desktop layout reads at panel size
-          instead of a phone-width column. */}
+          livehardtruth.tshirtbrothers.com does not.
+
+          200% + scale(0.5) rather than a fixed pixel width: the iframe
+          lays out at twice the panel's width, so the storefront renders
+          at a desktop viewport and not as a phone-width column, and the
+          halving puts it back exactly inside the panel at whatever width
+          that happens to be. A fixed 1600px frame left two thirds of the
+          panel empty on a wide screen. */}
       {!storefront.themeable && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
           <p className="text-xs text-amber-900">{storefront.note}</p>
@@ -1209,8 +1214,7 @@ function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
             src={storefront.path}
             title={`${storeName} storefront preview`}
             loading="lazy"
-            className="absolute left-0 top-0 origin-top-left border-0"
-            style={{ width: 1600, height: 1024, transform: 'scale(0.25)' }}
+            className="absolute left-0 top-0 h-[200%] w-[200%] origin-top-left scale-50 border-0"
           />
         </div>
       </div>
