@@ -23,6 +23,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { getClient, FROM_ADDRESS } from './shipping.js';
 import { parcelOunces, DEFAULT_ITEM_OZ } from '../lib/shippingRates.js';
 import { refreshTracking } from '../services/trackingRefresh.js';
+import { notifyShipped } from '../services/shipNotify.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -101,19 +102,41 @@ async function loadSubject(type, id) {
 }
 
 /** Write the bought label back onto whatever it was bought for, so the
- *  order screens show tracking without consulting this table. */
+ *  order screens show tracking without consulting this table — then tell
+ *  the customer.
+ *
+ *  The notification used to be missing here entirely: this screen buys
+ *  labels in bulk, so a batch of orders got tracking numbers and none of
+ *  those customers heard anything until someone flipped each order's
+ *  status by hand. notifyShipped is idempotent, so a later status change
+ *  won't send a second copy. */
 async function stampSubject(type, id, { tracking, carrier }) {
+  // Voiding a label calls this with tracking: null to put the order back in
+  // the queue. That has to clear shipped_email_sent_at too, or the
+  // replacement label is treated as already-notified and the customer never
+  // gets the tracking number they can actually use.
+  const reset = tracking === null ? ', shipped_email_sent_at = NULL' : '';
+
   if (type === 'store_order') {
     await pool.query(
-      `UPDATE store_orders SET tracking_number = $1, tracking_carrier = $2, updated_at = NOW() WHERE id = $3`,
+      `UPDATE store_orders
+          SET tracking_number = $1, tracking_carrier = $2, updated_at = NOW()${reset}
+        WHERE id = $3`,
       [tracking, carrier, id],
     );
   } else if (type === 'quote') {
     await pool.query(
-      `UPDATE quotes SET tracking_number = $1, tracking_carrier = $2 WHERE id = $3`,
+      `UPDATE quotes
+          SET tracking_number = $1, tracking_carrier = $2${reset}
+        WHERE id = $3`,
       [tracking, carrier, id],
     );
+  } else {
+    return { sent: false, reason: 'unknown_kind' };
   }
+  // Returns { sent: false, reason: 'no_tracking' } on a void, which is what
+  // we want — nothing to tell the customer about a label we just cancelled.
+  return notifyShipped(type, id);
 }
 
 // ── Queue ────────────────────────────────────────────────────────────

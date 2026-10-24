@@ -2,6 +2,7 @@ import { Router } from 'express';
 import EasyPostClient from '@easypost/api';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import pool from '../db.js';
+import { notifyShipped } from '../services/shipNotify.js';
 
 const router = Router();
 
@@ -92,18 +93,20 @@ router.post('/buy', authenticate, adminOnly, async (req, res, next) => {
       rate: purchased.selected_rate?.rate,
     };
 
-    // Record tracking on the quote. Status is untouched — the caller follows
-    // up with POST /api/quotes/admin/:id/fulfill, which completes the order
-    // and emails the customer their tracking link. (This used to force
-    // status back to 'approved' and graffiti the notes field.)
+    // Record tracking, then tell the customer. Status is still left to the
+    // fulfill / PATCH endpoints — buying postage isn't the same as saying
+    // the order is complete — but the notification no longer waits for
+    // them: a bought label means the package is going out, and which
+    // screen it was bought from shouldn't decide whether the customer
+    // hears about it. notifyShipped is idempotent, so the later status
+    // change won't send a second copy.
     if (quoteId) {
       await pool.query(
         `UPDATE quotes SET tracking_number = $1, tracking_carrier = $2 WHERE id = $3`,
         [result.trackingNumber, result.carrier || null, quoteId]
       );
+      result.customerNotified = (await notifyShipped('quote', quoteId)).sent;
     }
-    // Same deal for a storefront order — record the label, leave the status
-    // to PATCH /api/admin/store-orders/:id, which emails the buyer.
     if (storeOrderId) {
       await pool.query(
         `UPDATE store_orders
@@ -111,6 +114,7 @@ router.post('/buy', authenticate, adminOnly, async (req, res, next) => {
           WHERE id = $4`,
         [result.trackingNumber, result.carrier || null, result.labelUrl || null, storeOrderId],
       );
+      result.customerNotified = (await notifyShipped('store_order', storeOrderId)).sent;
     }
 
     res.json(result);

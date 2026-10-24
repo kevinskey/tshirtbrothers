@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { notifyShipped } from '../services/shipNotify.js';
 import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
@@ -15,7 +16,6 @@ import {
   sendArtworkRequestToCustomer,
   sendArtworkReceivedToAdmin,
   sendQuoteDeclinedToAdmin,
-  sendOrderShippedToCustomer,
   quoteLang,
   normalizeCcEmails,
 } from '../services/email.js';
@@ -1606,7 +1606,12 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
     const lang = quoteLang(quote);
 
     if (method === 'ship') {
-      sendOrderShippedToCustomer(quote, { carrier, trackingNumber: tracking_number }, lang).catch(() => {});
+      // Reads tracking off the quote row, not the request body. An admin who
+      // bought the label first (the normal order of operations) then clicked
+      // Fulfill with no tracking in the body used to send a shipped email
+      // with no tracking number in it at all. Also deduped, so the label
+      // purchase and this click don't both email.
+      notifyShipped('quote', quote.id).catch(() => {});
     } else {
       sendQuoteStatusUpdate(quote, 'completed').catch(() => {});
       smsStatusUpdateToCustomer(quote, 'completed').catch(() => {});

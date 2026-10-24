@@ -20,7 +20,7 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { getClient as easypostClient, FROM_ADDRESS } from './shipping.js';
 import { parcelOunces } from '../lib/shippingRates.js';
-import { sendStoreOrderShippedEmail } from '../services/email.js';
+import { notifyShipped } from '../services/shipNotify.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -196,31 +196,13 @@ router.patch('/:id', async (req, res, next) => {
     if (!rows[0]) return res.status(404).json({ error: 'Store order not found' });
     const order = rows[0];
 
-    // Tell the buyer their order shipped — once. Deduped on
-    // shipped_email_sent_at so re-marking fulfilled can't re-send, and
-    // skipped entirely for a pickup order or one with no tracking yet.
-    if (status === 'shipped' && order.tracking_number && !order.shipped_email_sent_at) {
-      (async () => {
-        try {
-          const { rows: full } = await pool.query(
-            `SELECT o.*, s.name AS store_name, s.slug AS store_slug,
-                    (SELECT json_agg(json_build_object('title', sp.title, 'qty', (l->>'qty')::int,
-                                                       'variant', l->'variant'))
-                       FROM jsonb_array_elements(COALESCE(o.split_snapshot_json->'lines','[]'::jsonb)) l
-                       JOIN store_products sp ON sp.id = (l->>'store_product_id')::int) AS lines
-               FROM store_orders o JOIN stores s ON s.id = o.store_id
-              WHERE o.id = $1`,
-            [id],
-          );
-          if (!full[0]) return;
-          await sendStoreOrderShippedEmail(full[0]);
-          await pool.query(
-            `UPDATE store_orders SET shipped_email_sent_at = NOW() WHERE id = $1`, [id],
-          );
-        } catch (err) {
-          console.error('[adminStoreOrders] shipped email failed:', err.message);
-        }
-      })();
+    // Tell the buyer their order shipped — once. The dedupe, the pickup
+    // skip and the no-tracking skip all live in notifyShipped now, because
+    // buying a label already triggers this and the two must not both send.
+    if (status === 'shipped') {
+      notifyShipped('store_order', id).catch((err) => {
+        console.error('[adminStoreOrders] shipped email failed:', err.message);
+      });
     }
     res.json(order);
   } catch (err) { next(err); }
