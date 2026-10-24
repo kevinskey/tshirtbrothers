@@ -984,51 +984,47 @@ router.get('/ss-catalog/:ssId/detail', async (req, res, next) => {
 });
 
 // ── Coupons ──────────────────────────────────────────────────────────────
-// Backed entirely by Stripe: a Coupon (the discount) + a Promotion Code
-// (the customer-facing code). Store checkout sessions set
-// allow_promotion_codes, so buyers redeem right on the Stripe page.
-// Codes are scoped to a store via metadata for listing purposes only —
-// Stripe applies any active code account-wide at checkout.
-import Stripe from 'stripe';
-let _stripe = null;
-function stripeClient() {
-  if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe not configured');
-  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  return _stripe;
-}
+// These used to be Stripe Coupon + Promotion Code objects, redeemed on the
+// Stripe page via `allow_promotion_codes`. That switch is account-wide, so
+// a code created here for store A worked at store B's checkout and at
+// JDS/APC/CGC — the store_id metadata only ever filtered this list.
+//
+// They are now rows in store_promotions, validated against one store_id at
+// checkout (see storePromoForCheckout in routes/payments.js). The request
+// and response shapes are unchanged so the existing admin screen keeps
+// working; /:id/promotions is the fuller surface over the same table.
+//
+// Nothing needed migrating: there were no active Stripe promotion codes on
+// the account when this changed over.
 
-// GET /:id/coupons — list this store's promotion codes.
+const couponShape = (p) => ({
+  id: p.id,
+  code: p.code,
+  active: p.active,
+  percent_off: p.discount_type === 'percent' ? Number(p.discount_value) : null,
+  amount_off_cents: p.discount_type === 'amount' ? Number(p.discount_value) : null,
+  times_redeemed: p.times_used,
+  max_redemptions: p.max_uses,
+  expires_at: p.expires_at,
+});
+
+// GET /:id/coupons — list this store's promo codes.
 router.get('/:id/coupons', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return next();
-    const stripe = stripeClient();
-    const list = await stripe.promotionCodes.list({ limit: 100, expand: ['data.coupon'] });
-    const coupons = list.data
-      .filter((pc) => pc.metadata?.store_id === String(id))
-      .map((pc) => ({
-        id: pc.id,
-        code: pc.code,
-        active: pc.active,
-        percent_off: pc.coupon?.percent_off ?? null,
-        amount_off_cents: pc.coupon?.amount_off ?? null,
-        times_redeemed: pc.times_redeemed,
-        max_redemptions: pc.max_redemptions,
-        expires_at: pc.expires_at ? new Date(pc.expires_at * 1000).toISOString() : null,
-      }));
-    res.json({ coupons });
+    const promos = await backoffice.listPromotions(id, { includeInactive: true });
+    res.json({ coupons: promos.map(couponShape) });
   } catch (err) { next(err); }
 });
 
-// POST /:id/coupons — create a coupon + code.
+// POST /:id/coupons — create a code.
 // Body: { code, percent_off? OR amount_off_cents?, max_redemptions?, expires_at? }
 router.post('/:id/coupons', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return next();
     const { code, percent_off, amount_off_cents, max_redemptions, expires_at } = req.body ?? {};
-    const cleanCode = String(code ?? '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
-    if (!cleanCode) return res.status(400).json({ error: 'code required (letters/numbers)' });
     const pct = Number(percent_off);
     const amt = Number(amount_off_cents);
     const hasPct = Number.isFinite(pct) && pct > 0 && pct <= 100;
@@ -1037,42 +1033,27 @@ router.post('/:id/coupons', async (req, res, next) => {
       return res.status(400).json({ error: 'Provide percent_off (1-100) OR amount_off_cents' });
     }
 
-    const stripe = stripeClient();
-    const coupon = await stripe.coupons.create({
-      duration: 'once',
-      name: cleanCode,
-      ...(hasPct ? { percent_off: pct } : { amount_off: amt, currency: 'usd' }),
-    });
-    const pc = await stripe.promotionCodes.create({
-      coupon: coupon.id,
-      code: cleanCode,
-      metadata: { store_id: String(id) },
-      ...(Number.isInteger(Number(max_redemptions)) && Number(max_redemptions) > 0
-        ? { max_redemptions: Number(max_redemptions) } : {}),
-      ...(expires_at ? { expires_at: Math.floor(new Date(expires_at).getTime() / 1000) } : {}),
-    });
-    res.status(201).json({ id: pc.id, code: pc.code });
-  } catch (err) {
-    if (err?.code === 'resource_already_exists' || /already exists/i.test(err?.message ?? '')) {
-      return res.status(409).json({ error: 'That code already exists' });
-    }
-    next(err);
-  }
+    const promo = await backoffice.upsertPromotion(id, {
+      code,
+      discount_type: hasPct ? 'percent' : 'amount',
+      discount_value: hasPct ? Math.round(pct) : amt,
+      max_uses: Number.isInteger(Number(max_redemptions)) && Number(max_redemptions) > 0
+        ? Number(max_redemptions) : null,
+      expires_at: expires_at || null,
+    }, req.user?.email);
+
+    res.status(201).json({ id: promo.id, code: promo.code });
+  } catch (err) { backofficeError(err, res, next); }
 });
 
-// DELETE /:id/coupons/:promoId — deactivate (Stripe codes can't be deleted).
+// DELETE /:id/coupons/:promoId — delete, or deactivate once it has been used.
 router.delete('/:id/coupons/:promoId', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return next();
-    const stripe = stripeClient();
-    const pc = await stripe.promotionCodes.retrieve(String(req.params.promoId));
-    if (pc.metadata?.store_id !== String(id)) {
-      return res.status(404).json({ error: 'Coupon not found for this store' });
-    }
-    await stripe.promotionCodes.update(pc.id, { active: false });
-    res.json({ deactivated: true, code: pc.code });
-  } catch (err) { next(err); }
+    const result = await backoffice.deletePromotion(id, req.params.promoId);
+    res.json({ deactivated: true, ...result });
+  } catch (err) { backofficeError(err, res, next); }
 });
 
 // ── POST /upload-mockup ──────────────────────────────────────────────────
