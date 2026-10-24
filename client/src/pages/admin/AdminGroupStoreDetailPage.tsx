@@ -1370,8 +1370,17 @@ function SubdomainSetter({ storeId, onSet }: { storeId: number; onSet: () => voi
 
 // ── Mockup picker + publish form ─────────────────────────────────────────
 // ── Coupons ──────────────────────────────────────────────────────────────
-// Stripe promotion codes scoped to this store. Buyers enter the code on
-// the Stripe checkout page ("Add promotion code" link).
+// This store's own promo codes (store_promotions rows). They used to be
+// Stripe Coupon + Promotion Code objects redeemed on the Stripe page, but
+// `allow_promotion_codes` is an ACCOUNT-WIDE switch — a code made for one
+// store worked at every other store's checkout. Codes are now validated
+// against this one store before the session is created, so the shopper
+// enters them in the store's own cart.
+//
+// The store's owner gets a fuller version of this on their own dashboard
+// (backoffice/PromotionsTab) with min order, per-shopper limits and
+// redemption totals. This panel stays deliberately small: it's the
+// shortcut for a TSB staffer setting a code up on someone's behalf.
 // What TSB owes this store, and the button that cuts it loose.
 //
 // The nightly job only fires on a cadence ('monthly' = the 1st,
@@ -1608,7 +1617,8 @@ function CouponsSection({ storeId }: { storeId: number }) {
           <div className="p-6 text-center"><Loader2 className="w-5 h-5 animate-spin text-gray-400 mx-auto" /></div>
         ) : coupons.length === 0 ? (
           <p className="p-6 text-sm text-gray-500 text-center">
-            No coupons yet. Codes are redeemed on the Stripe checkout page via "Add promotion code."
+            No coupons yet. Shoppers enter codes in this store's cart, and each
+            code works only here.
           </p>
         ) : (
           <table className="w-full text-sm">
