@@ -59,6 +59,14 @@ export interface BoShippingRule {
   active: boolean;
 }
 
+export interface BoBranding {
+  primary_color: string | null;
+  logo_url: string | null;
+  hero_url: string | null;
+  tagline: string | null;
+  footer_note: string | null;
+}
+
 export interface BoContentBlock {
   id: number;
   key: string;
@@ -221,6 +229,35 @@ export function saveShippingRule(
 export function deleteShippingRule(slug: string, ruleId: number, authHeaders: Record<string, string>) {
   return call<{ deleted: boolean }>(`${base(slug)}/shipping-rules/${ruleId}`, authHeaders, {
     method: 'DELETE',
+  });
+}
+
+// ── Branding ─────────────────────────────────────────────────────────────
+// The look of the shop. The server merges these into stores.brand_json
+// against an allowlist — that column also holds flags an owner must not be
+// able to set, so sending extra keys here is pointless rather than
+// dangerous.
+export function fetchBranding(slug: string, authHeaders: Record<string, string>) {
+  return call<{ name: string; branding: BoBranding }>(`${base(slug)}/branding`, authHeaders);
+}
+
+export function saveBranding(
+  slug: string, branding: Partial<BoBranding>, authHeaders: Record<string, string>,
+) {
+  return call<{ branding: BoBranding }>(`${base(slug)}/branding`, authHeaders, {
+    method: 'PUT',
+    body: JSON.stringify(branding),
+  });
+}
+
+// Uploads to DO Spaces and returns a public URL to drop in logo_url /
+// hero_url, so an owner doesn't need somewhere else to host an image first.
+export function uploadBrandingImage(
+  slug: string, dataUrl: string, filename: string, authHeaders: Record<string, string>,
+) {
+  return call<{ url: string }>(`${base(slug)}/branding/upload`, authHeaders, {
+    method: 'POST',
+    body: JSON.stringify({ data_url: dataUrl, filename }),
   });
 }
 

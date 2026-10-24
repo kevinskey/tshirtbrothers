@@ -27,6 +27,7 @@ import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeA
 import * as backoffice from '../services/storeBackoffice.js';
 import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -710,6 +711,75 @@ router.delete('/:slug/shipping-rules/:ruleId', owner, async (req, res, next) => 
   try {
     res.json(await backoffice.deleteShippingRule(req.store_admin.store_id, req.params.ruleId));
   } catch (err) { backofficeError(err, res, next); }
+});
+
+// ── Branding ─────────────────────────────────────────────────────────────
+// The LOOK of the shop, as opposed to its words (which are /content).
+// Writes are an allowlisted merge into stores.brand_json — see
+// sanitizeBranding — because that column also carries `demo` and the
+// business-store address/website, which an owner may neither set nor wipe.
+
+router.get('/:slug/branding', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.getBranding(req.store_admin.store_id));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.put('/:slug/branding', owner, async (req, res, next) => {
+  try {
+    const branding = await backoffice.updateBranding(req.store_admin.store_id, req.body);
+    res.json({ branding });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// POST /:slug/branding/upload { data_url, filename? }
+// Owners shouldn't need somewhere else to host a logo first. Same Spaces
+// bucket and public-read policy as the staff mockup uploader, namespaced
+// per store, with the size cap the staff route doesn't need because staff
+// aren't the ones pasting a 12MB phone photo in as a logo.
+router.post('/:slug/branding/upload', owner, async (req, res, next) => {
+  try {
+    const { data_url, filename } = req.body ?? {};
+    if (!data_url || typeof data_url !== 'string' || !data_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'Pick an image to upload' });
+    }
+    const match = data_url.match(/^data:([^;]+);base64,/);
+    const contentType = match?.[1] || '';
+    if (!/^image\//.test(contentType)) {
+      return res.status(400).json({ error: 'That file is not an image' });
+    }
+
+    // base64 is ~4/3 of the bytes it encodes.
+    const approxBytes = (data_url.length - (match?.[0]?.length ?? 0)) * 0.75;
+    if (approxBytes > 5 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Image is too large — keep it under 5MB' });
+    }
+
+    const ext =
+      contentType === 'image/jpeg' ? 'jpg' :
+      contentType === 'image/png'  ? 'png' :
+      contentType === 'image/webp' ? 'webp' :
+      contentType === 'image/gif'  ? 'gif' :
+      contentType === 'image/svg+xml' ? 'svg' : null;
+    if (!ext) return res.status(400).json({ error: 'Use a PNG, JPG, WEBP, GIF or SVG' });
+
+    const safeSlug = String(req.store_admin.store_slug || req.params.slug || 'store')
+      .replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'store';
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const rand = crypto.randomBytes(4).toString('hex');
+
+    const url = await uploadObject({
+      key: `store-branding/${safeSlug}/${stamp}-${rand}.${ext}`,
+      body: data_url,
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+
+    res.status(201).json({ url, filename: filename ?? null });
+  } catch (err) {
+    console.error('[groupStoreAdmin] branding upload failed:', err.message);
+    next(err);
+  }
 });
 
 export default router;
