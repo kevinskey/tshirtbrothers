@@ -354,8 +354,13 @@ export default function BlingPage() {
                         label={`${size.stones.toLocaleString()} stones${locations > 1 ? ' × 2 spots' : ''}`}
                         value={money(quote.breakdown.stone_charge_per_location * locations)}
                       />
+                      {/* On a transfer-only order we set the stones into the
+                          template but the customer presses it, so calling the
+                          line "pressing" would be plainly untrue. */}
                       <Row
-                        label={`Setting & pressing${locations > 1 ? ' × 2' : ''}`}
+                        label={`${quote.transferOnly ? 'Stone setting' : 'Setting & pressing'}${
+                          locations > 1 ? ' × 2' : ''
+                        }`}
                         value={money(quote.breakdown.press_labor_per_location * locations)}
                       />
                       {quote.breakdown.garment_per_piece > 0 && (
