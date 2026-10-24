@@ -706,3 +706,116 @@ export async function buildShippingOptions(
     },
   }));
 }
+
+// ── Branding ─────────────────────────────────────────────────────────────
+// The look of a store's shop: colour, logo, hero image, tagline, footer
+// line. These live in stores.brand_json, which until now only a TSB staffer
+// could write — so a store could edit its words but not its appearance.
+//
+// brand_json holds more than branding: `demo` marks a showroom store
+// unsellable, and business stores keep `business_address` / `website_url`
+// in there. An owner must not be able to set those, and must not wipe them
+// by saving. So the write is an allowlisted MERGE, never a replace.
+
+export const BRANDING_FIELDS = [
+  'primary_color', 'logo_url', 'hero_url', 'tagline', 'footer_note',
+];
+
+// #rgb or #rrggbb. Anything else is rejected rather than coerced: a bad
+// colour string lands in a style attribute on every page of the shop.
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+function cleanImageUrl(value, field) {
+  const s = String(value ?? '').trim();
+  if (!s) return null;
+  let url;
+  try {
+    url = new URL(s);
+  } catch {
+    throw bad(`${field} must be a full URL starting with https://`);
+  }
+  // http(s) only — a javascript: or data: URL here would be rendered into
+  // an <img src> on a public page.
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw bad(`${field} must be an http or https URL`);
+  }
+  if (s.length > 1000) throw bad(`${field} is too long`);
+  return s;
+}
+
+function cleanText(value, field, max) {
+  if (value === null || value === undefined) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (s.length > max) throw bad(`${field} must be ${max} characters or fewer`);
+  return s;
+}
+
+/**
+ * Validate an owner's branding edit and return ONLY the keys they may set.
+ * Pure — the merge against the stored brand_json happens in the route.
+ *
+ * Absent keys are left alone; an explicitly null/empty key clears that
+ * field, which is how an owner removes a logo.
+ */
+export function sanitizeBranding(payload) {
+  const out = {};
+  if (!payload || typeof payload !== 'object') return out;
+
+  if ('primary_color' in payload) {
+    const raw = payload.primary_color;
+    const s = String(raw ?? '').trim();
+    if (!s) {
+      out.primary_color = null;
+    } else {
+      if (!HEX_COLOR.test(s)) throw bad('primary_color must be a hex colour like #1f2a44');
+      out.primary_color = s.toLowerCase();
+    }
+  }
+  if ('logo_url' in payload)    out.logo_url    = cleanImageUrl(payload.logo_url, 'logo_url');
+  if ('hero_url' in payload)    out.hero_url    = cleanImageUrl(payload.hero_url, 'hero_url');
+  if ('tagline' in payload)     out.tagline     = cleanText(payload.tagline, 'tagline', 200);
+  if ('footer_note' in payload) out.footer_note = cleanText(payload.footer_note, 'footer_note', 500);
+
+  return out;
+}
+
+export async function getBranding(storeId) {
+  const { rows } = await pool.query(
+    `SELECT name, brand_json FROM stores WHERE id = $1`, [storeId],
+  );
+  if (!rows[0]) throw new BackofficeError(404, 'Store not found');
+  const brand = rows[0].brand_json ?? {};
+  return {
+    name: rows[0].name,
+    branding: Object.fromEntries(BRANDING_FIELDS.map((f) => [f, brand[f] ?? null])),
+  };
+}
+
+/**
+ * Merge an owner's branding edit into brand_json.
+ *
+ * jsonb || jsonb in one statement, so a concurrent staff edit to an
+ * unrelated key can't be lost to a read-modify-write race. Keys set to null
+ * are stripped rather than stored as JSON null, which keeps the storefront's
+ * `brand.logo_url || fallback` checks working.
+ */
+export async function updateBranding(storeId, payload) {
+  const patch = sanitizeBranding(payload);
+  if (!Object.keys(patch).length) throw bad('No branding fields supplied');
+
+  const toSet = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== null));
+  const toClear = Object.keys(patch).filter((k) => patch[k] === null);
+
+  const { rows } = await pool.query(
+    `UPDATE stores
+        SET brand_json = (COALESCE(brand_json, '{}'::jsonb) || $2::jsonb) - $3::text[]
+      WHERE id = $1
+      RETURNING brand_json`,
+    [storeId, JSON.stringify(toSet), toClear],
+  );
+  if (!rows[0]) throw new BackofficeError(404, 'Store not found');
+
+  const brand = rows[0].brand_json ?? {};
+  return Object.fromEntries(BRANDING_FIELDS.map((f) => [f, brand[f] ?? null]));
+}

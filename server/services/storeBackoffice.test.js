@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  discountCentsFor, priceShippingRules, normalizeSlug,
+  discountCentsFor, priceShippingRules, normalizeSlug, sanitizeBranding,
 } from './storeBackoffice.js';
 
 // ── discounts ────────────────────────────────────────────────────────────
@@ -96,4 +96,65 @@ test('category slugs survive the usual store naming', () => {
   assert.equal(normalizeSlug('Fall 2026 — Sets & Joggers'), 'fall-2026-sets-joggers');
   assert.equal(normalizeSlug('  Hats  '), 'hats');
   assert.equal(normalizeSlug('***'), '');
+});
+
+// ── branding ─────────────────────────────────────────────────────────────
+// brand_json also carries `demo` (which marks a showroom store unsellable)
+// and the business-store address/website. A store owner writes to this
+// column now, so the allowlist is a security boundary, not tidiness.
+
+test('only branding keys survive — everything else is dropped', () => {
+  const out = sanitizeBranding({
+    primary_color: '#1F2A44',
+    tagline: 'Live hard',
+    demo: true,                     // would un-sell or fake a showroom store
+    business_address: '1 Evil St',
+    is_fundraiser: true,
+    percent_of_retail: 0,
+  });
+  assert.deepEqual(Object.keys(out).sort(), ['primary_color', 'tagline']);
+});
+
+test('absent keys are left alone, so a partial save is not a wipe', () => {
+  const out = sanitizeBranding({ tagline: 'Just this' });
+  assert.deepEqual(out, { tagline: 'Just this' });
+  assert.ok(!('logo_url' in out), 'an untouched logo must not be cleared');
+});
+
+test('an explicitly empty field clears it — that is how a logo is removed', () => {
+  assert.deepEqual(sanitizeBranding({ logo_url: '' }), { logo_url: null });
+  assert.deepEqual(sanitizeBranding({ tagline: '   ' }), { tagline: null });
+});
+
+test('colours must be hex — the value lands in a style attribute', () => {
+  assert.equal(sanitizeBranding({ primary_color: '#abc' }).primary_color, '#abc');
+  assert.equal(sanitizeBranding({ primary_color: '#1F2A44' }).primary_color, '#1f2a44');
+  for (const bad of ['red', 'rgb(1,2,3)', '#12345', 'javascript:alert(1)', '#1f2a44; background:url(x)']) {
+    assert.throws(() => sanitizeBranding({ primary_color: bad }), /hex colour/, `accepted ${bad}`);
+  }
+});
+
+test('image URLs must be http(s) — these render into an img src', () => {
+  const ok = 'https://cdn.example.com/logo.png';
+  assert.equal(sanitizeBranding({ logo_url: ok }).logo_url, ok);
+  for (const bad of [
+    'javascript:alert(1)',
+    'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+    'file:///etc/passwd',
+    'not a url',
+  ]) {
+    assert.throws(() => sanitizeBranding({ logo_url: bad }), /URL/, `accepted ${bad}`);
+  }
+});
+
+test('long text is rejected rather than silently truncated', () => {
+  assert.throws(() => sanitizeBranding({ tagline: 'x'.repeat(201) }), /200 characters/);
+  assert.throws(() => sanitizeBranding({ footer_note: 'x'.repeat(501) }), /500 characters/);
+  assert.equal(sanitizeBranding({ tagline: 'x'.repeat(200) }).tagline.length, 200);
+});
+
+test('a junk payload yields no writes at all', () => {
+  assert.deepEqual(sanitizeBranding(null), {});
+  assert.deepEqual(sanitizeBranding('nope'), {});
+  assert.deepEqual(sanitizeBranding({}), {});
 });

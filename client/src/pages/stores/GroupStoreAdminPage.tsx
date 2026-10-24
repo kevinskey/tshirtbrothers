@@ -8,10 +8,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
-import { Loader2, LogOut, ShoppingBag, Target, Package, Users, Plus, Trash2, Tag, Layout, FolderOpen, Ticket, Truck } from 'lucide-react';
+import { Loader2, LogOut, ShoppingBag, Target, Package, Users, Plus, Trash2, Tag, Layout, FolderOpen, Ticket, Truck, Palette } from 'lucide-react';
 import ProductsTab from './backoffice/ProductsTab';
 import StorefrontTab from './backoffice/StorefrontTab';
 import CategoriesTab from './backoffice/CategoriesTab';
+import DesignTab from './backoffice/DesignTab';
 import PromotionsTab from './backoffice/PromotionsTab';
 import ShippingTab from './backoffice/ShippingTab';
 
@@ -352,7 +353,7 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
 function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string; me: Me; onLogout: () => void }) {
   const [tab, setTab] = useState<
     'orders' | 'fundraiser' | 'bulk' | 'products' | 'storefront' | 'collections'
-    | 'promos' | 'shipping'
+    | 'promos' | 'shipping' | 'design'
   >('orders');
   // The back office is owner-only. The server enforces this on every write;
   // hiding the tabs just keeps the UI honest about what a viewer can do.
@@ -385,6 +386,7 @@ function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string;
           )}
           {isOwner && <>
             <TabBtn active={tab === 'products'}    onClick={() => setTab('products')}    icon={<Tag      className="w-4 h-4" />} label="Products" />
+            <TabBtn active={tab === 'design'}      onClick={() => setTab('design')}      icon={<Palette  className="w-4 h-4" />} label="Design" />
             <TabBtn active={tab === 'storefront'}  onClick={() => setTab('storefront')}  icon={<Layout   className="w-4 h-4" />} label="Storefront" />
             <TabBtn active={tab === 'collections'} onClick={() => setTab('collections')} icon={<FolderOpen className="w-4 h-4" />} label="Collections" />
             <TabBtn active={tab === 'promos'}      onClick={() => setTab('promos')}      icon={<Ticket   className="w-4 h-4" />} label="Promo codes" />
@@ -398,6 +400,7 @@ function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string;
         {tab === 'fundraiser' && <FundraiserTab slug={slug} authHeaders={authHeaders} />}
         {tab === 'bulk'       && <BulkOrderTab  slug={slug} authHeaders={authHeaders} />}
         {isOwner && tab === 'products'    && <ProductsTab   slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'design'      && <DesignTab     slug={slug} authHeaders={authHeaders} />}
         {isOwner && tab === 'storefront'  && <StorefrontTab slug={slug} authHeaders={authHeaders} />}
         {isOwner && tab === 'collections' && <CategoriesTab slug={slug} authHeaders={authHeaders} />}
         {isOwner && tab === 'promos'      && <PromotionsTab slug={slug} authHeaders={authHeaders} />}
