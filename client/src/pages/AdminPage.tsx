@@ -147,6 +147,7 @@ type DashboardRow =
   | { kind: 'invoice'; at: number; invoice: Invoice };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
+import RhinestoneAdmin from '@/components/admin/RhinestoneAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
@@ -167,7 +168,7 @@ import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'bling' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
 const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
 
 // Which section a fresh mount should land on, read straight off the URL.
@@ -282,6 +283,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'hero-slides', label: 'Hero Slides', icon: GalleryHorizontal },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
     { key: 'instant-quote-pricing', label: 'Instant Quote Pricing', icon: Calculator },
+    { key: 'bling',     label: 'Bling Pricing', icon: Gem },
   ]},
   { label: '', items: [
     { key: 'settings',  label: 'Settings',     icon: Settings },
@@ -7340,6 +7342,10 @@ export default function AdminPage() {
 
         {activeSection === 'instant-quote-pricing' && (
           <InstantQuotePricingAdmin />
+        )}
+
+        {activeSection === 'bling' && (
+          <RhinestoneAdmin />
         )}
 
         {activeSection === 'pricing' && (

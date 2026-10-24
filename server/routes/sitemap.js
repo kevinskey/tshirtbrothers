@@ -39,6 +39,9 @@ const STATIC_PAGES = [
   { path: '/webstores/business',  priority: '0.8', changefreq: 'monthly'},
   { path: '/pro',                 priority: '0.8', changefreq: 'monthly'},
   { path: '/holiday-cards',       priority: '0.8', changefreq: 'monthly'},
+  // /spiritwear renders the same page but canonicalizes to /bling, so only
+  // /bling belongs in the sitemap.
+  { path: '/bling',               priority: '0.8', changefreq: 'weekly' },
 ];
 
 const SHOP_CATEGORIES = ['T-Shirts', 'Fleece', 'Headwear', 'Polos', 'Outerwear'];

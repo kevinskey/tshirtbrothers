@@ -28,6 +28,7 @@ import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
 import DrinkwarePage from '@/pages/DrinkwarePage';
+import BlingPage from '@/pages/BlingPage';
 import AwardsPage from '@/pages/AwardsPage';
 import QualityTiersPage from '@/pages/QualityTiersPage';
 import WebstoresPage from '@/pages/WebstoresPage';
@@ -157,6 +158,10 @@ function App() {
           <Route path="/admin/order/:quoteId" element={<AdminOrderDetailPage />} />
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/drinkware" element={<DrinkwarePage />} />
+          {/* Rhinestone / spiritwear. /spiritwear is the phrase schools
+              actually search for, so it's a real route rather than a redirect. */}
+          <Route path="/bling" element={<BlingPage />} />
+          <Route path="/spiritwear" element={<BlingPage />} />
           <Route path="/awards" element={<AwardsPage />} />
           <Route path="/compare" element={<QualityTiersPage />} />
           <Route path="/webstores" element={<WebstoresPage />} />
