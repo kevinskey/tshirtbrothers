@@ -30,6 +30,35 @@ export interface BoCategory {
   product_count?: number;
 }
 
+export interface BoPromotion {
+  id: number;
+  code: string;
+  headline: string | null;
+  subtext: string | null;
+  discount_type: 'percent' | 'amount' | 'free_shipping';
+  // NUMERIC comes back from pg as a string ("10.00"), so read it through
+  // Number() rather than trusting the type.
+  discount_value: string | number;
+  min_order_cents: number;
+  max_uses: number | null;
+  max_uses_per_email: number | null;
+  times_used: number;
+  active: boolean;
+  starts_at: string | null;
+  expires_at: string | null;
+  total_discount_cents?: number;
+}
+
+export interface BoShippingRule {
+  id: number;
+  label: string;
+  rule_type: 'flat' | 'per_item' | 'free_over' | 'pickup';
+  amount_cents: number;
+  threshold_cents: number | null;
+  sort_order: number;
+  active: boolean;
+}
+
 export interface BoContentBlock {
   id: number;
   key: string;
@@ -142,6 +171,55 @@ export function saveContent(
 
 export function deleteContent(slug: string, contentId: number, authHeaders: Record<string, string>) {
   return call<{ deleted: boolean }>(`${base(slug)}/content/${contentId}`, authHeaders, {
+    method: 'DELETE',
+  });
+}
+
+// ── Promotions ───────────────────────────────────────────────────────────
+// A store's own promo codes. These are NOT Stripe promotion codes:
+// Stripe's `allow_promotion_codes` is an account-wide switch, so a code
+// made for one store used to work at every other store's checkout. These
+// are validated against this one store before the session is created.
+export function fetchPromotions(slug: string, authHeaders: Record<string, string>) {
+  return call<{ promotions: BoPromotion[] }>(`${base(slug)}/promotions`, authHeaders);
+}
+
+export function savePromotion(
+  slug: string, promotion: Partial<BoPromotion>, authHeaders: Record<string, string>,
+) {
+  return call<{ promotion: BoPromotion }>(`${base(slug)}/promotions`, authHeaders, {
+    method: 'PUT',
+    body: JSON.stringify(promotion),
+  });
+}
+
+// A code that has been redeemed is deactivated rather than deleted, so the
+// response says which happened.
+export function deletePromotion(slug: string, promotionId: number, authHeaders: Record<string, string>) {
+  return call<{ deleted: boolean; deactivated?: boolean }>(
+    `${base(slug)}/promotions/${promotionId}`, authHeaders, { method: 'DELETE' },
+  );
+}
+
+// ── Shipping ─────────────────────────────────────────────────────────────
+// What the shopper is charged. TSB is merchant of record and buys the real
+// label later, so these are the store's pricing policy, not carrier rates.
+// A store with no rules keeps TSB's weight-based defaults.
+export function fetchShippingRules(slug: string, authHeaders: Record<string, string>) {
+  return call<{ rules: BoShippingRule[] }>(`${base(slug)}/shipping-rules`, authHeaders);
+}
+
+export function saveShippingRule(
+  slug: string, rule: Partial<BoShippingRule>, authHeaders: Record<string, string>,
+) {
+  return call<{ rule: BoShippingRule }>(`${base(slug)}/shipping-rules`, authHeaders, {
+    method: 'PUT',
+    body: JSON.stringify(rule),
+  });
+}
+
+export function deleteShippingRule(slug: string, ruleId: number, authHeaders: Record<string, string>) {
+  return call<{ deleted: boolean }>(`${base(slug)}/shipping-rules/${ruleId}`, authHeaders, {
     method: 'DELETE',
   });
 }
