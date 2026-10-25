@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Loader2, ArrowLeft, Plus, Search, ExternalLink, X, Trash2, AlertTriangle, Upload } from 'lucide-react';
 import StoreMark from '@/components/stores/StoreMark';
+import { storefrontInfo } from '@/lib/storefrontPreview';
 import {
   fetchGroupStore, updateGroupStore, addGroupStoreProduct,
   searchSsCatalog, addGroupStoreAdmin, removeGroupStoreAdmin, fetchSsStyleDetail,
@@ -1103,6 +1104,9 @@ function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
   const [footerNote, setFooterNote] = useState(str('footer_note'));
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState<'logo' | 'hero' | null>(null);
+  // Bumped after a save so the preview iframe remounts and refetches.
+  const [previewKey, setPreviewKey] = useState(0);
+  const storefront = storefrontInfo(storeSlug);
   const logoInput = useRef<HTMLInputElement | null>(null);
   const heroInput = useRef<HTMLInputElement | null>(null);
 
@@ -1138,7 +1142,10 @@ function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
       put('footer_note', footerNote);
       next.primary_color = color.toLowerCase();
       await updateGroupStore(storeId, { brand_json: next });
-      toast.success('Branding saved');
+      toast.success(storefront.themeable
+        ? 'Branding saved'
+        : `Branding saved — note that it does not change the ${storeName} storefront`);
+      setPreviewKey((n) => n + 1);
       onSaved();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
@@ -1154,29 +1161,61 @@ function BrandingEditor({ storeId, storeSlug, storeName, brand, onSaved }: {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Branding</h2>
           <p className="text-xs text-gray-500 mt-0.5">
-            Logo, banner graphic and brand color used across the storefront, product pages, cart and
-            receipt. Every page closes with the orange "Powered by TShirt Brothers" band.
+            {storefront.themeable
+              ? 'Logo, banner graphic and brand color used across the storefront, product pages, cart and receipt. Every page closes with the orange "Powered by TShirt Brothers" band.'
+              : 'Logo, banner graphic and brand color for this store. See the note below — this brand draws its storefront from its own design system.'}
           </p>
         </div>
       </div>
 
-      {/* Live preview: how the header and footer will read */}
-      <div className="mt-4 rounded-lg border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 flex items-center gap-3 bg-white">
-          <StoreMark name={storeName} logoUrl={logoUrl || null} color={previewColor} size="sm" />
-          <span className="font-bold text-lg truncate" style={{ color: previewColor }}>{storeName}</span>
-          {tagline && <span className="hidden sm:inline text-sm text-gray-500 truncate">— {tagline}</span>}
-          <span className="ml-auto inline-flex items-center px-3 py-1.5 rounded-full text-white text-xs font-semibold"
-            style={{ background: previewColor }}>Cart</span>
+      {/* The real storefront, in an iframe.
+
+          This used to be a hand-drawn mock of the generic store chrome —
+          white header, coloured name, orange Powered-by band. For a store
+          that renders through the shared front end it was roughly right.
+          For a sister brand it was fiction: Live Hard Truth has its own
+          dark, full-bleed storefront and the mock looked nothing like it,
+          which is exactly how it got reported (Doc, 2026-10-24).
+
+          A mock can always drift from the thing it depicts. The real page
+          cannot, so it is the page.
+
+          Same-origin path, not the store's subdomain: the site sends
+          X-Frame-Options: SAMEORIGIN, so tshirtbrothers.com/… frames and
+          livehardtruth.tshirtbrothers.com does not.
+
+          200% + scale(0.5) rather than a fixed pixel width: the iframe
+          lays out at twice the panel's width, so the storefront renders
+          at a desktop viewport and not as a phone-width column, and the
+          halving puts it back exactly inside the panel at whatever width
+          that happens to be. A fixed 1600px frame left two thirds of the
+          panel empty on a wide screen. */}
+      {!storefront.themeable && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-xs text-amber-900">{storefront.note}</p>
         </div>
-        {heroUrl && (
-          <div className="aspect-[5/1] bg-gray-100">
-            <img src={heroUrl} alt="" className="w-full h-full object-cover" />
-          </div>
-        )}
-        <div className="bg-orange-500 text-white px-4 py-2 flex items-center justify-between">
-          <span className="text-xs font-semibold">{storeName}</span>
-          <span className="text-[11px]">Powered by <span className="font-black uppercase tracking-wider">TShirt Brothers</span></span>
+      )}
+
+      <div className="mt-4 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200 bg-white">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Live storefront
+          </span>
+          <a href={storefront.path} target="_blank" rel="noreferrer"
+            className="text-[11px] text-blue-600 hover:underline inline-flex items-center gap-1">
+            Open {storefront.path} <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+        <div className="relative h-64 overflow-hidden">
+          <iframe
+            // Remounts on save so the preview shows what was just written
+            // rather than the state from page load.
+            key={previewKey}
+            src={storefront.path}
+            title={`${storeName} storefront preview`}
+            loading="lazy"
+            className="absolute left-0 top-0 h-[200%] w-[200%] origin-top-left scale-50 border-0"
+          />
         </div>
       </div>
 

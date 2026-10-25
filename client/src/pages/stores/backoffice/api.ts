@@ -67,6 +67,17 @@ export interface BoBranding {
   footer_note: string | null;
 }
 
+export interface BoConnectStatus {
+  connected: boolean;
+  account_id: string | null;
+  charges_enabled: boolean;
+  payouts_enabled: boolean;
+  details_submitted: boolean;
+  /** All three of the above — the only thing that actually gates payment. */
+  payable: boolean;
+  updated_at: string | null;
+}
+
 export interface BoContentBlock {
   id: number;
   key: string;
@@ -258,6 +269,27 @@ export function uploadBrandingImage(
   return call<{ url: string }>(`${base(slug)}/branding/upload`, authHeaders, {
     method: 'POST',
     body: JSON.stringify({ data_url: dataUrl, filename }),
+  });
+}
+
+// ── Stripe Connect ───────────────────────────────────────────────────────
+// Getting paid at checkout instead of waiting for TSB's monthly ACH run.
+export function fetchConnectStatus(slug: string, authHeaders: Record<string, string>) {
+  return call<BoConnectStatus>(`${base(slug)}/stripe`, authHeaders);
+}
+
+// Returns a one-time Stripe-hosted onboarding URL. These expire within
+// minutes, so it is fetched on click and navigated to immediately rather
+// than rendered into a link.
+export function startConnectOnboarding(slug: string, authHeaders: Record<string, string>) {
+  return call<{ url: string; account_id: string }>(`${base(slug)}/stripe/onboard`, authHeaders, {
+    method: 'POST', body: JSON.stringify({}),
+  });
+}
+
+export function refreshConnectStatus(slug: string, authHeaders: Record<string, string>) {
+  return call<BoConnectStatus>(`${base(slug)}/stripe/refresh`, authHeaders, {
+    method: 'POST', body: JSON.stringify({}),
   });
 }
 
