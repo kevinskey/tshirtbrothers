@@ -124,8 +124,28 @@ export async function startOnboarding(storeId, { returnUrl, refreshUrl }) {
       country: 'US',
       email: store.owner_email || undefined,
       business_profile: { name: store.name, product_description: `${store.name} merchandise` },
-      capabilities: { transfers: { requested: true } },
-      metadata: { store_id: String(store.id), store_slug: store.slug },
+      // transfers is the only capability a destination charge actually
+      // uses — the charge happens on TSB's account and Stripe just moves
+      // the partner's share. But Stripe refuses `transfers` on its own:
+      //
+      //   "Your platform needs approval for accounts to have requested the
+      //    transfers capability without the card_payments capability."
+      //
+      // So card_payments is requested too, and goes unused. The cost is
+      // real but it is paperwork, not risk: Stripe asks the partner for the
+      // fuller merchant onboarding. It does NOT make them merchant of
+      // record for our sales — that would require on_behalf_of, which we
+      // deliberately never set.
+      //
+      // Worth removing: ask Stripe to approve transfers-only for this
+      // platform (support.stripe.com/contact), then drop card_payments
+      // here and partners get a shorter form.
+      capabilities: { transfers: { requested: true }, card_payments: { requested: true } },
+      // store_id namespaces these: this Stripe account is SHARED with
+      // GleeWorld, whose connected accounts carry gleeworld_tenant_id /
+      // partner_id instead. Anything walking the account list must not
+      // assume every account belongs to it.
+      metadata: { store_id: String(store.id), store_slug: store.slug, platform: 'tsb' },
     });
     accountId = account.id;
     // Persist before returning the link. If the link request fails after
