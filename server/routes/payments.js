@@ -168,10 +168,16 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
         chargeAmount: chargedNow,
         chargeDate: nowIso,
       });
+      // $4 is cast on BOTH uses. Without the casts Postgres deduces varchar
+      // from `status = $4` (the column type) and text from `$4 = 'paid'` (an
+      // untyped literal), then refuses the whole statement with 42P08
+      // "inconsistent types deduced for parameter $4". That aborted every
+      // balance payment: Stripe took the money and the invoice was never
+      // booked, leaving the quote unsettled.
       const { rows } = await pool.query(
         `UPDATE invoices SET amount_paid = $1, amount_due = $2, payments = $3,
-           status = $4,
-           paid_at = CASE WHEN $4 = 'paid' THEN COALESCE(paid_at, NOW()) ELSE NULL END,
+           status = $4::text,
+           paid_at = CASE WHEN $4::text = 'paid' THEN COALESCE(paid_at, NOW()) ELSE NULL END,
            updated_at = NOW()
          WHERE id = $5 RETURNING *`,
         [book.amountPaid, book.amountDue, JSON.stringify(book.payments), book.status, inv.id],
