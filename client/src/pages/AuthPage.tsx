@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 import { login, register, getSignupToken } from '@/lib/api';
 import { rememberEmail } from '@/lib/activity';
 import { initPushRegistration } from '@/lib/pushRegistration';
@@ -20,6 +21,12 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get('redirect') || '/';
+  // The Design Studio auth gate lands here with ?reason=design — including
+  // the prerenderer's headless Chrome, so the HTML captured for /design IS
+  // this page. Give that render /design's identity (title, description,
+  // canonical, h1); without it the /design file ships with no description
+  // or h1 at all. See docs/ai-search-audit-2026-10.md §5.
+  const isDesignGate = searchParams.get('reason') === 'design';
   const [activeTab, setActiveTab] = useState<Tab>('register');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -114,8 +121,33 @@ export default function AuthPage() {
 
   return (
     <Layout>
+      {isDesignGate ? (
+        <Seo
+          title="Design Studio · Custom T-Shirt Designer · TShirt Brothers"
+          description="Free online t-shirt designer. Upload art, add text, generate AI designs, drop shapes — see your mockup live and get an instant quote. Sign in or create a free account to start designing."
+          path="/design"
+        />
+      ) : (
+        <Seo
+          title="Sign In or Create an Account · TShirt Brothers"
+          description="Sign in to TShirt Brothers to save designs, track quotes and orders, and check out faster. New here? Creating an account is free."
+          path="/auth"
+          noindex
+        />
+      )}
       <div className="bg-white min-h-[80vh] overflow-x-hidden">
       <div className="w-full max-w-md sm:max-w-lg lg:max-w-5xl mx-auto pt-8 sm:pt-12 pb-16 px-4 lg:px-8">
+        {isDesignGate && (
+          <div className="text-center mb-8">
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-gray-900">
+              Design Studio — Free Online T-Shirt Designer
+            </h1>
+            <p className="mt-2 text-sm sm:text-base text-gray-600">
+              Upload art, add text, generate AI designs and see your mockup live.
+              Sign in or create a free account to start designing.
+            </p>
+          </div>
+        )}
         <div className="lg:flex lg:items-start lg:justify-center lg:gap-8">
         {/* Auth form card */}
         <div className="rounded-2xl border border-gray-200 bg-white shadow-lg overflow-hidden lg:max-w-2xl lg:flex-shrink-0">
