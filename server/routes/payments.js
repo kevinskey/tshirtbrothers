@@ -589,7 +589,10 @@ router.post('/create-balance-checkout', async (req, res, next) => {
     // The balance link goes out on 'ready' (and can be sent any time after
     // the deposit), so every post-deposit state must be payable — gating on
     // exactly 'accepted' 400'd the very email we send at 'ready'.
-    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+    // 'completed' too: delivery/pickup flips the status before the balance
+    // is always collected, and send-balance-request already allows it —
+    // omitting it here 400'd the link that email contains.
+    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'];
     if (!BALANCE_OK.includes(quote.status)) {
       return res.status(400).json({ error: 'Quote must be accepted (deposit paid) before paying balance' });
     }
