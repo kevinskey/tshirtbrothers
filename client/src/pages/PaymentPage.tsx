@@ -32,6 +32,9 @@ export function PaymentCheckout() {
   const skipChoice = type === 'deposit' || type === 'full';
   const isBalance = type === 'balance';
   const [fulfillMethod, setFulfillMethod] = useState<'pickup' | 'ship' | null>(null);
+  // True while we check whether the order is already delivered (see below) —
+  // keeps the pickup/ship chooser from flashing before a redirect.
+  const [checkingDelivered, setCheckingDelivered] = useState(type === 'balance' && !!searchParams.get('token'));
   const [addr, setAddr] = useState({ name: '', address: '', address2: '', city: '', state: '', zip: '' });
   const addrComplete = addr.address.trim() && addr.city.trim() && addr.state.trim() && addr.zip.trim();
 
@@ -76,7 +79,22 @@ export function PaymentCheckout() {
       beginCheckout((type as 'deposit' | 'full'));
       return;
     }
-    if (isBalance) return; // balance renders the pickup/ship step, no fetch needed
+    if (isBalance) {
+      // An already-delivered order has nothing to fulfill — asking
+      // pickup-vs-ship after the customer has the shirts reads as a bug.
+      // The token on the email link lets us check; without one, fall back
+      // to showing the chooser.
+      if (token) {
+        fetch(`/api/quotes/${quoteId}/public?token=${encodeURIComponent(token)}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data?.status === 'completed') beginCheckout('balance');
+            else setCheckingDelivered(false);
+          })
+          .catch(() => setCheckingDelivered(false));
+      }
+      return;
+    }
     // Load a lightweight quote summary so we can show the two amounts.
     fetch(`/api/quotes/${quoteId}/public?token=${encodeURIComponent(token || '')}`)
       .then((res) => res.json())
@@ -112,7 +130,7 @@ export function PaymentCheckout() {
             <p className="text-gray-500 mb-6">{error}</p>
             <Link to="/" className="text-blue-600 font-medium hover:underline">Return Home</Link>
           </div>
-        ) : skipChoice || redirecting ? (
+        ) : skipChoice || redirecting || checkingDelivered ? (
           <div className="text-center">
             <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
             <h1 className="text-xl font-display font-bold text-gray-900 mb-2">Redirecting to Payment…</h1>
