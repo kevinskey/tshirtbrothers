@@ -33,13 +33,18 @@ async function fetchReviews(): Promise<ReviewsPayload> {
   return res.json();
 }
 
-export default function GoogleRatingChip({ className }: { className?: string }) {
+export function useGoogleRating() {
   const { data } = useQuery({
     queryKey: ['google-reviews'],
     queryFn: fetchReviews,
     staleTime: 6 * 60 * 60 * 1000, // match server cache
     retry: 1,
   });
+  return data;
+}
+
+export default function GoogleRatingChip({ className }: { className?: string }) {
+  const data = useGoogleRating();
 
   if (!data?.rating) return null;
 
