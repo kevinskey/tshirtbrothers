@@ -330,9 +330,11 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
       // received, whatever stage it's in now. deposit_amount alone is NOT
       // evidence — send-price stamps it with the 50% ask on every quoted
       // quote; the payment webhook is what sets accepted_at / 'accepted'.
+      // Status is not evidence either: admins can advance a quote through
+      // production manually, which is exactly how Quote #270 showed up here
+      // with zero dollars collected (no Stripe charge, accepted_at NULL).
       conditions.push(`quotes.archived_at IS NULL AND (
         quotes.accepted_at IS NOT NULL OR quotes.balance_paid_at IS NOT NULL
-        OR quotes.status IN ('accepted', 'in_production', 'ready', 'completed')
       )`);
     } else {
       conditions.push('quotes.archived_at IS NULL');
