@@ -8630,6 +8630,12 @@ export default function AdminPage() {
                   {/* Status */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={q.status} />
+                    {!acceptedAt && !balancePaidAt &&
+                      ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '') && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                        ⚠ NO PAYMENT ON FILE
+                      </span>
+                    )}
                     <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
                     <span className="flex items-center gap-1.5 text-xs text-gray-500">
                       Due
@@ -11273,11 +11279,15 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
 function paidState(q: Quote): { label: string; className: string } {
   if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
   // deposit_amount alone is NOT payment evidence — send-price stamps it with
-  // the 50% ask on every quoted quote. Money has actually arrived only when
-  // the payment webhook set accepted_at / moved the status past 'quoted'.
-  const depositReceived = Boolean((q as any).accepted_at)
-    || ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '');
-  if (depositReceived) return { label: 'Deposit paid', className: 'text-amber-700' };
+  // the 50% ask on every quoted quote. Status isn't evidence either: admins
+  // can advance a quote through production by hand. Money has actually
+  // arrived only when the payment webhook set accepted_at.
+  if ((q as any).accepted_at) return { label: 'Deposit paid', className: 'text-amber-700' };
+  // Post-acceptance stage with no payment on record — the job is moving
+  // but nobody has collected a dollar. Shout about it.
+  if (['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '')) {
+    return { label: '⚠ No payment on file', className: 'text-red-600 font-semibold' };
+  }
   return { label: 'Unpaid', className: 'text-gray-400' };
 }
 
