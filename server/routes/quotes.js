@@ -648,6 +648,31 @@ router.put('/:id/items', authenticate, adminOnly, async (req, res, next) => {
 });
 
 // PATCH /:id/admin-notes - Update admin private notes
+// PATCH /:id/customer — fix who a quote belongs to. Exists because
+// mockup→quote conversion can create quotes with customer_email = ''
+// (see routes/mockups.js), which later breaks every customer-facing send.
+router.patch('/:id/customer', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { customer_name, customer_email, customer_phone } = req.body;
+    if (!customer_name && !customer_email && !customer_phone) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+    const { rows } = await pool.query(
+      `UPDATE quotes SET
+         customer_name  = COALESCE(NULLIF($1, ''), customer_name),
+         customer_email = COALESCE(NULLIF($2, ''), customer_email),
+         customer_phone = COALESCE(NULLIF($3, ''), customer_phone)
+       WHERE id = $4
+       RETURNING id, customer_name, customer_email, customer_phone`,
+      [customer_name || '', customer_email || '', customer_phone || '', req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    res.json({ success: true, quote: rows[0] });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch('/:id/admin-notes', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -666,12 +691,36 @@ router.patch('/:id/admin-notes', authenticate, adminOnly, async (req, res, next)
 // POST /admin/send-price - Admin sends a price quote to the customer
 router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { quoteId, priceBreakdown, message } = req.body;
+    const { quoteId, priceBreakdown, message, customerEmail, customerName, customerPhone } = req.body;
 
     console.log('[send-price] Received:', JSON.stringify({ quoteId, hasBreakdown: !!priceBreakdown, total: priceBreakdown?.total }));
     if (!quoteId || !priceBreakdown || priceBreakdown.total === undefined) {
       return res.status(400).json({
         error: 'quoteId and priceBreakdown (with total) are required',
+      });
+    }
+
+    // Mockup-converted quotes can carry an empty customer_email ('' — the
+    // column is NOT NULL), and Resend rejects a missing `to` AFTER we've
+    // already flipped the quote to 'quoted'. Catch it here, before any
+    // mutation, and let the caller supply the address in the same request.
+    if (customerEmail !== undefined || customerName !== undefined || customerPhone !== undefined) {
+      await pool.query(
+        `UPDATE quotes SET
+           customer_email = COALESCE(NULLIF($1, ''), customer_email),
+           customer_name  = COALESCE(NULLIF($2, ''), customer_name),
+           customer_phone = COALESCE(NULLIF($3, ''), customer_phone)
+         WHERE id = $4`,
+        [customerEmail || '', customerName || '', customerPhone || '', quoteId]
+      );
+    }
+    const existing = await pool.query('SELECT customer_email FROM quotes WHERE id = $1', [quoteId]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Quote not found' });
+    }
+    if (!existing.rows[0].customer_email) {
+      return res.status(400).json({
+        error: 'Quote has no customer email — add one before sending (pass customerEmail or edit the quote).',
       });
     }
 
