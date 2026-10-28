@@ -26,7 +26,12 @@ async function fetchProxiedImage(url) {
   if (existing) return existing;
   const task = (async () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+      // www.ssactivewear.com started 429-ing requests with no User-Agent
+      // (Node fetch's default) in Oct 2026; any browser-ish UA passes.
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10000),
+        headers: { 'user-agent': 'Mozilla/5.0 (compatible; TSB-ImageProxy/1.0; +https://tshirtbrothers.com)' },
+      });
       if (response.ok) {
         return {
           type: response.headers.get('content-type') || 'image/jpeg',
