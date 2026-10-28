@@ -21,5 +21,9 @@ npm run build
 echo "==> Restarting API..."
 pm2 restart "$PM2_APP" --update-env
 
+# Tell IndexNow (Bing/Copilot's index) the site changed — see deploy.sh.
+echo "==> Pinging IndexNow..."
+node "$APP_DIR/client/scripts/indexnow-ping.mjs" || true
+
 echo "==> Done."
 pm2 status

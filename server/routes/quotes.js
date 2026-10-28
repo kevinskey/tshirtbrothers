@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { notifyShipped } from '../services/shipNotify.js';
 import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
@@ -15,7 +16,6 @@ import {
   sendArtworkRequestToCustomer,
   sendArtworkReceivedToAdmin,
   sendQuoteDeclinedToAdmin,
-  sendOrderShippedToCustomer,
   quoteLang,
   normalizeCcEmails,
 } from '../services/email.js';
@@ -330,9 +330,11 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
       // received, whatever stage it's in now. deposit_amount alone is NOT
       // evidence — send-price stamps it with the 50% ask on every quoted
       // quote; the payment webhook is what sets accepted_at / 'accepted'.
+      // Status is not evidence either: admins can advance a quote through
+      // production manually, which is exactly how Quote #270 showed up here
+      // with zero dollars collected (no Stripe charge, accepted_at NULL).
       conditions.push(`quotes.archived_at IS NULL AND (
         quotes.accepted_at IS NOT NULL OR quotes.balance_paid_at IS NOT NULL
-        OR quotes.status IN ('accepted', 'in_production', 'ready', 'completed')
       )`);
     } else {
       conditions.push('quotes.archived_at IS NULL');
@@ -1606,7 +1608,12 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
     const lang = quoteLang(quote);
 
     if (method === 'ship') {
-      sendOrderShippedToCustomer(quote, { carrier, trackingNumber: tracking_number }, lang).catch(() => {});
+      // Reads tracking off the quote row, not the request body. An admin who
+      // bought the label first (the normal order of operations) then clicked
+      // Fulfill with no tracking in the body used to send a shipped email
+      // with no tracking number in it at all. Also deduped, so the label
+      // purchase and this click don't both email.
+      notifyShipped('quote', quote.id).catch(() => {});
     } else {
       sendQuoteStatusUpdate(quote, 'completed').catch(() => {});
       smsStatusUpdateToCustomer(quote, 'completed').catch(() => {});

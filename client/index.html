@@ -44,38 +44,93 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- SEO Meta Tags -->
-    <title>TShirt Brothers | Custom T-Shirt Printing in Tyrone & Fairburn, GA | Screen Printing, DTF, Embroidery</title>
-    <meta name="description" content="Custom t-shirt printing in Tyrone & Fairburn, Georgia. Screen printing, DTF transfers, embroidery, and vinyl. No minimums. Same-day pickup. Free shipping over $150. Design online or get a free quote." />
-    <meta name="keywords" content="custom t-shirts, screen printing, DTF printing, embroidery, custom apparel, Tyrone GA, Fairburn GA, Peachtree City, Atlanta, custom printing, no minimums, bulk orders, team shirts, corporate apparel" />
+    <!-- SEO meta tags.
+         NOTE FOR EDITORS: never write literal tag syntax in the comments
+         in this file. The sister-brand shell generators in
+         client/scripts/make-*-shell.mjs rewrite this head with regexes
+         (they swap the title, the structured data, the noscript block);
+         a tag name in angle brackets inside a comment gets matched as if
+         it were real markup, which silently eats the comment and the tag
+         that follows it. Describe tags by name instead.
+         WHAT CHANGED (2026-10-23): the canonical link, meta description
+         and the Open Graph / Twitter blocks used to be hard-coded here.
+         Every public page already renders the Seo component
+         (react-helmet-async), which emits its own per-route copy of
+         those tags, and Helmet cannot remove static ones it finds in
+         this shell. So every one of the 68 prerendered pages shipped two
+         canonical links (the second correct, the first always pointing
+         at the homepage), two meta descriptions, and two of every og and
+         twitter tag. Conflicting canonicals are worse than none: Google
+         may discard both signals, and answer engines get an ambiguous
+         page identity. They are deliberately NOT re-added here — the Seo
+         component owns them. Only the title element stays, as a
+         pre-hydration fallback, because Helmet genuinely replaces the
+         single title element rather than appending to it. -->
+    <title>TShirt Brothers | Custom Apparel, Printing &amp; Embroidery Serving South Atlanta</title>
     <meta name="author" content="TShirt Brothers" />
-    <link rel="canonical" href="https://tshirtbrothers.com" />
 
-    <!-- Open Graph (Facebook/LinkedIn) -->
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="TShirt Brothers | Custom T-Shirt Printing - No Minimums" />
-    <meta property="og:description" content="Custom t-shirts, hoodies, hats & more. Screen printing, DTF, embroidery. Same-day pickup in Tyrone, GA. Free shipping over $150." />
-    <meta property="og:image" content="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
-    <meta property="og:url" content="https://tshirtbrothers.com" />
-    <meta property="og:site_name" content="TShirt Brothers" />
-    <meta property="og:locale" content="en_US" />
-
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="TShirt Brothers | Custom T-Shirt Printing - No Minimums" />
-    <meta name="twitter:description" content="Custom t-shirts, hoodies, hats & more. Screen printing, DTF, embroidery. Tyrone, GA." />
-    <meta name="twitter:image" content="https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png" />
-
-    <!-- Local Business Schema -->
+    <!-- Structured data.
+         Emitted as an @graph of three linked nodes (Organization,
+         WebSite, LocalBusiness) rather than a bare LocalBusiness.
+         Why the @id values matter: the homepage renders a SECOND
+         LocalBusiness node from the GoogleReviews component, carrying
+         the live aggregateRating from the Google Places API. Without a
+         shared @id, consumers see two unrelated businesses with the
+         same name and may trust neither — the ratings end up orphaned
+         from the business they describe. Both nodes now use
+         "https://tshirtbrothers.com/#business" so they merge into one
+         entity.
+         Nothing here is fabricated: no aggregateRating, no review
+         counts, and no second storefront. The only physical location is
+         the Fairburn shop. -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
+      "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://tshirtbrothers.com/#organization",
+      "name": "TShirt Brothers",
+      "url": "https://tshirtbrothers.com",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png"
+      },
+      "description": "Custom apparel, printing and embroidery serving south Atlanta from a production shop in Fairburn, Georgia.",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "telephone": "+14706221392",
+        "email": "info@tshirtbrothers.com",
+        "areaServed": "US-GA",
+        "availableLanguage": ["en", "es"]
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://tshirtbrothers.com/#website",
+      "url": "https://tshirtbrothers.com",
+      "name": "TShirt Brothers",
+      "publisher": { "@id": "https://tshirtbrothers.com/#organization" },
+      "inLanguage": "en-US",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://tshirtbrothers.com/shop?search={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      }
+    },
+    {
       "@type": "LocalBusiness",
+      "@id": "https://tshirtbrothers.com/#business",
+      "parentOrganization": { "@id": "https://tshirtbrothers.com/#organization" },
       "name": "TShirt Brothers",
       "image": "https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png",
       "url": "https://tshirtbrothers.com",
       "telephone": "+14706221392",
-      "email": "kevin@tshirtbrothers.com",
+      "email": "info@tshirtbrothers.com",
       "address": {
         "@type": "PostalAddress",
         "streetAddress": "6010 Renaissance Parkway",
@@ -98,7 +153,7 @@
         }
       ],
       "priceRange": "$",
-      "description": "Custom t-shirt printing in Tyrone & Fairburn, Georgia. Screen printing, DTF transfers, embroidery, and vinyl. No minimums required.",
+      "description": "Custom apparel, printing and embroidery in Fairburn, Georgia, serving the south Atlanta metro. Screen printing, DTF transfers, embroidery, and vinyl. No minimums required.",
       "areaServed": [
         {"@type": "City", "name": "Tyrone", "containedInPlace": {"@type": "State", "name": "Georgia"}},
         {"@type": "City", "name": "Fairburn", "containedInPlace": {"@type": "State", "name": "Georgia"}},
@@ -132,6 +187,8 @@
         ]
       }
     }
+      ]
+    }
     </script>
 
     <!-- Fonts — load the Google Fonts stylesheet non-blocking via the
@@ -155,13 +212,21 @@
     </noscript>
   </head>
   <body>
-    <!-- SEO: Static content for crawlers that can't run JavaScript -->
+    <!-- SEO: static fallback for crawlers that can't run JavaScript.
+         This block is baked into all 68 prerendered pages, so its
+         heading was previously a second top-level heading on EVERY page
+         — competing with each page's real one ("Custom Church Shirts",
+         etc.) and describing the whole business instead of the page. A
+         page with two contradictory h1 elements gives search and AI
+         systems no clear topic. Demoted to a bold paragraph: the
+         fallback copy is preserved for no-JS crawlers, but each page now
+         has exactly one h1. Keep this block heading-free. -->
     <noscript>
-      <h1>TShirt Brothers - Custom T-Shirt Printing in Tyrone & Fairburn, GA</h1>
-      <p>Custom t-shirts, hoodies, polos, and more. Screen printing, DTF transfers, embroidery, and vinyl. No minimums. Same-day pickup available. Free shipping on orders over $150.</p>
+      <p><strong>TShirt Brothers — Custom Apparel, Printing &amp; Embroidery Serving South Atlanta</strong></p>
+      <p>Custom t-shirts, hoodies, polos, and more. Screen printing, DTF transfers, embroidery, and vinyl. No minimums.</p>
       <p>Services: Screen Printing, DTF Transfers, Embroidery, Custom Vinyl, Stickers</p>
-      <p>Serving: Tyrone, Fairburn, Peachtree City, Fayetteville, Union City, Newnan, Atlanta Metro</p>
-      <p>Contact: (470) 622-1392 | kevin@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>
+      <p>Serving Fairburn, Fayetteville, Peachtree City, Tyrone, Newnan, Union City, College Park and the south Atlanta metro.</p>
+      <p>Contact: (470) 622-1392 | info@tshirtbrothers.com | 6010 Renaissance Parkway, Fairburn, GA 30213</p>
     </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

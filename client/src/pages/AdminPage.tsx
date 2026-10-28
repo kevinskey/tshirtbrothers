@@ -48,6 +48,7 @@ import {
   Copy,
   Check,
   Printer,
+  Gem,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -146,6 +147,7 @@ type DashboardRow =
   | { kind: 'invoice'; at: number; invoice: Invoice };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
+import RhinestoneAdmin from '@/components/admin/RhinestoneAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
@@ -166,7 +168,7 @@ import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'bling' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
 const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
 
 // Which section a fresh mount should land on, read straight off the URL.
@@ -233,9 +235,11 @@ function CustomerSortTh({ label, k, sort, onSort, align, title }: {
 // sidebar manageable (was 16 flat items; now 11 in 4 groups).
 // Items can either flip activeSection (internal admin section) or navigate
 // to a route via `to` (e.g. the customer-facing Design Studio at /design).
+// `external: true` means `to` is a full URL on another host (StoneCut lives at
+// rhinestones.tshirtbrothers.com), so it renders as an <a> in a new tab.
 type NavItem =
-  | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never }
-  | { key: string; label: string; icon: typeof LayoutDashboard; to: string };
+  | { key: Section; label: string; icon: typeof LayoutDashboard; to?: never; external?: never }
+  | { key: string; label: string; icon: typeof LayoutDashboard; to: string; external?: boolean };
 const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   // Dashboard + Pipeline merged into one landing: the Pipeline page now
   // shows the four stat cards above the search/filter list.
@@ -267,6 +271,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'post-office', label: 'Post Office', icon: Truck, to: '/admin/post-office' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
+    { key: 'stonecut',  label: 'StoneCut',         icon: Gem, to: 'https://rhinestones.tshirtbrothers.com', external: true },
     { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
     { key: 'jds',        label: 'Blanks (JDS)',    icon: Package },
   ]},
@@ -278,6 +283,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'hero-slides', label: 'Hero Slides', icon: GalleryHorizontal },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
     { key: 'instant-quote-pricing', label: 'Instant Quote Pricing', icon: Calculator },
+    { key: 'bling',     label: 'Bling Pricing', icon: Gem },
   ]},
   { label: '', items: [
     { key: 'settings',  label: 'Settings',     icon: Settings },
@@ -315,6 +321,12 @@ const STATUS_COLORS: Record<string, string> = {
 // actions (balance request, updated-quote email, mark complete) apply to
 // all of them, not just 'accepted'.
 const POST_DEPOSIT_STATUSES = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+
+// Fairburn, GA combined sales tax — matches the quote engine's TAX_RATE.
+// Used as the invoice editor's starting rate for hand-built invoices only;
+// anything derived from a quote opens at 0 because quote estimated_price is
+// already tax-inclusive.
+const DEFAULT_INVOICE_TAX_RATE = '7.75';
 
 type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
 type InvoiceView = 'list' | 'create' | 'preview';
@@ -1143,13 +1155,19 @@ export default function AdminPage() {
       due_date: '',
       mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
+    // A quote's estimated_price already contains its sales tax
+    // (price_breakdown.tax), so the line items we just built are
+    // tax-inclusive. Leaving the rate at the default would make the
+    // auto-recompute effect add tax a second time — that's how quote #215
+    // picked up $147.85 of phantom tax on a $1,848.17 order.
+    setInvoiceTaxRate('0');
     setInvoiceQuoteId(Number(q.id) || null);
     setActiveSection('invoices');
     setInvoiceView('create');
     toast(`Quote #${q.id} loaded — review and Save & Send`);
   }
 
-  const [invoiceTaxRate, setInvoiceTaxRate] = useState('8');
+  const [invoiceTaxRate, setInvoiceTaxRate] = useState(DEFAULT_INVOICE_TAX_RATE);
   const [invoiceRequireDeposit, setInvoiceRequireDeposit] = useState(true);
   const [invoiceDepositPercent, setInvoiceDepositPercent] = useState('50');
   const [previewInvoice, setPreviewInvoice] = useState<CreateInvoiceData | null>(null);
@@ -2176,6 +2194,8 @@ export default function AdminPage() {
     setEditingInvoiceFull(null);
     setInvoiceQuoteId(null);
     setMockupAttachToInvoice(false);
+    // Don't inherit the rate recovered from whichever invoice was open last.
+    setInvoiceTaxRate(DEFAULT_INVOICE_TAX_RATE);
   }
 
   function calcInvoiceSubtotal() {
@@ -2372,6 +2392,18 @@ export default function AdminPage() {
     setEditingInvoiceId(inv.id);
     setEditingInvoiceFull(inv);
     setInvoiceQuoteId(inv.quote_id != null ? Number(inv.quote_id) : null);
+    // Recover the rate this invoice was actually taxed at, so merely opening
+    // it (and saving/re-sending) doesn't rewrite its tax at the default rate.
+    // Derived from the item subtotal rather than inv.subtotal because that's
+    // what the auto-recompute effect multiplies.
+    const itemSubtotal = (Array.isArray(inv.items) ? inv.items : []).reduce(
+      (sum, it) => sum + ((it.quantity || 0) * (it.unit_price || 0)) + ((it.shipping_cost || 0) * (it.quantity || 0)),
+      0,
+    );
+    const storedTax = Number(inv.tax) || 0;
+    // Blank rate when there's nothing to divide by: the effect bails on a
+    // non-finite rate, which leaves the stored tax exactly as it was.
+    setInvoiceTaxRate(itemSubtotal > 0 ? String(+((storedTax / itemSubtotal) * 100).toFixed(4)) : '');
     setInvoiceForm({
       customer_name: inv.customer_name || '',
       customer_email: inv.customer_email || '',
@@ -3243,6 +3275,22 @@ export default function AdminPage() {
                 // External-route items (e.g. Design Studio → /design) are
                 // rendered as Link, not button — they navigate away from /admin.
                 if ('to' in item && item.to) {
+                  if (item.external) {
+                    return (
+                      <a
+                        key={key}
+                        href={item.to}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => setSidebarOpen(false)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="flex-1 text-left">{label}</span>
+                        <ArrowLeft className="w-3 h-3 rotate-180 opacity-50" />
+                      </a>
+                    );
+                  }
                   return (
                     <Link
                       key={key}
@@ -3356,6 +3404,22 @@ export default function AdminPage() {
                   {group.items.map((item) => {
                     const { key, label, icon: Icon } = item;
                     if ('to' in item && item.to) {
+                      if (item.external) {
+                        return (
+                          <a
+                            key={key}
+                            href={item.to}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setOpenNavGroup(null)}
+                            className="flex w-full items-center gap-3 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-800 hover:text-white"
+                          >
+                            <Icon className="h-4 w-4" />
+                            <span className="flex-1 text-left">{label}</span>
+                            <ArrowLeft className="h-3 w-3 rotate-180 opacity-50" />
+                          </a>
+                        );
+                      }
                       return (
                         <Link
                           key={key}
@@ -7280,6 +7344,10 @@ export default function AdminPage() {
           <InstantQuotePricingAdmin />
         )}
 
+        {activeSection === 'bling' && (
+          <RhinestoneAdmin />
+        )}
+
         {activeSection === 'pricing' && (
           <div>
             <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900 mb-6">AI Pricing Assistant</h2>
@@ -8562,6 +8630,12 @@ export default function AdminPage() {
                   {/* Status */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge status={q.status} />
+                    {!acceptedAt && !balancePaidAt &&
+                      ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '') && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                        ⚠ NO PAYMENT ON FILE
+                      </span>
+                    )}
                     <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
                     <span className="flex items-center gap-1.5 text-xs text-gray-500">
                       Due
@@ -11205,11 +11279,15 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
 function paidState(q: Quote): { label: string; className: string } {
   if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
   // deposit_amount alone is NOT payment evidence — send-price stamps it with
-  // the 50% ask on every quoted quote. Money has actually arrived only when
-  // the payment webhook set accepted_at / moved the status past 'quoted'.
-  const depositReceived = Boolean((q as any).accepted_at)
-    || ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '');
-  if (depositReceived) return { label: 'Deposit paid', className: 'text-amber-700' };
+  // the 50% ask on every quoted quote. Status isn't evidence either: admins
+  // can advance a quote through production by hand. Money has actually
+  // arrived only when the payment webhook set accepted_at.
+  if ((q as any).accepted_at) return { label: 'Deposit paid', className: 'text-amber-700' };
+  // Post-acceptance stage with no payment on record — the job is moving
+  // but nobody has collected a dollar. Shout about it.
+  if (['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '')) {
+    return { label: '⚠ No payment on file', className: 'text-red-600 font-semibold' };
+  }
   return { label: 'Unpaid', className: 'text-gray-400' };
 }
 

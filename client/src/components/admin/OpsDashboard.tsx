@@ -61,17 +61,33 @@ function dueLabel(due: string | null, overdue: boolean): { text: string; cls: st
   return { text: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), cls: 'text-gray-700' };
 }
 
-function Delta({ now, prev, invert = false }: { now: number; prev: number; invert?: boolean }) {
+// `format` renders the absolute-difference fallback, used when a percentage
+// would be useless (yesterday was 0, or the swing is so large the percent is
+// noise). Without it a revenue delta printed the raw float — $136.00 minus
+// $11.01 is 124.99000000000001 in IEEE 754 — and printed it bare, so a
+// dollar amount sat in the slot a percentage had just vacated with no unit
+// to tell them apart. Money cards pass `money`; count cards get the default.
+function Delta({
+  now,
+  prev,
+  invert = false,
+  format = (n: number) => String(Math.round(n)),
+}: { now: number; prev: number; invert?: boolean; format?: (n: number) => string }) {
   if (prev === 0 && now === 0) return null;
   const diff = now - prev;
-  if (diff === 0) return <span className="text-[11px] text-gray-400">— vs. yesterday</span>;
+  // Compare rounded, not raw: a half-cent of float drift either way must not
+  // read as movement when the displayed figures are identical.
+  if (Math.round(diff * 100) === 0) {
+    return <span className="text-[11px] text-gray-400">— vs. yesterday</span>;
+  }
   const up = diff > 0;
   const good = invert ? !up : up;
   const pct = prev > 0 ? Math.round((diff / prev) * 100) : null;
+  const usePct = pct !== null && Math.abs(pct) <= 500;
   return (
     <span className="flex items-center gap-1 text-[11px] text-gray-400">
       <span className={`rounded-full px-1.5 py-0.5 font-bold ${good ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-        {up ? '↑' : '↓'} {pct !== null && Math.abs(pct) <= 500 ? `${Math.abs(pct)}%` : Math.abs(diff)}
+        {up ? '↑' : '↓'} {usePct ? `${Math.abs(pct)}%` : format(Math.abs(diff))}
       </span>
       vs. yesterday
     </span>
@@ -179,7 +195,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
       {/* KPI cards */}
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-3 min-[900px]:grid-cols-6">
         <KpiCard icon={DollarSign} iconCls="bg-green-50 text-green-600" label="Revenue Today"
-          value={money(d.revenue.today)} delta={<Delta now={d.revenue.today} prev={d.revenue.yesterday} />} />
+          value={money(d.revenue.today)} delta={<Delta now={d.revenue.today} prev={d.revenue.yesterday} format={money} />} />
         <KpiCard icon={ShoppingBag} iconCls="bg-blue-50 text-blue-600" label="Orders Due Today" value={String(d.kpis.orders_due_today)} />
         <KpiCard icon={CalendarDays} iconCls="bg-purple-50 text-purple-600" label="Orders Due This Week" value={String(d.kpis.orders_due_week)} />
         <KpiCard icon={FileText} iconCls="bg-orange-50 text-orange-600" label="New Quotes Today"

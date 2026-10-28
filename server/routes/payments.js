@@ -17,7 +17,58 @@ import {
 import { smsQuoteAcceptedToAdmin, smsInvoiceReceiptToCustomer, smsDepositReceivedToCustomer, smsDepositPaidToAdmin } from '../services/sms.js';
 import { sendPushToAdmins } from '../services/push.js';
 import { captureStoreOrder } from '../services/storeOrderCapture.js';
+import { applyStoreRefund } from '../services/storeOrderRefund.js';
+import { checkoutConnectParams, syncAccount } from '../services/stripeConnect.js';
+import { computeLineSplit } from '../services/storeOrderCapture.js';
+import {
+  validatePromotion,
+  buildShippingOptions,
+  BackofficeError,
+} from '../services/storeBackoffice.js';
 import { generateInvoiceNumber, cardFeeCents } from './invoices.js';
+
+// ── Store promo codes ────────────────────────────────────────────────────
+// Store checkouts used to set `allow_promotion_codes: true`, which is an
+// account-wide switch: every promotion code on the TSB Stripe account was
+// redeemable at every store's checkout, and at JDS/APC/CGC. Codes are now
+// validated server-side against the ONE store being checked out, then
+// minted as a single-use Stripe coupon for that session.
+//
+// Returns { discounts, metadata, freeShipping } to spread into the session,
+// or nulls when no (valid) code was supplied. An invalid code is a 400 —
+// silently dropping it charges full price to a shopper who believes they
+// got a discount.
+async function storePromoForCheckout(stripe, storeId, rawCode, { subtotalCents, buyerEmail }) {
+  const empty = { discounts: null, metadata: {}, freeShipping: false };
+  if (!rawCode || !String(rawCode).trim()) return empty;
+
+  const promo = await validatePromotion(storeId, rawCode, { subtotalCents, buyerEmail });
+
+  const metadata = {
+    promo_id: String(promo.promotion_id),
+    promo_code: promo.code,
+    promo_amount_off: String(promo.amount_off_cents),
+  };
+
+  // free_shipping discounts the shipping option, not the goods, so it
+  // carries no coupon.
+  if (promo.free_shipping || promo.amount_off_cents <= 0) {
+    return { discounts: null, metadata, freeShipping: promo.free_shipping };
+  }
+
+  // duration 'once' + a per-session coupon means a leaked coupon id can't
+  // be replayed against another store's checkout the way a shared
+  // promotion code could.
+  const coupon = await stripe.coupons.create({
+    amount_off: promo.amount_off_cents,
+    currency: 'usd',
+    duration: 'once',
+    name: `${promo.code}${promo.headline ? ` — ${promo.headline}` : ''}`.slice(0, 40),
+    metadata: { store_id: String(storeId), store_promotion_id: String(promo.promotion_id) },
+  });
+
+  return { discounts: [{ coupon: coupon.id }], metadata, freeShipping: false };
+}
 
 // Shared card-surcharge line for custom-job checkouts (quotes/invoices).
 // Retail storefronts (stores, DTF, gifts, CGC/APC/LHT) deliberately do NOT
@@ -41,9 +92,49 @@ import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 const router = Router();
 
-// ── Create a paid invoice record + email a receipt when a balance payment
-// succeeds. Idempotent: if an invoice for this quote already exists it just
-// marks it paid. Returns the invoice row (or null if creation failed).
+// Decide what an invoice reads after a charge clears, from money we can
+// actually account for: the payments already recorded plus this charge.
+//
+// Extracted and exported so the rule is testable. The bug it guards against
+// (routes/payments.test.js): this used to synthesize a deposit entry for
+// (total - chargeAmount) whenever a charge came in short, assuming a deposit
+// must have been collected earlier. Quotes #215 and #221 (2026-10-13) each
+// paid a single 50% charge through the balance route, had the other half
+// invented, and were booked paid in full — ~$1,094 of revenue that never
+// existed, plus a paid-in-full receipt to each customer.
+//
+// A genuinely collected deposit is always already on the invoice: Stripe
+// deposits via createDepositInvoiceForQuote, offline cash/check via
+// POST /invoices/:id/record-payment. So priorPayments IS the record. If it
+// is empty, nothing was collected.
+export function reconcileInvoicePayments({ total, priorPayments = [], chargeAmount, chargeDate }) {
+  const invoiceTotal = +(Number(total) || 0).toFixed(2);
+  const charge = +(Number(chargeAmount) || 0).toFixed(2);
+  const prior = (Array.isArray(priorPayments) ? priorPayments : []).filter(
+    (p) => p && Number.isFinite(Number(p.amount)),
+  );
+  const payments = [
+    ...prior,
+    { amount: charge, method: 'stripe', date: chargeDate || new Date().toISOString() },
+  ];
+  const amountPaid = +payments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2);
+  const amountDue = Math.max(0, +(invoiceTotal - amountPaid).toFixed(2));
+  return {
+    payments,
+    amountPaid,
+    amountDue,
+    settled: amountDue <= 0,
+    status: amountDue <= 0 ? 'paid' : 'partial',
+    depositPercent: invoiceTotal > 0
+      ? Math.max(0, Math.min(100, Math.round((amountPaid / invoiceTotal) * 100)))
+      : 0,
+  };
+}
+
+// ── Create/advance the invoice for a quote when a balance or full payment
+// clears, and email a receipt IF the order is actually settled. Idempotent:
+// an existing linked invoice just gets this charge appended.
+// Returns the invoice row (or null if creation failed).
 async function createPaidInvoiceForQuote(quote, amountPaidCents) {
   try {
     const total = Number(quote.estimated_price || 0);
@@ -57,26 +148,10 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
       },
     ];
 
-    // This helper only runs when the quote is settled in full (balance or
-    // full payment), so the invoice must show amount_paid = total, with the
-    // payment history reconstructed: the charge that just cleared, plus a
-    // deposit entry for whatever was collected before it. Recording only the
-    // final charge used to leave invoices reading "Paid $371 / Due $0" on a
-    // $788 order.
     const chargedNow = amountPaid || total;
     const nowIso = new Date().toISOString();
-    const historyEntries = [];
-    if (chargedNow < total) {
-      historyEntries.push({
-        amount: +(total - chargedNow).toFixed(2),
-        method: 'stripe',
-        note: 'deposit',
-        date: quote.accepted_at ? new Date(quote.accepted_at).toISOString() : nowIso,
-      });
-    }
-    historyEntries.push({ amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso });
 
-    // If we already created an invoice for this quote, just mark it paid.
+    // If we already created an invoice for this quote, append to it.
     const existing = await pool.query(
       'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
       [quote.id],
@@ -87,28 +162,46 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
       const priorPayments = Array.isArray(inv.payments)
         ? inv.payments
         : (typeof inv.payments === 'string' ? JSON.parse(inv.payments || '[]') : []);
-      // Keep any payments already on the invoice; only backfill the deposit
-      // entry when nothing was recorded, so we never double-list a deposit
-      // that came through applyPaymentToInvoice.
-      const newPayments = priorPayments.length > 0
-        ? [...priorPayments, { amount: +chargedNow.toFixed(2), method: 'stripe', date: nowIso }]
-        : historyEntries;
-      const invTotal = Number(inv.total) || total;
+      const book = reconcileInvoicePayments({
+        total: Number(inv.total) || total,
+        priorPayments,
+        chargeAmount: chargedNow,
+        chargeDate: nowIso,
+      });
+      // $4 is cast on BOTH uses. Without the casts Postgres deduces varchar
+      // from `status = $4` (the column type) and text from `$4 = 'paid'` (an
+      // untyped literal), then refuses the whole statement with 42P08
+      // "inconsistent types deduced for parameter $4". That aborted every
+      // balance payment: Stripe took the money and the invoice was never
+      // booked, leaving the quote unsettled.
       const { rows } = await pool.query(
-        `UPDATE invoices SET amount_paid = $1, amount_due = GREATEST(0, total - $1), payments = $2,
-           status = CASE WHEN total - $1 <= 0 THEN 'paid' ELSE 'partial' END, updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [Math.min(total, invTotal), JSON.stringify(newPayments), inv.id],
+        `UPDATE invoices SET amount_paid = $1, amount_due = $2, payments = $3,
+           status = $4::text,
+           paid_at = CASE WHEN $4::text = 'paid' THEN COALESCE(paid_at, NOW()) ELSE NULL END,
+           updated_at = NOW()
+         WHERE id = $5 RETURNING *`,
+        [book.amountPaid, book.amountDue, JSON.stringify(book.payments), book.status, inv.id],
       );
       invoice = rows[0];
     } else {
+      // No invoice yet means no deposit was ever recorded, so this charge is
+      // all we can book. subtotal = total with tax 0 because quote
+      // estimated_price is already tax-inclusive (price_breakdown.tax is
+      // folded into it) — adding tax here would double-charge it.
       const invoiceNumber = await generateInvoiceNumber();
+      const book = reconcileInvoicePayments({
+        total,
+        priorPayments: [],
+        chargeAmount: chargedNow,
+        chargeDate: nowIso,
+      });
       const { rows } = await pool.query(
         `INSERT INTO invoices
            (invoice_number, customer_name, customer_email, customer_phone,
             items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-            payments, quote_id, status)
-         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,0,$9,$10,'paid')
+            payments, quote_id, status, deposit_percent, paid_at)
+         VALUES ($1,$2,$3,$4,$5,$6,0,0,0,$7,$8,$9,$10,$11,$12,$13,
+                 CASE WHEN $12 = 'paid' THEN NOW() ELSE NULL END)
          RETURNING *`,
         [
           invoiceNumber,
@@ -118,28 +211,43 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
           JSON.stringify(items),
           total,
           total,
-          total,
-          JSON.stringify(historyEntries),
+          book.amountPaid,
+          book.amountDue,
+          JSON.stringify(book.payments),
           quote.id,
+          book.status,
+          book.depositPercent,
         ],
       );
       invoice = rows[0];
     }
 
-    // Best-effort notifications (don't block or fail the webhook)
-    try {
-      if (typeof sendPaidInvoiceReceipt === 'function' && invoice.customer_email) {
-        await sendPaidInvoiceReceipt(invoice);
-      }
-    } catch (emailErr) {
-      console.error('[invoice receipt email] failed:', emailErr.message);
+    // Best-effort notifications (don't block or fail the webhook).
+    // Only on a genuinely settled invoice — a paid-in-full receipt for a
+    // partial payment tells the customer they owe nothing when they do.
+    const settled = Number(invoice.amount_due) <= 0;
+    if (!settled) {
+      console.warn(
+        `[createPaidInvoiceForQuote] Quote #${quote.id} → ${invoice.invoice_number} still owes ` +
+        `$${Number(invoice.amount_due).toFixed(2)} of $${Number(invoice.total).toFixed(2)} — ` +
+        `balance charge came in short, suppressing paid-in-full receipt`,
+      );
     }
-    try {
-      if (typeof smsInvoiceReceiptToCustomer === 'function' && invoice.customer_phone) {
-        await smsInvoiceReceiptToCustomer(invoice);
+    if (settled) {
+      try {
+        if (typeof sendPaidInvoiceReceipt === 'function' && invoice.customer_email) {
+          await sendPaidInvoiceReceipt(invoice);
+        }
+      } catch (emailErr) {
+        console.error('[invoice receipt email] failed:', emailErr.message);
       }
-    } catch (smsErr) {
-      console.error('[invoice receipt sms] failed:', smsErr.message);
+      try {
+        if (typeof smsInvoiceReceiptToCustomer === 'function' && invoice.customer_phone) {
+          await smsInvoiceReceiptToCustomer(invoice);
+        }
+      } catch (smsErr) {
+        console.error('[invoice receipt sms] failed:', smsErr.message);
+      }
     }
 
     return invoice;
@@ -481,7 +589,10 @@ router.post('/create-balance-checkout', async (req, res, next) => {
     // The balance link goes out on 'ready' (and can be sent any time after
     // the deposit), so every post-deposit state must be payable — gating on
     // exactly 'accepted' 400'd the very email we send at 'ready'.
-    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
+    // 'completed' too: delivery/pickup flips the status before the balance
+    // is always collected, and send-balance-request already allows it —
+    // omitting it here 400'd the link that email contains.
+    const BALANCE_OK = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'];
     if (!BALANCE_OK.includes(quote.status)) {
       return res.status(400).json({ error: 'Quote must be accepted (deposit paid) before paying balance' });
     }
@@ -507,8 +618,33 @@ router.post('/create-balance-checkout', async (req, res, next) => {
     }
 
     const total = parseFloat(quote.estimated_price || 0);
-    const depositPaid = parseFloat(quote.deposit_amount || 0);
-    const balanceDue = total - depositPaid;
+
+    // Charge total minus what we can PROVE was collected: the payments
+    // recorded on this quote's invoice (Stripe deposits land there via
+    // createDepositInvoiceForQuote, offline cash/check via
+    // POST /invoices/:id/record-payment). quote.deposit_amount is not
+    // evidence of collection — admins set it as the *requested* deposit
+    // when building a quote, so trusting it let quote #215 pay $924.09
+    // against a $1,848.17 order and be booked as settled (2026-10-13).
+    const invRes = await pool.query(
+      'SELECT id, payments FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
+      [quoteId],
+    );
+    let collected = 0;
+    if (invRes.rows.length > 0) {
+      const raw = invRes.rows[0].payments;
+      const list = Array.isArray(raw) ? raw : (typeof raw === 'string' ? JSON.parse(raw || '[]') : []);
+      collected = +list.reduce((sum, p) => sum + (Number(p.amount) || 0), 0).toFixed(2);
+    }
+    const requested = parseFloat(quote.deposit_amount || 0);
+    if (requested > collected) {
+      console.warn(
+        `[balance-checkout] Quote #${quoteId}: deposit_amount $${requested.toFixed(2)} exceeds ` +
+        `recorded payments $${collected.toFixed(2)} — billing against recorded payments. ` +
+        `If a deposit was taken offline, record it on the invoice first.`,
+      );
+    }
+    const balanceDue = +(total - collected).toFixed(2);
 
     if (balanceDue <= 0) {
       return res.status(400).json({ error: 'No balance due — already paid in full' });
@@ -573,7 +709,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
   try {
     const {
       store_slug, product_slug, qty: qtyRaw, variant,
-      buyer_email, success_url, cancel_url,
+      buyer_email, success_url, cancel_url, promo_code,
     } = req.body ?? {};
 
     if (!store_slug || !product_slug) {
@@ -590,6 +726,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
               sp.retail_price_cents, sp.is_active, sp.campaign_ref,
               sp.opens_at, sp.closes_at,
               s.brand_json,
+              s.stripe_account_id, s.stripe_charges_enabled, s.stripe_payouts_enabled,
               s.name AS store_name, s.slug AS store_slug, s.fulfillment_mode,
               p.weight_oz
          FROM store_products sp
@@ -707,14 +844,41 @@ router.post('/create-store-checkout', async (req, res, next) => {
     const rushPriorityCents = Math.round(lineRetailCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
     const sameDayRushCents = Math.round(lineRetailCents * rushCfg.sameDayPct);
 
+    // Promo code (store-scoped) — validated before shipping is priced so a
+    // free_shipping code can zero the cheapest option.
+    let promo;
+    try {
+      promo = await storePromoForCheckout(stripe, product.store_id, promo_code, {
+        subtotalCents: lineRetailCents,
+        buyerEmail: buyer_email ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+
+    // A store that has configured its own shipping rules uses them; one
+    // that never opened that screen keeps the weight-tier behaviour below.
+    const ruleOptions = await buildShippingOptions(product.store_id, {
+      subtotalCents: lineRetailCents,
+      itemCount: qty,
+      freeShipping: promo.freeShipping,
+    });
+
     const totalOz = parcelOunces([{ weightOz: product.weight_oz, qty }]);
     const tier = tierForOunces(totalOz);
     const shippingOptions = [];
-    if (product.fulfillment_mode !== 'pickup_only') {
+    if (ruleOptions) {
+      shippingOptions.push(...ruleOptions);
+    } else if (product.fulfillment_mode !== 'pickup_only') {
       const speeds = [
         {
-          cents: tier.ground,
-          label: 'Standard — USPS Ground',
+          // A free_shipping code covers the standard service only — it
+          // should not also buy the shopper free overnight air.
+          cents: promo.freeShipping ? 0 : tier.ground,
+          label: promo.freeShipping
+            ? 'Standard — USPS Ground (free with your code)'
+            : 'Standard — USPS Ground',
           minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7,
         },
         {
@@ -742,7 +906,10 @@ router.post('/create-store-checkout', async (req, res, next) => {
         });
       }
     }
-    if (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both') {
+    // Configured rules already say whether pickup is offered (rule_type
+    // 'pickup'), so this default only applies to the weight-tier path.
+    if (!ruleOptions
+        && (product.fulfillment_mode === 'pickup_only' || product.fulfillment_mode === 'both')) {
       shippingOptions.push({
         shipping_rate_data: {
           type: 'fixed_amount',
@@ -752,9 +919,31 @@ router.post('/create-store-checkout', async (req, res, next) => {
       });
     }
 
+    // Destination charge when the store is connected and payable: Stripe
+    // moves their share at charge time instead of TSB holding it for the
+    // monthly ACH run. Returns null for every store that isn't, which is
+    // all of them until one completes onboarding — so this is inert.
+    //
+    // The share is computed with the SAME function the capture webhook uses,
+    // so what Stripe transfers and what the order records can't disagree.
+    const connectShare = computeLineSplit({
+      retail_cents: product.retail_price_cents + upchargeCents,
+      qty,
+      fee_config: product.fee_config_json,
+      store_product_id: product.product_id,
+    }).store_earnings_cents;
+    const connect = checkoutConnectParams(product, {
+      grossCents: lineRetailCents,
+      storeShareCents: Math.max(0, connectShare - (promo.discounts ? Number(promo.metadata.promo_amount_off || 0) : 0)),
+    });
+
     const sessionParams = {
       payment_method_types: ['card'],
-      allow_promotion_codes: true,
+      ...(connect ? { payment_intent_data: connect.payment_intent_data } : {}),
+      // NOT allow_promotion_codes — that switch is account-wide and let any
+      // store's code work at any other store's checkout. Store codes come
+      // in as `promo_code` and are validated against this store_id.
+      ...(promo.discounts ? { discounts: promo.discounts } : {}),
       shipping_address_collection: { allowed_countries: ['US'] },
       shipping_options: shippingOptions,
       line_items: [
@@ -784,6 +973,8 @@ router.post('/create-store-checkout', async (req, res, next) => {
         store_product_id: String(product.product_id),
         product_slug,
         qty: String(qty),
+        ...promo.metadata,
+        ...(connect ? connect.metadata : {}),
         ...(variant ? { variant: JSON.stringify(variant).slice(0, 500) } : {}),
         ...(upsells.length
           ? { upsell_map: JSON.stringify(Object.fromEntries(upsells.map((u) => [u.price_id, u.store_product_id]))).slice(0, 500) }
@@ -835,7 +1026,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
 // }
 router.post('/create-store-cart-checkout', async (req, res, next) => {
   try {
-    const { store_slug, items, buyer_email, success_url, cancel_url } = req.body ?? {};
+    const { store_slug, items, buyer_email, success_url, cancel_url, promo_code } = req.body ?? {};
     if (!store_slug || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'store_slug + items required' });
     }
@@ -845,7 +1036,8 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
     }
 
     const { rows: storeRows } = await pool.query(
-      `SELECT id, name, slug, brand_json, fulfillment_mode
+      `SELECT id, name, slug, brand_json, fulfillment_mode,
+              stripe_account_id, stripe_charges_enabled, stripe_payouts_enabled
          FROM stores
         WHERE status = 'active' AND (slug = $1 OR lower(subdomain) = lower($1))`,
       [store_slug],
@@ -909,12 +1101,40 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
     const rushPriorityCents = Math.round(subtotalCents * rushCfg.pct * Math.max(0, rushCfg.stdDays - rushCfg.rushDays));
     const sameDayRushCents = Math.round(subtotalCents * rushCfg.sameDayPct);
 
+    const stripe = getStripe();
+
+    // Store-scoped promo code — see storePromoForCheckout. Validated
+    // before shipping so a free_shipping code can zero the cheapest option.
+    let promo;
+    try {
+      promo = await storePromoForCheckout(stripe, store.id, promo_code, {
+        subtotalCents,
+        buyerEmail: buyer_email ?? null,
+      });
+    } catch (err) {
+      if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+      throw err;
+    }
+
+    const itemCount = priced.reduce((n, l) => n + l.qty, 0);
+    const ruleOptions = await buildShippingOptions(store.id, {
+      subtotalCents, itemCount, freeShipping: promo.freeShipping,
+    });
+
     const totalOz = parcelOunces(priced.map((l) => ({ weightOz: l.product.weight_oz, qty: l.qty })));
     const tier = tierForOunces(totalOz);
     const shippingOptions = [];
-    if (store.fulfillment_mode !== 'pickup_only') {
+    if (ruleOptions) {
+      shippingOptions.push(...ruleOptions);
+    } else if (store.fulfillment_mode !== 'pickup_only') {
       const speeds = [
-        { cents: tier.ground, label: 'Standard — USPS Ground', minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7 },
+        {
+          cents: promo.freeShipping ? 0 : tier.ground,
+          label: promo.freeShipping
+            ? 'Standard — USPS Ground (free with your code)'
+            : 'Standard — USPS Ground',
+          minDays: rushCfg.stdDays + 3, maxDays: rushCfg.stdDays + 7,
+        },
         {
           cents: tier.priority + rushPriorityCents,
           label: `Rush — prints in ${rushCfg.rushDays} business days, ships USPS Priority`,
@@ -936,7 +1156,8 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
         });
       }
     }
-    if (store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both') {
+    if (!ruleOptions
+        && (store.fulfillment_mode === 'pickup_only' || store.fulfillment_mode === 'both')) {
       shippingOptions.push({
         shipping_rate_data: {
           type: 'fixed_amount',
@@ -957,11 +1178,34 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
       return res.status(400).json({ error: 'Too many different items — please check out in two orders.' });
     }
 
-    const stripe = getStripe();
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+    // Same destination-charge treatment as the single-product path. The
+    // partner's share is the sum of each line's split under the agreement
+    // frozen on its product.
+    let cartShare = 0;
+    for (const l of priced) {
+      const { rows: agr } = await pool.query(
+        `SELECT sa.fee_config_json f FROM store_products sp
+           JOIN store_agreements sa ON sa.id = sp.active_agreement_id
+          WHERE sp.id = $1`, [l.product.product_id]);
+      if (!agr[0]) continue;
+      cartShare += computeLineSplit({
+        retail_cents: l.product.retail_price_cents + l.upcharge,
+        qty: l.qty,
+        fee_config: agr[0].f,
+        store_product_id: l.product.product_id,
+      }).store_earnings_cents;
+    }
+    const connect = checkoutConnectParams(store, {
+      grossCents: subtotalCents,
+      storeShareCents: cartShare,
+    });
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      allow_promotion_codes: true,
+      ...(connect ? { payment_intent_data: connect.payment_intent_data } : {}),
+      // Store-scoped codes only — see storePromoForCheckout.
+      ...(promo.discounts ? { discounts: promo.discounts } : {}),
       shipping_address_collection: { allowed_countries: ['US'] },
       shipping_options: shippingOptions,
       line_items: priced.map((l) => {
@@ -996,6 +1240,8 @@ router.post('/create-store-cart-checkout', async (req, res, next) => {
         // older consumer of this metadata still sees a valid order.
         store_product_id: String(priced[0].product.product_id),
         qty: String(priced[0].qty),
+        ...promo.metadata,
+        ...(connect ? connect.metadata : {}),
       },
     });
 
@@ -1167,25 +1413,50 @@ async function handleCheckoutSessionCompleted(session) {
         // balance_paid_at IS NULL makes webhook and success-page fallback
         // mutually exclusive (the fallback already guards) — whichever runs
         // first does the bookkeeping AND the paid-in-full notifications.
+        //
+        // Credit only what cleared. This used to set
+        // deposit_amount = estimated_price and stamp balance_paid_at
+        // unconditionally, so a short charge through the balance route
+        // marked the whole order settled (quotes #215/#221, 2026-10-13).
+        // createPaidInvoiceForQuote is the arbiter: if the invoice still
+        // shows a balance, the quote stays unsettled and the customer gets
+        // no paid-in-full confirmation.
         const result = await pool.query(
           `UPDATE quotes SET
-            deposit_amount = estimated_price,
-            balance_paid_at = NOW()
+            deposit_amount = LEAST(estimated_price, COALESCE(deposit_amount, 0) + $2)
           WHERE id = $1 AND balance_paid_at IS NULL
           RETURNING *`,
-          [quoteId]
+          [quoteId, netTotalCents / 100]
         );
         if (result.rows.length > 0) {
           const quote = result.rows[0];
-          console.log('[Stripe] Quote #' + quoteId + ' balance paid: $' + (netTotalCents / 100));
-          await createPaidInvoiceForQuote(quote, netTotalCents);
-          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
-          sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
-          sendPushToAdmins({
-            title: 'Balance paid 💰',
-            body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Paid in full.`,
-            data: { type: 'payment', id: quote.id },
-          }).catch(() => {});
+          console.log('[Stripe] Quote #' + quoteId + ' balance payment: $' + (netTotalCents / 100));
+          const invoice = await createPaidInvoiceForQuote(quote, netTotalCents);
+          const settled = invoice ? Number(invoice.amount_due) <= 0 : false;
+          if (!settled) {
+            const owed = invoice ? Number(invoice.amount_due).toFixed(2) : '?';
+            console.warn(
+              `[Stripe] Quote #${quoteId} balance route charged $${(netTotalCents / 100).toFixed(2)} ` +
+              `but $${owed} is still due — leaving the quote unsettled`,
+            );
+            sendPushToAdmins({
+              title: 'Partial payment ⚠️',
+              body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Still owes $${owed}.`,
+              data: { type: 'payment', id: quote.id },
+            }).catch(() => {});
+          } else {
+            await pool.query(
+              'UPDATE quotes SET balance_paid_at = COALESCE(balance_paid_at, NOW()) WHERE id = $1',
+              [quoteId],
+            );
+            sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+            sendBalancePaidToAdmin(quote, session.amount_total / 100).catch(() => {});
+            sendPushToAdmins({
+              title: 'Balance paid 💰',
+              body: `Quote #${quoteId} — $${(session.amount_total / 100).toFixed(2)} from ${quote.customer_name || 'customer'}. Paid in full.`,
+              data: { type: 'payment', id: quote.id },
+            }).catch(() => {});
+          }
         }
       } else if (paymentType === 'full') {
         // Full payment from the choice screen — accept the quote AND
@@ -1501,8 +1772,16 @@ router.post('/webhook', (req, res) => {
       console.error('[Stripe Webhook] Signature verification failed:', err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    // Fail CLOSED in production. This branch used to accept unverified
+    // events whenever the secret was missing, which meant a single absent
+    // env var turned the endpoint into "anyone who can POST here can
+    // fabricate a paid order" — on a path that credits partner ledgers and,
+    // now, moves money to connected accounts.
+    console.error('[Stripe Webhook] STRIPE_WEBHOOK_SECRET missing in production — refusing event');
+    return res.status(500).send('Webhook not configured');
   } else {
-    // No secret configured — accept events unverified (dev/staging only).
+    // Dev/staging only, and now explicitly only there.
     console.warn('[Stripe Webhook] STRIPE_WEBHOOK_SECRET not set; skipping signature verification');
     try {
       event = JSON.parse(req.body.toString('utf8'));
@@ -1526,7 +1805,47 @@ router.post('/webhook', (req, res) => {
       });
     });
   }
+
+  // A refund in the Stripe dashboard used to change nothing here: the order
+  // still read 'paid' and the partner was still credited their share of
+  // money the buyer had got back, which the next payout run would have paid
+  // out. Fires again on each additional partial refund, carrying the
+  // cumulative total — applyStoreRefund works out what is new.
+  if (event.type === 'charge.refunded') {
+    setImmediate(() => {
+      applyStoreRefund(event.data.object, { findSessionId: sessionIdForPaymentIntent })
+        .catch((err) => {
+          console.error('[Stripe Webhook] refund handler crashed for ' + event.id + ':', err);
+        });
+    });
+  }
+
+  // A partner finished (or failed) Stripe onboarding. Mirrored onto the
+  // store so the dashboard can say whether they are payable without calling
+  // Stripe on every render — and so checkout stops routing transfers if an
+  // account ever loses its capabilities.
+  if (event.type === 'account.updated') {
+    setImmediate(() => {
+      syncAccount(event.data.object).catch((err) => {
+        console.error('[Stripe Webhook] account sync crashed for ' + event.id + ':', err);
+      });
+    });
+  }
 });
+
+// A Charge knows its payment intent; store_orders are keyed by the checkout
+// session id. Stripe has no direct charge → session link, so this is the
+// hop between them.
+async function sessionIdForPaymentIntent(paymentIntentId) {
+  try {
+    const stripe = getStripe();
+    const list = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 });
+    return list.data[0]?.id ?? null;
+  } catch (err) {
+    console.error('[Stripe Webhook] could not map payment intent to session:', err.message);
+    return null;
+  }
+}
 
 // Pull the bits of a Stripe Checkout session the customer-facing success
 // page needs (receipt URL, card brand + last4 / wallet, transaction id).
@@ -1628,20 +1947,32 @@ router.get('/success', async (req, res, next) => {
       const fbFeeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
       const fbNetCents = (stripeDetails.amount_total || 0) - fbFeeCents;
       if (paymentType === 'balance') {
+        // Credit only what cleared, and let the invoice decide whether the
+        // order is settled — same rule as the webhook branch above.
         const updated = await pool.query(
           `UPDATE quotes SET
-             deposit_amount = estimated_price,
-             balance_paid_at = NOW()
+             deposit_amount = LEAST(estimated_price, COALESCE(deposit_amount, 0) + $2)
            WHERE id = $1 AND balance_paid_at IS NULL
            RETURNING *`,
-          [quoteId],
+          [quoteId, fbNetCents / 100],
         );
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
-          console.log('[Payment Success] Quote #' + quoteId + ' balance verified & paid: $' + (fbNetCents / 100));
+          console.log('[Payment Success] Quote #' + quoteId + ' balance payment verified: $' + (fbNetCents / 100));
           invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
-          sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
-          sendBalancePaidToAdmin(quote, fbNetCents / 100).catch(() => {});
+          if (invoiceForQuote && Number(invoiceForQuote.amount_due) <= 0) {
+            await pool.query(
+              'UPDATE quotes SET balance_paid_at = COALESCE(balance_paid_at, NOW()) WHERE id = $1',
+              [quoteId],
+            );
+            sendBalancePaidConfirmation(quote, quoteLang(quote)).catch(() => {});
+            sendBalancePaidToAdmin(quote, fbNetCents / 100).catch(() => {});
+          } else {
+            console.warn(
+              `[Payment Success] Quote #${quoteId} still owes ` +
+              `$${invoiceForQuote ? Number(invoiceForQuote.amount_due).toFixed(2) : '?'} — not marking settled`,
+            );
+          }
         } else {
           // Already balance-paid earlier — surface the existing invoice.
           const existing = await pool.query(

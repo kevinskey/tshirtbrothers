@@ -24,7 +24,11 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeAdminSession.js';
+import * as backoffice from '../services/storeBackoffice.js';
+import * as connect from '../services/stripeConnect.js';
+import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
+import { uploadObject } from '../services/spaces.js';
 
 const router = Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -573,6 +577,266 @@ router.get('/:slug/design-drafts', async (req, res, next) => {
     );
     res.json({ drafts: rows });
   } catch (err) { next(err); }
+});
+
+// ── Back office ──────────────────────────────────────────────────────────
+// The store's own owner editing its storefront. Everything below shares an
+// implementation with the TSB staff routes in adminGroupStores.js, so the
+// two surfaces stay in step.
+//
+// Gated on 'owner': viewer and bulk_buyer keep the read-only contract this
+// file documents at the top. requireRole has no hierarchy, so owner is
+// listed explicitly.
+
+function backofficeError(err, res, next) {
+  if (err instanceof BackofficeError) return res.status(err.status).json({ error: err.message });
+  return next(err);
+}
+
+const owner = requireRole('owner');
+
+// Content blocks (hero, promo bar, about …)
+router.get('/:slug/content', async (req, res, next) => {
+  try {
+    // Owners need the inactive blocks too, to turn one back on.
+    const includeInactive = req.store_admin.role === 'owner';
+    res.json({ content: await backoffice.listContent(req.store_admin.store_id, { includeInactive }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/content', owner, async (req, res, next) => {
+  try {
+    const block = await backoffice.upsertContent(
+      req.store_admin.store_id, req.body, req.store_admin.email,
+    );
+    res.json({ block });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/content/:contentId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteContent(req.store_admin.store_id, req.params.contentId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Categories
+router.get('/:slug/categories', async (req, res, next) => {
+  try {
+    const includeInactive = req.store_admin.role === 'owner';
+    res.json({ categories: await backoffice.listCategories(req.store_admin.store_id, { includeInactive }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/categories', owner, async (req, res, next) => {
+  try {
+    res.json({ category: await backoffice.upsertCategory(req.store_admin.store_id, req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/categories/:categoryId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteCategory(req.store_admin.store_id, req.params.categoryId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Every product including hidden ones — the editor needs to show what the
+// storefront doesn't.
+router.get('/:slug/products', async (req, res, next) => {
+  try {
+    res.json({ products: await backoffice.listProducts(req.store_admin.store_id) });
+  } catch (err) { next(err); }
+});
+
+// Product merchandising — presentation and shopper-facing price only.
+// Blank cost and the S&S SKU stay with TSB.
+router.patch('/:slug/products/:productId', owner, async (req, res, next) => {
+  try {
+    const product = await backoffice.updateProductMerch(
+      req.store_admin.store_id, req.params.productId, req.body ?? {},
+    );
+    res.json({ product });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.put('/:slug/products/:productId/categories', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.setProductCategories(
+      req.store_admin.store_id, req.params.productId, req.body?.category_ids,
+    ));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.post('/:slug/products/reorder', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.reorderProducts(req.store_admin.store_id, req.body?.product_ids));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Promo codes. Scoped to this store — see the note in storeBackoffice.js
+// about why Stripe's own promotion codes can't be used here.
+router.get('/:slug/promotions', owner, async (req, res, next) => {
+  try {
+    res.json({ promotions: await backoffice.listPromotions(req.store_admin.store_id, { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/promotions', owner, async (req, res, next) => {
+  try {
+    const promotion = await backoffice.upsertPromotion(
+      req.store_admin.store_id, req.body, req.store_admin.email,
+    );
+    res.json({ promotion });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/promotions/:promotionId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deletePromotion(req.store_admin.store_id, req.params.promotionId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// Shipping the store charges its shoppers. TSB still buys the real label.
+router.get('/:slug/shipping-rules', owner, async (req, res, next) => {
+  try {
+    res.json({ rules: await backoffice.listShippingRules(req.store_admin.store_id, { includeInactive: true }) });
+  } catch (err) { next(err); }
+});
+
+router.put('/:slug/shipping-rules', owner, async (req, res, next) => {
+  try {
+    res.json({ rule: await backoffice.upsertShippingRule(req.store_admin.store_id, req.body) });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.delete('/:slug/shipping-rules/:ruleId', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.deleteShippingRule(req.store_admin.store_id, req.params.ruleId));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// ── Branding ─────────────────────────────────────────────────────────────
+// The LOOK of the shop, as opposed to its words (which are /content).
+// Writes are an allowlisted merge into stores.brand_json — see
+// sanitizeBranding — because that column also carries `demo` and the
+// business-store address/website, which an owner may neither set nor wipe.
+
+router.get('/:slug/branding', owner, async (req, res, next) => {
+  try {
+    res.json(await backoffice.getBranding(req.store_admin.store_id));
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+router.put('/:slug/branding', owner, async (req, res, next) => {
+  try {
+    const branding = await backoffice.updateBranding(req.store_admin.store_id, req.body);
+    res.json({ branding });
+  } catch (err) { backofficeError(err, res, next); }
+});
+
+// POST /:slug/branding/upload { data_url, filename? }
+// Owners shouldn't need somewhere else to host a logo first. Same Spaces
+// bucket and public-read policy as the staff mockup uploader, namespaced
+// per store, with the size cap the staff route doesn't need because staff
+// aren't the ones pasting a 12MB phone photo in as a logo.
+router.post('/:slug/branding/upload', owner, async (req, res, next) => {
+  try {
+    const { data_url, filename } = req.body ?? {};
+    if (!data_url || typeof data_url !== 'string' || !data_url.startsWith('data:')) {
+      return res.status(400).json({ error: 'Pick an image to upload' });
+    }
+    const match = data_url.match(/^data:([^;]+);base64,/);
+    const contentType = match?.[1] || '';
+    if (!/^image\//.test(contentType)) {
+      return res.status(400).json({ error: 'That file is not an image' });
+    }
+
+    // base64 is ~4/3 of the bytes it encodes.
+    const approxBytes = (data_url.length - (match?.[0]?.length ?? 0)) * 0.75;
+    if (approxBytes > 5 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Image is too large — keep it under 5MB' });
+    }
+
+    const ext =
+      contentType === 'image/jpeg' ? 'jpg' :
+      contentType === 'image/png'  ? 'png' :
+      contentType === 'image/webp' ? 'webp' :
+      contentType === 'image/gif'  ? 'gif' :
+      contentType === 'image/svg+xml' ? 'svg' : null;
+    if (!ext) return res.status(400).json({ error: 'Use a PNG, JPG, WEBP, GIF or SVG' });
+
+    const safeSlug = String(req.store_admin.store_slug || req.params.slug || 'store')
+      .replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'store';
+    const stamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const rand = crypto.randomBytes(4).toString('hex');
+
+    const url = await uploadObject({
+      key: `store-branding/${safeSlug}/${stamp}-${rand}.${ext}`,
+      body: data_url,
+      contentType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    });
+
+    res.status(201).json({ url, filename: filename ?? null });
+  } catch (err) {
+    console.error('[groupStoreAdmin] branding upload failed:', err.message);
+    next(err);
+  }
+});
+
+// ── Stripe Connect ───────────────────────────────────────────────────────
+// Getting paid directly instead of waiting for TSB's monthly ACH run.
+//
+// Owner-only, and deliberately so: this links a bank account and runs a
+// partner's identity through Stripe's KYC. TSB never sees those details —
+// Express accounts mean Stripe hosts the whole form.
+
+router.get('/:slug/stripe', owner, async (req, res, next) => {
+  try {
+    res.json(await connect.getConnectStatus(req.store_admin.store_id));
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /:slug/stripe/onboard — returns a one-time Stripe-hosted URL.
+// Account links expire within minutes, so this is called on each click
+// rather than stored anywhere.
+router.post('/:slug/stripe/onboard', owner, async (req, res, next) => {
+  try {
+    const origin = req.get('origin') || `https://${req.get('host')}`;
+    const base = `${origin}/stores/${encodeURIComponent(req.params.slug)}/admin`;
+    const link = await connect.startOnboarding(req.store_admin.store_id, {
+      returnUrl: `${base}?stripe=done`,
+      // Stripe sends the owner here if the link expired before they finished.
+      refreshUrl: `${base}?stripe=retry`,
+    });
+    res.json({ url: link.url, account_id: link.accountId });
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
+    // A key without Connect permissions is a TSB configuration problem, not
+    // something the partner can act on — say so rather than leaking a raw
+    // Stripe permissions error into their dashboard.
+    if (err?.code === 'more_permissions_required') {
+      console.error('[stripe connect] key lacks Connect permissions:', err.message);
+      return res.status(503).json({
+        error: 'Direct payouts are not switched on yet. Contact T-Shirt Brothers.',
+      });
+    }
+    next(err);
+  }
+});
+
+// Pull the latest from Stripe. The account.updated webhook keeps this
+// current on its own; this is the "I just finished, show me" button.
+router.post('/:slug/stripe/refresh', owner, async (req, res, next) => {
+  try {
+    await connect.refreshAccountStatus(req.store_admin.store_id);
+    res.json(await connect.getConnectStatus(req.store_admin.store_id));
+  } catch (err) {
+    if (err instanceof connect.ConnectError) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 export default router;

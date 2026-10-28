@@ -13,6 +13,7 @@
 
 import { Router } from 'express';
 import pool from '../db.js';
+import { validatePromotion, BackofficeError } from '../services/storeBackoffice.js';
 
 const router = Router();
 
@@ -63,6 +64,92 @@ router.get('/', async (req, res, next) => {
 });
 
 // GET /api/store-shop/:handle/products
+// Editable storefront content, grouped by slot. The storefront asks for a
+// slot ('hero') and renders the blocks in order; an empty array means the
+// store has not customized it and the page should fall back to its own
+// defaults rather than render nothing.
+router.get('/:handle/content', async (req, res, next) => {
+  try {
+    const store = await findActiveStore(req.params.handle);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    const { rows } = await pool.query(
+      `SELECT key, body, sort_order
+         FROM store_content
+        WHERE store_id = $1 AND active
+        ORDER BY key, sort_order`,
+      [store.id],
+    );
+
+    const content = {};
+    for (const row of rows) (content[row.key] ??= []).push(row.body);
+
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json({ content });
+  } catch (err) { next(err); }
+});
+
+// POST /api/store-shop/:handle/validate-promo
+// Lets the cart show "SAVE10 applied — −$12.50" before the shopper is sent
+// to Stripe. Advisory only: checkout re-validates against the same code
+// path, so a code that expires between the two calls is still caught.
+//
+// Body: { code, subtotal_cents?, buyer_email? }
+router.post('/:handle/validate-promo', async (req, res, next) => {
+  try {
+    const store = await findActiveStore(req.params.handle);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    const subtotalCents = Math.max(0, parseInt(String(req.body?.subtotal_cents ?? '0'), 10) || 0);
+    const promo = await validatePromotion(store.id, req.body?.code, {
+      subtotalCents,
+      buyerEmail: req.body?.buyer_email ?? null,
+    });
+    // promotion_id is internal; the shopper only needs the money.
+    res.json({
+      valid: true,
+      code: promo.code,
+      headline: promo.headline,
+      discount_type: promo.discount_type,
+      amount_off_cents: promo.amount_off_cents,
+      free_shipping: promo.free_shipping,
+    });
+  } catch (err) {
+    if (err instanceof BackofficeError) {
+      return res.status(err.status).json({ valid: false, error: err.message });
+    }
+    next(err);
+  }
+});
+
+// A store's own categories, with the count of live products in each so the
+// storefront can hide empty ones.
+router.get('/:handle/categories', async (req, res, next) => {
+  try {
+    const store = await findActiveStore(req.params.handle);
+    if (!store) return res.status(404).json({ error: 'Store not found' });
+
+    const { rows } = await pool.query(
+      `SELECT c.name, c.slug, c.description, c.image_url, c.sort_order,
+              COUNT(p.id)::int AS product_count
+         FROM store_categories c
+         LEFT JOIN store_product_categories pc ON pc.store_category_id = c.id
+         LEFT JOIN store_products p
+                ON p.id = pc.store_product_id
+               AND p.is_active
+               AND (p.opens_at IS NULL OR p.opens_at <= NOW())
+               AND (p.closes_at IS NULL OR p.closes_at > NOW())
+        WHERE c.store_id = $1 AND c.active
+        GROUP BY c.id
+        ORDER BY c.sort_order, c.name`,
+      [store.id],
+    );
+
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json({ categories: rows });
+  } catch (err) { next(err); }
+});
+
 // Currently-sellable products for a store (looked up by slug OR subdomain).
 router.get('/:handle/products', async (req, res, next) => {
   try {
@@ -71,20 +158,36 @@ router.get('/:handle/products', async (req, res, next) => {
 
     const campaignRef = req.query.campaign_ref ? String(req.query.campaign_ref) : null;
     const params = [store.id];
-    let where = `store_id = $1 AND is_active = true
-                 AND (opens_at IS NULL OR opens_at <= NOW())
-                 AND (closes_at IS NULL OR closes_at > NOW())`;
+    let where = `p.store_id = $1 AND p.is_active = true
+                 AND (p.opens_at IS NULL OR p.opens_at <= NOW())
+                 AND (p.closes_at IS NULL OR p.closes_at > NOW())`;
     if (campaignRef) {
       params.push(campaignRef);
-      where += ` AND campaign_ref = $${params.length}`;
+      where += ` AND p.campaign_ref = $${params.length}`;
     }
+    // sort_order is the store's own merchandising order; published_at keeps
+    // the previous behaviour as the tie-break, so stores that have never
+    // reordered (every row at the 0 default) look exactly as before.
     const { rows } = await pool.query(
-      `SELECT id, title, slug, description, cover_image,
-              retail_price_cents, variants_json, campaign_ref,
-              opens_at, closes_at, published_at
-         FROM store_products
+      `SELECT p.id, p.title, p.slug, p.description, p.cover_image,
+              p.retail_price_cents, p.compare_at_cents, p.gallery_json,
+              p.variants_json, p.campaign_ref, p.sort_order,
+              p.opens_at, p.closes_at, p.published_at,
+              COALESCE(
+                ARRAY_REMOVE(ARRAY_AGG(c.slug ORDER BY pc.sort_order), NULL),
+                '{}'
+              ) AS category_slugs
+         FROM store_products p
+         LEFT JOIN store_product_categories pc ON pc.store_product_id = p.id
+         LEFT JOIN store_categories c
+                ON c.id = pc.store_category_id AND c.active
         WHERE ${where}
-        ORDER BY published_at DESC
+        GROUP BY p.id
+        -- p.id last so the order is deterministic. Seeded stores share one
+        -- published_at to the microsecond, which left sort_order and
+        -- published_at both tied and the result order up to the planner —
+        -- it visibly reshuffled when this query gained its GROUP BY.
+        ORDER BY p.sort_order, p.published_at DESC, p.id
         LIMIT 200`,
       params,
     );
@@ -100,11 +203,20 @@ router.get('/:handle/product/:product_slug', async (req, res, next) => {
     const store = await findActiveStore(req.params.handle);
     if (!store) return res.status(404).json({ error: 'Product not found' });
     const { rows } = await pool.query(
-      `SELECT id, title, slug, description, cover_image,
-              retail_price_cents, variants_json, campaign_ref,
-              opens_at, closes_at, published_at
-         FROM store_products
-        WHERE store_id = $1 AND slug = $2 AND is_active = true`,
+      `SELECT p.id, p.title, p.slug, p.description, p.cover_image,
+              p.retail_price_cents, p.compare_at_cents, p.gallery_json,
+              p.variants_json, p.campaign_ref, p.sort_order,
+              p.opens_at, p.closes_at, p.published_at,
+              COALESCE(
+                ARRAY_REMOVE(ARRAY_AGG(c.slug ORDER BY pc.sort_order), NULL),
+                '{}'
+              ) AS category_slugs
+         FROM store_products p
+         LEFT JOIN store_product_categories pc ON pc.store_product_id = p.id
+         LEFT JOIN store_categories c
+                ON c.id = pc.store_category_id AND c.active
+        WHERE p.store_id = $1 AND p.slug = $2 AND p.is_active = true
+        GROUP BY p.id`,
       [store.id, req.params.product_slug],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Product not found' });

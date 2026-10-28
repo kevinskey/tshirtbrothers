@@ -8,7 +8,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStoreSlug, storeLink } from '@/lib/storeSubdomain';
 import Seo from '@/components/Seo';
-import { Loader2, LogOut, ShoppingBag, Target, Package, Users, Plus, Trash2 } from 'lucide-react';
+import { Loader2, LogOut, ShoppingBag, Target, Package, Users, Plus, Trash2, Tag, Layout, FolderOpen, Ticket, Truck, Palette, Banknote } from 'lucide-react';
+import ProductsTab from './backoffice/ProductsTab';
+import StorefrontTab from './backoffice/StorefrontTab';
+import CategoriesTab from './backoffice/CategoriesTab';
+import DesignTab from './backoffice/DesignTab';
+import PayoutsTab from './backoffice/PayoutsTab';
+import PromotionsTab from './backoffice/PromotionsTab';
+import ShippingTab from './backoffice/ShippingTab';
 
 const STORAGE_KEY = (slug: string) => `tsb_gsa_${slug}`;
 
@@ -168,6 +175,7 @@ export default function GroupStoreAdminPage({ slug: slugProp }: { slug?: string 
 interface LoginBrand {
   name?: string;
   hero_url?: string;
+  login_image_url?: string;
   logo_url?: string;
   primary_color?: string;
   tagline?: string;
@@ -192,6 +200,7 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
           setBrand({
             name: store.name,
             hero_url: store.brand_json?.hero_url,
+            login_image_url: store.brand_json?.login_image_url,
             logo_url: store.brand_json?.logo_url,
             primary_color: store.brand_json?.primary_color,
             tagline: store.brand_json?.tagline,
@@ -202,7 +211,10 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
     return () => { cancelled = true; };
   }, [slug]);
 
-  const branded = !!brand.hero_url;
+  // A store can give its sign-in page its own image. Falling back to the
+  // storefront hero keeps every store that hasn't set one looking as before.
+  const loginImage = brand.login_image_url || brand.hero_url;
+  const branded = !!loginImage;
   const accent = brand.primary_color || '#111827';
   // Dark text on light accents (e.g. LHT cyan), white on dark ones.
   const accentText = (() => {
@@ -263,10 +275,10 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
         <>
           <div
             className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${brand.hero_url})` }}
+            style={{ backgroundImage: `url(${loginImage})` }}
             aria-hidden
           />
-          <div className="absolute inset-0 bg-black/65" aria-hidden />
+          <div className="absolute inset-0 bg-black/45" aria-hidden />
         </>
       )}
       <div className={`relative w-full max-w-md rounded-lg p-6 ${branded ? 'bg-white/95 backdrop-blur shadow-2xl' : 'bg-white border border-gray-200'}`}>
@@ -340,7 +352,13 @@ function LoginView({ slug, onLoggedIn, ssoError }: { slug: string; onLoggedIn: (
 
 // ── Dashboard ────────────────────────────────────────────────────────────
 function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string; me: Me; onLogout: () => void }) {
-  const [tab, setTab] = useState<'orders' | 'fundraiser' | 'bulk'>('orders');
+  const [tab, setTab] = useState<
+    'orders' | 'fundraiser' | 'bulk' | 'products' | 'storefront' | 'collections'
+    | 'promos' | 'shipping' | 'design' | 'payouts'
+  >('orders');
+  // The back office is owner-only. The server enforces this on every write;
+  // hiding the tabs just keeps the UI honest about what a viewer can do.
+  const isOwner = me.role === 'owner';
 
   const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
@@ -367,6 +385,15 @@ function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string;
           {(me.role === 'bulk_buyer' || me.role === 'owner') && (
             <TabBtn active={tab === 'bulk'}       onClick={() => setTab('bulk')}       icon={<Package     className="w-4 h-4" />} label="Bulk order" />
           )}
+          {isOwner && <>
+            <TabBtn active={tab === 'products'}    onClick={() => setTab('products')}    icon={<Tag      className="w-4 h-4" />} label="Products" />
+            <TabBtn active={tab === 'design'}      onClick={() => setTab('design')}      icon={<Palette  className="w-4 h-4" />} label="Design" />
+            <TabBtn active={tab === 'storefront'}  onClick={() => setTab('storefront')}  icon={<Layout   className="w-4 h-4" />} label="Storefront" />
+            <TabBtn active={tab === 'collections'} onClick={() => setTab('collections')} icon={<FolderOpen className="w-4 h-4" />} label="Collections" />
+            <TabBtn active={tab === 'promos'}      onClick={() => setTab('promos')}      icon={<Ticket   className="w-4 h-4" />} label="Promo codes" />
+            <TabBtn active={tab === 'shipping'}    onClick={() => setTab('shipping')}    icon={<Truck    className="w-4 h-4" />} label="Shipping" />
+            <TabBtn active={tab === 'payouts'}     onClick={() => setTab('payouts')}     icon={<Banknote className="w-4 h-4" />} label="Payouts" />
+          </>}
         </div>
       </header>
 
@@ -374,6 +401,13 @@ function Dashboard({ slug, token, me, onLogout }: { slug: string; token: string;
         {tab === 'orders'     && <OrdersTab     slug={slug} authHeaders={authHeaders} />}
         {tab === 'fundraiser' && <FundraiserTab slug={slug} authHeaders={authHeaders} />}
         {tab === 'bulk'       && <BulkOrderTab  slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'products'    && <ProductsTab   slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'design'      && <DesignTab     slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'storefront'  && <StorefrontTab slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'collections' && <CategoriesTab slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'promos'      && <PromotionsTab slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'shipping'    && <ShippingTab   slug={slug} authHeaders={authHeaders} />}
+        {isOwner && tab === 'payouts'     && <PayoutsTab    slug={slug} authHeaders={authHeaders} />}
       </main>
     </div>
   );

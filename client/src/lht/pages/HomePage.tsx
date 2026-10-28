@@ -5,8 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchProducts, postLead } from '../lib/api';
-import { JOGGERS_SLUG, colorsFor, photoFor, usd } from '../lib/catalog';
+import { JOGGERS_SLUG, STORE_SLUG, colorsFor, photoFor, usd } from '../lib/catalog';
 import { useLhtPath } from '../lib/base';
+import { useStoreContent, slotField } from '@/lib/useStoreContent';
 import ProductCard from '../components/ProductCard';
 
 const VALUES = [
@@ -29,6 +30,7 @@ const FILTERS: { key: string; label: string; match: (slug: string) => boolean }[
 export default function HomePage() {
   const p = useLhtPath();
   const location = useLocation();
+  const { content } = useStoreContent(STORE_SLUG);
   const { data } = useQuery({ queryKey: ['lht-products'], queryFn: fetchProducts });
   const products = useMemo(() => data?.products ?? [], [data]);
 
@@ -70,6 +72,33 @@ export default function HomePage() {
   const shown = activeFilter ? products.filter((x) => activeFilter.match(x.slug)) : products;
   const heroPhoto = photoFor(JOGGERS_SLUG, selectedColor, joggers?.cover_image ?? '/lht/set-espresso.jpg');
 
+  // Every string below is the fallback the page shipped with, so clearing a
+  // field in the back office restores this wording rather than blanking the
+  // banner.
+  // Our own cut-outs are transparent and need no edge treatment; an
+  // owner-uploaded photo does.
+  const hero = {
+    eyebrow: slotField(content, 'hero', 'eyebrow', 'Fall 2026 · Now shipping'),
+    headline: slotField(content, 'hero', 'headline', 'Live Hard Truth'),
+    subcopy: slotField(content, 'hero', 'subcopy',
+      'Truth looks good on you. The heavyweight hoodie and jogger collection, '
+      + 'photographed exactly as it is and built to be worn loud.'),
+    ctaLabel: slotField(content, 'hero', 'cta_label', 'Shop the drop'),
+    ctaHref: slotField(content, 'hero', 'cta_href', '#shop'),
+    // The espresso set, cut out of its background so it sits ON the hero
+    // gradient instead of inside a photo. Doc's shot (2026-10-24) is a
+    // richer brown than the studio vignette and reads properly against
+    // the ink; the vignette version is still what the showroom swatches
+    // below use, so all eleven colorways stay consistent down there.
+    //
+    // WebP because alpha rules out JPEG and the source PNG was 1.6MB —
+    // this is the page's LCP element, and 79KB is the difference between
+    // the hero appearing and the hero arriving.
+    imageUrl: slotField(content, 'hero', 'image_url', '/lht/hero-set-espresso.webp'),
+  };
+
+  const cutout = hero.imageUrl.endsWith('.webp') || hero.imageUrl.endsWith('.png');
+
   return (
     <div className="bg-lht-ink text-lht-cream font-lht-sans">
       <Helmet>
@@ -77,32 +106,89 @@ export default function HomePage() {
         <meta name="description" content="Live Hard Truth luxury streetwear. Shop the Fall 2026 heavyweight hoodie and jogger collection in eleven colors, and find your Truth Color." />
       </Helmet>
 
-      {/* Hero */}
-      <section id="top" className="relative overflow-hidden">
-        <img
-          src="/lht/campaign.jpg"
-          alt="Live Hard Truth hoodie and classic joggers in chestnut brown"
-          className="absolute inset-0 h-full w-full object-cover opacity-50"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-lht-ink via-lht-ink/60 to-transparent" />
-        <div className="relative max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-28 sm:py-40 lg:py-52">
-          <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
-            Fall 2026 · Now shipping
-          </p>
-          <h1 className="mt-4 font-lht-display uppercase leading-[0.95] text-5xl sm:text-7xl lg:text-8xl max-w-4xl">
-            Live Hard Truth
-          </h1>
-          <p className="mt-6 max-w-xl text-base sm:text-lg text-lht-cream/85">
-            Truth looks good on you. The heavyweight hoodie and jogger
-            collection, photographed exactly as it is and built to be worn loud.
-          </p>
-          <div className="mt-9 flex flex-wrap gap-3">
-            <a href={p('/#shop')} className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
-              Shop the drop <ArrowRight className="h-4 w-4" aria-hidden />
+      {/* Hero — full-bleed, product right, headline over the top.
+
+          Doc's reference (2026-10-24): the garment stands on the RIGHT
+          against a gradient, and the display type runs across it from
+          the left at a size that would be absurd in a contained column.
+          That overlap is the whole look — the words in front of the
+          clothes, not beside them.
+
+          Three things follow from it:
+
+          * The section is full-bleed and tall. It is the page, not a
+            band at the top of the page.
+          * The photo is object-contain, not cover. These are studio
+            cut-outs of a whole garment; cropping a hoodie to fill a
+            column is the one thing the shot cannot survive. Contain
+            also means the layout has no opinion about the composition
+            of whatever the owner uploads, which is what the previous
+            split layout was protecting.
+          * The image gets a left-edge mask instead of an edge. The
+            studio shots sit on a near-black vignette that blends into
+            the ink background on its own, but an owner's photo will
+            not, and a hard vertical seam under the headline looks like
+            a mistake. The mask fades whatever is there into the page.
+
+          Copy stays capped at lg:max-w-[46rem] so the headline crosses
+          the product without burying it. */}
+      <section
+        id="top"
+        className="relative overflow-hidden min-h-[36rem] lg:min-h-[44rem] flex items-center
+                   bg-[radial-gradient(105%_115%_at_78%_48%,#5a5250_0%,#332e2d_38%,#1d1a1a_70%,#141212_100%)]"
+      >
+        {/* Product. Pinned right and full height; on small screens it
+            sits behind the copy at reduced opacity rather than stacking,
+            so the hero stays one image tall instead of two screens. */}
+        {/* No mask on a cut-out: there is no background edge to hide, and
+            fading from the left ate the hoodie's shoulder. An uploaded
+            photo still needs one, so the fade only applies when the image
+            is not our own transparent asset. Padding keeps the garment
+            clear of the viewport edge. */}
+        <div
+          className={`absolute inset-y-0 right-0 w-full lg:w-[58%] opacity-25 lg:opacity-100
+                      py-10 lg:py-14 pr-4 sm:pr-8 lg:pr-12
+                      ${cutout ? '' : '[mask-image:linear-gradient(to_right,transparent,black_38%)]'}`}
+        >
+          <img
+            src={hero.imageUrl}
+            alt={hero.headline}
+            fetchPriority="high"
+            className="h-full w-full object-contain object-right"
+          />
+        </div>
+
+        {/* Copy. z-10 to sit in front of the garment — the overlap is
+            deliberate, see above. */}
+        <div className="relative z-10 w-full max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-10 py-20 lg:py-24">
+          <div className="lg:max-w-[46rem]">
+            <p className="text-xs sm:text-sm font-bold uppercase tracking-[0.3em] text-lht-cyan">
+              {hero.eyebrow}
+            </p>
+            {/* Bigger than a contained hero would allow, because it is
+                no longer sharing a row with the photo. drop-shadow keeps
+                it legible where it crosses the garment. */}
+            <h1 className="mt-5 font-lht-display uppercase leading-[0.88] tracking-tight
+                           text-6xl sm:text-8xl lg:text-9xl
+                           [text-shadow:0_2px_40px_rgba(0,0,0,0.55)]">
+              {hero.headline}
+            </h1>
+            <p className="mt-7 max-w-xl text-base sm:text-lg text-lht-cream/85">
+              {hero.subcopy}
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3">
+              <a href={hero.ctaHref.startsWith('#') ? p(`/${hero.ctaHref}`) : hero.ctaHref}
+                className="inline-flex items-center gap-2 bg-lht-cyan text-lht-ink font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:bg-lht-cyan-dark transition-colors">
+                {hero.ctaLabel} <ArrowRight className="h-4 w-4" aria-hidden />
+              </a>
+              <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
+                Start your Truth Session
+              </Link>
+            </div>
+            <a href={p('/#fall')}
+              className="mt-12 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-lht-stone hover:text-lht-cyan transition-colors">
+              Enter the showroom <span aria-hidden>↓</span>
             </a>
-            <Link to={p('/truth')} className="inline-flex items-center gap-2 border border-lht-cream/40 text-lht-cream font-bold uppercase tracking-[0.14em] text-sm px-7 py-4 hover:border-lht-cyan hover:text-lht-cyan transition-colors">
-              Start your Truth Session
-            </Link>
           </div>
         </div>
       </section>

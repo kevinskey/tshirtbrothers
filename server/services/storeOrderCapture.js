@@ -21,6 +21,7 @@
 import Stripe from 'stripe';
 import pool from '../db.js';
 import { dispatchStoreEvent } from './storeWebhookDispatcher.js';
+import { recordRedemption } from './storeBackoffice.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
 
 let _stripe = null;
@@ -261,6 +262,23 @@ export async function captureStoreOrder(session) {
   const tax_cents       = session.total_details?.amount_tax || 0;
   const gross_total     = session.amount_total ?? (subtotal_cents + shipping_cents + tax_cents);
 
+  // A store promo code is the store's own marketing spend, so the discount
+  // comes off the STORE's share, not TSB's. Before store_promotions existed
+  // any Stripe account code could be redeemed here and the discount was
+  // invisible: the store was still credited full retail and TSB silently
+  // ate the whole thing.
+  //
+  // Stripe's amount_discount is the source of truth over our metadata —
+  // it's what the buyer actually didn't pay.
+  const discount_cents = session.total_details?.amount_discount || 0;
+  const promoId = parseInt(String(session.metadata?.promo_id ?? ''), 10) || null;
+  // When the discount exceeds the store's share there is nothing left to
+  // take it from, so TSB absorbs the remainder rather than the store
+  // carrying a negative ledger entry.
+  const discount_from_store = Math.min(discount_cents, store_earnings_total);
+  const discount_from_tsb   = discount_cents - discount_from_store;
+  const store_earnings_net  = store_earnings_total - discount_from_store;
+
   const split_snapshot = {
     agreement_id: product.agreement_id,
     fee_percent: headlineSplit?.fee_percent ?? 0,
@@ -274,7 +292,27 @@ export async function captureStoreOrder(session) {
     tax_cents,
     shipping_to_tsb: shipping_cents,
     tax_to_tsb: tax_cents,
+    // Promo code, if any. store_earnings_cents on the order is already net
+    // of discount_from_store; these keep the arithmetic auditable.
+    ...(discount_cents ? {
+      discount_cents,
+      promo_id: promoId,
+      promo_code: session.metadata?.promo_code ?? null,
+      discount_from_store,
+      discount_from_tsb,
+    } : {}),
   };
+
+  // Was the partner's share already moved by Stripe at charge time?
+  //
+  // A destination charge transfers their money the moment the card clears,
+  // so crediting store_ledger as well would pay them twice: once by Stripe,
+  // once by the next payout run handing over money TSB never held. The
+  // metadata is written by checkoutConnectParams at session creation.
+  const connectDestination = session.metadata?.connect_destination || null;
+  const connectTransfer = connectDestination
+    ? parseInt(String(session.metadata?.connect_transfer ?? '0'), 10) || 0
+    : null;
 
   // ── 3. Insert order + ledger credit atomically ──────────────────────────
   const client = await pool.connect();
@@ -285,30 +323,65 @@ export async function captureStoreOrder(session) {
          (store_id, tsb_order_ref, buyer_email,
           subtotal_cents, shipping_cents, tax_cents, gross_total_cents,
           split_snapshot_json, store_earnings_cents, tsb_earnings_cents, status,
-          buyer_name, buyer_phone, shipping_address)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13::jsonb)
+          buyer_name, buyer_phone, shipping_address,
+          stripe_destination, stripe_transfer_cents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'paid', $11, $12, $13::jsonb, $14, $15)
        RETURNING id, created_at`,
       [
         storeId, session.id, buyerEmail,
         subtotal_cents, shipping_cents, tax_cents, gross_total,
-        split_snapshot, store_earnings_total,
-        tsb_earnings_total + shipping_cents + tax_cents,
+        split_snapshot, store_earnings_net,
+        tsb_earnings_total + shipping_cents + tax_cents - discount_from_tsb,
         buyerName, buyerPhone,
         shippingAddress ? JSON.stringify(shippingAddress) : null,
+        connectDestination, connectTransfer,
       ],
     );
     const orderId = orderRes.rows[0].id;
 
+    // Zero when Stripe already paid them. The entry is still written, at
+    // zero, so the ledger remains a complete record of every order rather
+    // than silently skipping the Connect ones — a partner reconciling their
+    // Stripe payouts against this list should find the same orders.
     await client.query(
       `INSERT INTO store_ledger (store_id, entry_type, amount_cents, order_id, memo)
        VALUES ($1, 'sale', $2, $3, $4)`,
       [
         storeId,
-        store_earnings_total,
+        connectDestination ? 0 : store_earnings_net,
         orderId,
-        `Sale: ${lines.map((l) => `store_product ${l.store_product_id} × ${l.qty}`).join(', ')}`,
+        `Sale: ${lines.map((l) => `store_product ${l.store_product_id} × ${l.qty}`).join(', ')}`
+          + (discount_from_store ? ` (less ${session.metadata?.promo_code || 'promo'} −$${(discount_from_store / 100).toFixed(2)})` : '')
+          + (connectDestination ? ` — $${((connectTransfer || 0) / 100).toFixed(2)} paid direct to Stripe account ${connectDestination}` : ''),
       ],
     );
+
+    // Redemption counter lives in the same transaction as the order, or
+    // max_uses drifts every time a webhook is retried after a partial write.
+    // The idempotency check at the top of this function is what stops a
+    // Stripe retry from counting the same session twice.
+    //
+    // The SAVEPOINT matters: a failing statement poisons the whole
+    // transaction in Postgres, so a plain try/catch here would still blow
+    // up at COMMIT and lose a paid order over a bookkeeping row.
+    if (promoId) {
+      await client.query('SAVEPOINT promo_redemption');
+      try {
+        await recordRedemption({
+          promotionId: promoId,
+          storeOrderId: orderId,
+          buyerEmail,
+          amountOffCents: discount_cents,
+        }, client);
+        await client.query('RELEASE SAVEPOINT promo_redemption');
+      } catch (err) {
+        // A promo deleted between checkout and capture (FK gone) must not
+        // cost us the order.
+        await client.query('ROLLBACK TO SAVEPOINT promo_redemption');
+        console.error('[captureStoreOrder] promo redemption log failed:', err.message);
+      }
+    }
+
     await client.query('COMMIT');
 
     // ── 4. Fire outbound webhook (fire-and-forget) ────────────────────────
@@ -320,7 +393,8 @@ export async function captureStoreOrder(session) {
       shipping_cents,
       tax_cents,
       gross_total_cents: gross_total,
-      store_earnings_cents: store_earnings_total,
+      discount_cents,
+      store_earnings_cents: store_earnings_net,
       lines: split_snapshot.lines,
       status: 'paid',
     }).catch((err) => {

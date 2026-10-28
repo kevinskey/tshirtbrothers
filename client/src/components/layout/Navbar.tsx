@@ -21,6 +21,7 @@ const catalogueLinks: NavLink[] = [
   { label: 'Accessories', href: '/shop?category=Accessories' },
   { label: 'Gifts & Awards', href: '/gifts' },
   { label: 'DTF Transfers', href: '/dtf' },
+  { label: 'Bling & Spiritwear', href: '/bling' },
   { label: 'Compare Shirt Tiers', href: '/compare' },
   { label: 'All Products', href: '/shop' },
 ];
@@ -34,6 +35,7 @@ const catalogueLinksEs: NavLink[] = [
   { label: 'Accesorios', href: '/shop?category=Accessories' },
   { label: 'Regalos y Premios', href: '/gifts' },
   { label: 'Transferencias DTF', href: '/dtf' },
+  { label: 'Brillo y Ropa Escolar', href: '/bling' },
   { label: 'Compara Camisetas', href: '/compare' },
   { label: 'Todos los Productos', href: '/shop' },
 ];

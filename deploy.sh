@@ -83,5 +83,10 @@ fi
 cd "$APP_DIR"
 git checkout -- package-lock.json client/package-lock.json server/package-lock.json 2>/dev/null || true
 
+# Tell IndexNow (Bing/Copilot's index) the site changed, so recrawl happens
+# in hours, not weeks. Reads the live sitemap, so it runs after the restart.
+echo "==> Pinging IndexNow..."
+node "$APP_DIR/client/scripts/indexnow-ping.mjs" || true
+
 echo "==> Done."
 pm2 status

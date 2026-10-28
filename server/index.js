@@ -52,6 +52,7 @@ import jdsStoreRouter from './routes/jdsStore.js';
 import cgcRouter from './routes/cgc.js';
 import { backfillCgcCategories, backfillCgcSports } from './services/cgcCatalog.js';
 import apcRouter from './routes/apc.js';
+import rhinestoneRouter from './routes/rhinestone.js';
 import lhtRouter from './routes/lht.js';
 import { seedApcDemoCatalog } from './services/apcCatalog.js';
 import mailRouter from './routes/mail.js';
@@ -126,6 +127,7 @@ app.use('/api/jds', jdsRouter);
 app.use('/api/jds-store', jdsStoreRouter); // JDS gifts & awards retail store (Stripe)
 app.use('/api/cgc', cgcRouter); // Custom Gift Club sister-brand storefront
 app.use('/api/apc', apcRouter); // All Print Club sister-brand storefront (4over)
+app.use('/api/rhinestone', rhinestoneRouter); // Bling: StoneCut publish + pricing
 app.use('/api/lht', lhtRouter); // Live Hard Truth sister-brand (leads + Truth Session)
 app.use('/api/mail', mailRouter);
 app.use('/api/sms', smsInboundRouter); // Twilio webhook (signature-checked, no JWT)

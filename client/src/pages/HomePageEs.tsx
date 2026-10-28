@@ -5,6 +5,7 @@ import {
   Sparkles, Tag, Users, Clock, MapPin, Star, CheckCircle2,
   Shirt, Scissors, Layers, Trophy,
 } from 'lucide-react';
+import { useGoogleRating } from '@/components/GoogleRatingChip';
 
 // Spanish-language home page at /es. Mirror of HomePage's hero +
 // services + CTAs but standalone — we're not introducing a full i18n
@@ -17,6 +18,7 @@ import {
 // /es page is the Spanish counterpart of /.
 
 export default function HomePageEs() {
+  const googleRating = useGoogleRating();
   return (
     <Layout lang="es">
       <Seo
@@ -128,7 +130,12 @@ export default function HomePageEs() {
               { title: 'Sin mínimos', body: 'Una camiseta o mil — todo pedido es un pedido real. Sin reglas de "tienes que comprar 12 para empezar."' },
               { title: 'Precio en tiempo real', body: 'Usa nuestra calculadora de cotización para ver el precio actualizarse al instante mientras eliges la prenda, el método y la cantidad.' },
               { title: 'Diseño en línea gratis', body: 'Sube tu arte, agrega texto, o genera ideas con IA. El boceto se transfiere a tu cotización con un clic.' },
-              { title: 'Reseñas reales', body: '5.0 ★ en Google con más de 40 reseñas de familias, iglesias, escuelas y negocios del área metropolitana de Atlanta.' },
+              {
+                title: 'Reseñas reales',
+                body: googleRating?.rating
+                  ? `${googleRating.rating.toFixed(1)} ★ en Google con ${googleRating.totalReviews} reseñas de familias, iglesias, escuelas y negocios del área metropolitana de Atlanta.`
+                  : 'Reseñas reales en Google de familias, iglesias, escuelas y negocios del área metropolitana de Atlanta.',
+              },
             ].map((row) => (
               <div key={row.title} className="flex items-start gap-3 rounded-xl bg-white border border-gray-200 p-4">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 text-orange-500 shrink-0" />
