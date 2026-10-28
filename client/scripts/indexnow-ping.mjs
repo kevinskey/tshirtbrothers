@@ -13,10 +13,26 @@ const KEY = 'c528a2a6fd8092078f3fe69384e8865e';
 const SITEMAP = `https://${HOST}/sitemap.xml`;
 const dryRun = process.argv.includes('--dry-run');
 
+// The deploy script runs this right after the pm2 restart, so the API that
+// serves the sitemap may still be coming up (nginx answers 502 meanwhile).
+async function fetchSitemap() {
+  let lastErr;
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    try {
+      const res = await fetch(SITEMAP);
+      if (!res.ok) throw new Error(`sitemap fetch: HTTP ${res.status}`);
+      return await res.text();
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[indexnow] attempt ${attempt}/6: ${err.message}`);
+      await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+  throw lastErr;
+}
+
 try {
-  const res = await fetch(SITEMAP);
-  if (!res.ok) throw new Error(`sitemap fetch: HTTP ${res.status}`);
-  const xml = await res.text();
+  const xml = await fetchSitemap();
   const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)]
     .map((m) => m[1])
     .filter((u) => new URL(u).hostname.replace(/^www\./, '') === HOST);
