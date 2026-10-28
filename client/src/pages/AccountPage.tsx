@@ -2,6 +2,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { User, FileText, Palette, Package, Save, Lock, Loader2 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
+import Seo from '@/components/Seo';
 
 interface Profile { id: number; email: string; name: string; phone: string; role: string; created_at: string; }
 interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; accept_token: string | null; }
@@ -131,6 +132,15 @@ export default function AccountPage() {
 
   return (
     <Layout>
+      {/* Private page: never prerendered (SKIP_PREFIXES), so before hydration
+          crawlers see the homepage fallback head — noindex corrects the record
+          for the JS-executing crawlers that matter. */}
+      <Seo
+        title="My Account · TShirt Brothers"
+        description="Your T-Shirt Brothers account: quotes, orders, and saved designs."
+        path="/account"
+        noindex
+      />
       <div className="max-w-4xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-display font-bold text-gray-900 mb-1">My Account</h1>
         <p className="text-sm text-gray-500 mb-6">{profile?.email}</p>

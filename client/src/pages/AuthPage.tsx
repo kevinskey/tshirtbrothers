@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle, Mail, Lock, User } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
@@ -321,7 +321,7 @@ export default function AuthPage() {
         </div>
 
         <p className="text-center text-[10px] text-gray-400 mt-4">
-          By creating an account you agree to our terms of service.
+          By creating an account you agree to our <Link to="/terms" className="underline hover:text-gray-500">terms of service</Link>.
           <br />Questions? Call <a href="tel:+14706221392" className="text-orange-500">(470) 622-1392</a>
         </p>
       </div>
