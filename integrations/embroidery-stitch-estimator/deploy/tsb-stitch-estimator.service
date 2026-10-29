@@ -1,0 +1,20 @@
+[Unit]
+Description=T-Shirt Brothers Embroidery Stitch Estimator
+After=network.target
+
+[Service]
+Type=simple
+User=tsbstitch
+Group=tsbstitch
+WorkingDirectory=/opt/tsb-stitch-estimator
+ExecStart=/opt/tsb-stitch-estimator/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8765 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tsb-stitch-estimator
+
+[Install]
+WantedBy=multi-user.target
