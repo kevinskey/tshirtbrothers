@@ -24,6 +24,7 @@ import deepseekRouter from './routes/deepseek.js';
 import gangsheetRouter from './routes/gangsheet.js';
 import gangsheetStoreRouter from './routes/gangsheetStore.js';
 import embroideryRouter from './routes/embroidery.js';
+import stitchEstimatorRouter from './routes/stitchEstimator.js';
 import mockupsRouter from './routes/mockups.js';
 import storesRouter from './routes/stores.js';
 import storeShopRouter from './routes/storeShop.js';
@@ -101,6 +102,7 @@ app.use('/api/blog', blogRouter);
 app.use('/api/deepseek', deepseekRouter);
 app.use('/api/admin/gangsheets', gangsheetRouter);
 app.use('/api/gangsheet-store', gangsheetStoreRouter);
+app.use('/api/admin/stitch-estimator', stitchEstimatorRouter);
 app.use('/api/admin', embroideryRouter);
 // Second mount: the customer-facing embroidery quote routes
 // (/embroidery/requests + status) live in the same router but must be

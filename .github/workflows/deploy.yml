@@ -42,4 +42,6 @@ jobs:
               # loads the latest deploy.sh from disk.
               git pull --ff-only origin main
               bash /var/www/tshirtbrothers/deploy.sh
+              cd /var/www/tshirtbrothers/server
+              node scripts/check-stitch-estimator.mjs
             '

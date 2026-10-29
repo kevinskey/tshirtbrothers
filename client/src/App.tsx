@@ -21,6 +21,7 @@ import SalePage from '@/pages/SalePage';
 import InstantQuotePage from '@/pages/InstantQuotePage';
 import EasyQuotePage from '@/pages/EasyQuotePage';
 import EmbroideryQuotePage from '@/pages/EmbroideryQuotePage';
+import StitchEstimatorPage from '@/pages/StitchEstimatorPage';
 import EmbroideryThanksPage from '@/pages/EmbroideryThanksPage';
 import DesignStudioPage from '@/pages/DesignStudioPage';
 import AdminPage from '@/pages/AdminPage';
@@ -188,6 +189,7 @@ function App() {
           {/* Embroidery is quoted by stitch count after a paid digitization,
               so it gets its own path rather than a lane in the wizard. */}
           <Route path="/embroidery" element={<EmbroideryQuotePage />} />
+          <Route path="/stitch-estimator" element={<StitchEstimatorPage />} />
           <Route path="/embroidery/thanks/:id" element={<EmbroideryThanksPage />} />
           {/* Token-gated customer actions linked from quote emails. */}
           <Route path="/quote/decline/:id" element={<QuoteDeclinePage />} />
