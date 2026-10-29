@@ -1,0 +1,25 @@
+name: Validate embroidery stitch preview
+on:
+  pull_request:
+    paths:
+      - 'server/lib/embroideryPreview.js'
+      - 'server/lib/embroideryPreview.test.js'
+      - '.github/workflows/test-embroidery-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install server dependencies
+        run: npm install --ignore-scripts=false --no-audit --no-fund
+        working-directory: server
+      - name: Run stitch preview tests
+        run: node --test lib/embroideryPreview.test.js
+        working-directory: server
