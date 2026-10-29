@@ -20,14 +20,16 @@ async function sha256Hex(input: string): Promise<string> {
 export default function AuthPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get('redirect') || '/';
+  const requestedRedirect = searchParams.get('redirect') || '';
+  const safeRedirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//') && !/[\\\r\n]/.test(requestedRedirect) ? requestedRedirect : '';
+  const redirectTo = safeRedirect || '/';
   // The Design Studio auth gate lands here with ?reason=design — including
   // the prerenderer's headless Chrome, so the HTML captured for /design IS
   // this page. Give that render /design's identity (title, description,
   // canonical, h1); without it the /design file ships with no description
   // or h1 at all. See docs/ai-search-audit-2026-10.md §5.
   const isDesignGate = searchParams.get('reason') === 'design';
-  const [activeTab, setActiveTab] = useState<Tab>('register');
+  const [activeTab, setActiveTab] = useState<Tab>(searchParams.get('reason') === 'admin' ? 'login' : 'register');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -64,7 +66,7 @@ export default function AuthPage() {
       localStorage.setItem('tsb_token', token);
       void initPushRegistration();
       rememberEmail(loginEmail);
-      navigate(loginEmail === 'kevin@tshirtbrothers.com' ? '/admin' : redirectTo);
+      navigate(safeRedirect || (loginEmail.toLowerCase() === 'kevin@tshirtbrothers.com' ? '/admin' : '/'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

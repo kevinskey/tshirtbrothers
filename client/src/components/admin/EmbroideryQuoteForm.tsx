@@ -7,6 +7,7 @@
 // call to the same endpoint that saves — one engine, zero drift — so what
 // the admin sees is byte-identical to what the customer will be emailed.
 import { useEffect, useRef, useState } from 'react';
+import StitchEstimator from './StitchEstimator';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Mail, Paperclip, FileText } from 'lucide-react';
 import {
@@ -69,6 +70,7 @@ export function embroideryMoney(cents: number) {
 
 export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest }) {
   const qc = useQueryClient();
+  const [estimatorIndex, setEstimatorIndex] = useState<number | null>(null);
   const reqItems = request.items ?? [];
   const multiGarment = request.garment_mode === 'tsb' && reqItems.length > 0;
 
@@ -218,6 +220,8 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
 
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+      {estimatorIndex !== null && <div role="dialog" aria-modal="true" aria-label="Estimate embroidery stitches" className="fixed inset-0 z-[100] overflow-y-auto bg-black/50 p-3 sm:p-8"><div className="mx-auto max-w-5xl"><button type="button" autoFocus onClick={() => setEstimatorIndex(null)} className="mb-3 rounded-lg bg-white px-4 py-2 font-semibold">Close estimator</button><StitchEstimator quoteId={request.quote_id} initialArtworkUrl={request.artwork_urls?.[estimatorIndex] || (estimatorIndex === 0 ? request.artwork_url : null)} onApply={count => { setDesignRows(prev => prev.map((row, index) => index === estimatorIndex ? { ...row, stitches: String(count) } : row)); setEstimatorIndex(null); }} /></div></div>}
+
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-full space-y-1.5">
           {designRows.map((d, di) => {
@@ -239,6 +243,7 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
                   onChange={(e) => setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, stitches: e.target.value } : r))}
                   placeholder="e.g. 7500" className={`${field} w-28`} />
               </label>
+              {!attached?.dst_url && !(di === 0 && request.stitch_file_url) && <button type="button" onClick={() => setEstimatorIndex(di)} className="rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-700">Estimate from PNG</button>}
               <label className="text-xs font-medium text-gray-700">
                 Run qty
                 <input type="text" inputMode="numeric" value={d.qty}

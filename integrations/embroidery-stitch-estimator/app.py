@@ -8,7 +8,7 @@ from pathlib import Path
 app=FastAPI(title='TSB Stitch Estimator')
 
 @app.post('/api/v1/embroidery/estimate')
-async def estimate(file:UploadFile=File(...),width_in:float=Form(...),height_in:float|None=Form(None),spacing_mm:float=Form(.42)):
+async def estimate(file:UploadFile=File(...),width_in:float=Form(...),height_in:float|None=Form(None),spacing_mm:float=Form(.42),background_mode:str=Form('auto')):
  if not (.25<=width_in<=20 and .25<=spacing_mm<=1.2):raise HTTPException(422,'Invalid width or spacing')
  data=await file.read(15000001)
  if len(data)>15000000:raise HTTPException(413,'PNG exceeds 15 MB')
@@ -18,7 +18,7 @@ async def estimate(file:UploadFile=File(...),width_in:float=Form(...),height_in:
  except Exception:raise HTTPException(422,'Invalid PNG or image too large')
  if height_in is None:height_in=width_in*h/w
  if not .25<=height_in<=20:raise HTTPException(422,'Invalid height')
- mask=(a[:,:,3]>=128).astype('uint8') if np.any(a[:,:,3]<245) else (np.min(a[:,:,:3],axis=2)<245).astype('uint8')
+ mask=(a[:,:,3]>=128).astype('uint8') if background_mode=='alpha' or np.any(a[:,:,3]<245) else (np.min(a[:,:,:3],axis=2)<245).astype('uint8')
  if not mask.any():raise HTTPException(422,'No visible artwork')
  sx=width_in*25.4/w;sy=height_in*25.4/h;pxmm=(sx*sy)**.5
  dist=cv2.distanceTransform(mask,cv2.DIST_L2,3)*2*pxmm
