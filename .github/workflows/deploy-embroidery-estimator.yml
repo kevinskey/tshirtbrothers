@@ -1,0 +1,49 @@
+name: Deploy TSB Embroidery Estimator to Droplet
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tsb-embroidery-droplet
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: embroidery-droplet
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/embroidery-stitch-estimator
+          persist-credentials: false
+      - name: Verify deployment secrets
+        env:
+          HOST: ${{ secrets.TSB_DROPLET_HOST }}
+          USER: ${{ secrets.TSB_DROPLET_USER }}
+          KEY: ${{ secrets.TSB_DROPLET_SSH_KEY }}
+          KNOWN: ${{ secrets.TSB_DROPLET_KNOWN_HOSTS }}
+        run: |
+          test -n "$HOST" && test -n "$USER" && test -n "$KEY" && test -n "$KNOWN" || { echo 'Missing deployment secrets'; exit 1; }
+      - name: Install SSH credentials
+        env:
+          SSH_KEY: ${{ secrets.TSB_DROPLET_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.TSB_DROPLET_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Deploy isolated service
+        env:
+          HOST: ${{ secrets.TSB_DROPLET_HOST }}
+          USER: ${{ secrets.TSB_DROPLET_USER }}
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/tsb-estimator.tar.gz -C integrations/embroidery-stitch-estimator .
+          scp -o StrictHostKeyChecking=yes /tmp/tsb-estimator.tar.gz "$USER@$HOST:/tmp/tsb-estimator.tar.gz"
+          ssh -o StrictHostKeyChecking=yes "$USER@$HOST" 'set -eu; tmp=$(mktemp -d); trap "rm -rf \"$tmp\" /tmp/tsb-estimator.tar.gz" EXIT; tar -xzf /tmp/tsb-estimator.tar.gz -C "$tmp"; sudo -n bash "$tmp/deploy/install-ubuntu.sh"; curl -fsS http://127.0.0.1:8765/openapi.json >/dev/null'
