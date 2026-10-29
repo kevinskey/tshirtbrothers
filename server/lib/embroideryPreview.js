@@ -27,8 +27,26 @@ export async function renderEmbroideryPreview(png, { widthIn = 3.5, spacingMm = 
     cell[i] = id;
     const p = palette[id]; p.n++; p.r += r; p.g += g; p.b += b;
   }
+  // Retain dominant color bins; remap JPEG/antialias fringe colors to them.
+  // This avoids treating edge noise as independent embroidery thread colors.
   const ranked = palette.map((p, id) => ({ id, n: p.n })).sort((a, b) => b.n - a.n);
-  const keep = new Set(ranked.slice(0, 12).map(p => p.id));
+  const dominant = ranked.filter(p => p.n >= Math.max(24, w * h * .002)).slice(0, 12).map(p => p.id);
+  const keep = new Set(dominant);
+  // Representative RGB values are computed below from the source image.
+  const representatives = dominant.map(id => {
+    const p = palette[id];
+    return [p.r / Math.max(1, p.n), p.g / Math.max(1, p.n), p.b / Math.max(1, p.n)];
+  });
+  for (let i = 0; i < cell.length; i++) {
+    if (cell[i] < 0 || keep.has(cell[i]) || !dominant.length) continue;
+    const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    let best = 0, distance = Infinity;
+    for (let j = 0; j < representatives.length; j++) {
+      const p = representatives[j], d = (r - p[0]) ** 2 + (g - p[1]) ** 2 + (b - p[2]) ** 2;
+      if (d < distance) { distance = d; best = j; }
+    }
+    cell[i] = dominant[best];
+  }
   const groups = new Map();
   for (const id of keep) groups.set(id, []);
   // Connected components prevent distant objects of the same color sharing a fill angle.
