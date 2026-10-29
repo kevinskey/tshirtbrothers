@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Run from a checkout of the feature branch on Ubuntu/Debian as root.
+# Run as root on Ubuntu/Debian.
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 id tsbstitch >/dev/null 2>&1 || useradd --system --home /opt/tsb-stitch-estimator --shell /usr/sbin/nologin tsbstitch
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip curl
+# Avoid invoking apt when prerequisites exist: unrelated pending packages may fail.
+if ! command -v python3 >/dev/null || ! command -v curl >/dev/null || ! python3 -c 'import venv, ensurepip' >/dev/null 2>&1; then
+  apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip curl
+fi
 install -d -o tsbstitch -g tsbstitch /opt/tsb-stitch-estimator
 cp "$SOURCE_DIR/app.py" "$SOURCE_DIR/index.html" "$SOURCE_DIR/requirements.txt" /opt/tsb-stitch-estimator/
 python3 -m venv /opt/tsb-stitch-estimator/.venv
@@ -24,5 +27,3 @@ for attempt in {1..30}; do
 done
 journalctl -u tsb-stitch-estimator -n 50 --no-pager
 exit 1
-systemctl --no-pager status tsb-stitch-estimator
-echo 'Local endpoint: http://127.0.0.1:8765/api/v1/embroidery/estimate'
