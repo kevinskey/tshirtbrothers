@@ -15,7 +15,9 @@ test('technical preview draws stitch segments without filling transparent margin
   assert.equal(preview.preview_mode, 'object-aware-stitch-plan');
   assert.ok(preview.stitch_segments > 0);
   const { data, info } = await sharp(Buffer.from(preview.data_url.split(',')[1], 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-  assert.equal(info.width, width); assert.equal(info.height, height);
+  // SVG is rasterized at 144 DPI; logical preview dimensions stay source-sized.
+  assert.equal(preview.width, width); assert.equal(preview.height, height);
+  assert.equal(info.width, width * 2); assert.equal(info.height, height * 2);
   assert.equal(data[3], 0);
   assert.ok(data.some((v, i) => i % 4 === 3 && v > 0));
 });
