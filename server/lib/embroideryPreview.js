@@ -51,12 +51,11 @@ export async function renderEmbroideryPreview(png, { widthIn = 3.5, spacingMm = 
   const parts = [];
   let count = 0;
   const escape = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="#eeeeee"/>`);
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`);
   let groupIndex = 0;
   for (const [id, components] of groups) {
-    const p = palette[id], n = p.n;
-    const r = Math.round((p.r - data[0]) / Math.max(1, n)); // replaced by representative pixel below
-    void r;
+    
+    
     const sample = components[0]?.pixels[0];
     if (sample === undefined) continue;
     const rgb = [data[sample * 4], data[sample * 4 + 1], data[sample * 4 + 2]];
