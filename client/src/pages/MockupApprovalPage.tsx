@@ -39,6 +39,24 @@ interface PublicMockup {
   preview_image_url_sleeve_left: string | null;
   notes: string | null;
   created_at: string;
+  /**
+   * Every mockup attached to the same quote, the tokened one included.
+   * A quote can carry several garments and each can be printed on more than
+   * one side, so approval has to show the whole set — the link only names
+   * where the conversation started.
+   */
+  mockups?: PublicMockup[];
+  quote_id?: number | null;
+}
+
+/** The printed sides of one mockup, in the order a shop proofs them. */
+function sidesOf(m: PublicMockup): Array<{ url: string; label: string }> {
+  return [
+    { url: m.preview_image_url, label: 'Front' },
+    { url: m.preview_image_url_back, label: 'Back' },
+    { url: m.preview_image_url_sleeve, label: 'Right Sleeve' },
+    { url: m.preview_image_url_sleeve_left, label: 'Left Sleeve' },
+  ].filter((v): v is { url: string; label: string } => Boolean(v.url));
 }
 
 export default function MockupApprovalPage() {
@@ -101,11 +119,10 @@ export default function MockupApprovalPage() {
   }
 
   const placement = mockup.placement || { x: 35, y: 30, width: 30 };
-  const extraViews = [
-    { url: mockup.preview_image_url_back, label: 'Back' },
-    { url: mockup.preview_image_url_sleeve, label: 'Right Sleeve' },
-    { url: mockup.preview_image_url_sleeve_left, label: 'Left Sleeve' },
-  ].filter((v): v is { url: string; label: string } => Boolean(v.url));
+  // Fall back to the single mockup for links created before the approval
+  // view understood sets.
+  const allMockups = mockup.mockups?.length ? mockup.mockups : [mockup];
+  const totalSides = allMockups.reduce((sum, m) => sum + sidesOf(m).length, 0);
   const alreadyResponded = ['approved', 'rejected', 'converted_to_quote'].includes(mockup.status);
 
   return (
@@ -113,65 +130,90 @@ export default function MockupApprovalPage() {
       <div className="max-w-3xl mx-auto px-4 py-10">
         <h1 className="text-3xl font-display font-bold text-gray-900 mb-2">Mockup Approval</h1>
         <p className="text-sm text-gray-500 mb-6">
-          {mockup.customer_name ? `Hi ${mockup.customer_name}, ` : ''}please take a look at your mockup below and let us know if it's approved.
+          {mockup.customer_name ? `Hi ${mockup.customer_name}, ` : ''}
+          {allMockups.length > 1
+            ? `please review all ${allMockups.length} mockups below — every printed side is shown — and let us know if they're approved.`
+            : "please take a look at your mockup below and let us know if it's approved."}
         </p>
 
-        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-          {mockup.preview_image_url ? (
-            <img src={mockup.preview_image_url} alt={mockup.name || 'Mockup'} className="w-full rounded-lg" />
-          ) : (
-            <div className="relative inline-block w-full">
-              {mockup.product_image_url && (
-                <img src={mockup.product_image_url} alt={mockup.product_name || 'Product'} className="w-full rounded-lg" />
+        {allMockups.map((m, index) => {
+          const sides = sidesOf(m);
+          return (
+            <div key={m.id} className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+              {allMockups.length > 1 && (
+                <p className="mb-3 text-sm font-semibold text-gray-900">
+                  Mockup {index + 1} of {allMockups.length}
+                  {m.name ? <span className="font-normal text-gray-600"> — {m.name}</span> : null}
+                </p>
               )}
-              {mockup.graphic_url && (
-                <img
-                  src={mockup.graphic_url}
-                  alt="Your design"
-                  className="absolute"
-                  style={{
-                    left: `${placement.x}%`,
-                    top: `${placement.y}%`,
-                    width: `${placement.width}%`,
-                    transform: placement.rotation ? `rotate(${placement.rotation}deg)` : undefined,
-                  }}
-                />
+
+              {sides.length > 0 ? (
+                sides.map((v, i) => (
+                  <div key={v.label} className={i === 0 ? '' : 'mt-4'}>
+                    <img
+                      src={v.url}
+                      alt={`${m.name || 'Mockup'} - ${v.label}`}
+                      className="w-full rounded-lg"
+                    />
+                    {/* Label even a lone side: on a multi-garment proof the
+                        customer needs to know which side they are signing off. */}
+                    <p className="mt-2 text-center text-xs uppercase tracking-wide text-gray-400">{v.label}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="relative inline-block w-full">
+                  {m.product_image_url && (
+                    <img src={m.product_image_url} alt={m.product_name || 'Product'} className="w-full rounded-lg" />
+                  )}
+                  {m.graphic_url && (
+                    <img
+                      src={m.graphic_url}
+                      alt="Your design"
+                      className="absolute"
+                      style={{
+                        left: `${placement.x}%`,
+                        top: `${placement.y}%`,
+                        width: `${placement.width}%`,
+                        transform: placement.rotation ? `rotate(${placement.rotation}deg)` : undefined,
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {sides.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {sides.map((v) => (
+                    <button
+                      key={v.label}
+                      type="button"
+                      onClick={() => downloadImage(
+                        v.url,
+                        `${(m.name || 'mockup').replace(/[^a-zA-Z0-9-_ ]/g, '')}-${v.label.toLowerCase().replace(/ /g, '-')}.png`,
+                      )}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      <Download className="w-4 h-4" />
+                      {sides.length > 1 ? v.label : 'Download Mockup'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {m.product_name && (
+                <p className="mt-3 text-sm text-gray-600"><span className="font-medium">Product:</span> {m.product_name}</p>
+              )}
+              {m.notes && (
+                <p className="mt-1 text-sm text-gray-600"><span className="font-medium">Notes:</span> {m.notes}</p>
               )}
             </div>
-          )}
-          {extraViews.length > 0 && (
-            <>
-              {mockup.preview_image_url && (
-                <p className="mt-2 text-center text-xs uppercase tracking-wide text-gray-400">Front</p>
-              )}
-              {extraViews.map((v) => (
-                <div key={v.label} className="mt-4">
-                  <img src={v.url} alt={`${mockup.name || 'Mockup'} - ${v.label}`} className="w-full rounded-lg" />
-                  <p className="mt-2 text-center text-xs uppercase tracking-wide text-gray-400">{v.label}</p>
-                </div>
-              ))}
-            </>
-          )}
-          {(mockup.preview_image_url || mockup.product_image_url) && (
-            <button
-              type="button"
-              onClick={() => downloadImage(
-                mockup.preview_image_url || mockup.product_image_url!,
-                `${(mockup.name || 'mockup').replace(/[^a-zA-Z0-9-_ ]/g, '')}.png`,
-              )}
-              className="mt-3 inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-            >
-              <Download className="w-4 h-4" />
-              Download Mockup
-            </button>
-          )}
-          {mockup.product_name && (
-            <p className="mt-3 text-sm text-gray-600"><span className="font-medium">Product:</span> {mockup.product_name}</p>
-          )}
-          {mockup.notes && (
-            <p className="mt-1 text-sm text-gray-600"><span className="font-medium">Notes:</span> {mockup.notes}</p>
-          )}
-        </div>
+          );
+        })}
+
+        {allMockups.length > 1 && (
+          <p className="-mt-2 mb-6 text-xs text-gray-500">
+            Approving covers all {allMockups.length} mockups ({totalSides} print locations) on this order.
+          </p>
+        )}
 
         {done || alreadyResponded ? (
           <div className={`rounded-xl p-6 text-center ${done === 'approved' || mockup.status === 'approved' ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
