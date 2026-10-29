@@ -599,12 +599,18 @@ router.get('/mockup/:token', async (req, res, next) => {
       if (siblings.length > 0) set = siblings;
     }
 
+    // What they are approving, not just what it looks like: garment, colours,
+    // sizes, quantities and the total.
+    const { quoteProductData } = await import('../services/quoteProductData.js');
+    const quote = await quoteProductData(m.quote_id);
+
     res.json({
       // The tokened mockup stays at the top level so older clients, the
       // approve/reject buttons and the email links keep working unchanged.
       ...publicMockup(m),
       quote_id: m.quote_id,
       mockups: set.map(publicMockup),
+      quote,
     });
   } catch (err) { next(err); }
 });

@@ -47,7 +47,34 @@ interface PublicMockup {
    */
   mockups?: PublicMockup[];
   quote_id?: number | null;
+  /** The order itself — what the proofs are for. */
+  quote?: QuoteProductData | null;
 }
+
+interface QuoteLine {
+  product_name: string | null;
+  color: string | null;
+  sizes: string | null;
+  quantity: number | null;
+  print_areas: string | null;
+  unit_price: number | null;
+  line_total: number | null;
+  notes: string | null;
+}
+
+interface QuoteProductData {
+  estimated_price: number | null;
+  deposit_amount: number | null;
+  status: string | null;
+  product_name: string | null;
+  quantity: number | null;
+  items: QuoteLine[];
+}
+
+const money = (n: number | null | undefined) =>
+  typeof n === 'number' && Number.isFinite(n)
+    ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+    : null;
 
 /** The printed sides of one mockup, in the order a shop proofs them. */
 function sidesOf(m: PublicMockup): Array<{ url: string; label: string }> {
@@ -213,6 +240,64 @@ export default function MockupApprovalPage() {
           <p className="-mt-2 mb-6 text-xs text-gray-500">
             Approving covers all {allMockups.length} mockups ({totalSides} print locations) on this order.
           </p>
+        )}
+
+        {/* What the proofs are for. A customer should never be asked to
+            approve artwork without being shown the garments, quantities and
+            price they are approving alongside it. */}
+        {mockup.quote && mockup.quote.items.length > 0 && (
+          <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Your Order
+            </div>
+            <ul className="divide-y divide-gray-100">
+              {mockup.quote.items.map((line, i) => {
+                // Colour, sizes and print areas are often folded into the
+                // description instead of their own columns, so only the ones
+                // actually filled in get shown.
+                const details = [
+                  line.color ? `Color: ${line.color}` : null,
+                  line.sizes ? `Sizes: ${line.sizes}` : null,
+                  line.print_areas ? `Print: ${line.print_areas}` : null,
+                ].filter(Boolean);
+                return (
+                  <li key={i} className="flex items-start justify-between gap-4 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-gray-900">{line.product_name || 'Item'}</p>
+                      {details.length > 0 && (
+                        <p className="mt-0.5 text-xs text-gray-500">{details.join(' · ')}</p>
+                      )}
+                      {line.notes && <p className="mt-0.5 text-xs text-gray-500">{line.notes}</p>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {line.quantity != null && (
+                        <p className="text-sm text-gray-900">Qty {line.quantity}</p>
+                      )}
+                      {money(line.unit_price) && (
+                        <p className="text-xs text-gray-500">{money(line.unit_price)} ea</p>
+                      )}
+                      {money(line.line_total) && (
+                        <p className="text-xs font-medium text-gray-700">{money(line.line_total)}</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            {money(mockup.quote.estimated_price) && (
+              <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-2">
+                <span className="text-sm font-semibold text-gray-700">Quote total</span>
+                <span className="text-sm font-semibold text-gray-900">{money(mockup.quote.estimated_price)}</span>
+              </div>
+            )}
+            {/* A TSB quote total is tax-inclusive, so say so rather than
+                leaving the customer to wonder what gets added later. Nothing
+                is said about payment here: some of these customers have
+                already paid a deposit. */}
+            <p className="px-4 pb-3 pt-2 text-[11px] text-gray-400">
+              Total includes tax. Approving the mockups doesn't charge anything.
+            </p>
+          </div>
         )}
 
         {done || alreadyResponded ? (
