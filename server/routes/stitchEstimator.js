@@ -42,7 +42,7 @@ export function createStitchEstimatorRouter({ request = fetch, records, worker =
       if (res.destroyed) return;
       const estimate_key = randomUUID();
       const result = { ...data, filename: req.file.originalname, width_in: width, height_in: Number(prepared.height_in.toFixed(3)), embroidery_preview, estimate_key,
-        algorithm_version: 'planning-v2-bounds', settings: { spacing_mm: spacing, background, trim },
+        algorithm_version: 'planning-v2-bounds', settings: { spacing_mm: spacing, background, trim, aspect_locked: height === null },
         artwork: { bounds: prepared.bounds, original: prepared.original }, disclaimer: 'Uncalibrated planning estimate. Confirm with the digitized file.' };
       for (const [key, entry] of cache) if (entry.expires < Date.now()) cache.delete(key);
       while (cache.size >= 4) cache.delete(cache.keys().next().value);
