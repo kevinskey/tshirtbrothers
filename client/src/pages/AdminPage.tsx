@@ -270,6 +270,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'vendor-send', label: 'File Sender', icon: Send, to: '/admin/vendor-send' },
     { key: 'post-office', label: 'Post Office', icon: Truck, to: '/admin/post-office' },
     { key: 'embroidery',label: 'Embroidery',       icon: Sparkles },
+    { key: 'stitch-estimator', label: 'Stitch Estimator', icon: Calculator, to: '/stitch-estimator' },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
     { key: 'stonecut',  label: 'StoneCut',         icon: Gem, to: 'https://rhinestones.tshirtbrothers.com', external: true },
     { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
@@ -7632,6 +7633,7 @@ export default function AdminPage() {
             <div>
               <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
                 <h2 className="text-2xl font-display font-bold text-gray-900">Embroidery</h2>
+                <Link to="/stitch-estimator" className="text-sm font-semibold text-orange-600 hover:underline">Estimate stitches from PNG →</Link>
                 <button
                   onClick={() => setEmbroideryUploadOpen(true)}
                   className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
