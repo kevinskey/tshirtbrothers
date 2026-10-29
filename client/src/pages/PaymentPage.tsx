@@ -3,12 +3,35 @@ import { useSearchParams, Link } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
+interface QuoteLine {
+  product_name: string | null;
+  color: string | null;
+  sizes: string | null;
+  quantity: number | null;
+  print_areas: string | null;
+  unit_price: number | null;
+  line_total: number | null;
+  notes: string | null;
+}
+
+interface QuoteMockup {
+  id: number | null;
+  name: string | null;
+  front: string | null;
+  back: string | null;
+  sleeve?: string | null;
+  sleeve_left?: string | null;
+}
+
 interface QuoteSummary {
   id: number;
   customer_name: string | null;
   product_name: string | null;
   estimated_price: number;
   deposit_amount: number;
+  /** The itemised order, so this screen shows what is being paid for. */
+  items?: QuoteLine[];
+  mockups?: QuoteMockup[];
 }
 
 // Checkout page — shows a choice between paying the 50% deposit OR
@@ -106,6 +129,8 @@ export function PaymentCheckout() {
             product_name: data.product_name ?? null,
             estimated_price: Number(data.estimated_price || 0),
             deposit_amount: Number(data.deposit_amount || 0),
+            items: Array.isArray(data.items) ? data.items : [],
+            mockups: Array.isArray(data.mockups) ? data.mockups : [],
           });
         } else {
           setError(data?.error || 'Could not load quote');
@@ -204,6 +229,61 @@ export function PaymentCheckout() {
                 <span className="font-semibold text-gray-900"> {fmt(total)}</span>.
               </p>
             </div>
+
+            {/* What is being paid for. This screen used to show two amounts
+                and nothing else — the customer had to trust the number. */}
+            {(quote.items?.length || quote.mockups?.length) ? (
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                <div className="border-b border-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Your Order
+                </div>
+                {(quote.mockups?.length ?? 0) > 0 && (
+                  <div className="flex gap-2 overflow-x-auto border-b border-gray-100 p-3">
+                    {quote.mockups!.flatMap((m, mi) =>
+                      ([[m.front, 'Front'], [m.back, 'Back'], [m.sleeve, 'Right Sleeve'], [m.sleeve_left, 'Left Sleeve']] as Array<[string | null | undefined, string]>)
+                        .filter(([url]) => !!url)
+                        .map(([url, label]) => (
+                          <div key={`${mi}-${label}`} className="shrink-0">
+                            <img src={url!} alt={`${m.name || 'Mockup'} ${label}`} className="h-24 w-24 rounded-lg border border-gray-200 bg-white object-contain" />
+                            <p className="mt-1 text-center text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
+                          </div>
+                        )),
+                    )}
+                  </div>
+                )}
+                {(quote.items?.length ?? 0) > 0 && (
+                  <ul className="divide-y divide-gray-100">
+                    {quote.items!.map((line, i) => {
+                      const details = [
+                        line.color ? `Color: ${line.color}` : null,
+                        line.sizes ? `Sizes: ${line.sizes}` : null,
+                        line.print_areas ? `Print: ${line.print_areas}` : null,
+                      ].filter(Boolean);
+                      return (
+                        <li key={i} className="flex items-start justify-between gap-4 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className="text-sm text-gray-900">{line.product_name || 'Item'}</p>
+                            {details.length > 0 && (
+                              <p className="mt-0.5 text-xs text-gray-500">{details.join(' · ')}</p>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {line.quantity != null && <p className="text-sm text-gray-900">Qty {line.quantity}</p>}
+                            {line.line_total != null && (
+                              <p className="text-xs text-gray-500">{fmt(line.line_total)}</p>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-4 py-2">
+                  <span className="text-sm font-semibold text-gray-700">Total (incl. tax)</span>
+                  <span className="text-sm font-semibold text-gray-900">{fmt(total)}</span>
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Pay deposit (50%) */}

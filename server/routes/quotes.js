@@ -432,9 +432,13 @@ router.get('/:id/public', async (req, res, next) => {
       }];
     }
 
+    // The itemised order, so the checkout screen shows what is being paid for.
+    const { quoteProductData } = await import('../services/quoteProductData.js');
+    const product = await quoteProductData(req.params.id);
+
     // Don't echo the token back.
     const { accept_token: _t, ...safe } = q;
-    res.json({ ...safe, mockups });
+    res.json({ ...safe, mockups, items: product?.items ?? [] });
   } catch (err) {
     next(err);
   }
