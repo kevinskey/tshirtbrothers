@@ -8822,9 +8822,18 @@ export default function AdminPage() {
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {((q as Quote).extra_mockups ?? []).map((m, i) => (
                             <div key={`${m.front}-${i}`} className="relative rounded-lg border border-gray-200 bg-gray-50 p-1">
-                              <a href={m.front} target="_blank" rel="noreferrer">
-                                <img src={m.front} alt={`Mockup ${i + 2}`} className="h-20 w-full rounded bg-white object-contain" />
-                              </a>
+                              {/* Every side, so the shop can check what the
+                                  customer will be asked to approve. */}
+                              <div className="flex gap-1">
+                                {([[m.front, 'Front'], [m.back, 'Back'], [m.sleeve, 'Sleeve R'], [m.sleeve_left, 'Sleeve L']] as Array<[string | null | undefined, string]>)
+                                  .filter(([url]) => !!url)
+                                  .map(([url, label]) => (
+                                    <a key={label} href={url!} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
+                                      <img src={url!} alt={`Mockup ${i + 2} ${label}`} className="h-20 w-full rounded bg-white object-contain" />
+                                      <span className="block text-center text-[9px] uppercase tracking-wide text-gray-400">{label}</span>
+                                    </a>
+                                  ))}
+                              </div>
                               <button
                                 aria-label="Remove mockup"
                                 onClick={async () => {
@@ -9386,7 +9395,13 @@ export default function AdminPage() {
         {mockupPickerOpen && (mockupPickerFor === 'invoice' || detailQuote) && (() => {
           const filter = mockupPickerSearch.trim().toLowerCase();
           const all = mockupPickerQuery.data || [];
-          const withPreview = all.filter((m) => !!m.preview_image_url);
+          // Any rendered side makes a mockup pickable. Requiring a front
+          // preview hid every back-only and sleeve-only design from the
+          // picker, so they could never be attached to a quote at all.
+          const withPreview = all.filter((m) => !!(
+            m.preview_image_url || m.preview_image_url_back
+            || m.preview_image_url_sleeve || m.preview_image_url_sleeve_left
+          ));
           const filtered = filter
             ? withPreview.filter((m) =>
                 (m.name || '').toLowerCase().includes(filter) ||

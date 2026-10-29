@@ -1454,7 +1454,12 @@ export default function DesignStudioPage() {
     if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
-    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+    // Sleeves count: the capture below already renders them, so refusing a
+    // sleeve-only design here was rejecting an order the studio can draw.
+    if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
+      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      return;
+    }
 
     setSavingInvoiceMockup(true);
     try {
@@ -1532,7 +1537,12 @@ export default function DesignStudioPage() {
     if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
-    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+    // Sleeves count: the capture below already renders them, so refusing a
+    // sleeve-only design here was rejecting an order the studio can draw.
+    if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
+      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      return;
+    }
 
     setSavingQuoteMockup(true);
     try {
@@ -1609,7 +1619,12 @@ export default function DesignStudioPage() {
     if (!productImg) { alert('Pick a product first.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
-    if (!hasFront && !hasBack) { alert('Add at least one element to the front or back before saving the mockup.'); return; }
+    // Sleeves count: the capture below already renders them, so refusing a
+    // sleeve-only design here was rejecting an order the studio can draw.
+    if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
+      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      return;
+    }
 
     setSavingNewMockup(true);
     try {

@@ -240,7 +240,15 @@ router.post('/admin/mockups', authenticate, adminOnly, async (req, res, next) =>
             // Back-only studio saves have no front preview — fall back to
             // the back image so the invoice editor never renders a broken
             // <img src=null> card (the "Mockup 2 that won't delete" bug).
-            [JSON.stringify([{ mockup_id: row.id, front: row.preview_image_url || row.preview_image_url_back || null, back: row.preview_image_url_back || null }]), invoice_id],
+            [JSON.stringify([{
+              mockup_id: row.id,
+              front: row.preview_image_url || row.preview_image_url_back || null,
+              back: row.preview_image_url_back || null,
+              // Sleeves travel with the entry now; dropping them here meant a
+              // sleeve print vanished from the invoice it was saved to.
+              sleeve: row.preview_image_url_sleeve || null,
+              sleeve_left: row.preview_image_url_sleeve_left || null,
+            }]), invoice_id],
           );
         } else {
           await pool.query('UPDATE invoices SET mockup_id = $1, updated_at = NOW() WHERE id = $2', [row.id, invoice_id]);
