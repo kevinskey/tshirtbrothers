@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
+import { accuracyReport, complexities } from '../lib/embroideryAccuracy.js';
 import { embroideryMockupFields } from '../lib/embroideryMockup.js';
 
 export function createEstimateRecordsRouter({ cache, db = pool, upload = uploadObject }) {
@@ -14,6 +15,24 @@ export function createEstimateRecordsRouter({ cache, db = pool, upload = uploadO
       if (quote && (!/^\d+$/.test(String(quote)) || !Number.isSafeInteger(Number(quote)))) return res.status(422).json({ error: 'Invalid quote number.' });
       const { rows } = await db.query(`SELECT id,name,quote_id,mockup_id,actual_stitches,created_at,data->>'estimated_stitches' AS estimated_stitches FROM embroidery_estimates ${quote ? 'WHERE quote_id=$1' : ''} ORDER BY created_at DESC LIMIT 30`, quote ? [quote] : []);
       res.json(rows);
+    } catch (error) { next(error); }
+  });
+  // Aggregate all saved designs, independently of the recent/quote list limit.
+  router.get('/accuracy', async (req, res, next) => {
+    try {
+      const { rows } = await db.query(`SELECT id,name,actual_stitches,jsonb_build_object(
+        'estimated_stitches',data->'estimated_stitches','width_in',data->'width_in',
+        'height_in',data->'height_in','coverage_pct',data->'coverage_pct',
+        'calibration',data->'calibration') AS data FROM embroidery_estimates ORDER BY id DESC`);
+      res.set('Cache-Control', 'no-store').json(accuracyReport(rows));
+    } catch (error) { next(error); }
+  });
+  router.post('/:id/calibration', async (req, res, next) => {
+    if (!complexities.includes(req.body.complexity) && req.body.complexity !== 'unclassified') return res.status(422).json({ error: 'Choose simple, moderate, complex or unclassified artwork.' });
+    try {
+      const { rows } = await db.query(`UPDATE embroidery_estimates SET data=jsonb_set(data,'{calibration}',$1::jsonb),updated_at=NOW() WHERE id=$2 RETURNING *`, [JSON.stringify({ complexity: req.body.complexity }), req.params.id]);
+      if (!rows[0]) return res.status(404).json({ error: 'Saved estimate not found.' });
+      res.json(expose(rows[0]));
     } catch (error) { next(error); }
   });
   router.get('/:id', async (req, res, next) => {
