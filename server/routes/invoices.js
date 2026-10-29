@@ -201,10 +201,37 @@ export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
     subtotal: (Number(it.quantity || 0) * Number(it.unit_price || 0)),
   }));
 
+  // Every print location of every mockup. The extras loop used to push
+  // `front` only, so a customer approving a two-sided shirt on their invoice
+  // saw the front and nothing else.
   const mockups = [];
-  if (invoice.mockup_preview_url) mockups.push({ src: invoice.mockup_preview_url, label: invoice.mockup_preview_url_back ? 'Front' : '' });
-  if (invoice.mockup_preview_url_back) mockups.push({ src: invoice.mockup_preview_url_back, label: 'Back' });
-  if (Array.isArray(invoice.extra_mockups)) for (const m of invoice.extra_mockups) if (m && m.front) mockups.push({ src: m.front, label: '' });
+  const manyMockups = (Array.isArray(invoice.extra_mockups) ? invoice.extra_mockups.length : 0) > 0;
+  const pushSides = (sides, prefix) => {
+    const present = sides.filter(([src]) => !!src);
+    for (const [src, side] of present) {
+      // Label only when there is something to tell apart — a lone front on a
+      // single-mockup invoice needs no caption.
+      const label = present.length > 1 || prefix ? `${prefix}${present.length > 1 ? side : ''}`.trim() : '';
+      mockups.push({ src, label: label.replace(/—\s*$/, '').trim() });
+    }
+  };
+  pushSides([
+    [invoice.mockup_preview_url, 'Front'],
+    [invoice.mockup_preview_url_back, 'Back'],
+    [invoice.mockup_preview_url_sleeve, 'Right Sleeve'],
+    [invoice.mockup_preview_url_sleeve_left, 'Left Sleeve'],
+  ], manyMockups ? 'Mockup 1 — ' : '');
+  if (Array.isArray(invoice.extra_mockups)) {
+    invoice.extra_mockups.forEach((m, i) => {
+      if (!m) return;
+      pushSides([
+        [m.front, 'Front'],
+        [m.back, 'Back'],
+        [m.sleeve, 'Right Sleeve'],
+        [m.sleeve_left, 'Left Sleeve'],
+      ], `Mockup ${i + 2} — `);
+    });
+  }
 
   const summaryRows = [
     { label: 'Product Subtotal', value: formatCurrency(invoice.subtotal) },
@@ -298,7 +325,10 @@ export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
 router.get('/public/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url,
+              COALESCE(m.preview_image_url_back, m.back_preview_image_url) AS mockup_preview_url_back,
+              m.preview_image_url_sleeve AS mockup_preview_url_sleeve,
+              m.preview_image_url_sleeve_left AS mockup_preview_url_sleeve_left
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,
@@ -336,6 +366,8 @@ router.get('/public/:id', async (req, res, next) => {
       mockup_id: i.mockup_id,
       mockup_preview_url: i.mockup_preview_url,
       mockup_preview_url_back: i.mockup_preview_url_back,
+      mockup_preview_url_sleeve: i.mockup_preview_url_sleeve,
+      mockup_preview_url_sleeve_left: i.mockup_preview_url_sleeve_left,
       // Linked order, shown as TSB-<id> next to the invoice number.
       quote_id: i.quote_id,
     });
@@ -552,7 +584,10 @@ router.get('/', async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url,
+              COALESCE(m.preview_image_url_back, m.back_preview_image_url) AS mockup_preview_url_back,
+              m.preview_image_url_sleeve AS mockup_preview_url_sleeve,
+              m.preview_image_url_sleeve_left AS mockup_preview_url_sleeve_left
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
          ${whereClause ? whereClause.replace('WHERE status', 'WHERE i.status') : ''}
@@ -570,7 +605,10 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url,
+              COALESCE(m.preview_image_url_back, m.back_preview_image_url) AS mockup_preview_url_back,
+              m.preview_image_url_sleeve AS mockup_preview_url_sleeve,
+              m.preview_image_url_sleeve_left AS mockup_preview_url_sleeve_left
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,
@@ -584,15 +622,20 @@ router.get('/:id', async (req, res, next) => {
 });
 
 // Sanitize the extra_mockups jsonb payload: https-only urls, capped list.
+// Every side is carried through — truncating to front/back here was silently
+// deleting sleeve prints from any invoice that passed through this function.
 function cleanExtraMockups(v) {
   if (!Array.isArray(v)) return [];
+  const url = (u) => (typeof u === 'string' && /^https:\/\//.test(u) ? u : null);
   return v
-    .filter((m) => m && typeof m.front === 'string' && /^https:\/\//.test(m.front))
+    .filter((m) => m && (url(m.front) || url(m.back) || url(m.sleeve) || url(m.sleeve_left)))
     .slice(0, 12)
     .map((m) => ({
       mockup_id: Number.isInteger(m.mockup_id) ? m.mockup_id : null,
-      front: m.front,
-      back: typeof m.back === 'string' && /^https:\/\//.test(m.back) ? m.back : null,
+      front: url(m.front),
+      back: url(m.back),
+      sleeve: url(m.sleeve),
+      sleeve_left: url(m.sleeve_left),
     }));
 }
 
@@ -748,7 +791,10 @@ router.post('/:id/send', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { rows } = await pool.query(
-      `SELECT i.*, m.preview_image_url AS mockup_preview_url, m.preview_image_url_back AS mockup_preview_url_back
+      `SELECT i.*, m.preview_image_url AS mockup_preview_url,
+              COALESCE(m.preview_image_url_back, m.back_preview_image_url) AS mockup_preview_url_back,
+              m.preview_image_url_sleeve AS mockup_preview_url_sleeve,
+              m.preview_image_url_sleeve_left AS mockup_preview_url_sleeve_left
          FROM invoices i
          LEFT JOIN mockups m ON m.id = i.mockup_id
         WHERE i.id = $1`,

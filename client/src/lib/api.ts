@@ -1021,6 +1021,11 @@ export interface Mockup {
   graphic_url: string | null;
   placement: { x: number; y: number; width: number; rotation?: number } | null;
   preview_image_url: string | null;
+  // Every print location the studio can render. A mockup may have any
+  // combination — back-only and sleeve-only designs are real orders.
+  preview_image_url_back?: string | null;
+  preview_image_url_sleeve?: string | null;
+  preview_image_url_sleeve_left?: string | null;
   notes: string | null;
   status: 'draft' | 'sent' | 'approved' | 'rejected' | 'converted_to_quote';
   approve_token: string | null;
@@ -1206,13 +1211,23 @@ export interface Invoice {
   cc_emails?: string[];
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
+  mockup_preview_url_sleeve?: string | null;
+  mockup_preview_url_sleeve_left?: string | null;
   payments: { amount: number; method: string; date: string }[];
   sent_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type ExtraMockup = { mockup_id: number | null; front: string; back: string | null };
+/** One attached mockup, with every print location it carries. `front` can be
+ *  null: a back-only or sleeve-only design is a real order. */
+export type ExtraMockup = {
+  mockup_id: number | null;
+  front: string | null;
+  back: string | null;
+  sleeve?: string | null;
+  sleeve_left?: string | null;
+};
 
 /** Customer-facing order number for an invoice's linked quote/order — the
  *  same "TSB-<id>" the emailed invoice prints. Null when the invoice stands

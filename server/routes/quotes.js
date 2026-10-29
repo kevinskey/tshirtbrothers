@@ -386,7 +386,10 @@ router.get('/:id/public', async (req, res, next) => {
     if (!token) return res.status(400).json({ error: 'token is required' });
     const result = await pool.query(
       `SELECT id, customer_name, product_name, estimated_price, deposit_amount,
-              balance_paid_at, status, accept_token
+              balance_paid_at, status, accept_token,
+              mockup_image_url, mockup_image_url_back,
+              mockup_image_url_sleeve, mockup_image_url_sleeve_left,
+              extra_mockups
        FROM quotes WHERE id = $1`,
       [req.params.id],
     );
@@ -395,9 +398,43 @@ router.get('/:id/public', async (req, res, next) => {
     if (!tokenMatches(q.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
+
+    // Someone paying a deposit should be able to see what they are paying
+    // for. The mockups table is the lossless record, so read the set through
+    // quote_id and fall back to the quote's own columns if it has none.
+    let mockups = [];
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, name, preview_image_url, preview_image_url_back, back_preview_image_url,
+                preview_image_url_sleeve, preview_image_url_sleeve_left
+           FROM mockups WHERE quote_id = $1 ORDER BY id ASC`,
+        [req.params.id],
+      );
+      mockups = rows.map((m) => ({
+        id: m.id,
+        name: m.name,
+        front: m.preview_image_url,
+        back: m.preview_image_url_back || m.back_preview_image_url || null,
+        sleeve: m.preview_image_url_sleeve,
+        sleeve_left: m.preview_image_url_sleeve_left,
+      }));
+    } catch (err) {
+      console.error(`[quotes] public mockup lookup failed for ${req.params.id}:`, err.message);
+    }
+    if (mockups.length === 0 && q.mockup_image_url) {
+      mockups = [{
+        id: null,
+        name: null,
+        front: q.mockup_image_url,
+        back: q.mockup_image_url_back,
+        sleeve: q.mockup_image_url_sleeve,
+        sleeve_left: q.mockup_image_url_sleeve_left,
+      }];
+    }
+
     // Don't echo the token back.
     const { accept_token: _t, ...safe } = q;
-    res.json(safe);
+    res.json({ ...safe, mockups });
   } catch (err) {
     next(err);
   }
@@ -1449,19 +1486,39 @@ router.delete('/admin/:id/design-url', authenticate, adminOnly, async (req, res,
 router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { mockup_image_url, mockup_image_url_back, mockup_id } = req.body || {};
-    let urlFront = typeof mockup_image_url === 'string' && mockup_image_url ? mockup_image_url : null;
-    let urlBack = typeof mockup_image_url_back === 'string' && mockup_image_url_back ? mockup_image_url_back : null;
-    if (mockup_id && (urlFront == null || urlBack == null)) {
+    const {
+      mockup_image_url, mockup_image_url_back, mockup_id,
+      mockup_image_url_sleeve, mockup_image_url_sleeve_left,
+    } = req.body || {};
+    const str = (v) => (typeof v === 'string' && v ? v : null);
+    let urlFront = str(mockup_image_url);
+    let urlBack = str(mockup_image_url_back);
+    // Sleeves ride along so a left-chest + sleeve-hit order survives the trip
+    // through extra_mockups; the jsonb used to carry front/back only, which
+    // silently lost every sleeve print the moment it was attached.
+    let urlSleeve = str(mockup_image_url_sleeve);
+    let urlSleeveLeft = str(mockup_image_url_sleeve_left);
+    if (mockup_id && (urlFront == null || urlBack == null || urlSleeve == null || urlSleeveLeft == null)) {
       const m = await pool.query(
-        'SELECT preview_image_url, preview_image_url_back FROM mockups WHERE id = $1',
+        `SELECT preview_image_url, preview_image_url_back, back_preview_image_url,
+                preview_image_url_sleeve, preview_image_url_sleeve_left
+           FROM mockups WHERE id = $1`,
         [mockup_id],
       );
       if (m.rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
-      if (urlFront == null) urlFront = m.rows[0].preview_image_url;
-      if (urlBack == null) urlBack = m.rows[0].preview_image_url_back;
+      const row = m.rows[0];
+      if (urlFront == null) urlFront = row.preview_image_url;
+      // back_preview_image_url is the older duplicate column that no renderer
+      // reads; fall back to it so those backs are not lost here either.
+      if (urlBack == null) urlBack = row.preview_image_url_back || row.back_preview_image_url;
+      if (urlSleeve == null) urlSleeve = row.preview_image_url_sleeve;
+      if (urlSleeveLeft == null) urlSleeveLeft = row.preview_image_url_sleeve_left;
     }
-    if (!urlFront) return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
+    // A sleeve-only or back-only design is a real order; requiring a front
+    // print refused it outright.
+    if (!urlFront && !urlBack && !urlSleeve && !urlSleeveLeft) {
+      return res.status(400).json({ error: 'mockup_image_url or mockup_id is required' });
+    }
 
     // add_extra: true appends to the extra_mockups array instead of
     // replacing the primary mockup — quotes can carry several mockups.
@@ -1469,11 +1526,19 @@ router.patch('/admin/:id/mockup', authenticate, adminOnly, async (req, res, next
       ? await pool.query(
           `UPDATE quotes SET extra_mockups = COALESCE(extra_mockups, '[]'::jsonb) || $1::jsonb
            WHERE id = $2 RETURNING *`,
-          [JSON.stringify([{ mockup_id: mockup_id || null, front: urlFront, back: urlBack }]), id],
+          [JSON.stringify([{
+            mockup_id: mockup_id || null,
+            front: urlFront,
+            back: urlBack,
+            sleeve: urlSleeve,
+            sleeve_left: urlSleeveLeft,
+          }]), id],
         )
       : await pool.query(
-          'UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2 WHERE id = $3 RETURNING *',
-          [urlFront, urlBack, id],
+          `UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2,
+                  mockup_image_url_sleeve = $3, mockup_image_url_sleeve_left = $4
+             WHERE id = $5 RETURNING *`,
+          [urlFront, urlBack, urlSleeve, urlSleeveLeft, id],
         );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
 
@@ -1498,10 +1563,18 @@ router.delete('/admin/:id/mockup', authenticate, adminOnly, async (req, res, nex
     if (!rows[0].mockup_image_url) return res.status(404).json({ error: 'This quote has no mockup attached' });
     const extras = Array.isArray(rows[0].extra_mockups) ? rows[0].extra_mockups : [];
     const [promoted, ...restExtras] = extras;
+    // Promote every side, not just front/back — an extra with a sleeve print
+    // used to lose it on the way up to primary.
     const result = await pool.query(
-      `UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2, extra_mockups = $3::jsonb
-       WHERE id = $4 RETURNING *`,
-      [promoted?.front || null, promoted?.back || null, JSON.stringify(restExtras), req.params.id],
+      `UPDATE quotes SET mockup_image_url = $1, mockup_image_url_back = $2,
+              mockup_image_url_sleeve = $3, mockup_image_url_sleeve_left = $4,
+              extra_mockups = $5::jsonb
+       WHERE id = $6 RETURNING *`,
+      [
+        promoted?.front || null, promoted?.back || null,
+        promoted?.sleeve || null, promoted?.sleeve_left || null,
+        JSON.stringify(restExtras), req.params.id,
+      ],
     );
     res.json(result.rows[0]);
   } catch (err) { next(err); }

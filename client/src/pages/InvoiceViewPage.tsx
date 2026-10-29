@@ -31,7 +31,15 @@ interface PublicInvoice {
   mockup_id: number | null;
   mockup_preview_url: string | null;
   mockup_preview_url_back: string | null;
-  extra_mockups?: Array<{ mockup_id: number | null; front: string; back: string | null }> | null;
+  mockup_preview_url_sleeve?: string | null;
+  mockup_preview_url_sleeve_left?: string | null;
+  extra_mockups?: Array<{
+    mockup_id: number | null;
+    front: string | null;
+    back: string | null;
+    sleeve?: string | null;
+    sleeve_left?: string | null;
+  }> | null;
   quote_id?: number | string | null;
 }
 
@@ -131,6 +139,31 @@ export default function InvoiceViewPage() {
   const items = Array.isArray(inv.items) ? inv.items : (() => { try { return JSON.parse(String(inv.items || '[]')); } catch { return []; } })();
   const isPaid = inv.status === 'paid' || Number(inv.amount_due) <= 0;
 
+  // Every print location of every attached mockup, flattened once so the
+  // markup below is a single loop. Labels are prefixed only when there is
+  // more than one mockup to tell apart.
+  const mockupViews: Array<{ key: string; src: string; label: string }> = [];
+  {
+    const extras = inv.extra_mockups ?? [];
+    const many = extras.length > 0;
+    const add = (src: string | null | undefined, side: string, prefix: string) => {
+      if (!src) return;
+      mockupViews.push({ key: `${src}-${side}`, src, label: `${prefix}${side}`.trim() });
+    };
+    const p1 = many ? 'Mockup 1 · ' : '';
+    add(inv.mockup_preview_url, 'Front', p1);
+    add(inv.mockup_preview_url_back, 'Back', p1);
+    add(inv.mockup_preview_url_sleeve, 'Right Sleeve', p1);
+    add(inv.mockup_preview_url_sleeve_left, 'Left Sleeve', p1);
+    extras.forEach((m, i) => {
+      const prefix = `Mockup ${i + 2} · `;
+      add(m?.front, 'Front', prefix);
+      add(m?.back, 'Back', prefix);
+      add(m?.sleeve, 'Right Sleeve', prefix);
+      add(m?.sleeve_left, 'Left Sleeve', prefix);
+    });
+  }
+
   // Group identical design+color runs so a 27-row size breakdown reads as a
   // handful of summary lines with expandable size detail. Groups of one
   // render as plain rows.
@@ -215,31 +248,23 @@ export default function InvoiceViewPage() {
           </div>
         </div>
 
-        {/* Mockup preview — front and/or back depending on what's attached */}
-        {(inv.mockup_preview_url || inv.mockup_preview_url_back || (inv.extra_mockups && inv.extra_mockups.length > 0)) && (
+        {/* Approved mockups — every mockup, every print location. One flat
+            list built up front: the extras loop used to be nested inside the
+            back-image block AND repeated after it, so an invoice with a back
+            print rendered its extras twice while one with no back rendered
+            them once. */}
+        {mockupViews.length > 0 && (
           <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
-            <div className="px-4 py-2 text-xs uppercase text-gray-500 font-semibold border-b border-gray-200">Approved Mockup</div>
-            <div className={`p-3 bg-white grid gap-3 ${(inv.mockup_preview_url && inv.mockup_preview_url_back) || (inv.extra_mockups && inv.extra_mockups.length > 0) ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
-              {inv.mockup_preview_url && (
-                <div className="flex flex-col items-center">
-                  <img src={inv.mockup_preview_url} alt="Mockup front" className="max-h-96 w-auto object-contain" />
-                  {inv.mockup_preview_url_back && <span className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">Front</span>}
-                </div>
-              )}
-              {inv.mockup_preview_url_back && (
-                <div className="flex flex-col items-center">
-                  <img src={inv.mockup_preview_url_back} alt="Mockup back" className="max-h-96 w-auto object-contain" />
-                  <span className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">Back</span>
-                  {(inv.extra_mockups ?? []).map((m, i) => (
-                <div key={`${m.front}-${i}`} className="flex flex-col items-center">
-                  <img src={m.front} alt={`Mockup ${i + 2}`} className="max-h-96 w-auto object-contain" />
-                </div>
-              ))}
+            <div className="px-4 py-2 text-xs uppercase text-gray-500 font-semibold border-b border-gray-200">
+              {mockupViews.length > 1 ? 'Approved Mockups' : 'Approved Mockup'}
             </div>
-              )}
-              {(inv.extra_mockups ?? []).map((m, i) => (
-                <div key={`${m.front}-${i}`} className="flex flex-col items-center">
-                  <img src={m.front} alt={`Mockup ${i + 2}`} className="max-h-96 w-auto object-contain" />
+            <div className={`p-3 bg-white grid gap-3 ${mockupViews.length > 1 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+              {mockupViews.map((v) => (
+                <div key={v.key} className="flex flex-col items-center">
+                  <img src={v.src} alt={v.label || 'Mockup'} className="max-h-96 w-auto object-contain" />
+                  {mockupViews.length > 1 && (
+                    <span className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">{v.label}</span>
+                  )}
                 </div>
               ))}
             </div>
