@@ -34,3 +34,10 @@ Open https://tshirtbrothers.com/stitch-estimator and sign in with a TSB admin ac
 The Express endpoint `POST /api/admin/stitch-estimator` requires existing admin authentication, accepts multipart PNG uploads, validates finite dimensions, limits requests and concurrent processing, and forwards only to the fixed loopback service. Larger images are normalized to a maximum 1200-pixel edge for bounded processing. The Python service remains private.
 
 The application deployment runs `server/scripts/check-stitch-estimator.mjs` to verify authentication, a real PNG estimate through Express, and HTTPS page availability. The smoke check uses a short-lived synthetic admin token only in process memory and creates no account or quote records.
+
+
+### Embroidery mockup preview
+
+Each estimate also returns an `embroidery_preview` with a transparent PNG data URL. Its thread texture is procedural, preserving source geometry/alpha and matching the estimator's opaque-white background removal. It is a visual simulation, not a DST render or a promise of actual digitizing paths.
+
+Download PNG exports that artwork. **Use in Mockup** uploads only on click, saves an embroidery-labeled draft via the existing mockup API, and opens Design Studio with that draft. Choose a garment, adjust the placement and save using the normal mockup workflow. Estimate notes include finished size and the count range. No quote price changes automatically.
