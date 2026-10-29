@@ -8841,7 +8841,9 @@ export default function AdminPage() {
                                     const r = await fetch(`/api/quotes/admin/${q.id}/extra-mockup`, {
                                       method: 'DELETE',
                                       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-                                      body: JSON.stringify({ front: m.front }),
+                                      // Send both: a back-only or sleeve-only
+                                      // entry has no front to match on.
+                                      body: JSON.stringify({ front: m.front ?? undefined, mockup_id: m.mockup_id ?? undefined }),
                                     });
                                     const upd = await r.json();
                                     if (!r.ok) throw new Error(upd.error || 'Remove failed');

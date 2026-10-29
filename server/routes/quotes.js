@@ -1580,15 +1580,23 @@ router.delete('/admin/:id/mockup', authenticate, adminOnly, async (req, res, nex
   } catch (err) { next(err); }
 });
 
-// DELETE /admin/:id/extra-mockup — remove one entry from extra_mockups by
-// its front-image URL (the stable identifier the UI has in hand).
+// DELETE /admin/:id/extra-mockup — remove one entry from extra_mockups,
+// identified by its front-image URL or by mockup_id. mockup_id matters now
+// that back-only and sleeve-only mockups can be attached: matching on `front`
+// alone left those entries with no way to be removed.
 router.delete('/admin/:id/extra-mockup', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { front } = req.body || {};
-    if (typeof front !== 'string' || !front) return res.status(400).json({ error: 'front is required' });
+    const { front, mockup_id } = req.body || {};
+    const byFront = typeof front === 'string' && front;
+    const byId = Number.isInteger(mockup_id);
+    if (!byFront && !byId) return res.status(400).json({ error: 'front or mockup_id is required' });
     const { rows } = await pool.query('SELECT extra_mockups FROM quotes WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Quote not found' });
-    const kept = (Array.isArray(rows[0].extra_mockups) ? rows[0].extra_mockups : []).filter((m) => m?.front !== front);
+    const kept = (Array.isArray(rows[0].extra_mockups) ? rows[0].extra_mockups : []).filter((m) => {
+      if (byId && m?.mockup_id === mockup_id) return false;
+      if (byFront && m?.front === front) return false;
+      return true;
+    });
     const result = await pool.query(
       'UPDATE quotes SET extra_mockups = $1::jsonb WHERE id = $2 RETURNING *',
       [JSON.stringify(kept), req.params.id],
