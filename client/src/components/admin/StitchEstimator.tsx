@@ -5,7 +5,7 @@ import { Upload, Loader2, Calculator } from 'lucide-react';
 
 type SavedEstimate = { id: number; name: string; quote_id: number | null; actual_stitches: number | null; data: Estimate };
 type Estimate = {
-  estimate_key: string; filename?: string; settings?: { spacing_mm: number; trim: boolean; background: string };
+  estimate_key: string; filename?: string; settings?: { spacing_mm: number; trim: boolean; background: string; aspect_locked?: boolean };
   artwork?: { bounds: { width: number; height: number }; original: { width: number; height: number } };
   embroidery_preview: { data_url: string; width: number; height: number; disclaimer: string };
   estimated_stitches: number; low_stitches: number; high_stitches: number;
@@ -60,7 +60,7 @@ export default function StitchEstimator({ quoteId, initialArtworkUrl, onApply }:
       if (!response.ok) throw new Error('Unable to restore original artwork.');
       const source = new File([await response.blob()], record.name, { type: 'image/png' });
       setFile(source); setResult(record.data); setSaved(record); setActual(String(record.actual_stitches || ''));
-      setWidth(String(record.data.width_in)); setHeight(String(record.data.height_in)); setLocked(false);
+      setWidth(String(record.data.width_in)); setHeight(record.data.settings?.aspect_locked === false ? String(record.data.height_in) : ''); setLocked(record.data.settings?.aspect_locked !== false);
       setSpacing(String(record.data.settings?.spacing_mm || 0.42)); setTrim(record.data.settings?.trim !== false);
       setBackground(record.data.settings?.background || 'remove_white_edges');
       setQuote(String(record.quote_id || '')); setDirty(false);
