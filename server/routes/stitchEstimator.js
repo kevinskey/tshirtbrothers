@@ -3,6 +3,7 @@ import multer from 'multer';
 import sharp from 'sharp';
 import { rateLimit } from 'express-rate-limit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
+import { renderEmbroideryPreview } from '../lib/embroideryPreview.js';
 
 // Only this fixed loopback endpoint is reachable; clients cannot supply a URL.
 export function createStitchEstimatorRouter({ request = fetch } = {}) {
@@ -55,7 +56,8 @@ export function createStitchEstimatorRouter({ request = fetch } = {}) {
           if (!upstream.ok) return res.status(upstream.status === 422 ? 422 : 503).json({
             error: upstream.status === 422 && typeof data.detail === 'string' ? data.detail : 'Estimator is temporarily unavailable. Please try again.',
           });
-          res.set('Cache-Control', 'no-store').json(data);
+          const embroidery_preview = await renderEmbroideryPreview(png, { widthIn: width, spacingMm: spacing });
+          res.set('Cache-Control', 'no-store').json({ ...data, embroidery_preview });
         } catch {
           res.status(503).json({ error: 'Estimator is temporarily unavailable. Please try again.' });
         }

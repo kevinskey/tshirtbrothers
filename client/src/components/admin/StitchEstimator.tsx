@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { createMockup } from '@/lib/api';
 import { Upload, Loader2, Calculator } from 'lucide-react';
 
 type Estimate = {
+  embroidery_preview: { data_url: string; width: number; height: number; disclaimer: string };
   estimated_stitches: number; low_stitches: number; high_stitches: number;
   color_count_estimate: number; coverage_pct: number; width_in: number; height_in: number;
   breakdown: { fill: number; satin: number; running: number; underlay: number };
@@ -10,6 +12,8 @@ type Estimate = {
 const count = (value: number) => value.toLocaleString();
 
 export default function StitchEstimator() {
+  const navigate = useNavigate();
+  const [mockupBusy, setMockupBusy] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState('');
   const [width, setWidth] = useState('3.5');
@@ -45,6 +49,26 @@ export default function StitchEstimator() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Unable to estimate. Please try again.'); }
     finally { setBusy(false); }
   }
+  async function useInMockup() {
+    if (!result) return;
+    setMockupBusy(true); setError('');
+    try {
+      const response = await fetch('/api/quotes/upload-design', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify({ imageBase64: result.embroidery_preview.data_url, filename: 'embroidery-preview.png', customerEmail: 'admin-mockup' }),
+      });
+      const uploaded = await response.json();
+      if (!response.ok || !uploaded.url) throw new Error('Could not save the embroidery preview. Please try again.');
+      const mockup = await createMockup({
+        name: `Embroidery preview — ${file?.name || 'Artwork'}`,
+        graphic_url: uploaded.url,
+        preview_image_url: uploaded.url,
+        notes: `Simulated embroidery texture. Finished artwork: ${result.width_in} × ${result.height_in} inches. Estimated ${count(result.estimated_stitches)} stitches (${count(result.low_stitches)}–${count(result.high_stitches)}). Confirm with digitized file before production.`,
+      });
+      navigate(`/design?editMockup=${mockup.id}`);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to open the mockup editor.'); }
+    finally { setMockupBusy(false); }
+  }
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
     <div className="border-b border-orange-100 bg-orange-50 p-5 sm:p-7">
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-orange-700"><Calculator size={18} /> TSB PRODUCTION TOOLS</div>
@@ -53,7 +77,7 @@ export default function StitchEstimator() {
     </div>
     <div className="grid gap-7 p-5 sm:p-7 lg:grid-cols-2">
       <form onSubmit={estimate} className="space-y-5">
-        <fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
+        <fieldset disabled={busy || mockupBusy} className="space-y-5 disabled:opacity-60">
           <label className="block rounded-xl border-2 border-dashed border-orange-200 bg-orange-50/40 p-5">
             <span className="flex items-center gap-2 font-semibold text-gray-900"><Upload size={20} /> Choose PNG artwork</span>
             <span className="mt-1 block text-xs text-gray-600">Up to 8 MB / 12 megapixels. Transparent backgrounds work best.</span>
@@ -71,6 +95,15 @@ export default function StitchEstimator() {
         {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       </form>
       <div aria-live="polite" aria-busy={busy}>
+        {result?.embroidery_preview && <div className="mb-5 overflow-hidden rounded-xl border border-gray-200">
+          <div className="border-b bg-gray-50 px-4 py-3"><h2 className="font-semibold text-gray-900">Embroidery preview</h2><p className="mt-1 text-xs text-gray-500">Simulated thread texture · transparent PNG</p></div>
+          <div className="flex min-h-56 items-center justify-center bg-gray-200 p-6"><img src={result.embroidery_preview.data_url} alt="Your artwork with simulated embroidery thread texture" className="max-h-80 max-w-full object-contain" /></div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <a download={`${(file?.name || 'artwork').replace(/\.png$/i, '')}-embroidery-preview.png`} href={result.embroidery_preview.data_url} className="rounded-lg border border-orange-200 px-3 py-3 text-center text-sm font-semibold text-orange-700 hover:bg-orange-50">Download PNG</a>
+            <button type="button" disabled={mockupBusy} onClick={useInMockup} className="rounded-lg bg-orange-500 px-3 py-3 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-60">{mockupBusy ? 'Opening mockup…' : 'Use in Mockup'}</button>
+          </div>
+          <p className="px-4 pb-4 text-xs text-gray-500">Choose a garment and position the artwork in Design Studio. Actual thread paths depend on digitizing.</p>
+        </div>}
         {result ? <div className="rounded-xl bg-slate-900 p-6 text-white">
           <p className="text-sm text-orange-300">Estimated stitch count</p>
           <p className="mt-2 text-5xl font-bold tracking-tight">{count(result.estimated_stitches)}</p>
