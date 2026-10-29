@@ -2,7 +2,7 @@ import sharp from 'sharp';
 
 /** Deterministic thread-style visualization, not digitized stitch geometry.
  *  Keep the source silhouette/alpha; never add a garment or background. */
-export async function renderEmbroideryPreview(png, { widthIn, spacingMm = 0.42 }) {
+export async function renderEmbroideryPreview(png, { widthIn, spacingMm = 0.42, preserveAlpha = false }) {
   const { data, info } = await sharp(png).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height } = info;
   const output = Buffer.from(data);
@@ -12,7 +12,7 @@ export async function renderEmbroideryPreview(png, { widthIn, spacingMm = 0.42 }
   const alphaAt = (x, y) => {
     if (x < 0 || y < 0 || x >= width || y >= height) return 0;
     const i = (y * width + x) * 4;
-    return !transparent && Math.min(data[i], data[i + 1], data[i + 2]) >= 245 ? 0 : data[i + 3];
+    return !preserveAlpha && !transparent && Math.min(data[i], data[i + 1], data[i + 2]) >= 245 ? 0 : data[i + 3];
   };
   const pixelsPerMm = width / (widthIn * 25.4);
   const rowPitch = Math.max(3, Math.min(8, pixelsPerMm * spacingMm));

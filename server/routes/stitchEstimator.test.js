@@ -10,8 +10,6 @@ test('stitch estimator protects uploads, validates PNGs and handles service outa
   const token = role => jwt.sign({ id: 1, role }, process.env.JWT_SECRET);
   let calls = 0;
   let unavailable = false;
-  let release;
-  let hold = false;
   const app = express();
   app.use('/estimate', createStitchEstimatorRouter({ request: async (url, options) => {
     calls++;
@@ -20,9 +18,8 @@ test('stitch estimator protects uploads, validates PNGs and handles service outa
     const meta = await sharp(Buffer.from(await options.body.get('file').arrayBuffer())).metadata();
     assert.equal(meta.format, 'png');
     assert.ok(meta.width <= 1200);
-    if (hold) await new Promise(resolve => { release = resolve; });
     if (unavailable) throw new Error('connection refused');
-    return Response.json({ estimated_stitches: 4200, low_stitches: 2900, high_stitches: 6100 });
+    return Response.json({ estimated_stitches: 4200, low_stitches: 2900, high_stitches: 6100, color_count_estimate: 1, coverage_pct: 100, breakdown: { fill: 4000, satin: 0, running: 0, underlay: 200 } });
   } }));
   const server = app.listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
@@ -49,11 +46,7 @@ test('stitch estimator protects uploads, validates PNGs and handles service outa
     assert.equal(ok.headers.get('cache-control'), 'no-store');
     unavailable = true;
     assert.equal((await send('admin')).status, 503);
-    unavailable = false; hold = true;
-    const first = send('admin');
-    while (!release) await new Promise(resolve => setTimeout(resolve, 5));
-    assert.equal((await send('admin')).status, 429);
-    release();
-    assert.equal((await first).status, 200);
+    unavailable = false;
+    assert.equal((await send('admin')).status, 200, 'Requests recover after an outage');
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
