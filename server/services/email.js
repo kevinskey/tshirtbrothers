@@ -196,25 +196,30 @@ async function quoteMockupViews(quote) {
     views.push({ url, label });
   };
 
-  // The linked Studio mockup is the richest source — it's the only one with
-  // sleeve renders. Non-fatal if it fails: the quote columns still cover
-  // front/back.
+  // The linked Studio mockups are the richest source — the only one carrying
+  // sleeve renders, and the only record of a mockup that was attached without
+  // being listed in quotes.extra_mockups. ALL of them, not the newest: a quote
+  // with four garments was showing one. Non-fatal if it fails: the quote
+  // columns below still cover the primary front/back.
   if (quote?.id) {
     try {
       const { default: pool } = await import('../db.js');
       const { rows } = await pool.query(
-        `SELECT preview_image_url, preview_image_url_back,
+        `SELECT id, name, preview_image_url, preview_image_url_back, back_preview_image_url,
                 preview_image_url_sleeve, preview_image_url_sleeve_left
-           FROM mockups WHERE quote_id = $1 ORDER BY id DESC LIMIT 1`,
+           FROM mockups WHERE quote_id = $1 ORDER BY id ASC`,
         [quote.id],
       );
-      const m = rows[0];
-      if (m) {
-        push(m.preview_image_url, 'Front');
-        push(m.preview_image_url_back, 'Back');
-        push(m.preview_image_url_sleeve, 'Right Sleeve');
-        push(m.preview_image_url_sleeve_left, 'Left Sleeve');
-      }
+      const many = rows.length > 1;
+      rows.forEach((m, i) => {
+        // Only number the labels when there is more than one garment to tell
+        // apart — "Front" beats "Mockup 1 — Front" on a single-garment quote.
+        const prefix = many ? `${m.name ? m.name : `Mockup ${i + 1}`} — ` : '';
+        push(m.preview_image_url, `${prefix}Front`);
+        push(m.preview_image_url_back || m.back_preview_image_url, `${prefix}Back`);
+        push(m.preview_image_url_sleeve, `${prefix}Right Sleeve`);
+        push(m.preview_image_url_sleeve_left, `${prefix}Left Sleeve`);
+      });
     } catch (err) {
       console.error(`[Email] mockup view lookup failed for quote ${quote.id}:`, err.message);
     }
@@ -1291,9 +1296,39 @@ export async function sendMockupShareEmail(mockup, toEmail, approveUrl, opts = {
   console.log(`[Email] Mockup share sent to ${toEmail}`);
 }
 
+/**
+ * Every mockup on the quote, each with every printed side.
+ *
+ * Read through mockups.quote_id, not quotes.extra_mockups: the jsonb there
+ * carries front/back only and omits mockups that were attached without being
+ * listed, so a customer would approve a set they had never been shown.
+ */
+async function allMockupBlocks(mockup, es) {
+  if (!mockup?.quote_id) return mockupPreviewBlock(mockup, es);
+  try {
+    const { default: pool } = await import('../db.js');
+    const { rows } = await pool.query(
+      'SELECT * FROM mockups WHERE quote_id = $1 ORDER BY id ASC',
+      [mockup.quote_id],
+    );
+    if (rows.length <= 1) return mockupPreviewBlock(mockup, es);
+    return rows.map((m, i) => `
+      <p style="margin:24px 0 0;font-size:14px;font-weight:700;color:${BRAND_DARK};">
+        ${es ? 'Muestra' : 'Mockup'} ${i + 1} ${es ? 'de' : 'of'} ${rows.length}${m.name ? ` — ${escapeHtml(m.name)}` : ''}
+      </p>
+      ${mockupPreviewBlock({
+        ...m,
+        preview_image_url_back: m.preview_image_url_back || m.back_preview_image_url || null,
+      }, es)}`).join('');
+  } catch {
+    // A failed lookup must not stop the approval email going out.
+    return mockupPreviewBlock(mockup, es);
+  }
+}
+
 export async function sendMockupForApproval(mockup, approveUrl, lang = 'en', opts = {}) {
   const es = lang === 'es';
-  const previewBlock = mockupPreviewBlock(mockup, es);
+  const previewBlock = await allMockupBlocks(mockup, es);
 
   // revision > 0 means the customer already ruled on an earlier proof. Say
   // so plainly — otherwise a second near-identical email reads as a

@@ -545,27 +545,58 @@ router.delete('/admin/mockups/:id', authenticate, adminOnly, async (req, res, ne
 // ── Customer-facing approval (no auth) ───────────────────────────────────────
 
 // GET /mockup/:token - public; used by the email link + approval page
+/**
+ * The customer-safe view of one mockup — every printed side, no internals.
+ *
+ * `back_preview_image_url` is a second, older back column that some rows were
+ * written into and that no renderer reads; falling back to it here is what
+ * keeps those backs from being invisible on the approval page.
+ */
+function publicMockup(m) {
+  return {
+    id: m.id,
+    name: m.name,
+    status: m.status,
+    customer_name: m.customer_name,
+    product_name: m.product_name,
+    product_image_url: m.product_image_url,
+    graphic_url: m.graphic_url,
+    placement: m.placement,
+    preview_image_url: m.preview_image_url,
+    preview_image_url_back: m.preview_image_url_back || m.back_preview_image_url || null,
+    preview_image_url_sleeve: m.preview_image_url_sleeve,
+    preview_image_url_sleeve_left: m.preview_image_url_sleeve_left,
+    notes: m.notes,
+    created_at: m.created_at,
+  };
+}
+
 router.get('/mockup/:token', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM mockups WHERE approve_token = $1', [req.params.token]);
     if (rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
-    // Don't leak internal fields
     const m = rows[0];
+
+    // The customer must see EVERY mockup on the quote, not just the one whose
+    // token happens to be in the link. Read through mockups.quote_id rather
+    // than quotes.extra_mockups: that jsonb only carries front/back, and a
+    // mockup can be attached to a quote without ever being listed in it, so
+    // reading the jsonb hides both the sleeves and those rows entirely.
+    let set = [m];
+    if (m.quote_id) {
+      const { rows: siblings } = await pool.query(
+        'SELECT * FROM mockups WHERE quote_id = $1 ORDER BY id ASC',
+        [m.quote_id],
+      );
+      if (siblings.length > 0) set = siblings;
+    }
+
     res.json({
-      id: m.id,
-      name: m.name,
-      status: m.status,
-      customer_name: m.customer_name,
-      product_name: m.product_name,
-      product_image_url: m.product_image_url,
-      graphic_url: m.graphic_url,
-      placement: m.placement,
-      preview_image_url: m.preview_image_url,
-      preview_image_url_back: m.preview_image_url_back,
-      preview_image_url_sleeve: m.preview_image_url_sleeve,
-      preview_image_url_sleeve_left: m.preview_image_url_sleeve_left,
-      notes: m.notes,
-      created_at: m.created_at,
+      // The tokened mockup stays at the top level so older clients, the
+      // approve/reject buttons and the email links keep working unchanged.
+      ...publicMockup(m),
+      quote_id: m.quote_id,
+      mockups: set.map(publicMockup),
     });
   } catch (err) { next(err); }
 });
@@ -598,6 +629,17 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
     // someone happened to open the page.
     (async () => {
       try {
+        // The decision covers every mockup on the quote, because that is what
+        // the customer was shown and what the quote status below records.
+        // Leaving the siblings in 'draft' while the quote reads 'approved'
+        // made the shop's own mockup list disagree with the quote.
+        if (mockup.quote_id) {
+          await pool.query(
+            `UPDATE mockups SET status = $1, updated_at = NOW()
+              WHERE quote_id = $2 AND id <> $3`,
+            [action, mockup.quote_id, mockup.id],
+          );
+        }
         if (mockup.quote_id) {
           // approved -> straight into production-ready state. rejected ->
           // back to 'awaiting_approval' with the note attached, because the
