@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 
+import EmbroideryAccuracy from './EmbroideryAccuracy';
 import { Upload, Loader2, Calculator } from 'lucide-react';
 
 type SavedEstimate = { id: number; name: string; quote_id: number | null; actual_stitches: number | null; data: Estimate };
 type Estimate = {
-  estimate_key: string; filename?: string; settings?: { spacing_mm: number; trim: boolean; background: string; aspect_locked?: boolean };
+  calibration?: { complexity: string }; estimate_key: string; filename?: string; settings?: { spacing_mm: number; trim: boolean; background: string; aspect_locked?: boolean };
   artwork?: { bounds: { width: number; height: number }; original: { width: number; height: number } };
   embroidery_preview: { data_url: string; width: number; height: number; disclaimer: string };
   estimated_stitches: number; low_stitches: number; high_stitches: number;
@@ -25,6 +26,7 @@ export default function StitchEstimator({ quoteId, initialArtworkUrl, onApply }:
   const [recent, setRecent] = useState<Array<{ id: number; name: string; estimated_stitches: string; actual_stitches: number | null }>>([]);
   const [quote, setQuote] = useState(String(quoteId || new URLSearchParams(window.location.search).get('quote') || ''));
   const [actual, setActual] = useState('');
+  const [accuracyRevision, setAccuracyRevision] = useState(0);
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` });
   const api = async (path: string, body?: unknown) => {
     const r = await fetch(`/api/admin/stitch-estimator/saved${path}`, { headers: { ...headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
@@ -87,7 +89,7 @@ export default function StitchEstimator({ quoteId, initialArtworkUrl, onApply }:
     if (!result || dirty) throw new Error('Estimate the current artwork and settings first.');
     if (saved) return saved;
     const record: SavedEstimate = await api('', { estimate_key: result.estimate_key, name: file?.name, quote_id: quote || null });
-    setSaved(record); setResult(record.data); void refreshRecent();
+    setSaved(record); setResult(record.data); setAccuracyRevision(v => v + 1); void refreshRecent();
     if (location.pathname === '/stitch-estimator') navigate(`/stitch-estimator?estimate=${record.id}`, { replace: true });
     return record;
   }
@@ -99,7 +101,7 @@ export default function StitchEstimator({ quoteId, initialArtworkUrl, onApply }:
   async function recordActual() {
     if (!saved) return;
     setMockupBusy(true); setError('');
-    try { const record = await api(`/${saved.id}/actual`, { actual_stitches: Number(actual) }); setSaved(record); void refreshRecent(); }
+    try { const record = await api(`/${saved.id}/actual`, { actual_stitches: Number(actual) }); setSaved(record); setAccuracyRevision(v => v + 1); void refreshRecent(); }
     catch (err) { setError(err instanceof Error ? err.message : 'Unable to record actual count.'); }
     finally { setMockupBusy(false); }
   }
@@ -199,12 +201,19 @@ export default function StitchEstimator({ quoteId, initialArtworkUrl, onApply }:
         {result && <div className="mt-4 space-y-3 rounded-xl border p-4">
           <button type="button" disabled={mockupBusy || busy || dirty || !!saved} onClick={saveOnly} className="w-full rounded-lg bg-slate-900 p-3 text-sm font-semibold text-white disabled:opacity-50">{saved ? `Saved estimate #${saved.id}` : mockupBusy ? 'Saving…' : 'Save artwork & estimate'}</button>
           {onApply && <button type="button" disabled={dirty || busy || mockupBusy} onClick={async () => { setMockupBusy(true); try { await saveEstimate(); onApply(result.estimated_stitches); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save.'); } finally { setMockupBusy(false); } }} className="w-full rounded-lg bg-orange-500 p-3 font-semibold text-white disabled:opacity-50">Apply estimated count to quote</button>}
-          {saved && <div><label className="block text-sm font-semibold">Actual digitized stitch count<input type="number" min="1" value={actual} onChange={e => setActual(e.target.value)} className="mt-2 w-full rounded border p-2" /></label><label className="mt-2 block text-xs text-gray-600">Or read the count from a DST header<input type="file" accept=".dst" className="mt-1 block max-w-full" onChange={async e => { const dst = e.target.files?.[0]; if (!dst) return; try { const header = await dst.slice(0, 512).text(); const count = header.match(/ST:\s*(\d{1,7})/); if (!count) throw new Error('DST header has no readable stitch count. Enter it manually.'); setActual(count[1] || ''); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to read DST.'); } }} /></label><button type="button" disabled={mockupBusy || busy || dirty || !actual} onClick={recordActual} className="mt-2 text-sm font-semibold text-orange-700">Record actual count</button>{saved.actual_stitches && <p className="mt-2 text-xs">Recorded: {count(saved.actual_stitches)} stitches. Difference from estimate: {((saved.actual_stitches - result.estimated_stitches) / result.estimated_stitches * 100).toFixed(1)}%.</p>}</div>}
+          {saved && <div><label className="mb-3 block text-sm font-semibold">Calibration artwork complexity<select disabled={mockupBusy || busy || dirty} value={saved.data.calibration?.complexity || 'unclassified'} className="mt-2 block w-full rounded border p-2" onChange={async e => {
+            const complexity = e.target.value;
+            setMockupBusy(true); setError('');
+            try { const record = await api(`/${saved.id}/calibration`, { complexity }); setSaved(record); setAccuracyRevision(v => v + 1); }
+            catch (err) { setError(err instanceof Error ? err.message : 'Unable to classify sample.'); }
+            finally { setMockupBusy(false); }
+          }}><option value="unclassified">Unclassified</option><option value="simple">Simple</option><option value="moderate">Moderate</option><option value="complex">Complex</option></select></label><label className="block text-sm font-semibold">Actual digitized stitch count<input type="number" min="1" value={actual} onChange={e => setActual(e.target.value)} className="mt-2 w-full rounded border p-2" /></label><label className="mt-2 block text-xs text-gray-600">Or read the count from a DST header<input type="file" accept=".dst" className="mt-1 block max-w-full" onChange={async e => { const dst = e.target.files?.[0]; if (!dst) return; try { const header = await dst.slice(0, 512).text(); const count = header.match(/ST:\s*(\d{1,7})/); if (!count) throw new Error('DST header has no readable stitch count. Enter it manually.'); setActual(count[1] || ''); } catch (err) { setError(err instanceof Error ? err.message : 'Unable to read DST.'); } }} /></label><button type="button" disabled={mockupBusy || busy || dirty || !actual} onClick={recordActual} className="mt-2 text-sm font-semibold text-orange-700">Record actual count</button>{saved.actual_stitches && <p className="mt-2 text-xs">Recorded: {count(saved.actual_stitches)} stitches. Difference from estimate: {((saved.actual_stitches - result.estimated_stitches) / result.estimated_stitches * 100).toFixed(1)}%.</p>}</div>}
           {!saved && <p className="text-xs text-gray-500">Save to keep the original artwork, preview and settings for later. Unsaved results are temporary.</p>}
         </div>}
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Preliminary estimate only. Digitizing choices, fabric and underlay affect the final stitch count. Confirm against the digitized file before final pricing. This tool does not create a DST file.</p>
         <Link to="/admin?section=embroidery" className="mt-5 inline-block text-sm font-semibold text-orange-700 hover:underline">Back to embroidery jobs &amp; quotes →</Link>
       </div>
     </div>
+    <EmbroideryAccuracy revision={String(accuracyRevision)} onOpen={id => { if (!busy && !mockupBusy) void openSaved(id); }} />
   </section>;
 }

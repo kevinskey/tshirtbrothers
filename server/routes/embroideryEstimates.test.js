@@ -41,3 +41,28 @@ test('saved estimates reuse assets and mockups, retain quote context and actual 
     const actual = await (await post('/1/actual', { actual_stitches: 5400 })).json(); assert.equal(actual.actual_stitches, 5400);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test('accuracy spans all records; metadata validates, persists and preserves saved payload', async () => {
+  let metadata;
+  const record = { id: 1, data: { estimated_stitches: 1000, width_in: 3.5, embroidery_preview: {} }, preview_url: 'preview' };
+  const db = { query: async (sql, args) => {
+    if (sql.startsWith('SELECT id,name,actual_stitches')) {
+      assert.ok(!sql.includes('LIMIT')); assert.ok(!sql.includes('source_key'));
+      return { rows: Array.from({ length: 35 }, (_, id) => ({ id: id + 1, actual_stitches: 1000, data: record.data })) };
+    }
+    assert.ok(sql.includes("jsonb_set(data,'{calibration}'"));
+    metadata = JSON.parse(args[0]);
+    return { rows: args[1] === '999' ? [] : [{ ...record, data: { ...record.data, calibration: metadata } }] };
+  } };
+  const app = express(); app.use(express.json()); app.use('/saved', createEstimateRecordsRouter({ cache: new Map(), db }));
+  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${server.address().port}/saved`;
+  const post = (id, complexity) => fetch(`${base}/${id}/calibration`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ complexity }) });
+  try {
+    const response = await fetch(`${base}/accuracy`); assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
+    const r = await response.json(); assert.equal(r.paired, 35); assert.equal(r.mape, 0);
+    assert.equal((await post(1, 'unknown')).status, 422); assert.equal(metadata, undefined);
+    const updated = await (await post(1, 'complex')).json(); assert.equal(updated.data.calibration.complexity, 'complex'); assert.equal(updated.data.estimated_stitches, 1000); assert.equal(updated.data.embroidery_preview.data_url, 'preview');
+    assert.equal((await post(999, 'simple')).status, 404); assert.equal((await post('bad', 'simple')).status, 422);
+  } finally { await new Promise(resolve => server.close(resolve)); }
+});
