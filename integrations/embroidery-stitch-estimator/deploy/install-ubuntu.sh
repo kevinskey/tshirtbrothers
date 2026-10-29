@@ -4,7 +4,7 @@ set -euo pipefail
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 id tsbstitch >/dev/null 2>&1 || useradd --system --home /opt/tsb-stitch-estimator --shell /usr/sbin/nologin tsbstitch
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip
+DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv python3-pip curl
 install -d -o tsbstitch -g tsbstitch /opt/tsb-stitch-estimator
 cp "$SOURCE_DIR/app.py" "$SOURCE_DIR/index.html" "$SOURCE_DIR/requirements.txt" /opt/tsb-stitch-estimator/
 python3 -m venv /opt/tsb-stitch-estimator/.venv
@@ -12,6 +12,17 @@ python3 -m venv /opt/tsb-stitch-estimator/.venv
 chown -R tsbstitch:tsbstitch /opt/tsb-stitch-estimator
 install -m 0644 "$SOURCE_DIR/deploy/tsb-stitch-estimator.service" /etc/systemd/system/tsb-stitch-estimator.service
 systemctl daemon-reload
-systemctl enable --now tsb-stitch-estimator
+systemctl enable tsb-stitch-estimator
+systemctl restart tsb-stitch-estimator
+for attempt in {1..30}; do
+  if curl --fail --silent --max-time 3 http://127.0.0.1:8765/openapi.json >/dev/null; then
+    systemctl --no-pager status tsb-stitch-estimator
+    echo 'Estimator health check passed'
+    exit 0
+  fi
+  sleep 2
+done
+journalctl -u tsb-stitch-estimator -n 50 --no-pager
+exit 1
 systemctl --no-pager status tsb-stitch-estimator
 echo 'Local endpoint: http://127.0.0.1:8765/api/v1/embroidery/estimate'
