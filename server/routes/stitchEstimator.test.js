@@ -41,8 +41,8 @@ test('stitch estimator protects uploads, validates PNGs and handles service outa
     const result = await ok.json();
     assert.equal(result.estimated_stitches, 4200);
     assert.match(result.embroidery_preview.data_url, /^data:image\/png;base64,/);
-    assert.equal(result.embroidery_preview.width, 1200);
-    assert.equal(result.embroidery_preview.height, 600);
+    assert.equal(result.embroidery_preview.width, 640);
+    assert.equal(result.embroidery_preview.height, 320);
     assert.equal(ok.headers.get('cache-control'), 'no-store');
     unavailable = true;
     assert.equal((await send('admin')).status, 503);

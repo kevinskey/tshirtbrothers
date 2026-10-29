@@ -20,6 +20,19 @@ const endpoint = `${base}/api/admin/stitch-estimator`;
 assert.equal((await fetch(endpoint, { method: 'POST' })).status, 401, 'Estimator must require sign-in');
 // Short-lived synthetic admin token exists only in this process.
 const token = jwt.sign({ id: 0, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '180s' });
+// Read production aggregates before this smoke test creates any disposable records.
+const accuracyResponse = await fetch(`${endpoint}/saved/accuracy`, {
+  headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000),
+});
+assert.equal(accuracyResponse.status, 200, 'Accuracy dashboard report failed');
+const accuracy = await accuracyResponse.json();
+assert.ok(Number.isSafeInteger(accuracy.saved) && Number.isSafeInteger(accuracy.paired));
+assert.equal(accuracy.calibration.applied, false, 'Accuracy reporting must not apply correction factors');
+console.log('Production embroidery accuracy aggregates:', JSON.stringify({
+  saved: accuracy.saved, paired: accuracy.paired, missing_actual: accuracy.missing_actual,
+  mape: accuracy.mape, bias: accuracy.bias, outliers: accuracy.outliers,
+  collection_target_met: accuracy.calibration.review_ready, additional_examples: accuracy.calibration.missing,
+}));
 const png = await sharp({ create: { width: 200, height: 200, channels: 4, background: '#f97316' } }).png().toBuffer();
 const form = new FormData();
 form.append('file', new Blob([png], { type: 'image/png' }), 'deployment-check.png');
@@ -34,7 +47,8 @@ assert.ok(Number.isFinite(data.estimated_stitches) && data.estimated_stitches > 
 assert.ok(data.low_stitches <= data.estimated_stitches && data.high_stitches >= data.estimated_stitches);
 assert.match(data.embroidery_preview.data_url, /^data:image\/png;base64,/);
 const preview = await sharp(Buffer.from(data.embroidery_preview.data_url.split(',')[1], 'base64')).metadata();
-assert.equal(preview.width, 200);
+// The current SVG renderer rasterizes at 144 DPI (2× its logical dimensions).
+assert.equal(preview.width, 400);
 assert.ok(preview.hasAlpha, 'Embroidery preview must support transparency');
 let record, mockup;
 try {
