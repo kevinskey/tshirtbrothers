@@ -1,0 +1,46 @@
+name: Deploy TSB Embroidery Estimator to Droplet
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'integrations/embroidery-stitch-estimator/**'
+      - '.github/workflows/deploy-embroidery-estimator.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Deploy estimator using existing Droplet credentials
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: DEPLOY_SHA
+          command_timeout: 18m
+          script: |
+            set -eu
+            # Export this workflow's exact commit without changing the app checkout.
+            sudo -n bash -s -- "$DEPLOY_SHA" <<'DEPLOY'
+            set -euo pipefail
+            cd /var/www/tshirtbrothers
+            git fetch origin main
+            tmp=$(mktemp -d)
+            trap 'rm -rf "$tmp"' EXIT
+            git archive "$1" integrations/embroidery-stitch-estimator | tar -x -C "$tmp"
+            bash "$tmp/integrations/embroidery-stitch-estimator/deploy/install-ubuntu.sh"
+            DEPLOY
