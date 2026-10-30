@@ -81,14 +81,14 @@ async function purgeAbandonedGangSheetCheckouts() {
   }
 }
 
-// Quotes expire two weeks after the customer goes quiet. Unaccepted quotes
-// (pending/quoted) expire 14 days after creation; accepted-but-never-paid
-// quotes expire 14 days after acceptance. Expired quotes move to the
-// non-responsive archive (archived_at + archive_reason) and the customer is
-// recorded in non_buying_customers for marketing / geo analysis — unless
-// some OTHER quote of theirs shows buying evidence (a deposit, a paid
-// balance, or a completed job).
-const QUOTE_EXPIRY_DAYS = 14;
+// Quotes expire a week after the customer goes quiet (Doc, 2026-10-30 —
+// was 14 days). The follow-up nudge goes out at 24-72h, so they still get
+// roughly five days after hearing from us before the quote drops off the
+// board. Expired quotes move to the non-responsive archive (archived_at +
+// archive_reason) and the customer is recorded in non_buying_customers for
+// marketing / geo analysis — unless some OTHER quote of theirs shows buying
+// evidence (a deposit, a paid balance, or a completed job).
+const QUOTE_EXPIRY_DAYS = 7;
 
 async function archiveNonResponsiveQuotes() {
   try {
