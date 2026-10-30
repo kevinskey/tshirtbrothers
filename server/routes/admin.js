@@ -1498,6 +1498,11 @@ router.get('/dashboard-ops', async (req, res, next) => {
       // Every post-deposit working status counts: this predicate predates the
       // wired status ladder, and 'accepted'-only made jobs vanish from the
       // pipeline the moment they advanced.
+      //
+      // 'paid' belongs here too and was missing: 17 live quotes sit at that
+      // status, money collected and work outstanding, and none of them
+      // appeared in Open Orders. 'completed' and 'rejected' stay out — those
+      // are finished, not open.
       pool.query(`
         SELECT id, customer_name, customer_email, product_name, quantity, status,
                date_needed, estimated_price, created_at, order_stages, production_steps,
@@ -1506,7 +1511,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
           FROM quotes
          WHERE archived_at IS NULL
-           AND status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
+           AND status IN ('accepted', 'awaiting_approval', 'approved', 'paid', 'in_production', 'ready')
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
