@@ -538,6 +538,34 @@ function resolveHex(colorName, rawHex) {
 router.get('/colors/:styleId', async (req, res, next) => {
   try {
     const { styleId } = req.params;
+
+    // SanMar styles have no S&S styleid, so asking S&S returns nothing and
+    // the colour picker comes up empty. Their colourways are already stored
+    // on the catalog row from the feed, so serve those instead. SanMar rows
+    // are identified by a negative id or a "sanmar:" ss_id.
+    const isSanmar = /^-\d+$/.test(styleId) || String(styleId).startsWith('sanmar:');
+    if (isSanmar) {
+      const { rows } = await pool.query(
+        `SELECT colors, sizes FROM catalog_products
+          WHERE supplier = 'sanmar' AND (id::text = $1 OR ss_id = $1)
+          LIMIT 1`,
+        [styleId]
+      );
+      const row = rows[0];
+      if (!row) return res.json({ colors: [] });
+      return res.json({
+        colors: (row.colors || []).map((c) => ({
+          colorName: c.name,
+          // The feed gives a swatch photo but no hex, so the UI has to fall
+          // back to the swatch image rather than a colour chip.
+          color1: null,
+          colorSwatchImage: c.swatch ?? null,
+          colorFrontImage: c.image ?? null,
+        })),
+        sizes: row.sizes || [],
+      });
+    }
+
     const accountNumber = process.env.SS_ACCOUNT_NUMBER;
     const apiKey = process.env.SS_API_KEY;
     if (!accountNumber || !apiKey) {
