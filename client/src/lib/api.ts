@@ -2063,3 +2063,51 @@ export async function rejectGroupStoreDesignDraft(
     { method: 'POST', body: JSON.stringify({ review_notes }) },
   );
 }
+
+// ── Shelf stock ───────────────────────────────────────────────────────────
+// What's physically on the shelf in Fairburn. Not an inventory system — see
+// server/migrations/shelf_stock_v1.sql for why this is its own table and not
+// a column on products.
+
+export type ShelfStock = {
+  id: number;
+  product_id: number | null;
+  style_name: string;
+  color: string;
+  size: string;
+  qty: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function fetchShelfStock() {
+  return authRequest<ShelfStock[]>('/shelf-stock');
+}
+
+/** Totals per catalogue product, for the "On hand" figure in the product list. */
+export async function fetchShelfStockSummary() {
+  return authRequest<Record<string, number>>('/shelf-stock/summary');
+}
+
+/** "Can I pull this off the shelf?", asked while quoting. */
+export async function matchShelfStock(style: string, size?: string) {
+  const params = new URLSearchParams({ style });
+  if (size) params.set('size', size);
+  return authRequest<ShelfStock[]>(`/shelf-stock/match?${params}`);
+}
+
+export async function saveShelfStock(data: {
+  style_name: string; color?: string; size?: string; qty: number;
+  note?: string; product_id?: number | null;
+}) {
+  return authRequest<ShelfStock>('/shelf-stock', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateShelfStock(id: number, data: Partial<Pick<ShelfStock, 'qty' | 'note' | 'color' | 'size' | 'style_name'>>) {
+  return authRequest<ShelfStock>(`/shelf-stock/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function deleteShelfStock(id: number) {
+  return authRequest<{ ok: true }>(`/shelf-stock/${id}`, { method: 'DELETE' });
+}

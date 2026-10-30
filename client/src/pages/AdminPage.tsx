@@ -49,6 +49,7 @@ import {
   Check,
   Printer,
   Gem,
+  Boxes,
 } from 'lucide-react';
 import {
   fetchQuotes,
@@ -135,6 +136,7 @@ import {
   sendQuoteMockupForApproval,
   fetchQuoteArchiveAnalytics,
   fetchNonBuyingCustomers,
+  matchShelfStock,
 } from '@/lib/api';
 
 /** A row in the dashboard's combined list: a quote, or a gang sheet order.
@@ -165,10 +167,11 @@ import ShipLabelModal from '@/components/admin/ShipLabelModal';
 import JdsAdmin from '@/components/admin/JdsAdmin';
 import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
+import ShelfStockAdmin from '@/components/admin/ShelfStockAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
-const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
+type Section = 'dashboard' | 'quotes' | 'products' | 'shelf-stock' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
+const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'shelf-stock', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
 
 // Which section a fresh mount should land on, read straight off the URL.
 // This has to be the useState initializer, not an effect: the URL-sync
@@ -256,6 +259,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   ]},
   { label: 'Catalog', items: [
     { key: 'products',    label: 'Products',     icon: Package },
+    { key: 'shelf-stock', label: 'Shelf Stock',  icon: Boxes },
     { key: 'art-library', label: 'Art Library',  icon: FolderOpen },
   ]},
   { label: 'Production', items: [
@@ -7323,6 +7327,10 @@ export default function AdminPage() {
           <ArtLibraryAdmin />
         )}
 
+        {activeSection === 'shelf-stock' && (
+          <ShelfStockAdmin />
+        )}
+
         {activeSection === 'workspace' && (
           <DesignWorkspace
             initialImage={artLibraryImage}
@@ -8690,6 +8698,9 @@ export default function AdminPage() {
                       </span>
                     )}
                   </div>
+
+                  {/* Can this come off the shelf instead of an S&S order? */}
+                  <ShelfMatch productName={productName} />
 
                   {/* AI Triage summary */}
                   {(q as Quote & { triage?: { summary?: string; complexity?: string; estimated_hours?: number } }).triage?.summary && (
@@ -12399,6 +12410,55 @@ const REJECTION_LABELS: Record<string, string> = {
   customer_declined: 'Customer declined',
   shop_declined: 'We passed',
 };
+
+// "Can I pull these off the shelf instead of ordering blanks?" — the whole
+// reason shelf stock is tracked at all. Shown on a quote only when there's
+// actually something to pull: an empty shelf match is noise on every other
+// quote in the shop.
+//
+// The match is loose on purpose. A quote's garment reads "Gildan Softstyle
+// Tee" and the shelf says "Gildan 64000"; requiring them to agree would mean
+// never matching. Doc eyeballs the result — this is a prompt to go look, not
+// an allocation.
+function ShelfMatch({ productName }: { productName: string }) {
+  // Match on the most distinctive token rather than the whole string, which
+  // almost never appears verbatim on the shelf.
+  const term = useMemo(() => {
+    const words = (productName || '').split(/[^A-Za-z0-9]+/).filter((w) => w.length > 2);
+    return words.sort((a, b) => b.length - a.length)[0] || '';
+  }, [productName]);
+
+  const { data } = useQuery({
+    queryKey: ['admin', 'shelf-match', term],
+    queryFn: () => matchShelfStock(term),
+    enabled: term.length > 2,
+    staleTime: 60_000,
+  });
+
+  const hits = data ?? [];
+  if (hits.length === 0) return null;
+  const total = hits.reduce((sum, r) => sum + r.qty, 0);
+
+  return (
+    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+      <p className="text-xs font-semibold text-emerald-700 uppercase mb-1">
+        On the shelf — {total} piece{total === 1 ? '' : 's'}
+      </p>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {hits.slice(0, 8).map((r) => (
+          <span key={r.id} className="text-sm text-emerald-900">
+            <strong>{r.qty}</strong> × {r.style_name}
+            {r.color ? ` ${r.color}` : ''}
+            {r.size ? ` ${r.size.toUpperCase()}` : ''}
+          </span>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-emerald-700">
+        Loose match on &ldquo;{term}&rdquo; — check it before you order blanks.
+      </p>
+    </div>
+  );
+}
 
 function StatusBadge({ status, archiveReason }: { status: string; archiveReason?: string | null }) {
   const label = status === 'rejected' && archiveReason && REJECTION_LABELS[archiveReason]
