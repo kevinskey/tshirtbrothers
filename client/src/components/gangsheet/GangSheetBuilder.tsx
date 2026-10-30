@@ -183,6 +183,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const navigate = useNavigate();
   // One-shot guard for the ?fromQuote= canvas preload.
   const fromQuoteConsumed = useRef(false);
+  // The quote this sheet was laid out for, read once at mount. It rides along
+  // to /admin/vendor-send so the quote's "Gang sheets ordered" step ticks
+  // itself when the vendor actually receives the file.
+  const fromQuoteId = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('fromQuote'),
+  );
   const { id: sheetId } = useParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<FabricCanvas | null>(null);
@@ -1727,6 +1733,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         vendor_email,
         note,
         designs: designs.map((d) => ({ name: d.name, quantity: d.quantity, printWidthInches: d.printWidthInches })),
+        quote_id: fromQuoteId.current || undefined,
       }),
     });
     const sendData = await sendRes.json().catch(() => ({}));

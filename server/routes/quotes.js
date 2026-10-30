@@ -1210,7 +1210,15 @@ router.get('/admin/live-cost', authenticate, adminOnly, async (req, res, next) =
 // POST /:id/production-step — toggle one production sub-stage on a job.
 // Body: { step, done } where step is one of the checklist keys, or
 // { delivered: 'pickup' | 'mailed' } which also completes the quote.
-const PRODUCTION_STEPS = ['blanks_ordered', 'print_ordered', 'press_in_progress', 'pressed'];
+// Ordered and in-hand are different facts: the press can't be scheduled off
+// a PO number, only off goods on the shelf. The *_received pair closes that
+// gap (Doc, 2026-10-30). blanks_received is also stamped automatically when
+// the S&S purchase order flips to 'received' — see services/purchaseOrders.js.
+const PRODUCTION_STEPS = [
+  'blanks_ordered', 'blanks_received',
+  'print_ordered', 'prints_received',
+  'press_in_progress', 'pressed',
+];
 router.post('/:id/production-step', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { id } = req.params;

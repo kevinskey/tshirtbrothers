@@ -321,6 +321,18 @@ const STATUS_COLORS: Record<string, string> = {
 // all of them, not just 'accepted'.
 const POST_DEPOSIT_STATUSES = ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready'];
 
+// The in-production checklist, in the order the shop works it. Ordered and
+// received are separate ticks because the press schedules off goods in hand,
+// not off a PO number. Keys must match PRODUCTION_STEPS in routes/quotes.js.
+const PRODUCTION_CHECKLIST = [
+  ['blanks_ordered', 'Blanks ordered'],
+  ['blanks_received', 'Blanks received'],
+  ['print_ordered', 'Gang sheets ordered'],
+  ['prints_received', 'Gang sheets received'],
+  ['press_in_progress', 'Press in progress'],
+  ['pressed', 'Pressed'],
+] as const;
+
 // Fairburn, GA combined sales tax — matches the quote engine's TAX_RATE.
 // Used as the invoice editor's starting rate for hand-built invoices only;
 // anything derived from a quote opens at 0 because quote estimated_price is
@@ -3967,8 +3979,8 @@ export default function AdminPage() {
                           {quotePaidStage(q) && (() => {
                             const ps = q.production_steps || {};
                             if (ps.delivered) return <div className="text-[10px] text-gray-500 capitalize">Delivered · {ps.delivered}</div>;
-                            const done = ['blanks_ordered', 'print_ordered', 'press_in_progress', 'pressed'].filter((k) => ps[k]).length;
-                            return done > 0 ? <div className="text-[10px] text-gray-500">Production {done}/4</div> : null;
+                            const done = PRODUCTION_CHECKLIST.filter(([k]) => ps[k]).length;
+                            return done > 0 ? <div className="text-[10px] text-gray-500">Production {done}/{PRODUCTION_CHECKLIST.length}</div> : null;
                           })()}
                         </td>
                         <td className="px-3 py-2 relative whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -4033,15 +4045,18 @@ export default function AdminPage() {
                                   Order blanks (S&S)
                                 </button>
                               )}
-                              {!quotePaidStage(q) && (
-                                <button
-                                  onClick={() => { setOpenActionMenu(null); navigate(`/admin/gangsheet?fromQuote=${q.id}`); }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
-                                >
-                                  <GalleryHorizontal className="w-3.5 h-3.5" />
-                                  Price on Gang Sheet
-                                </button>
-                              )}
+                              {/* Available at every stage: before the deposit
+                                  this is how a DTF job gets priced, and after
+                                  it this is how the prints actually get
+                                  ordered — sending from the builder ticks
+                                  "Gang sheets ordered" on its own. */}
+                              <button
+                                onClick={() => { setOpenActionMenu(null); navigate(`/admin/gangsheet?fromQuote=${q.id}`); }}
+                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                              >
+                                <GalleryHorizontal className="w-3.5 h-3.5" />
+                                {quotePaidStage(q) ? 'Order gang sheets' : 'Price on Gang Sheet'}
+                              </button>
                               <button
                                 onClick={() => { setOpenActionMenu(null); navigate(`/admin/order/${q.id}`); }}
                                 className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
@@ -4099,7 +4114,7 @@ export default function AdminPage() {
                                   <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">
                                     Production
                                   </p>
-                                  {([['blanks_ordered', 'Blanks ordered'], ['print_ordered', 'Print ordered'], ['press_in_progress', 'Press in progress'], ['pressed', 'Pressed']] as const).map(([s, label]) => {
+                                  {PRODUCTION_CHECKLIST.map(([s, label]) => {
                                     const done = !!(q.production_steps || {})[s];
                                     return (
                                       <button

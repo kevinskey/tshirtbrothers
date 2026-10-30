@@ -1286,7 +1286,8 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
   try {
     const parsed = parseVendorBody(req.body);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
-    const { file_key, sheet_id, sheet_name, designs } = req.body || {};
+    const { file_key, sheet_id, sheet_name, designs, quote_id } = req.body || {};
+    const quoteId = Number.isFinite(Number(quote_id)) && Number(quote_id) > 0 ? Number(quote_id) : null;
     const dims = typeof file_key === 'string' ? file_key.match(FILE_KEY_RE) : null;
     if (!dims) return res.status(400).json({ error: 'Invalid file_key' });
     // Belt & suspenders: confirm the object actually exists before emailing
@@ -1350,11 +1351,31 @@ router.post('/admin/vendor-send', ...adminGuard, async (req, res, next) => {
       vendorName: parsed.vendorName,
       vendorEmail: parsed.vendorEmail,
       source: 'builder',
-      reference,
+      reference: quoteId ? `${reference} (Quote #${quoteId})` : reference,
       note: parsed.note,
       files: splitFiles || [{ name: `${reference}.png`, key: file_key, widthPx: Number(dims[1]), heightPx: Number(dims[2]) }],
     });
-    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, vendor_sent_at: sentAt });
+    // A sheet laid out from a quote (?fromQuote=) carries that quote through
+    // to here, so "Gang sheets ordered" ticks itself off the moment the
+    // vendor actually has the file. Before this it was a checkbox the shop
+    // ticked by hand with nothing behind it.
+    if (quoteId) {
+      try {
+        await pool.query(
+          `UPDATE quotes
+              SET production_steps = COALESCE(production_steps, '{}'::jsonb)
+                                     || jsonb_build_object('print_ordered', NOW()::text),
+                  print_vendor_name = $2,
+                  print_vendor_sent_at = NOW()
+            WHERE id = $1`,
+          [quoteId, parsed.vendorName || parsed.vendorEmail],
+        );
+      } catch (err) {
+        // The vendor already has the file; bookkeeping must not 500 the send.
+        console.error(`[dtf-store] print_ordered stamp failed for quote ${quoteId}:`, err.message);
+      }
+    }
+    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, vendor_sent_at: sentAt, quote_id: quoteId });
   } catch (err) { next(err); }
 });
 

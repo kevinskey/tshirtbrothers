@@ -514,6 +514,25 @@ router.put('/orders/:id', async (req, res, next) => {
       [req.params.id, status || null, notes ?? null]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'PO not found' });
+    // Marking the PO received means the blanks are physically here, which is
+    // exactly what the quote's production checklist is asking. Stamping it
+    // from one place keeps the purchasing board and the job board from
+    // disagreeing about whether the shop can schedule the press.
+    if (status === 'received' && rows[0].quote_id) {
+      try {
+        await pool.query(
+          `UPDATE quotes
+              SET production_steps = COALESCE(production_steps, '{}'::jsonb)
+                                     || jsonb_build_object('blanks_received', NOW()::text)
+            WHERE id = $1
+              AND NOT (COALESCE(production_steps, '{}'::jsonb) ? 'blanks_received')`,
+          [rows[0].quote_id],
+        );
+      } catch (err) {
+        // Bookkeeping must not fail the status change the admin asked for.
+        console.error(`[purchasing] blanks_received stamp failed for quote ${rows[0].quote_id}:`, err.message);
+      }
+    }
     res.json(rows[0]);
   } catch (err) {
     next(err);
