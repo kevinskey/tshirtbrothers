@@ -272,7 +272,14 @@ router.get('/', async (req, res, next) => {
       }
 
       const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-      const countResult = await pool.query(`SELECT COUNT(*) FROM products ${whereClause}`, params);
+      // catalog_products is `products` unioned with the SanMar catalog, with
+      // styles both suppliers carry collapsed to whichever is cheaper. It is
+      // column-compatible with `products`, so every filter above still
+      // applies -- see migrations/supplier_catalog_v1.sql.
+      const countResult = await pool.query(
+        `SELECT COUNT(*) FROM catalog_products ${whereClause}`,
+        params
+      );
       const total = parseInt(countResult.rows[0].count, 10);
 
       // Pin top 3 featured products when no search is active
@@ -289,7 +296,7 @@ router.get('/', async (req, res, next) => {
           END, name ASC`;
 
       const dataResult = await pool.query(
-        `SELECT * FROM products ${whereClause} ORDER BY ${orderClause} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+        `SELECT * FROM catalog_products ${whereClause} ORDER BY ${orderClause} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
         [...params, limitNum, offset]
       );
 
@@ -340,7 +347,7 @@ router.get('/brands', async (req, res, next) => {
         brand,
         COUNT(*)::int as count,
         (array_agg(image_url ORDER BY name))[1] as image_url
-      FROM products
+      FROM catalog_products
       WHERE brand IS NOT NULL AND brand != '' AND ss_id NOT LIKE 'lht:%'
       GROUP BY brand
       ORDER BY brand
@@ -431,9 +438,12 @@ router.get('/pricing/:styleId', async (req, res, next) => {
 // GET /filters - Distinct brands and categories for dropdowns
 router.get('/filters', async (req, res, next) => {
   try {
+    // Read the unioned catalog so SanMar-only brands (Port Authority,
+    // Sport-Tek, District, CornerStone, ...) are selectable -- otherwise the
+    // search returns products the filter dropdown cannot reach.
     const [brandsResult, categoriesResult] = await Promise.all([
-      pool.query("SELECT DISTINCT brand FROM products WHERE brand != '' AND ss_id NOT LIKE 'lht:%' ORDER BY brand"),
-      pool.query("SELECT DISTINCT category FROM products WHERE category != '' AND ss_id NOT LIKE 'lht:%' ORDER BY category"),
+      pool.query("SELECT DISTINCT brand FROM catalog_products WHERE brand != '' AND ss_id NOT LIKE 'lht:%' ORDER BY brand"),
+      pool.query("SELECT DISTINCT category FROM catalog_products WHERE category != '' AND ss_id NOT LIKE 'lht:%' ORDER BY category"),
     ]);
     res.json({
       brands: brandsResult.rows.map(r => r.brand),
@@ -626,7 +636,13 @@ router.get('/by-ssid/:ssId', async (req, res, next) => {
         est_height_in: dims?.h ?? null,
       });
     }
-    const result = await pool.query('SELECT * FROM products WHERE ss_id = $1 LIMIT 1', [ssId]);
+    // catalog_products so SanMar rows (ss_id "sanmar:<style>") resolve here
+    // too -- search returns them, so the studio and detail views must find
+    // them by the same id they were handed.
+    const result = await pool.query(
+      'SELECT * FROM catalog_products WHERE ss_id = $1 LIMIT 1',
+      [ssId]
+    );
     if (result.rows.length === 0) return res.status(404).json(null);
     res.json(result.rows[0]);
   } catch (err) {
@@ -735,7 +751,9 @@ router.get('/detail/:id', authenticate, adminOnly, async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('SELECT * FROM products WHERE id = $1', [id]);
+    // SanMar rows carry negative ids (see supplier_catalog_v1.sql), so this
+    // must read the unioned view or every SanMar search result 404s on click.
+    const result = await pool.query('SELECT * FROM catalog_products WHERE id = $1', [id]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });

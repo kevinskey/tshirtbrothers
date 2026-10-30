@@ -332,6 +332,24 @@ async function main() {
 
     psql(['-c', 'TRUNCATE sanmar_feed_staging']);
 
+    // sanmar_style_catalog is materialized (a plain view made /shop take
+    // 8-10s per page), so the storefront keeps serving the previous load's
+    // prices until it is refreshed. CONCURRENTLY so a live shop is not
+    // locked out for the duration; it needs the unique index created in
+    // migrations/supplier_catalog_v1.sql.
+    console.log('[sanmar-feed] refreshing sanmar_style_catalog…');
+    const refreshStart = Date.now();
+    try {
+      psql(['-c', 'REFRESH MATERIALIZED VIEW CONCURRENTLY sanmar_style_catalog']);
+    } catch (err) {
+      // CONCURRENTLY cannot populate a matview that has never been filled.
+      console.warn(`[sanmar-feed] concurrent refresh failed (${err.message.split('\n')[0]}); retrying plain`);
+      psql(['-c', 'REFRESH MATERIALIZED VIEW sanmar_style_catalog']);
+    }
+    console.log(
+      `[sanmar-feed] refreshed in ${Math.round((Date.now() - refreshStart) / 1000)}s`
+    );
+
     const summary = psql([
       '-tAc',
       `SELECT format(
