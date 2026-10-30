@@ -13,6 +13,14 @@ function authHeaders(): Record<string, string> {
 }
 
 const MAX_FILES = 20;
+/**
+ * Above this, upload straight to Spaces instead of through the API.
+ *
+ * Cloudflare's hard ceiling is 100 MB; 60 leaves room for multipart overhead
+ * and for several files going up in one send, without moving the everyday
+ * small-file case off the path that already works.
+ */
+const DIRECT_UPLOAD_OVER_BYTES = 60 * 1024 * 1024;
 // Keep in step with the multer limit on /admin/vendor-send-file.
 // NOTE: Cloudflare proxies tshirtbrothers.com and rejects request bodies
 // over 100 MB with its own 413 before they reach the origin, so uploads
@@ -133,6 +141,52 @@ function VendorFileSender() {
   }
 
   async function handleSend(payload: VendorSendPayload) {
+    // Cloudflare refuses a request body over 100 MB and answers with its own
+    // HTML 413, which never reaches the origin — so anything near that goes
+    // straight to Spaces with a presigned PUT and the API is only told the
+    // key. Smaller files keep the proven multipart path.
+    const needsDirect = files.some((f) => f.size > DIRECT_UPLOAD_OVER_BYTES);
+
+    if (needsDirect) {
+      const uploaded = [];
+      for (const f of files) {
+        const signRes = await fetch('/api/gangsheet-store/admin/vendor-upload-url', {
+          method: 'POST',
+          headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: f.name, content_type: f.type }),
+        });
+        const signed = await signRes.json().catch(() => ({}));
+        if (!signRes.ok) throw new Error(signed.error || 'Could not start the upload');
+        const put = await fetch(signed.url, {
+          method: 'PUT',
+          headers: { 'Content-Type': f.type, 'x-amz-acl': 'private' },
+          body: f,
+        });
+        if (!put.ok) throw new Error(`Upload failed for ${f.name} (${put.status})`);
+        uploaded.push({ key: signed.key, name: signed.name, bytes: f.size, content_type: f.type });
+      }
+      const r = await fetch('/api/gangsheet-store/admin/vendor-send-uploaded', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: uploaded,
+          vendor_name: payload.vendor_name,
+          vendor_email: payload.vendor_email,
+          note: payload.note,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.error || `Send failed (${r.status})`);
+      toast.success(
+        files.length === 1
+          ? `Sent to ${payload.vendor_email}`
+          : `${files.length} files sent to ${payload.vendor_email}`
+      );
+      setFiles([]);
+      refreshLog();
+      return;
+    }
+
     const fd = new FormData();
     for (const f of files) fd.append('files', f);
     fd.append('vendor_name', payload.vendor_name);
@@ -143,8 +197,11 @@ function VendorFileSender() {
       headers: authHeaders(), // Authorization only — browser sets multipart Content-Type
       body: fd,
     });
+    // A 413 here comes from Cloudflare as HTML, so there is no JSON error to
+    // read — saying "Send failed" left the real limit invisible.
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || 'Send failed');
+    if (r.status === 413) throw new Error('That file is too big to send through the site — it will upload directly instead; try again.');
+    if (!r.ok) throw new Error(body.error || `Send failed (${r.status})`);
     toast.success(
       files.length === 1
         ? `Sent to ${payload.vendor_email}`
