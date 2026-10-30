@@ -147,7 +147,6 @@ type DashboardRow =
   | { kind: 'invoice'; at: number; invoice: Invoice };
 import PromoManager from '@/components/admin/PromoManager';
 import InstantQuotePricingAdmin from '@/components/admin/InstantQuotePricingAdmin';
-import RhinestoneAdmin from '@/components/admin/RhinestoneAdmin';
 import DesignWorkspace from '@/components/admin/DesignWorkspace';
 import { CustomFontsAdmin } from './admin/CustomFontsAdmin';
 import CampaignsAdmin from '@/components/admin/CampaignsAdmin';
@@ -168,7 +167,7 @@ import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'bling' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
+type Section = 'dashboard' | 'quotes' | 'products' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
 const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
 
 // Which section a fresh mount should land on, read straight off the URL.
@@ -284,7 +283,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'hero-slides', label: 'Hero Slides', icon: GalleryHorizontal },
     { key: 'pricing',   label: 'AI Pricing',   icon: DollarSign },
     { key: 'instant-quote-pricing', label: 'Instant Quote Pricing', icon: Calculator },
-    { key: 'bling',     label: 'Bling Pricing', icon: Gem },
   ]},
   { label: '', items: [
     { key: 'settings',  label: 'Settings',     icon: Settings },
@@ -999,16 +997,33 @@ export default function AdminPage() {
   // absolutely-positioned children — the row Actions menus render
   // position:fixed at the button's screen corner instead, and close on
   // any scroll so they never drift from their button.
-  const [actionMenuPos, setActionMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const [actionMenuPos, setActionMenuPos] = useState<React.CSSProperties | null>(null);
   const toggleRowActionMenu = (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
     if (openActionMenu === id) { setOpenActionMenu(null); return; }
     const r = e.currentTarget.getBoundingClientRect();
-    setActionMenuPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    const right = window.innerWidth - r.right;
+    const gutter = 8;
+    const below = window.innerHeight - r.bottom - 4 - gutter;
+    const above = r.top - 4 - gutter;
+    // Rows near the bottom of the window have no room below the button, so cap
+    // maxHeight to the space that actually exists (the menu's own overflow-y
+    // scrolls the rest) and flip above the button when there's more room there.
+    setActionMenuPos(
+      below >= 240 || below >= above
+        ? { top: r.bottom + 4, right, maxHeight: Math.max(160, below) }
+        : { bottom: window.innerHeight - r.top + 4, right, maxHeight: Math.max(160, above) }
+    );
     setOpenActionMenu(id);
   };
   useEffect(() => {
     if (!openActionMenu) return;
-    const close = () => setOpenActionMenu(null);
+    // Scrolling the menu's own overflow must not count as the page moving
+    // out from under it.
+    const close = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('[data-row-action-menu]')) return;
+      setOpenActionMenu(null);
+    };
     window.addEventListener('scroll', close, true);
     return () => window.removeEventListener('scroll', close, true);
   }, [openActionMenu]);
@@ -3965,8 +3980,9 @@ export default function AdminPage() {
                           </button>
                           {openActionMenu === q.id && actionMenuPos && (
                             <div
-                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 max-h-[70vh] overflow-y-auto"
-                              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 overflow-y-auto overscroll-contain"
+                              style={actionMenuPos}
+                              data-row-action-menu
                             >
                               {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                                 <button
@@ -5491,8 +5507,9 @@ export default function AdminPage() {
                           </button>
                           {openActionMenu === o.id && actionMenuPos && (
                             <div
-                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48"
-                              style={{ top: actionMenuPos.top, right: actionMenuPos.right }}
+                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 overflow-y-auto overscroll-contain"
+                              style={actionMenuPos}
+                              data-row-action-menu
                             >
                               {o.estimated_price != null && o.deposit_amount != null && Number(o.estimated_price) - Number(o.deposit_amount) > 0 && (
                                 <button
@@ -7343,10 +7360,6 @@ export default function AdminPage() {
 
         {activeSection === 'instant-quote-pricing' && (
           <InstantQuotePricingAdmin />
-        )}
-
-        {activeSection === 'bling' && (
-          <RhinestoneAdmin />
         )}
 
         {activeSection === 'pricing' && (
