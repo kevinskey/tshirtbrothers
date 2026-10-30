@@ -9238,23 +9238,45 @@ export default function AdminPage() {
                         One primary next-step button per state so the pipeline
                         stamps (in_production_at / ready_at) actually get set —
                         'ready' also auto-emails the balance-due request. */}
-                    {/* Procurement shortcuts appear the moment the mockup is
-                        approved: blanks PO prefilled from this quote's line
-                        items, and the vendor-send queue for the gang sheet. */}
-                    {(q.status === 'approved' || q.status === 'in_production') && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          onClick={() => { setPurchasingQuoteId(Number(q.id)); setActiveSection('purchasing'); setDetailQuote(null); }}
-                          className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900"
-                        >
-                          Order Blanks (S&S)
-                        </button>
-                        <Link
-                          to="/admin/vendor-send"
-                          className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 text-center"
-                        >
-                          Send Gang Sheet
-                        </Link>
+                    {/* Procurement shortcuts: a blanks PO prefilled from this
+                        quote's line items, and the vendor-send queue for the
+                        gang sheet.
+
+                        These used to require status 'approved' or
+                        'in_production'. The shop does not actually drive
+                        quotes through that ladder — of 157 live quotes
+                        exactly one was 'approved' and none were
+                        'in_production', while 58 sat at 'quoted', 15
+                        'accepted' and 17 'paid' — so the button was
+                        invisible on essentially every order, including the
+                        paid ones most in need of blanks. It now shows unless
+                        the quote is dead, and clicking it only prefills a
+                        draft PO; nothing is bought until that is submitted. */}
+                    {!['rejected', 'completed'].includes(String(q.status)) && (
+                      <div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => { setPurchasingQuoteId(Number(q.id)); setActiveSection('purchasing'); setDetailQuote(null); }}
+                            className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900"
+                          >
+                            Order Blanks (S&S)
+                          </button>
+                          <Link
+                            to="/admin/vendor-send"
+                            className="py-3 bg-gray-800 text-white text-sm font-semibold rounded-lg hover:bg-gray-900 text-center"
+                          >
+                            Send Gang Sheet
+                          </Link>
+                        </div>
+                        {/* Buying garments for an order the customer has not
+                            committed to is a real risk, so say which side of
+                            that line this quote is on rather than hiding the
+                            button and leaving it unexplained. */}
+                        {!['accepted', 'paid', 'approved', 'in_production', 'ready'].includes(String(q.status)) && (
+                          <p className="mt-1 text-[11px] text-gray-500">
+                            Not accepted yet — opens a draft PO, nothing is ordered until you submit it.
+                          </p>
+                        )}
                       </div>
                     )}
                     {q.status === 'approved' && (
