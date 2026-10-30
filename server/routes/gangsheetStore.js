@@ -1369,7 +1369,12 @@ const VENDOR_FILE_LABELS = {
 };
 const vendorUpload = multer({
   dest: '/tmp/gangsheet-uploads',
-  limits: { fileSize: 200 * 1024 * 1024 },
+  // Keep in step with MAX_MB_EACH in client/src/pages/AdminVendorSendPage.tsx.
+  // Cloudflare fronts tshirtbrothers.com and returns its own 413 for bodies
+  // over 100 MB, so this ceiling is not reachable in production until that
+  // limit is lifted (plan upgrade, a grey-clouded upload host, or presigned
+  // direct-to-Spaces uploads that skip the proxy entirely).
+  limits: { fileSize: 300 * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, file.mimetype in VENDOR_FILE_LABELS),
 });
 

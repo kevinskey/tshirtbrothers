@@ -13,7 +13,11 @@ function authHeaders(): Record<string, string> {
 }
 
 const MAX_FILES = 20;
-const MAX_MB_EACH = 200;
+// Keep in step with the multer limit on /admin/vendor-send-file.
+// NOTE: Cloudflare proxies tshirtbrothers.com and rejects request bodies
+// over 100 MB with its own 413 before they reach the origin, so uploads
+// above that fail regardless of this number.
+const MAX_MB_EACH = 300;
 
 function mb(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;

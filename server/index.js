@@ -77,6 +77,20 @@ app.use(cors());
 // Stripe webhook needs raw body - must come before json parser
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
+/**
+ * Mockup saves are far bigger than any other request and must be parsed
+ * before the 10mb default below (body-parser marks the body parsed, so the
+ * first matching parser wins).
+ *
+ * A Design Studio save carries base64 artwork inside design_elements —
+ * measured at 7.5MB on real rows — plus a full base64 composite per printed
+ * side. Front + back + two sleeves cleared 10mb and the studio reported only
+ * "mockup save failed", with PayloadTooLargeError visible nowhere but the
+ * server log. nginx already allows 250M on this vhost, so Express was the
+ * only ceiling.
+ */
+app.use(['/api/admin/mockups', '/api/mockups'], express.json({ limit: '64mb' }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

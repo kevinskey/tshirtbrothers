@@ -562,6 +562,30 @@ const DEFAULT_PRODUCT_SSID = '32';
 
 const STORE_ADMIN_STORAGE_KEY = (slug: string) => `tsb_gsa_${slug}`;
 
+/**
+ * Why a save actually failed, in words the person at the screen can act on.
+ *
+ * "mockup save failed: mockup save failed" told Doc nothing — the real cause
+ * (a payload over the body limit) was visible only in the server log.
+ */
+async function saveFailureReason(res: Response): Promise<string> {
+  if (res.status === 413) {
+    return 'the mockup is too large to upload — try fewer print locations or a smaller image';
+  }
+  try {
+    const body = await res.clone().json();
+    if (body?.error) return String(body.error);
+  } catch {
+    // Not JSON — nginx and proxy errors come back as HTML.
+  }
+  const text = await res.clone().text().catch(() => '');
+  if (/entity too large/i.test(text)) {
+    return 'the mockup is too large to upload — try fewer print locations or a smaller image';
+  }
+  if (res.status === 401 || res.status === 403) return 'your admin session expired — sign in again';
+  return `server returned ${res.status}`;
+}
+
 export default function DesignStudioPage() {
   useEffect(() => { logActivityOnce('design_studio_open'); }, []);
   const [searchParams] = useSearchParams();
@@ -1501,7 +1525,7 @@ export default function DesignStudioPage() {
           status: 'draft',
         }),
       });
-      if (!create.ok) throw new Error('mockup save failed');
+      if (!create.ok) throw new Error(await saveFailureReason(create));
 
       // Force the admin mockups/invoice queries to refetch on landing so the
       // new mockup/preview shows immediately instead of waiting for the
@@ -1579,7 +1603,7 @@ export default function DesignStudioPage() {
           status: 'draft',
         }),
       });
-      if (!create.ok) throw new Error('mockup save failed');
+      if (!create.ok) throw new Error(await saveFailureReason(create));
       const row = await create.json();
 
       // Stamp the composite onto the quote so the modal, recent-quotes
@@ -1589,7 +1613,7 @@ export default function DesignStudioPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ mockup_id: row.id, add_extra: attachAsExtraMockup || undefined }),
       });
-      if (!patch.ok) throw new Error('attaching mockup to quote failed');
+      if (!patch.ok) throw new Error(`attaching mockup to quote failed — ${await saveFailureReason(patch)}`);
 
       await Promise.all([
         studioQueryClient.refetchQueries({ queryKey: ['mockups'] }),
@@ -1660,7 +1684,7 @@ export default function DesignStudioPage() {
           status: 'draft',
         }),
       });
-      if (!create.ok) throw new Error('mockup save failed');
+      if (!create.ok) throw new Error(await saveFailureReason(create));
 
       await studioQueryClient.refetchQueries({ queryKey: ['mockups'] });
       navigate('/admin?section=mockups');
@@ -1719,7 +1743,7 @@ export default function DesignStudioPage() {
           placement,
         }),
       });
-      if (!patch.ok) throw new Error('mockup save failed');
+      if (!patch.ok) throw new Error(await saveFailureReason(patch));
 
       // refetch (not invalidate) so this awaits — otherwise the navigate
       // below races the refetch and AdminPage mounts on the stale cache.
