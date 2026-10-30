@@ -622,6 +622,13 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
     if (!['approved', 'rejected'].includes(action)) {
       return res.status(400).json({ error: 'action must be "approved" or "rejected"' });
     }
+    // A rejection with no detail is a phone call the shop has to make before
+    // it can redraw anything, so the note is mandatory on that path. Approval
+    // stays note-optional — there is nothing to explain.
+    const trimmedNote = typeof note === 'string' ? note.trim() : '';
+    if (action === 'rejected' && !trimmedNote) {
+      return res.status(400).json({ error: 'Please tell us what needs to change.' });
+    }
     const { rows } = await pool.query(
       `UPDATE mockups
          SET status = $1,
@@ -629,7 +636,7 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
              updated_at = NOW()
        WHERE approve_token = $3
        RETURNING *`,
-      [action, note || null, req.params.token],
+      [action, trimmedNote || null, req.params.token],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Mockup not found' });
     const mockup = rows[0];
@@ -666,7 +673,7 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
                     ${stamp} = NOW(),
                     mockup_feedback = COALESCE($2, mockup_feedback)
               WHERE id = $3`,
-            [nextStatus, note || null, mockup.quote_id],
+            [nextStatus, trimmedNote || null, mockup.quote_id],
           );
         }
         const { sendMockupDecisionToAdmin, sendMockupRejectedAckToCustomer, quoteLang } = await import('../services/email.js');
@@ -681,11 +688,11 @@ router.post('/mockup/:token/respond', async (req, res, next) => {
             const q = await pool.query('SELECT inputs_json FROM quotes WHERE id = $1', [mockup.quote_id]);
             if (q.rows[0]) lang = quoteLang(q.rows[0]);
           }
-          rejectAck = sendMockupRejectedAckToCustomer(mockup, note || '', lang).catch(() => {});
+          rejectAck = sendMockupRejectedAckToCustomer(mockup, trimmedNote, lang).catch(() => {});
         }
         await Promise.all([
-          sendMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
-          smsMockupDecisionToAdmin(mockup, action, note || '').catch(() => {}),
+          sendMockupDecisionToAdmin(mockup, action, trimmedNote).catch(() => {}),
+          smsMockupDecisionToAdmin(mockup, action, trimmedNote).catch(() => {}),
           rejectAck,
         ]);
       } catch (err) {

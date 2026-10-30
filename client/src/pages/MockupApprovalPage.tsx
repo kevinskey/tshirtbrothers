@@ -86,6 +86,17 @@ function sidesOf(m: PublicMockup): Array<{ url: string; label: string }> {
   ].filter((v): v is { url: string; label: string } => Boolean(v.url));
 }
 
+// The changes the shop actually gets asked for. Tapping one is a shortcut,
+// not a substitute for the written detail — the note is required either way.
+const REVISION_REASONS = [
+  'Size or placement',
+  'Colors',
+  'Spelling or wording',
+  'Wrong artwork',
+  'Product or garment color',
+  'Something else',
+];
+
 export default function MockupApprovalPage() {
   const { token } = useParams<{ token: string }>();
   const [mockup, setMockup] = useState<PublicMockup | null>(null);
@@ -93,6 +104,11 @@ export default function MockupApprovalPage() {
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState<null | 'approved' | 'rejected'>(null);
   const [done, setDone] = useState<'approved' | 'rejected' | null>(null);
+  // "Request Changes" opens its own panel rather than submitting straight
+  // away: a rejection with no detail costs a phone call before anyone can
+  // redraw, so the note is required on that path (optional on approve).
+  const [revising, setRevising] = useState(false);
+  const [reasons, setReasons] = useState<string[]>([]);
 
   useEffect(() => {
     if (!token) return;
@@ -105,14 +121,23 @@ export default function MockupApprovalPage() {
       .catch((e) => setError(e?.message || 'Failed to load mockup'));
   }, [token]);
 
+  // The shop reads one field, so the tapped categories ride in front of the
+  // customer's own words rather than in a parallel column nobody opens.
+  function composeNote(action: 'approved' | 'rejected') {
+    const text = note.trim();
+    if (action === 'approved') return text || undefined;
+    return reasons.length > 0 ? `${reasons.join(', ')} — ${text}` : text;
+  }
+
   async function respond(action: 'approved' | 'rejected') {
     if (!token || submitting) return;
+    if (action === 'rejected' && !note.trim()) return;
     setSubmitting(action);
     try {
       const res = await fetch(`/api/mockup/${token}/respond`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, note: note || undefined }),
+        body: JSON.stringify({ action, note: composeNote(action) }),
       });
       if (!res.ok) throw new Error('Failed to submit');
       setDone(action);
@@ -318,30 +343,87 @@ export default function MockupApprovalPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Add a note (optional — especially helpful if requesting changes)"
-              rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => respond('rejected')}
-                disabled={!!submitting}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {submitting === 'rejected' ? 'Submitting…' : 'Request Changes'}
-              </button>
-              <button
-                onClick={() => respond('approved')}
-                disabled={!!submitting}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
-              >
-                {submitting === 'approved' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                Approve Mockup
-              </button>
-            </div>
+            {revising ? (
+              <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-3">
+                <p className="text-sm font-semibold text-gray-900">What needs to change?</p>
+                <div className="flex flex-wrap gap-2">
+                  {REVISION_REASONS.map((r) => {
+                    const on = reasons.includes(r);
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => setReasons((prev) => (on ? prev.filter((x) => x !== r) : [...prev, r]))}
+                        className={`px-3 py-1.5 rounded-full border text-xs font-medium ${
+                          on
+                            ? 'bg-orange-600 border-orange-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-700 hover:border-orange-400'
+                        }`}
+                      >
+                        {r}
+                      </button>
+                    );
+                  })}
+                </div>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  autoFocus
+                  placeholder="Tell us exactly what to change — the more specific, the faster we can turn it around. Example: “Make the logo on the front about 2 inches smaller and move it up; the back is perfect.”"
+                  rows={4}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                />
+                <p className="text-xs text-gray-500">
+                  {note.trim()
+                    ? 'Thanks — this goes straight to the shop.'
+                    : 'Please describe the change so we can redraw it without calling you.'}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setRevising(false); setNote(''); setReasons([]); }}
+                    disabled={!!submitting}
+                    className="px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={() => respond('rejected')}
+                    disabled={!!submitting || !note.trim()}
+                    className="flex-1 px-4 py-3 rounded-lg text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {submitting === 'rejected' ? 'Submitting…' : 'Send Change Request'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <textarea
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Add a note (optional)"
+                  rows={3}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-orange-500"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setRevising(true)}
+                    disabled={!!submitting}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Request Changes
+                  </button>
+                  <button
+                    onClick={() => respond('approved')}
+                    disabled={!!submitting}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                  >
+                    {submitting === 'approved' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Approve Mockup
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
