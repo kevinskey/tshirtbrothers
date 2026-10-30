@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar, CalendarDays, DollarSign, ShoppingBag, FileText, CreditCard, AlertTriangle,
@@ -149,6 +150,7 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
   toast?: (msg: string, type?: 'error' | 'success') => void;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useQuery<OpsData>({
     queryKey: ['admin', 'dashboard-ops'],
     queryFn: async () => {
@@ -160,6 +162,37 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
     },
     refetchInterval: 60_000,
   });
+
+  /**
+   * Refresh the moment a quote or invoice changes anywhere in the admin.
+   *
+   * The poll above is a backstop, not the mechanism: writing a quote in a
+   * modal over this dashboard left the numbers and the open-order list up to
+   * a minute stale, which reads as the dashboard being wrong.
+   *
+   * Listening to the query cache rather than editing each of the ~32 call
+   * sites that invalidate ['admin','quotes'] / ['admin','invoices'] means a
+   * new write path gets this for free instead of being a bug nobody notices.
+   */
+  useEffect(() => {
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event?.type !== 'updated') return;
+      const key = event.query?.queryKey;
+      if (!Array.isArray(key) || key[0] !== 'admin') return;
+      if (key[1] !== 'quotes' && key[1] !== 'invoices' && key[1] !== 'orders') return;
+      // A single user action can touch several of these; coalesce so the
+      // dashboard refetches once rather than three times.
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard-ops'] });
+      }, 250);
+    });
+    return () => {
+      if (pending) clearTimeout(pending);
+      unsubscribe();
+    };
+  }, [queryClient]);
 
   const dateStr = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 
