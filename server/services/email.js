@@ -6,7 +6,16 @@ import { mailRecipients, normalizeCcEmails, mockupRecipients } from './recipient
 // Re-exported so existing importers of email.js keep resolving them.
 export { mailRecipients, normalizeCcEmails, mockupRecipients };
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Built on first send, not at import. The SDK throws from its constructor
+// when RESEND_API_KEY is unset, and this module is imported transitively by
+// most of the route layer — so a missing key took down every test that
+// touched a route, locally and in CI, long before any mail was sent. Failing
+// at the send call keeps that failure where it belongs.
+let resendClient = null;
+function resend() {
+  if (!resendClient) resendClient = new Resend(process.env.RESEND_API_KEY);
+  return resendClient;
+}
 // Compose RFC-5322 "Name <addr>" from FROM_NAME + FROM_EMAIL so inboxes
 // show "T-Shirt Brothers" instead of the bare noreply@ address. If the
 // env already includes a display name (contains "<"), pass it through.
@@ -47,7 +56,7 @@ async function sendMail(payload) {
       payload = { ...payload, bcc: [...bcc, ARCHIVE_BCC] };
     }
   }
-  const { data, error } = await resend.emails.send(payload);
+  const { data, error } = await resend().emails.send(payload);
   if (error) {
     const to = Array.isArray(payload.to) ? payload.to.join(', ') : payload.to;
     const err = new Error(`Resend rejected "${payload.subject}" to ${to}: ${error.message || JSON.stringify(error)}`);
