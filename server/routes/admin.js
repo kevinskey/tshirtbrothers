@@ -1424,7 +1424,7 @@ router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
 // the only row-level fetch is the bounded open-jobs list for the schedule.
 router.get('/dashboard-ops', async (req, res, next) => {
   try {
-    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, storeOrdersR, methodsR, blanksR, overdueR] = await Promise.all([
+    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, depositInvoicesR, storeOrdersR, methodsR, blanksR, overdueR] = await Promise.all([
       // Money movement by period: invoice payment entries + gang sheet paid.
       pool.query(`
         WITH pays AS (
@@ -1519,6 +1519,36 @@ router.get('/dashboard-ops', async (req, res, next) => {
           FROM gang_sheet_orders
          WHERE status IN ('paid', 'in_production', 'ready')
          ORDER BY paid_at ASC LIMIT 50`),
+      // Invoices whose deposit has landed are open orders: money is in and
+      // the work is outstanding. Most are already on the board through their
+      // quote, so anything whose quote is in the open set above is left to
+      // that row rather than listed twice — what this picks up is the cases
+      // the quote list structurally cannot show: an invoice with no quote at
+      // all (mail-to-invoice makes those), one whose quote was archived, and
+      // one whose quote sits in a status outside the open set.
+      // A finished quote means the work is done and only money may be
+      // outstanding, which the overdue-invoices card already covers.
+      pool.query(`
+        SELECT i.id, i.invoice_number, i.customer_name, i.customer_email, i.quote_id,
+               i.total, i.amount_paid, i.amount_due, i.status, i.due_date, i.created_at,
+               q.status AS quote_status,
+               (SELECT COALESCE(SUM((it->>'quantity')::int), 0)
+                  FROM jsonb_array_elements(COALESCE(i.items, '[]'::jsonb)) it) AS qty,
+               (SELECT it->>'description'
+                  FROM jsonb_array_elements(COALESCE(i.items, '[]'::jsonb)) it LIMIT 1) AS job
+          FROM invoices i
+          LEFT JOIN quotes q ON q.id = i.quote_id
+         WHERE i.amount_paid > 0
+           AND i.status NOT IN ('draft', 'void', 'cancelled')
+           AND (q.status IS NULL OR q.status NOT IN ('completed', 'rejected'))
+           AND (
+             i.quote_id IS NULL
+             OR q.id IS NULL
+             OR q.archived_at IS NOT NULL
+             OR q.status NOT IN ('accepted', 'awaiting_approval', 'approved', 'paid', 'in_production', 'ready')
+           )
+         ORDER BY i.due_date ASC NULLS LAST, i.created_at ASC
+         LIMIT 50`),
       // Storefront sales. Captured into store_orders by the Stripe webhook
       // and, until 2026-10-02, shown nowhere in the shop's working views —
       // paid shirts with no production trail.
@@ -1566,6 +1596,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
     const jobs = jobsR.rows;
     const gang = gangR.rows;
     const storeOrders = storeOrdersR.rows;
+    const depositInvoices = depositInvoicesR.rows;
 
     // Quote sub-state → pipeline stage. Finishing = the shop-floor 'pressed'
     // checkpoint is ticked but the job hasn't been marked ready yet.
@@ -1590,6 +1621,9 @@ router.get('/dashboard-ops', async (req, res, next) => {
       else if (g.status === 'in_production') pipeline.printing += 1;
       else if (g.status === 'ready') pipeline.pickup += 1;
     }
+    // A deposit-paid invoice is bought-and-unmade work, same as a paid
+    // storefront sale, so it counts in the same tile the schedule row uses.
+    for (const _inv of depositInvoices) pipeline.ready_to_produce += 1;
     // Store orders ride the same three stages — a storefront sale arrives
     // already paid and already designed, so it starts at ready_to_produce.
     for (const o of storeOrders) {
@@ -1622,15 +1656,24 @@ router.get('/dashboard-ops', async (req, res, next) => {
         d.setDate(d.getDate() + STORE_ORDER_TURNAROUND_DAYS);
         return d;
       }
+      // Invoices carry their own due date; without this every deposit-paid
+      // invoice would show an em dash where the date belongs.
+      if (row.invoice_number !== undefined && row.due_date) {
+        const d = new Date(row.due_date);
+        return isNaN(d) ? null : d;
+      }
       return null;
     };
     let dueToday = 0, dueWeek = 0, atRisk = 0;
     const schedule = [];
-    for (const row of [...jobs, ...gang, ...storeOrders]) {
+    for (const row of [...jobs, ...gang, ...depositInvoices, ...storeOrders]) {
       const done = row.ready_at || row.status === 'ready';
       const due = dueDateOf(row);
       const isGang = row.tier !== undefined;
       const isStore = row.store_name !== undefined;
+      // invoice_number is the only field unique to this source; quotes and
+      // gang sheets never carry one.
+      const isInvoice = row.invoice_number !== undefined;
       if (due) {
         if (!done && due < today) atRisk += 1;
         if (due >= today && due < new Date(today.getTime() + 86400000)) dueToday += 1;
@@ -1638,22 +1681,34 @@ router.get('/dashboard-ops', async (req, res, next) => {
       }
       const storeStage = (st) => (st === 'paid' ? 'ready_to_produce' : st === 'printing' ? 'printing' : 'pickup');
       schedule.push({
-        kind: isStore ? 'storeorder' : isGang ? 'gangsheet' : 'quote',
+        kind: isStore ? 'storeorder' : isGang ? 'gangsheet' : isInvoice ? 'invoice' : 'quote',
         id: row.id,
+        invoice_number: isInvoice ? row.invoice_number : undefined,
         customer: isStore ? (row.buyer_email || '(store buyer)') : (row.customer_name || '(no name)'),
         email: isStore ? row.buyer_email : (row.customer_email || null),
         store: isStore ? row.store_name : undefined,
         job: isStore
           ? (row.job || `${row.store_name} order`)
-          : isGang ? `DTF Gang Sheet ${row.length_ft} ft` : (row.product_name || 'Custom order'),
-        qty: isStore ? (Number(row.qty) || 0) : isGang ? 1 : (row.quantity || 0),
-        price: isStore ? (Number(row.gross_total_cents) || 0) / 100 : isGang ? null : (Number(row.estimated_price) || null),
+          : isGang ? `DTF Gang Sheet ${row.length_ft} ft`
+          : isInvoice ? (row.job || `Invoice ${row.invoice_number || row.id}`)
+          : (row.product_name || 'Custom order'),
+        qty: isStore ? (Number(row.qty) || 0) : isGang ? 1 : isInvoice ? (Number(row.qty) || 0) : (row.quantity || 0),
+        price: isStore ? (Number(row.gross_total_cents) || 0) / 100
+          : isGang ? null
+          : isInvoice ? (Number(row.total) || null)
+          : (Number(row.estimated_price) || null),
         days_open: row.created_at ? Math.floor((Date.now() - new Date(row.created_at).getTime()) / 86400000) : null,
-        method: isStore ? 'DTF' : isGang ? 'DTF' : (row.method || 'Other'),
+        method: isStore ? 'DTF' : isGang ? 'DTF' : isInvoice ? 'Invoice' : (row.method || 'Other'),
         stage: isStore
           ? storeStage(row.status)
           : isGang
           ? (row.status === 'paid' ? 'ready_to_produce' : row.status === 'in_production' ? 'printing' : 'pickup')
+          // Money is in and the garments are not made, which is exactly what
+          // ready_to_produce means. Deliberately NOT a new 'deposit_paid'
+          // stage: the pipeline tiles index a fixed set of stage keys, so an
+          // extra one would be counted nowhere and silently vanish.
+          : isInvoice
+          ? 'ready_to_produce'
           : stageOf(row),
         due: due ? due.toISOString().slice(0, 10) : null,
         overdue: !!(due && !done && due < today),
