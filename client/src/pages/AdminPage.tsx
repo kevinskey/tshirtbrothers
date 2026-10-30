@@ -3709,7 +3709,7 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <StatusBadge status={q.status} />
+                      <StatusBadge status={q.status} archiveReason={(q as any).archive_reason} />
                       <BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} />
                       {isRush && (
                         <span className="text-[10px] font-bold text-white bg-orange-500 px-2 py-0.5 rounded-full">
@@ -3974,7 +3974,7 @@ export default function AdminPage() {
                           <div className={`text-[11px] ${paidState(q).className}`}>{paidState(q).label}</div>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <StatusBadge status={q.status} />
+                          <StatusBadge status={q.status} archiveReason={(q as any).archive_reason} />
                           <div><BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} /></div>
                           {quotePaidStage(q) && (() => {
                             const ps = q.production_steps || {};
@@ -5111,7 +5111,7 @@ export default function AdminPage() {
                                         : '--'}
                                     </td>
                                     <td className="px-4 py-2">
-                                      <StatusBadge status={q.status} />
+                                      <StatusBadge status={q.status} archiveReason={(q as any).archive_reason} />
                                     </td>
                                     <td className="px-4 py-2 text-gray-400">
                                       {new Date(q.created_at).toLocaleDateString()}
@@ -8659,7 +8659,7 @@ export default function AdminPage() {
                 <div className="p-5 space-y-5">
                   {/* Status */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge status={q.status} />
+                    <StatusBadge status={q.status} archiveReason={(q as any).archive_reason} />
                     {!acceptedAt && !balancePaidAt &&
                       ['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '') && (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">
@@ -9393,14 +9393,12 @@ export default function AdminPage() {
                         Buy Label & Ship (EasyPost)
                       </button>
                     )}
-                    {q.status === 'pending' && (
-                      <button
-                        onClick={() => { statusMutation.mutate({ id: q.id, status: 'reviewed' }); }}
-                        className="w-full py-2.5 bg-gray-100 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-200"
-                      >
-                        Mark Reviewed (seen it, pricing next)
-                      </button>
-                    )}
+                    {/* "Mark Reviewed" lived here until 2026-10-30. 'reviewed'
+                        was a pre-quote triage state that behaved exactly like
+                        'pending' everywhere it was checked — not a tab, not a
+                        pipeline stage, no trigger hanging off it — so the
+                        button only ever moved a quote sideways. The status
+                        stays valid server-side for the one historical row. */}
                     {POST_DEPOSIT_STATUSES.includes(q.status || '') && balance > 0 && (
                       <button
                         onClick={() => {
@@ -12393,14 +12391,26 @@ function BlanksBadge({ status, poNumber }: { status?: string | null; poNumber?: 
   );
 }
 
-function StatusBadge({ status }: { status: string }) {
+// 'rejected' covers two opposite events — the customer turned us down, and
+// we turned the job down — which read identically on the board and made the
+// tab useless for either question. archive_reason already distinguishes
+// them, so show that instead of the bare status.
+const REJECTION_LABELS: Record<string, string> = {
+  customer_declined: 'Customer declined',
+  shop_declined: 'We passed',
+};
+
+function StatusBadge({ status, archiveReason }: { status: string; archiveReason?: string | null }) {
+  const label = status === 'rejected' && archiveReason && REJECTION_LABELS[archiveReason]
+    ? REJECTION_LABELS[archiveReason]
+    : status.replace(/_/g, ' ');
   return (
     <span
       className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${
         STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-800'
       }`}
     >
-      {status.replace(/_/g, ' ')}
+      {label}
     </span>
   );
 }

@@ -1302,6 +1302,15 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (status === 'awaiting_approval') patches.push('mockup_sent_at = NOW()');
     if (status === 'in_production')     patches.push('in_production_at = NOW()');
     if (status === 'ready')             patches.push('ready_at = NOW()');
+    // An admin setting 'rejected' means the shop passed on the job; the
+    // customer-facing /quote/decline/:id path stamps 'customer_declined'.
+    // Both used to land in one undifferentiated bucket. Recording which is
+    // which — and taking a passed job off the active board, the way a
+    // declined one already comes off — is what makes the tab answerable.
+    if (status === 'rejected') {
+      patches.push(`archive_reason = COALESCE(archive_reason, 'shop_declined')`);
+      patches.push('archived_at = COALESCE(archived_at, NOW())');
+    }
     // Completing via the status dropdown should leave the same fulfillment
     // trail as the fulfill endpoint: stamp picked_up_at (or shipped_at for
     // ship orders) and fulfillment_method — but never overwrite stamps the
