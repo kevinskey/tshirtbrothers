@@ -19,7 +19,7 @@ type OpsData = {
   kpis: { orders_due_today: number; orders_due_week: number; new_quotes_today: number; new_quotes_yesterday: number; unpaid_balance: number; jobs_at_risk: number };
   pipeline: Record<string, number>;
   methods: Record<string, number>;
-  schedule: Array<{ kind: 'quote' | 'gangsheet' | 'storeorder'; id: number; store?: string; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
+  schedule: Array<{ kind: 'quote' | 'gangsheet' | 'storeorder' | 'invoice'; invoice_number?: string; id: number; store?: string; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
   blanks: Array<{ id: number; po_number: string; status: string; will_call: boolean; total: number | null; expected: string | null; for_customer: string | null; quote_id: number | null }>;
   overdue_invoices: Array<{ id: string; invoice_number: string; customer_name: string; customer_email: string; amount_due: number; due_date: string }>;
   attention: { proofs_waiting: number; quotes_unanswered_24h: number; orders_overdue: number; awaiting_payment: number; ready_for_pickup: number };
@@ -307,6 +307,9 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
                         onClick={() => navigate(
                           row.kind === 'quote' ? `/admin/order/${row.id}`
                             : row.kind === 'storeorder' ? `/admin/store-order/${row.id}`
+                            // A deposit-paid invoice opens the invoice itself —
+                            // these are the ones with no quote behind them.
+                            : row.kind === 'invoice' ? `/invoice/view/${row.id}`
                             // Everything else in this feed is a gang sheet.
                             : '/admin/dtf-orders',
                         )}
