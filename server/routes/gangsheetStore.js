@@ -5,7 +5,7 @@ import fs from 'fs';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
 import sharp from 'sharp';
-import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
@@ -1425,6 +1425,105 @@ router.post('/admin/vendor-send-file', ...adminGuard, vendorUpload.array('files'
     res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, count: sent.length });
   } catch (err) { next(err); }
   finally { tmpPaths.forEach((p) => fs.unlink(p, () => {})); }
+});
+
+/**
+ * Direct-to-Spaces upload, because Cloudflare will not carry a gang sheet.
+ *
+ * tshirtbrothers.com sits behind Cloudflare, which caps a request body at
+ * 100 MB and answers anything larger with its own HTML 413 — the origin never
+ * sees it, so nginx's 250M and multer's 200MB never came into play. A 226 MB
+ * sheet simply cannot be posted to this API. Verified by measurement: 48 MB
+ * reaches the origin (401), 114 MB comes back 413 from `server: cloudflare`.
+ *
+ * The browser therefore PUTs straight to the Spaces endpoint, which is not
+ * proxied, and then calls vendor-send-uploaded with the object key. The key
+ * is minted here so the client can never choose where it writes.
+ */
+router.post('/admin/vendor-upload-url', ...adminGuard, async (req, res, next) => {
+  try {
+    const { filename, content_type } = req.body || {};
+    if (!(content_type in VENDOR_FILE_LABELS)) {
+      return res.status(400).json({ error: 'Files must be PNG, PDF, or TIFF' });
+    }
+    const month = new Date().toISOString().slice(0, 7);
+    const safeName = String(filename || 'print-file').replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+    const key = `vendor-files/${month}/${crypto.randomUUID()}-${safeName}`;
+    const url = await getSignedUrl(
+      getSpacesClient(),
+      new PutObjectCommand({
+        Bucket: SPACES_BUCKET, Key: key, ContentType: content_type, ACL: 'private',
+      }),
+      { expiresIn: 3600 },
+    );
+    res.json({ key, url, name: safeName });
+  } catch (err) { next(err); }
+});
+
+/**
+ * Send files the browser already uploaded to Spaces.
+ *
+ * Same email and log as vendor-send-file; the only difference is that the
+ * bytes are already in the bucket, so the PNG header is read back with a
+ * ranged GET rather than off a temp file.
+ */
+router.post('/admin/vendor-send-uploaded', ...adminGuard, async (req, res, next) => {
+  try {
+    const parsed = parseVendorBody(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const incoming = Array.isArray(req.body?.files) ? req.body.files.slice(0, 20) : [];
+    if (incoming.length === 0) return res.status(400).json({ error: 'No uploaded files to send' });
+    // Only keys this server minted above, so a client cannot presign or
+    // email an arbitrary object out of the bucket.
+    for (const f of incoming) {
+      if (typeof f?.key !== 'string' || !/^vendor-files\//.test(f.key) || f.key.includes('..')) {
+        return res.status(400).json({ error: 'Invalid file key' });
+      }
+    }
+
+    const sent = [];
+    for (const f of incoming) {
+      let dims = null;
+      if (f.content_type === 'image/png') {
+        try {
+          const head = await getSpacesClient().send(new GetObjectCommand({
+            Bucket: SPACES_BUCKET, Key: f.key, Range: 'bytes=0-23',
+          }));
+          const chunks = [];
+          for await (const c of head.Body) chunks.push(c);
+          dims = pngDimensions(Buffer.concat(chunks));
+        } catch {
+          // A missing header just means the spec email says "see file".
+        }
+      }
+      sent.push({
+        name: String(f.name || 'print-file').slice(0, 120),
+        key: f.key,
+        downloadUrl: await presignFileKey(f.key),
+        widthPx: dims?.width ?? null,
+        heightPx: dims?.height ?? null,
+        format: VENDOR_FILE_LABELS[f.content_type] || 'see file',
+        bytes: Number(f.bytes) || null,
+      });
+    }
+
+    await sendGangSheetVendorFiles({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      files: sent,
+      linkExpiresDays: VENDOR_LINK_DAYS,
+      note: parsed.note,
+    });
+    await logVendorSend({
+      vendorName: parsed.vendorName,
+      vendorEmail: parsed.vendorEmail,
+      source: 'upload',
+      reference: sent.length === 1 ? sent[0].name : `${sent.length} files`,
+      note: parsed.note,
+      files: sent.map(({ name, key, bytes, widthPx, heightPx }) => ({ name, key, bytes, widthPx, heightPx })),
+    });
+    res.json({ ok: true, vendor_email: parsed.vendorEmail, vendor_name: parsed.vendorName, count: sent.length });
+  } catch (err) { next(err); }
 });
 
 // Send history for the File Sender page.

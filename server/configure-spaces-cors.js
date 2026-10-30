@@ -38,6 +38,24 @@ const rules = {
         ExposeHeaders: ['ETag', 'Content-Length', 'Content-Type'],
         MaxAgeSeconds: 3600,
       },
+      {
+        // Writes only from our own admin, and only ours — a presigned PUT is
+        // already scoped to one key for one hour, but there is no reason for
+        // any other origin to be able to use one.
+        //
+        // This exists because Cloudflare caps an upload at 100 MB, so a gang
+        // sheet has to go to Spaces directly from the browser instead of
+        // through the API. See /admin/vendor-upload-url.
+        AllowedOrigins: [
+          'https://tshirtbrothers.com',
+          'https://www.tshirtbrothers.com',
+          'http://localhost:5173',
+        ],
+        AllowedMethods: ['PUT'],
+        AllowedHeaders: ['*'],
+        ExposeHeaders: ['ETag'],
+        MaxAgeSeconds: 3600,
+      },
     ],
   },
 };
