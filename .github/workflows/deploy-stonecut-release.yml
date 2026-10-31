@@ -1,0 +1,93 @@
+name: Deploy StoneCut reliability fixes
+
+on:
+  push:
+    branches: [deploy/stonecut-76a4863]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/deploy/stonecut-76a4863'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Deploy pinned StoneCut build using existing droplet access
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          command_timeout: 18m
+          script: |
+            sudo -n bash -s <<'STONECUT_RELEASE'
+            set -euo pipefail
+            SHA=76a4863eb47b7b1234d20d9be419b667c1fe62ca
+            HOST=rhinestones.tshirtbrothers.com
+            DOCROOT=/var/www/stonecut/html
+            # Refuse to guess a deployment target. Require the documented vhost/root pair.
+            nginx -T 2>/dev/null | python3 -c '
+            import re,sys
+            text=sys.stdin.read()
+            host="rhinestones.tshirtbrothers.com"
+            root="/var/www/stonecut/html"
+            for m in re.finditer(r"\bserver\s*\{",text):
+             depth=1; i=m.end(); start=i
+             while i<len(text) and depth:
+              depth+=(text[i]=="{")-(text[i]=="}"); i+=1
+             block=text[start:i-1]
+             names=re.findall(r"\bserver_name\s+([^;]+);",block)
+             roots=re.findall(r"\broot\s+([^;]+);",block)
+             if any(host in n.split() for n in names) and root in [r.strip() for r in roots]:
+              print("Verified StoneCut nginx document root"); sys.exit(0)
+            sys.exit("Refusing deployment: documented StoneCut vhost/root pair not found")'
+            [ -d "$DOCROOT" ] && [ ! -L "$DOCROOT" ]
+            TMP=$(mktemp -d /var/tmp/stonecut-release.XXXXXX)
+            STAGE="$DOCROOT.next-${SHA:0:12}"
+            BACKUP="$DOCROOT.prev-$(date -u +%Y%m%dT%H%M%SZ)"
+            SWAPPED=0
+            cleanup() {
+             result=$?
+             if [ "$result" -ne 0 ] && [ "$SWAPPED" = 1 ]; then
+              echo 'Deployment check failed; restoring previous StoneCut build'
+              mv "$DOCROOT" "$DOCROOT.failed-${SHA:0:12}"
+              mv "$BACKUP" "$DOCROOT"
+             fi
+             rm -rf "$TMP"
+             exit "$result"
+            }
+            trap cleanup EXIT
+            [ ! -e "$STAGE" ] && [ ! -e "$BACKUP" ]
+            git clone --quiet https://github.com/kevinskey/stonecut.git "$TMP/source"
+            cd "$TMP/source"
+            git checkout --quiet --detach "$SHA"
+            [ "$(git rev-parse HEAD)" = "$SHA" ]
+            npm ci --ignore-scripts --no-audit --no-fund
+            npm run test:publish
+            npm run test:saved-sizes
+            npm run build
+            printf '{"commit":"%s"}\n' "$SHA" > dist/build-info.json
+            cp -a dist "$STAGE"
+            # Keep cached pages' previous hashed assets available after the release.
+            if [ -d "$DOCROOT/assets" ]; then cp -an "$DOCROOT/assets/." "$STAGE/assets/"; fi
+            mv "$DOCROOT" "$BACKUP"
+            if ! mv "$STAGE" "$DOCROOT"; then mv "$BACKUP" "$DOCROOT"; exit 1; fi
+            SWAPPED=1
+            BASE="https://$HOST"
+            CURL=(curl --fail --silent --show-error --retry 2 --max-time 30 --resolve "$HOST:443:127.0.0.1")
+            "${CURL[@]}" "$BASE/build-info.json" | python3 -c 'import json,sys; assert json.load(sys.stdin)["commit"]==sys.argv[1]' "$SHA"
+            "${CURL[@]}" "$BASE/" > "$TMP/live.html"
+            cmp dist/index.html "$TMP/live.html"
+            ASSET=$(python3 -c 'import re; print(re.search(r"src=\"([^\"]+\.js)\"",open("dist/index.html").read()).group(1))')
+            "${CURL[@]}" "$BASE$ASSET" > "$TMP/live.js"
+            cmp "dist$ASSET" "$TMP/live.js"
+            echo "STONECUT_DEPLOYED=$SHA"
+            echo "PREVIOUS_BUILD=$BACKUP"
+            echo "LIVE_BUNDLE=$ASSET"
+            STONECUT_RELEASE
