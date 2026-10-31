@@ -1,8 +1,10 @@
-name: Deploy StoneCut reliability fixes
+name: Deploy StoneCut production
 
 on:
   push:
-    branches: [deploy/stonecut-76a4863]
+    branches: [deploy/stonecut-production]
+    paths:
+      - '.github/workflows/deploy-stonecut-release.yml'
 
 permissions:
   contents: read
@@ -13,11 +15,11 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/deploy/stonecut-76a4863'
+    if: github.ref == 'refs/heads/deploy/stonecut-production'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Deploy pinned StoneCut build using existing droplet access
+      - name: Deploy pinned tested StoneCut release
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -28,66 +30,20 @@ jobs:
           script: |
             sudo -n bash -s <<'STONECUT_RELEASE'
             set -euo pipefail
-            SHA=76a4863eb47b7b1234d20d9be419b667c1fe62ca
-            HOST=rhinestones.tshirtbrothers.com
-            DOCROOT=/var/www/stonecut/html
-            # Refuse to guess a deployment target. Require the documented vhost/root pair.
-            nginx -T 2>/dev/null | python3 -c '
-            import re,sys
-            text=sys.stdin.read()
-            host="rhinestones.tshirtbrothers.com"
-            root="/var/www/stonecut/html"
-            for m in re.finditer(r"\bserver\s*\{",text):
-             depth=1; i=m.end(); start=i
-             while i<len(text) and depth:
-              depth+=(text[i]=="{")-(text[i]=="}"); i+=1
-             block=text[start:i-1]
-             names=re.findall(r"\bserver_name\s+([^;]+);",block)
-             roots=re.findall(r"\broot\s+([^;]+);",block)
-             if any(host in n.split() for n in names) and root in [r.strip() for r in roots]:
-              print("Verified StoneCut nginx document root"); sys.exit(0)
-            sys.exit("Refusing deployment: documented StoneCut vhost/root pair not found")'
-            [ -d "$DOCROOT" ] && [ ! -L "$DOCROOT" ]
-            TMP=$(mktemp -d /var/tmp/stonecut-release.XXXXXX)
-            STAGE="$DOCROOT.next-${SHA:0:12}"
-            BACKUP="$DOCROOT.prev-$(date -u +%Y%m%dT%H%M%SZ)"
-            SWAPPED=0
-            cleanup() {
-             result=$?
-             if [ "$result" -ne 0 ] && [ "$SWAPPED" = 1 ]; then
-              echo 'Deployment check failed; restoring previous StoneCut build'
-              mv "$DOCROOT" "$DOCROOT.failed-${SHA:0:12}"
-              mv "$BACKUP" "$DOCROOT"
-             fi
-             rm -rf "$TMP"
-             exit "$result"
-            }
-            trap cleanup EXIT
-            [ ! -e "$STAGE" ] && [ ! -e "$BACKUP" ]
-            git clone --quiet https://github.com/kevinskey/stonecut.git "$TMP/source"
-            cd "$TMP/source"
-            git checkout --quiet --detach "$SHA"
-            [ "$(git rev-parse HEAD)" = "$SHA" ]
-            npm ci --ignore-scripts --no-audit --no-fund
-            npm run test:publish
-            npm run test:saved-sizes
-            npm run build
-            printf '{"commit":"%s"}\n' "$SHA" > dist/build-info.json
-            cp -a dist "$STAGE"
-            # Keep cached pages' previous hashed assets available after the release.
-            if [ -d "$DOCROOT/assets" ]; then cp -an "$DOCROOT/assets/." "$STAGE/assets/"; fi
-            mv "$DOCROOT" "$BACKUP"
-            if ! mv "$STAGE" "$DOCROOT"; then mv "$BACKUP" "$DOCROOT"; exit 1; fi
-            SWAPPED=1
-            BASE="https://$HOST"
-            CURL=(curl --fail --silent --show-error --retry 2 --max-time 30 --resolve "$HOST:443:127.0.0.1")
-            "${CURL[@]}" "$BASE/build-info.json" | python3 -c 'import json,sys; assert json.load(sys.stdin)["commit"]==sys.argv[1]' "$SHA"
-            "${CURL[@]}" "$BASE/" > "$TMP/live.html"
-            cmp dist/index.html "$TMP/live.html"
-            ASSET=$(python3 -c 'import re; print(re.search(r"src=\"([^\"]+\.js)\"",open("dist/index.html").read()).group(1))')
-            "${CURL[@]}" "$BASE$ASSET" > "$TMP/live.js"
-            cmp "dist$ASSET" "$TMP/live.js"
-            echo "STONECUT_DEPLOYED=$SHA"
-            echo "PREVIOUS_BUILD=$BACKUP"
-            echo "LIVE_BUNDLE=$ASSET"
+            python3 - <<'DOMAIN_CHECK'
+            import socket,urllib.request,re,json
+            for host in ['stonecut.com','rhinestones.tshirtbrothers.com']:
+             try: print('DOMAIN_DNS',host,json.dumps(socket.gethostbyname_ex(host)))
+             except Exception as e: print('DOMAIN_DNS_ERROR',host,str(e))
+             try:
+              response=urllib.request.urlopen('https://'+host+'/',timeout=12)
+              html=response.read(200000).decode('utf-8','replace')
+              print('DOMAIN_HTTP',host,response.status,response.url,'TITLE',re.findall(r'<title>(.*?)</title>',html,re.I)[:1],'SCRIPTS',re.findall(r'<script[^>]+src="([^"]+)"',html)[:2])
+             except Exception as e: print('DOMAIN_HTTP_ERROR',host,str(e))
+            DOMAIN_CHECK
+            work=$(mktemp -d /var/tmp/stonecut-runner.XXXXXX)
+            trap 'rm -rf "$work"' EXIT
+            git clone --quiet https://github.com/kevinskey/stonecut.git "$work/source"
+            git -C "$work/source" checkout --quiet --detach 5af529a4b727751d6d6d42436a176998ec1188da
+            STONECUT_REF=5af529a4b727751d6d6d42436a176998ec1188da bash "$work/source/deploy.sh"
             STONECUT_RELEASE
