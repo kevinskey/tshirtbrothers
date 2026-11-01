@@ -71,13 +71,17 @@ const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
 export default function BlingPage() {
+  const [previousSelection] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('tsb_rhinestone_selection') || 'null'); }
+    catch { return null; }
+  });
   const [collectionFilter, setCollectionFilter] = useState('All');
   const [crystalColor, setCrystalColor] = useState('Crystal');
-  const [sizeKey, setSizeKey] = useState<string>('standard');
-  const [garmentKey, setGarmentKey] = useState<string>('tee');
-  const [quantity, setQuantity] = useState(24);
-  const [locations, setLocations] = useState(1);
-  const [rush, setRush] = useState(false);
+  const [sizeKey, setSizeKey] = useState<string>(previousSelection?.sizeKey || 'standard');
+  const [garmentKey, setGarmentKey] = useState<string>(previousSelection?.garmentKey || 'tee');
+  const [quantity, setQuantity] = useState(Number(previousSelection?.quantity) || 24);
+  const [locations, setLocations] = useState(Number(previousSelection?.numLocations) || 1);
+  const [rush, setRush] = useState(previousSelection?.rush === true);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [gallery, setGallery] = useState<GalleryDesign[]>([]);
@@ -106,6 +110,8 @@ export default function BlingPage() {
   // doesn't fire a request per pixel.
   useEffect(() => {
     let live = true;
+    setQuote(null);
+    setQuoteError(null);
     const t = setTimeout(() => {
       fetch('/api/rhinestone/quote', {
         method: 'POST',
@@ -355,7 +361,9 @@ export default function BlingPage() {
                     </ul>
 
                     <Link
-                      to="/quote"
+                      to="/quote/rhinestone"
+                      state={{ rhinestone: { sizeKey, garmentKey, quantity, numLocations: locations, rush } }}
+                      onClick={() => { try { sessionStorage.setItem('tsb_rhinestone_selection', JSON.stringify({ sizeKey, garmentKey, quantity, numLocations: locations, rush })); } catch { /* router state still carries selection */ } }}
                       className="mt-6 flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-orange-500 to-orange-500 px-5 py-3 font-semibold hover:brightness-110"
                     >
                       Lock this in <ArrowRight className="h-4 w-4" />
