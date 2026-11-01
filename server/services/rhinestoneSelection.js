@@ -35,7 +35,7 @@ export function priceRhinestoneSelection(selection, settings) {
   return {
     inputs,
     calc: { ...priced, per_shirt: priced.effectivePerPiece,
-      turnaround_days: inputs.rush ? 3 : 7,
+      turnaround_days: 0,
       breakdown: { ...priced.breakdown, num_locations: numLocations, colors_per_location: 1 } },
   };
 }
