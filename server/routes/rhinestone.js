@@ -1,3 +1,4 @@
+import { priceRhinestoneSelection } from '../services/rhinestoneSelection.js';
 // Rhinestone / bling: the StoneCut hand-off, the public gallery, and the
 // instant price behind /bling.
 //
@@ -266,6 +267,12 @@ router.patch('/admin/designs/:id', authenticate, adminOnly, async (req, res, nex
 router.post('/quote', async (req, res, next) => {
   try {
     const body = req.body || {};
+    if (body.sizeKey || body.garmentKey) {
+      try {
+        const priced = priceRhinestoneSelection(body, await loadSettings());
+        return res.json(priced.calc);
+      } catch (err) { return res.status(400).json({ error: err.message }); }
+    }
     const inputs = { ...body };
 
     if (body.designId) {
