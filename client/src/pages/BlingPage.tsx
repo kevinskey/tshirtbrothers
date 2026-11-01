@@ -71,6 +71,8 @@ const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 
 export default function BlingPage() {
+  const [collectionFilter, setCollectionFilter] = useState('All');
+  const [crystalColor, setCrystalColor] = useState('Crystal');
   const [sizeKey, setSizeKey] = useState<string>('standard');
   const [garmentKey, setGarmentKey] = useState<string>('tee');
   const [quantity, setQuantity] = useState(24);
@@ -135,81 +137,55 @@ export default function BlingPage() {
         path="/bling"
       />
 
-      {/* The sparkle is pure CSS so it costs nothing and degrades to a plain
-          dark hero wherever prefers-reduced-motion is set. */}
-      <style>{`
-        @keyframes tsb-twinkle {
-          0%, 100% { opacity: 0.15; transform: scale(0.7); }
-          50%      { opacity: 1;    transform: scale(1.15); }
-        }
-        .tsb-sparkle { animation: tsb-twinkle 3.2s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) {
-          .tsb-sparkle { animation: none; opacity: 0.5; }
-        }
-      `}</style>
-
-      {/* ── Hero ───────────────────────────────────────────────────────── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-gray-950 via-purple-950 to-gray-900 text-white">
-        <div aria-hidden className="pointer-events-none absolute inset-0">
-          {HERO_SPARKLES.map((s, i) => (
-            <span
-              key={i}
-              className="tsb-sparkle absolute rounded-full bg-white"
-              style={{
-                left: `${s.x}%`,
-                top: `${s.y}%`,
-                width: s.r,
-                height: s.r,
-                animationDelay: `${s.d}s`,
-                boxShadow: '0 0 6px 1px rgba(255,255,255,0.8)',
-              }}
-            />
-          ))}
-        </div>
-
-        <div className="relative container mx-auto px-4 py-20 md:py-28 max-w-5xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-sm font-medium backdrop-blur">
-            <Gem className="h-4 w-4" /> Made in Fairburn, GA — stones set in-house
-          </span>
-          <h1 className="mt-6 font-display text-4xl md:text-6xl font-bold leading-tight">
-            Bling that doesn&apos;t
-            <span className="bg-gradient-to-r from-amber-200 via-white to-fuchsia-200 bg-clip-text text-transparent">
-              {' '}fall off
-            </span>
-          </h1>
-          <p className="mt-5 text-lg text-gray-300 max-w-2xl mx-auto">
-            Custom rhinestone shirts and spiritwear for schools, teams, dance studios, cheer squads,
-            Greek life, and small brands. We cut the template, set the stones, and press them
-            ourselves — so one shirt costs the same per stone as a hundred would.
-          </p>
-          <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a
-              href="#price"
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-fuchsia-500 to-orange-500 px-7 py-3.5 font-semibold shadow-lg shadow-fuchsia-900/40 hover:brightness-110"
-            >
-              <Sparkles className="h-4 w-4" /> Price my bling
-            </a>
-            <Link
-              to="/quote"
-              className="inline-flex items-center gap-2 rounded-lg border border-white/25 px-7 py-3.5 font-semibold hover:bg-white/10"
-            >
-              Talk to a human <ArrowRight className="h-4 w-4" />
-            </Link>
+      <section className="bg-white text-slate-900">
+        <div className="container mx-auto grid max-w-7xl items-center gap-10 px-5 py-12 md:grid-cols-2 md:py-16">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.2em] text-orange-700">The Rhinestone Studio</p>
+            <h1 className="mt-6 text-5xl font-bold leading-[1.04] tracking-tight lg:text-7xl">A little sparkle.<br />A bold<br /><em className="font-serif font-normal text-orange-500">statement.</em></h1>
+            <p className="mt-6 max-w-md text-base leading-relaxed text-slate-600">Custom rhinestone apparel that catches the light—and everyone's attention. Made for your team, your celebration, your moment.</p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <a href="#collection" className="inline-flex items-center gap-5 bg-orange-500 px-6 py-4 text-sm font-bold text-slate-950 hover:bg-orange-400">Explore designs <ArrowRight className="h-4 w-4" /></a>
+              <a href="#price" className="border border-slate-300 px-6 py-4 text-sm font-bold hover:bg-slate-50">Price my project</a>
+            </div>
+            <p className="mt-7 text-[10px] tracking-widest text-slate-500">YOUR IDEA / YOUR COLORS / YOUR SHINE</p>
           </div>
-
-          <dl className="mt-14 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
-            {[
-              { k: 'No minimum', v: 'Order 1 or 1,000' },
-              { k: 'Free proofs', v: 'Every single time' },
-              { k: '90+ colors', v: 'Mix as many as you like' },
-              { k: '5–7 days', v: 'Rush available' },
-            ].map((s) => (
-              <div key={s.k} className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                <dt className="font-display text-lg font-bold">{s.k}</dt>
-                <dd className="text-sm text-gray-400">{s.v}</dd>
-              </div>
-            ))}
-          </dl>
+          <figure className="relative overflow-hidden bg-slate-950">
+            <img src="/images/rhinestone/hero.svg" alt="Black shirts with brilliant crystal SHINE lettering, a golden crown and sapphire lightning" className="aspect-square w-full object-cover" fetchPriority="high" />
+            <figcaption className="absolute bottom-5 left-5 bg-black/50 px-3 py-2 text-[10px] tracking-widest text-white">BRILLIANCE IN EVERY DETAIL</figcaption>
+          </figure>
+        </div>
+        <div className="border-y border-slate-200">
+          <div className="container mx-auto grid max-w-7xl grid-cols-2 gap-5 px-5 py-6 text-xs font-semibold md:grid-cols-4">
+            {['Eye-catching crystal detail', 'Original custom artwork', 'Teams, groups & celebrations', 'Personal service'].map(text => <p key={text}><span className="mr-2 text-orange-500">✦</span>{text}</p>)}
+          </div>
+        </div>
+      </section>
+      <section id="collection" className="scroll-mt-24 bg-white py-16">
+        <div className="container mx-auto max-w-7xl px-5">
+          <p className="text-xs font-bold uppercase tracking-[.2em] text-orange-700">Designed to stand out</p>
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-5">
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">Find your kind of shine.</h2>
+            <p className="max-w-sm text-sm leading-relaxed text-slate-500">Start with a concept. Make it yours with your name, colors, and a little T-Shirt Brothers creativity.</p>
+          </div>
+          <div className="my-7 flex flex-wrap gap-2" role="group" aria-label="Filter rhinestone concepts">
+            {['All', 'Team spirit', 'Celebrations', 'Everyday statements'].map(category => <button type="button" key={category} aria-pressed={collectionFilter === category} onClick={() => setCollectionFilter(category)} className={`rounded-full border px-4 py-2 text-xs ${collectionFilter === category ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-600 hover:border-orange-500'}`}>{category === 'All' ? 'All designs' : category}</button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-8 md:grid-cols-3 md:gap-x-6">
+            {STUDIO_CONCEPTS.filter(d => collectionFilter === 'All' || d.category === collectionFilter).map(d => <article key={d.id}>
+              <a href="#price" className="group block" aria-label={`Explore pricing for ${d.name}`}>
+                <img src={`/images/rhinestone/design-${d.id}.svg`} alt={`${d.name}: ${d.color} rhinestone design on a black cotton shirt`} loading="lazy" width={512} height={512} className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90" />
+                <div className="mt-4 flex items-center justify-between gap-2"><h3 className="text-sm font-bold">{d.name}</h3><ArrowRight className="h-4 w-4" /></div>
+                <p className="mt-1 text-xs text-slate-500">{d.color} / Design concept</p>
+              </a>
+            </article>)}
+          </div>
+          <p className="mt-6 text-xs leading-relaxed text-slate-500">Illustrative design concepts. Final stone colors, garment options and production details are confirmed with your quote.</p>
+        </div>
+      </section>
+      <section className="bg-slate-900 py-14 text-white">
+        <div className="container mx-auto grid max-w-7xl gap-8 px-5 md:grid-cols-2 md:gap-16">
+          <div><p className="text-xs font-bold uppercase tracking-widest text-orange-400">Make it personal</p><h2 className="mt-4 text-3xl font-bold md:text-4xl">Your vision.<br />With more brilliance.</h2><p className="mt-5 max-w-lg text-sm leading-relaxed text-slate-300">A team name. A signature phrase. A milestone worth wearing. Share your artwork or inspiration and we'll help translate it into stones.</p><a href="#price" className="mt-6 inline-flex items-center gap-4 bg-orange-500 px-6 py-3 text-sm font-bold text-slate-950">Start with a price <ArrowRight className="h-4 w-4" /></a></div>
+          <div><p className="text-xs uppercase tracking-widest text-slate-300">Explore crystal color concepts</p><div className="mt-5 flex flex-wrap gap-3">{CRYSTAL_COLORS.map(color => <button type="button" key={color.name} aria-pressed={crystalColor === color.name} onClick={() => setCrystalColor(color.name)} className={`border p-3 text-xs ${crystalColor === color.name ? 'border-orange-400' : 'border-transparent hover:border-slate-500'}`}><span className="mx-auto mb-3 block h-9 w-9" style={{ clipPath: 'polygon(50% 0,85% 15%,100% 50%,85% 85%,50% 100%,15% 85%,0 50%,15% 15%)', background: `conic-gradient(white, ${color.hex}, white, ${color.hex}, #48505a, ${color.hex}, white)` }} />{color.name}</button>)}</div><p className="mt-4 text-sm text-slate-300" aria-live="polite">{CRYSTAL_COLORS.find(c => c.name === crystalColor)?.description}</p></div>
         </div>
       </section>
 
@@ -236,13 +212,13 @@ export default function BlingPage() {
                       onClick={() => setSizeKey(d.key)}
                       className={`rounded-lg border p-3 text-left transition-colors ${
                         sizeKey === d.key
-                          ? 'border-fuchsia-500 bg-fuchsia-50 ring-1 ring-fuchsia-500'
+                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
                       <span className="block font-semibold text-sm">{d.label}</span>
                       <span className="block text-xs text-gray-500">{d.detail}</span>
-                      <span className="mt-1 block text-xs font-medium text-fuchsia-600">
+                      <span className="mt-1 block text-xs font-medium text-orange-600">
                         ≈ {d.stones.toLocaleString()} stones
                       </span>
                     </button>
@@ -259,7 +235,7 @@ export default function BlingPage() {
                       onClick={() => setGarmentKey(g.key)}
                       className={`rounded-lg border px-3 py-2 text-left transition-colors ${
                         garmentKey === g.key
-                          ? 'border-fuchsia-500 bg-fuchsia-50 ring-1 ring-fuchsia-500'
+                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -277,7 +253,7 @@ export default function BlingPage() {
                   max={250}
                   value={quantity}
                   onChange={(e) => setQuantity(Number(e.target.value))}
-                  className="w-full accent-fuchsia-500"
+                  className="w-full accent-orange-500"
                   aria-label="Quantity"
                 />
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -287,7 +263,7 @@ export default function BlingPage() {
                       type="button"
                       onClick={() => setQuantity(q)}
                       className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                        quantity === q ? 'border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700' : 'border-gray-200 text-gray-600'
+                        quantity === q ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600'
                       }`}
                     >
                       {q}
@@ -306,7 +282,7 @@ export default function BlingPage() {
                         onClick={() => setLocations(n)}
                         className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
                           locations === n
-                            ? 'border-fuchsia-500 bg-fuchsia-50 text-fuchsia-700'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
                             : 'border-gray-200 text-gray-600'
                         }`}
                       >
@@ -380,7 +356,7 @@ export default function BlingPage() {
 
                     <Link
                       to="/quote"
-                      className="mt-6 flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-fuchsia-500 to-orange-500 px-5 py-3 font-semibold hover:brightness-110"
+                      className="mt-6 flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-orange-500 to-orange-500 px-5 py-3 font-semibold hover:brightness-110"
                     >
                       Lock this in <ArrowRight className="h-4 w-4" />
                     </Link>
@@ -440,7 +416,7 @@ export default function BlingPage() {
           <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {AUDIENCES.map((a) => (
               <div key={a.title} className="rounded-xl border border-gray-200 bg-white p-5">
-                <a.icon className="h-6 w-6 text-fuchsia-500" />
+                <a.icon className="h-6 w-6 text-orange-500" />
                 <h3 className="mt-3 font-display text-lg font-bold">{a.title}</h3>
                 <p className="mt-1 text-sm text-gray-500">{a.blurb}</p>
               </div>
@@ -464,7 +440,7 @@ export default function BlingPage() {
           <ol className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {STEPS.map((s, i) => (
               <li key={s.title} className="rounded-xl border border-gray-200 p-5">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-fuchsia-100 font-display font-bold text-fuchsia-700">
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-100 font-display font-bold text-orange-700">
                   {i + 1}
                 </span>
                 <h3 className="mt-3 font-display text-lg font-bold">{s.title}</h3>
@@ -534,7 +510,7 @@ export default function BlingPage() {
       </section>
 
       {/* ── Close ──────────────────────────────────────────────────────── */}
-      <section className="bg-gradient-to-r from-fuchsia-600 to-orange-500 py-16 text-white">
+      <section className="bg-gradient-to-r from-orange-600 to-orange-500 py-16 text-white">
         <div className="container mx-auto px-4 max-w-3xl text-center">
           <h2 className="font-display text-3xl md:text-4xl font-bold">Send us a sketch</h2>
           <p className="mt-3 text-white/90">
@@ -582,21 +558,20 @@ function Row({ label, value, hint }: { label: string; value: string; hint?: stri
   );
 }
 
-// Fixed positions rather than Math.random(), so the hero doesn't reshuffle on
-// every render and the prerender output stays byte-stable.
-const HERO_SPARKLES = [
-  { x: 6, y: 18, r: 3, d: 0 },
-  { x: 14, y: 68, r: 2, d: 1.1 },
-  { x: 22, y: 34, r: 4, d: 2.0 },
-  { x: 31, y: 82, r: 2, d: 0.6 },
-  { x: 43, y: 12, r: 3, d: 1.7 },
-  { x: 52, y: 60, r: 2, d: 2.6 },
-  { x: 61, y: 26, r: 4, d: 0.3 },
-  { x: 70, y: 74, r: 3, d: 1.4 },
-  { x: 78, y: 40, r: 2, d: 2.2 },
-  { x: 86, y: 16, r: 4, d: 0.9 },
-  { x: 92, y: 62, r: 3, d: 1.9 },
-  { x: 96, y: 30, r: 2, d: 2.8 },
+const STUDIO_CONCEPTS = [
+  { id: 1, name: 'Shine On', color: 'Crystal clear', category: 'Everyday statements' },
+  { id: 2, name: 'Royal Energy', color: 'Golden crystal', category: 'Celebrations' },
+  { id: 3, name: 'Game Day', color: 'Sapphire + crystal', category: 'Team spirit' },
+  { id: 4, name: 'Birthday Era', color: 'Rose crystal', category: 'Celebrations' },
+  { id: 5, name: 'Fearless', color: 'Crystal clear', category: 'Everyday statements' },
+  { id: 6, name: 'Choir Collective', color: 'Crystal + champagne', category: 'Team spirit' },
+];
+const CRYSTAL_COLORS = [
+  { name: 'Crystal', hex: '#dce5f4', description: 'Crystal clear — a classic, luminous silver-white finish.' },
+  { name: 'Gold', hex: '#e9b742', description: 'Gold — a warm golden statement.' },
+  { name: 'Sapphire', hex: '#328af5', description: 'Sapphire — a vivid blue accent.' },
+  { name: 'Rose', hex: '#f980b4', description: 'Rose — a playful pink sparkle.' },
+  { name: 'Ruby', hex: '#e7354d', description: 'Ruby — a bold red accent.' },
 ];
 
 const AUDIENCES = [
