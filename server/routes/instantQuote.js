@@ -1,3 +1,5 @@
+import { priceRhinestoneSelection } from '../services/rhinestoneSelection.js';
+import { DEFAULT_RHINESTONE_SETTINGS } from '../services/rhinestonePricing.js';
 import { Router } from 'express';
 import Stripe from 'stripe';
 import pool from '../db.js';
@@ -337,7 +339,7 @@ router.post('/save', async (req, res, next) => {
     // Pool quantities across all priced garment lines so the quantity-tier
     // discount reflects the whole order (5 tees + 6 caps ⇒ the 11+ tier).
     const pooledQty = items.reduce((sum, item) => {
-      if (!item || item.kind === 'custom' || !item.inputs) return sum;
+      if (!item || ['custom', 'rhinestone'].includes(item.kind) || !item.inputs) return sum;
       if (Array.isArray(item.inputs.sizes)) {
         return sum + item.inputs.sizes.reduce((s, sz) => s + (Number(sz?.quantity) || 0), 0);
       }
@@ -352,6 +354,21 @@ router.post('/save', async (req, res, next) => {
       const item = items[i];
       if (!item || typeof item !== 'object') {
         return res.status(400).json({ error: `items[${i}] is required` });
+      }
+      if (item.kind === 'rhinestone') {
+        let settings = DEFAULT_RHINESTONE_SETTINGS;
+        try {
+          const result = await pool.query('SELECT * FROM rhinestone_pricing_settings WHERE id = 1');
+          settings = result.rows[0] || settings;
+        } catch (err) {
+          if (err.code !== '42P01') throw err;
+        }
+        let priced;
+        try { priced = priceRhinestoneSelection(item.selection, settings); }
+        catch (err) { return res.status(400).json({ error: err.message }); }
+        itemRows.push({ index: i, kind: 'rhinestone', ...priced,
+          pickedProductMeta: null, design_url: null, extra_design_urls: [] });
+        continue;
       }
       if (item.kind === 'custom') {
         if (!item.custom || typeof item.custom !== 'object') {
@@ -550,8 +567,8 @@ router.post('/save', async (req, res, next) => {
       await client.query(
         `INSERT INTO quote_items
           (quote_id, position, product_id, product_name, color, sizes, quantity,
-           print_areas, design_url, unit_price, line_total)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11)`,
+           print_areas, design_url, unit_price, line_total, notes)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, $9, $10, $11, $12)`,
         [
           quote.id,
           r.index,
@@ -564,6 +581,9 @@ router.post('/save', async (req, res, next) => {
           r.design_url || null,
           r.calc.per_shirt,
           r.calc.total,
+          r.kind === 'rhinestone'
+            ? `Rhinestone estimate: ${inp.designSize}; ${inp.stoneCount} stones per placement; ${inp.numLocations} placement(s); ${inp.rush ? 'rush' : 'standard'}. Final stone count confirmed after artwork review.`
+            : null,
         ],
       );
     }

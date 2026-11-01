@@ -29,6 +29,7 @@ import AuthPage from '@/pages/AuthPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import BrandsPage from '@/pages/BrandsPage';
 import DrinkwarePage from '@/pages/DrinkwarePage';
+import RhinestoneQuotePage from '@/pages/RhinestoneQuotePage';
 import BlingPage from '@/pages/BlingPage';
 import AwardsPage from '@/pages/AwardsPage';
 import QualityTiersPage from '@/pages/QualityTiersPage';
@@ -163,6 +164,7 @@ function App() {
           <Route path="/drinkware" element={<DrinkwarePage />} />
           {/* Rhinestone / spiritwear. /spiritwear is the phrase schools
               actually search for, so it's a real route rather than a redirect. */}
+          <Route path="/quote/rhinestone" element={<RhinestoneQuotePage />} />
           <Route path="/bling" element={<BlingPage />} />
           <Route path="/spiritwear" element={<BlingPage />} />
           <Route path="/awards" element={<AwardsPage />} />

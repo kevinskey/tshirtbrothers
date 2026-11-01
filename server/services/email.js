@@ -1988,9 +1988,13 @@ function instantQuoteItemRows(item) {
   if (inputs.methodName === 'Screen Print') {
     html += detailRow('Colors per location', String(colors_per_location));
   }
-  html += detailRow('Turnaround', inputs.rush
-    ? `Rush — ${calc.turnaround_days} days`
-    : `Standard — ${calc.turnaround_days} days`);
+  html += detailRow('Turnaround', item.kind === 'rhinestone'
+    ? (inputs.rush ? 'Rush requested — timing confirmed after review' : 'Standard — timing confirmed after review')
+    : inputs.rush ? `Rush — ${calc.turnaround_days} days` : `Standard — ${calc.turnaround_days} days`);
+  if (item.kind === 'rhinestone') {
+    html += detailRow('Design size', escapeHtml(inputs.designSize));
+    html += detailRow('Estimated stones per placement', String(inputs.stoneCount));
+  }
   html += detailRow('Per shirt', formatCurrency(calc.per_shirt));
   html += detailRow('Item total', formatCurrency(calc.total));
   return html;
