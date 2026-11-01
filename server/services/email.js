@@ -1991,6 +1991,10 @@ function instantQuoteItemRows(item) {
   html += detailRow('Turnaround', inputs.rush
     ? `Rush — ${calc.turnaround_days} days`
     : `Standard — ${calc.turnaround_days} days`);
+  if (item.kind === 'rhinestone') {
+    html += detailRow('Design size', escapeHtml(inputs.designSize));
+    html += detailRow('Estimated stones per placement', String(inputs.stoneCount));
+  }
   html += detailRow('Per shirt', formatCurrency(calc.per_shirt));
   html += detailRow('Item total', formatCurrency(calc.total));
   return html;
