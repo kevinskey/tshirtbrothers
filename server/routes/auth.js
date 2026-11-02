@@ -233,6 +233,54 @@ router.put('/me/password', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// DELETE /me - Close your own account.
+//
+// App Store guideline 5.1.1(v) requires any app that lets you create an
+// account to let you delete it from inside the app. Most FKs into users are
+// ON DELETE CASCADE or SET NULL, so the DELETE does the right thing on both
+// sides: the personal sidecars (push tokens, favorites, saved designs,
+// uploaded assets, customer notes) go away, while the quotes, mockups and
+// shipments we have to keep for accounting survive with a null user ref.
+//
+// Three columns are the exception — invoices.created_by, admin_designs.created_by
+// and gang_sheets.created_by are NO ACTION in production (the migrations that
+// created them say SET NULL; the live database disagrees). They only ever hold
+// staff ids, so a customer has no rows there, but a blocking FK would turn this
+// into a 500 instead of a deletion. Null them first, inside the transaction.
+//
+// Admins can't self-delete — losing the only admin row would lock the shop
+// out of its own back office. Kevin closes those by hand.
+router.delete('/me', authenticate, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { password } = req.body || {};
+    if (!password) return res.status(400).json({ error: 'Password required to delete your account' });
+
+    const { rows } = await client.query('SELECT password_hash, role FROM users WHERE id = $1', [req.user.id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    if (rows[0].role !== 'customer') {
+      return res.status(403).json({ error: 'Staff accounts are closed by an administrator — contact kevin@tshirtbrothers.com' });
+    }
+
+    const valid = await bcrypt.compare(password, rows[0].password_hash);
+    if (!valid) return res.status(400).json({ error: 'Password is incorrect' });
+
+    await client.query('BEGIN');
+    for (const table of ['invoices', 'admin_designs', 'gang_sheets']) {
+      await client.query(`UPDATE ${table} SET created_by = NULL WHERE created_by = $1`, [req.user.id]);
+    }
+    await client.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    await client.query('COMMIT');
+
+    res.json({ deleted: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 // GET /me/quotes - Customer's own quotes
 router.get('/me/quotes', authenticate, async (req, res, next) => {
   try {
