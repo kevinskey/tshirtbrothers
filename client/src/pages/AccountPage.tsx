@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, FileText, Palette, Package, Save, Lock, Loader2 } from 'lucide-react';
+import { User, FileText, Palette, Package, Save, Lock, Loader2, Trash2, AlertTriangle } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 
 interface Profile { id: number; email: string; name: string; phone: string; role: string; created_at: string; }
@@ -40,6 +40,12 @@ export default function AccountPage() {
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
+
+  // Delete account (App Store 5.1.1(v) — must be doable inside the app)
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePw, setDeletePw] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState('');
 
   useEffect(() => {
     const token = getToken();
@@ -81,6 +87,19 @@ export default function AccountPage() {
       setPwMsg('Password changed!');
       setCurrentPw(''); setNewPw('');
     } catch (err) { setPwMsg((err as Error).message); }
+  }
+
+  async function handleDeleteAccount(e: FormEvent) {
+    e.preventDefault();
+    setDeleteMsg(''); setDeleting(true);
+    try {
+      await api('/me', { method: 'DELETE', body: JSON.stringify({ password: deletePw }) });
+      localStorage.removeItem('tsb_token');
+      navigate('/?account_closed=1', { replace: true });
+    } catch (err) {
+      setDeleteMsg((err as Error).message);
+      setDeleting(false);
+    }
   }
 
   const [openingDesignId, setOpeningDesignId] = useState<number | null>(null);
@@ -211,6 +230,53 @@ export default function AccountPage() {
                 {pwMsg && <span className={`text-sm font-medium ${pwMsg.includes('changed') ? 'text-green-600' : 'text-red-600'}`}>{pwMsg}</span>}
               </div>
             </form>
+
+            <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-red-600" /> Delete Account
+              </h2>
+              <p className="text-sm text-gray-600">
+                Permanently closes your T-Shirt Brothers account. Your saved designs, favorites
+                and push notifications are deleted and you won't be able to sign in again.
+                Past orders and invoices are kept for warranty, reprints and accounting, as
+                described in our{' '}
+                <Link to="/privacy" className="text-orange-600 hover:underline">Privacy Policy</Link>.
+              </p>
+
+              {!deleteOpen ? (
+                <button type="button" onClick={() => setDeleteOpen(true)}
+                  className="border border-red-300 text-red-700 hover:bg-red-50 font-semibold px-6 py-2.5 rounded-lg text-sm transition">
+                  Delete My Account
+                </button>
+              ) : (
+                <form onSubmit={handleDeleteAccount} className="space-y-4">
+                  <div className="flex gap-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                    <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-800">
+                      This cannot be undone. Enter your password to confirm.
+                    </p>
+                  </div>
+                  <div className="sm:max-w-xs">
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Password</label>
+                    <input type="password" value={deletePw} onChange={e => setDeletePw(e.target.value)} required
+                      autoComplete="current-password"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }} />
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button type="submit" disabled={deleting}
+                      className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition disabled:opacity-50 flex items-center gap-2">
+                      {deleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Deleting...</> : <><Trash2 className="w-4 h-4" /> Permanently Delete</>}
+                    </button>
+                    <button type="button" disabled={deleting}
+                      onClick={() => { setDeleteOpen(false); setDeletePw(''); setDeleteMsg(''); }}
+                      className="text-gray-600 hover:text-gray-900 font-semibold px-4 py-2.5 text-sm transition">
+                      Cancel
+                    </button>
+                    {deleteMsg && <span className="text-sm font-medium text-red-600">{deleteMsg}</span>}
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         )}
 

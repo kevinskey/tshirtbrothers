@@ -233,6 +233,92 @@ router.put('/me/password', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// DELETE /me - Customer-initiated account deletion
+//
+// Required by App Store Review Guideline 5.1.1(v) for any app that offers
+// account creation; the iOS 1.0 review asked to see this flow on camera.
+//
+// Anonymize-and-keep rather than DELETE FROM users: quotes, invoices,
+// mockups, gang sheets and store orders all hang off this row (directly or
+// by email), and the shop needs those for warranty, reprints and accounting.
+// So the row stays, every personal field on it is scrubbed, and the password
+// hash becomes something no human can type. Rows that are purely the
+// customer's own — push tokens, favorites, saved designs, activity tracking —
+// are hard-deleted here, since nothing downstream depends on them.
+const PRIVILEGED_ROLES = ['admin', 'owner', 'assistant'];
+
+router.delete('/me', authenticate, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { password } = req.body || {};
+    if (!password) {
+      return res.status(400).json({ error: 'Enter your password to delete your account' });
+    }
+
+    const { rows } = await client.query(
+      'SELECT email, password_hash, role, deleted_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = rows[0];
+    if (user.deleted_at) return res.status(410).json({ error: 'This account has already been closed' });
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(400).json({ error: 'Password is incorrect' });
+
+    // Staff accounts run the shop. Closing one from the storefront would
+    // strip admin access with no self-serve way back, so those go through us.
+    if (PRIVILEGED_ROLES.includes(user.role)) {
+      return res.status(403).json({
+        error: 'Staff accounts are closed by request — email kevin@tshirtbrothers.com.',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    // A bcrypt hash of 32 random bytes: structurally valid, so password
+    // comparison still runs in constant time, but unreachable by any input.
+    const deadHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+
+    // The email is rewritten (not nulled) because the column is UNIQUE NOT
+    // NULL, and the id keeps it unique. It also frees the real address to
+    // sign up again later.
+    await client.query(
+      `UPDATE users
+          SET email          = 'deleted+' || id || '@deleted.tshirtbrothers.com',
+              password_hash  = $1,
+              name           = 'Deleted Account',
+              phone          = NULL,
+              address_street = NULL,
+              address_city   = NULL,
+              address_state  = NULL,
+              address_zip    = NULL,
+              deleted_at     = NOW()
+        WHERE id = $2`,
+      [deadHash, req.user.id]
+    );
+
+    await client.query('DELETE FROM push_tokens   WHERE user_id = $1', [req.user.id]);
+    await client.query('DELETE FROM user_favorites WHERE user_id = $1', [req.user.id]);
+    await client.query('DELETE FROM saved_designs  WHERE user_id = $1', [req.user.id]);
+    // activity_events has no FK, so it would otherwise keep orphan rows
+    // carrying the old address (same reason the bot purges clean it).
+    await client.query(
+      'DELETE FROM activity_events WHERE user_id = $1 OR LOWER(email) = LOWER($2)',
+      [req.user.id, user.email]
+    );
+
+    await client.query('COMMIT');
+    console.warn(`[auth] account closed: user ${req.user.id}`);
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
+});
+
 // GET /me/quotes - Customer's own quotes
 router.get('/me/quotes', authenticate, async (req, res, next) => {
   try {
