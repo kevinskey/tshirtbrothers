@@ -26,6 +26,76 @@ const LOGO_PATH = fileURLToPath(new URL('../../client/public/tsb-splat.png', imp
 // edge to edge, so they need the page box rather than the text margin.
 const PAGE_W = 612;
 const PAGE_H = 792;
+
+// Mockup thumbnails printed on the invoice. Capped because each tile is a
+// network fetch on the request path and the strip has to fit between the
+// totals and the repeat-order offer. Eight covers two garments proofed on
+// all four sides.
+const INVOICE_MOCKUP_LIMIT = 8;
+const INVOICE_MOCKUP_PER_ROW = 4;
+const MOCKUP_FETCH_TIMEOUT_MS = 4000;
+
+// The printed sides of one mockup row, in the order the shop proofs them —
+// the same list and precedence MockupApprovalPage uses. Note the back lives
+// in preview_image_url_back; back_preview_image_url is an older column that
+// current rows leave null, so reading it instead silently drops the back.
+function sidesOf(m) {
+  return [
+    { url: m.preview_image_url, label: 'Front' },
+    { url: m.preview_image_url_back, label: 'Back' },
+    { url: m.preview_image_url_sleeve, label: 'Right Sleeve' },
+    { url: m.preview_image_url_sleeve_left, label: 'Left Sleeve' },
+  ].filter((s) => Boolean(s.url));
+}
+
+// Top edge of the repeat-order offer box; the mockup strip has to clear it.
+const UPSELL_TOP = 664;
+
+// Pull the approved mockup previews for an invoice so they can be embedded in
+// the PDF. Linked through mockups.quote_id — the quote is what carries every
+// mockup and every printed side; invoices.mockup_id only ever points at one.
+// Any failure here returns an empty list: a slow CDN must not cost the
+// customer their invoice.
+async function fetchMockupImages(inv) {
+  const SIDE_COLUMNS = `product_name, preview_image_url, preview_image_url_back,
+                        preview_image_url_sleeve, preview_image_url_sleeve_left`;
+  try {
+    const { rows } = inv.quote_id
+      ? await pool.query(
+          `SELECT ${SIDE_COLUMNS} FROM mockups WHERE quote_id = $1 ORDER BY id`,
+          [inv.quote_id],
+        )
+      : inv.mockup_id
+      ? await pool.query(
+          `SELECT ${SIDE_COLUMNS} FROM mockups WHERE id = $1`,
+          [inv.mockup_id],
+        )
+      : { rows: [] };
+
+    const wanted = rows.flatMap(sidesOf).slice(0, INVOICE_MOCKUP_LIMIT);
+    const dropped = rows.flatMap(sidesOf).length - wanted.length;
+    if (dropped > 0) {
+      console.warn(`[invoices] invoice ${inv.id} PDF shows ${wanted.length} of ${wanted.length + dropped} mockup sides`);
+    }
+
+    // Sequential rather than parallel: a handful of CDN images, and this runs
+    // before the response stream opens.
+    const images = [];
+    for (const side of wanted) {
+      try {
+        const res = await fetch(side.url, { signal: AbortSignal.timeout(MOCKUP_FETCH_TIMEOUT_MS) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        images.push({ label: side.label, buffer: Buffer.from(await res.arrayBuffer()) });
+      } catch (err) {
+        console.warn(`[invoices] mockup side skipped (${side.label}, ${side.url}): ${err.message}`);
+      }
+    }
+    return images;
+  } catch (err) {
+    console.warn(`[invoices] mockup lookup failed for invoice ${inv.id}: ${err.message}`);
+    return [];
+  }
+}
 const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 function getStripe() {
@@ -415,6 +485,10 @@ router.get('/:id/pdf', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     const inv = rows[0];
 
+    // Fetched before the stream opens: once headers are out we can no longer
+    // answer with an error, so any mockup trouble has to surface here.
+    const mockups = await fetchMockupImages(inv);
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="Invoice-${inv.invoice_number}.pdf"`);
 
@@ -541,9 +615,55 @@ router.get('/:id/pdf', async (req, res, next) => {
       { bold: true, color: isPaid ? '#16a34a' : BRAND_ORANGE },
     );
 
+    let afterTotalsY = totalsY + 30;
     if (inv.notes) {
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#9ca3af').text('NOTES', 50, totalsY + 30);
-      doc.fontSize(10).font('Helvetica').fillColor('#4b5563').text(String(inv.notes), 50, totalsY + 44, { width: 512 });
+      doc.fontSize(9).font('Helvetica-Bold').fillColor('#9ca3af').text('NOTES', 50, afterTotalsY);
+      doc.fontSize(10).font('Helvetica').fillColor('#4b5563').text(String(inv.notes), 50, afterTotalsY + 14, { width: 512 });
+      afterTotalsY = doc.y + 16;
+    }
+
+    // Approved mockups, so the invoice shows what was actually printed.
+    // Drawn only when the strip fits above the repeat-order offer — a long
+    // itemized invoice keeps its one-page shape instead of spilling.
+    if (mockups.length > 0) {
+      const gap = 12;
+      const perRow = Math.min(mockups.length, INVOICE_MOCKUP_PER_ROW);
+      const tileW = Math.min(150, Math.floor((512 - gap * (perRow - 1)) / perRow));
+      const tileH = tileW;                       // square: the previews are
+      const labelH = 13;                         // rendered on a square canvas
+      const rowH = tileH + labelH + 6;
+      const rowCount = Math.ceil(mockups.length / perRow);
+      const stripTop = afterTotalsY + 14;
+
+      if (stripTop + rowH * rowCount <= UPSELL_TOP - 14) {
+        doc.fontSize(9).font('Helvetica-Bold').fillColor('#9ca3af')
+          .text(mockups.length > 1 ? 'APPROVED MOCKUPS' : 'APPROVED MOCKUP', 50, afterTotalsY);
+
+        mockups.forEach((m, i) => {
+          const row = Math.floor(i / perRow);
+          const col = i % perRow;
+          const inThisRow = Math.min(perRow, mockups.length - row * perRow);
+          const rowW = tileW * inThisRow + gap * (inThisRow - 1);
+          const tileX = 50 + Math.floor((512 - rowW) / 2) + col * (tileW + gap);
+          const tileY = stripTop + row * rowH;
+
+          doc.roundedRect(tileX, tileY, tileW, tileH, 6).fillAndStroke('#ffffff', '#e5e7eb');
+          try {
+            // `fit` keeps the garment's aspect ratio inside the tile.
+            doc.image(m.buffer, tileX + 6, tileY + 6, {
+              fit: [tileW - 12, tileH - 12],
+              align: 'center',
+              valign: 'center',
+            });
+          } catch (imgErr) {
+            console.warn(`[invoices] mockup image unreadable (${m.label}): ${imgErr.message}`);
+          }
+          doc.fontSize(8).font('Helvetica').fillColor('#6b7280')
+            .text(m.label, tileX, tileY + tileH + 4, { width: tileW, align: 'center' });
+        });
+      } else {
+        console.warn(`[invoices] mockups omitted from invoice ${inv.id} PDF — no room above the offer`);
+      }
     }
 
     if (!isPaid) {
@@ -560,12 +680,12 @@ router.get('/:id/pdf', async (req, res, next) => {
     // Repeat-order offer. THANKS10 is a real standing code in the promotions
     // table, so /validate-promo accepts it — printing a code that bounces at
     // checkout would be worse than printing nothing.
-    doc.roundedRect(50, 664, 512, 64, 10).fillAndStroke('#fff7ed', BRAND_ORANGE);
+    doc.roundedRect(50, UPSELL_TOP, 512, 64, 10).fillAndStroke('#fff7ed', BRAND_ORANGE);
     doc.fontSize(15).font('Helvetica-Bold').fillColor(BRAND_ORANGE)
-      .text('10% OFF YOUR NEXT ORDER', 50, 680, { width: 512, align: 'center' });
+      .text('10% OFF YOUR NEXT ORDER', 50, UPSELL_TOP + 16, { width: 512, align: 'center' });
     doc.fontSize(10).font('Helvetica').fillColor('#7c2d12')
       .text('Use code THANKS10 at tshirtbrothers.com — thank you for your business!',
-        50, 702, { width: 512, align: 'center' });
+        50, UPSELL_TOP + 38, { width: 512, align: 'center' });
 
     // Orange footer band, mirroring the masthead. The band sits below the
     // 50pt bottom margin, and PDFKit answers text past that margin by opening
