@@ -21,6 +21,11 @@ const BRAND_DARK = '#111827';
 // regardless of the process's working directory, and treated as optional — a
 // missing file must not take the invoice down with it.
 const LOGO_PATH = fileURLToPath(new URL('../../client/public/tsb-splat.png', import.meta.url));
+
+// US Letter at 72dpi, the PDFDocument default — the orange bands are drawn
+// edge to edge, so they need the page box rather than the text margin.
+const PAGE_W = 612;
+const PAGE_H = 792;
 const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 function getStripe() {
@@ -419,25 +424,35 @@ router.get('/:id/pdf', async (req, res, next) => {
     const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
     const isPaid = inv.status === 'paid' || Number(inv.amount_due) <= 0;
 
-    // Header. The splat logo leads, with the shop block set beside it; if the
-    // image can't be read we fall back to the old text-only masthead rather
-    // than failing the download.
+    // Orange masthead band, edge to edge. The splat logo is mostly orange
+    // itself, so it sits on a white chip to keep its shape readable against
+    // the band; a missing image just leaves the chip out.
+    doc.rect(0, 0, PAGE_W, 104).fill(BRAND_ORANGE);
+
     let headerX = 50;
     try {
-      doc.image(LOGO_PATH, 50, 44, { width: 76 });
-      headerX = 138;
+      doc.roundedRect(40, 16, 92, 72, 8).fill('#ffffff');
+      doc.image(LOGO_PATH, 46, 24, { width: 80 });
+      headerX = 148;
     } catch (imgErr) {
       console.warn(`[invoices] logo unavailable for PDF header: ${imgErr.message}`);
     }
-    doc.fillColor(BRAND_DARK).fontSize(22).font('Helvetica-Bold').text('T-Shirt Brothers', headerX, 50);
-    doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
-      .text('6010 Renaissance Parkway', headerX, 78)
-      .text('Fairburn, GA 30213', headerX, 90)
-      .text('(470) 622-1392', headerX, 102);
-    doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND_DARK).text('INVOICE', 400, 50, { align: 'right' });
-    doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(inv.invoice_number, 400, 78, { align: 'right' });
+
+    doc.fillColor('#ffffff').fontSize(20).font('Helvetica-Bold')
+      .text('T-SHIRT BROTHERS', headerX, 28);
+    doc.fontSize(9).font('Helvetica').fillColor('#ffedd5')
+      .text('6010 Renaissance Parkway, Fairburn, GA 30213', headerX, 54)
+      .text('(470) 622-1392  ·  tshirtbrothers.com', headerX, 66);
+
+    doc.fontSize(20).font('Helvetica-Bold').fillColor('#ffffff')
+      .text('INVOICE', 400, 28, { width: 162, align: 'right' });
+    doc.fontSize(10).font('Helvetica').fillColor('#ffedd5')
+      .text(inv.invoice_number, 400, 54, { width: 162, align: 'right' });
     if (isPaid) {
-      doc.fontSize(11).font('Helvetica-Bold').fillColor('#16a34a').text('PAID', 400, 95, { align: 'right' });
+      // White pill so the green PAID stays legible on orange.
+      doc.roundedRect(502, 68, 60, 20, 10).fill('#ffffff');
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#16a34a')
+        .text('PAID', 502, 73, { width: 60, align: 'center' });
     }
 
     // Bill to
@@ -539,11 +554,31 @@ router.get('/:id/pdf', async (req, res, next) => {
         ? 'Payment terms: remaining balance due on delivery.'
         : 'Payment terms: due upon receipt.';
       doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
-        .text(terms, 50, 700, { align: 'center', width: 512 });
+        .text(terms, 50, 636, { align: 'center', width: 512 });
     }
 
-    doc.fontSize(9).font('Helvetica-Oblique').fillColor('#9ca3af')
-      .text('Thank you for your business!', 50, 720, { align: 'center', width: 512 });
+    // Repeat-order offer. THANKS10 is a real standing code in the promotions
+    // table, so /validate-promo accepts it — printing a code that bounces at
+    // checkout would be worse than printing nothing.
+    doc.roundedRect(50, 664, 512, 64, 10).fillAndStroke('#fff7ed', BRAND_ORANGE);
+    doc.fontSize(15).font('Helvetica-Bold').fillColor(BRAND_ORANGE)
+      .text('10% OFF YOUR NEXT ORDER', 50, 680, { width: 512, align: 'center' });
+    doc.fontSize(10).font('Helvetica').fillColor('#7c2d12')
+      .text('Use code THANKS10 at tshirtbrothers.com — thank you for your business!',
+        50, 702, { width: 512, align: 'center' });
+
+    // Orange footer band, mirroring the masthead. The band sits below the
+    // 50pt bottom margin, and PDFKit answers text past that margin by opening
+    // a new page — so drop the margin to zero first, or the footer lands on
+    // page 2 and the invoice goes out three pages long.
+    doc.page.margins.bottom = 0;
+    doc.rect(0, PAGE_H - 46, PAGE_W, 46).fill(BRAND_ORANGE);
+    doc.fontSize(9).font('Helvetica-Bold').fillColor('#ffffff')
+      .text('T-SHIRT BROTHERS  ·  tshirtbrothers.com  ·  (470) 622-1392',
+        50, PAGE_H - 34, { width: 512, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor('#ffedd5')
+      .text('Screen Printing  ·  DTF Transfers  ·  Embroidery  ·  Rhinestones  ·  Fairburn, GA',
+        50, PAGE_H - 21, { width: 512, align: 'center' });
 
     doc.end();
   } catch (err) { next(err); }
