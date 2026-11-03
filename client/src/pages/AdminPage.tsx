@@ -1216,6 +1216,10 @@ export default function AdminPage() {
   const [recordPaymentInvoice, setRecordPaymentInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('card');
+  // Deliberate overpayment. The server refuses anything that takes an invoice
+  // past its total unless this is set — two invoices drifted that way by
+  // recording a Stripe payment a second time by hand.
+  const [allowOverpay, setAllowOverpay] = useState(false);
 
   // Quote/Order detail drawer state
   const [detailQuote, setDetailQuote] = useState<Quote | Order | null>(null);
@@ -2179,7 +2183,7 @@ export default function AdminPage() {
   });
 
   const recordPaymentMutation = useMutation({
-    mutationFn: ({ id, amount, method }: { id: string; amount: number; method: string }) => recordPayment(id, { amount, method }),
+    mutationFn: ({ id, amount, method, overpay_ok }: { id: string; amount: number; method: string; overpay_ok?: boolean }) => recordPayment(id, { amount, method, overpay_ok }),
     onSuccess: (updated) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
       // Keep the Edit-screen Payments block in sync after a recorded payment
@@ -2191,6 +2195,7 @@ export default function AdminPage() {
       setRecordPaymentInvoice(null);
       setPaymentAmount('');
       setPaymentMethod('card');
+      setAllowOverpay(false);
     },
     onError: (err) => alert(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`),
   });
@@ -6881,12 +6886,21 @@ export default function AdminPage() {
                         <option value="other">Other</option>
                       </select>
                     </div>
+                    {Number(paymentAmount) > Number(recordPaymentInvoice.amount_due) + 0.01 && (
+                      <label className="flex gap-2 items-start bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+                        <input type="checkbox" checked={allowOverpay} onChange={e => setAllowOverpay(e.target.checked)} className="mt-0.5" />
+                        <span>
+                          This is more than the ${Number(recordPaymentInvoice.amount_due).toFixed(2)} still due.
+                          Check that it wasn't already recorded when it cleared Stripe, then tick to record it anyway.
+                        </span>
+                      </label>
+                    )}
                     <div className="flex gap-3 pt-2">
-                      <button onClick={() => setRecordPaymentInvoice(null)} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                      <button onClick={() => { setRecordPaymentInvoice(null); setAllowOverpay(false); }} className="flex-1 px-4 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
                       <button
                         onClick={() => {
                           if (!paymentAmount || Number(paymentAmount) <= 0) return;
-                          recordPaymentMutation.mutate({ id: recordPaymentInvoice.id, amount: Number(paymentAmount), method: paymentMethod });
+                          recordPaymentMutation.mutate({ id: recordPaymentInvoice.id, amount: Number(paymentAmount), method: paymentMethod, overpay_ok: allowOverpay });
                         }}
                         disabled={recordPaymentMutation.isPending || !paymentAmount || Number(paymentAmount) <= 0}
                         className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"

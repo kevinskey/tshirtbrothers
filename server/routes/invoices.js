@@ -884,7 +884,7 @@ router.post('/:id/send', async (req, res, next) => {
 router.post('/:id/record-payment', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { amount, method } = req.body;
+    const { amount, method, overpay_ok } = req.body;
 
     if (!amount || Number(amount) <= 0) {
       return res.status(400).json({ error: 'A positive amount is required' });
@@ -896,6 +896,27 @@ router.post('/:id/record-payment', async (req, res, next) => {
     const invoice = existing[0];
     const newAmountPaid = Number(invoice.amount_paid) + Number(amount);
     const newAmountDue = Number(invoice.total) - newAmountPaid;
+
+    // Refuse a payment that would take the invoice past its total unless the
+    // caller says it meant to. Two invoices had already drifted this way by
+    // 2026-11-02 — a payment already collected through Stripe got recorded a
+    // second time by hand, and amount_paid just kept adding. Invoice 96 ended
+    // up printing "Paid -$3,844.19" against a $1,996.02 total on the
+    // customer's own PDF. Nothing downstream validates amount_paid, so the
+    // only place to catch it is here, before the row is written.
+    if (!overpay_ok && newAmountPaid > Number(invoice.total) + 0.01) {
+      return res.status(409).json({
+        error:
+          `That payment would take this invoice to $${newAmountPaid.toFixed(2)} ` +
+          `against a total of $${Number(invoice.total).toFixed(2)}. ` +
+          `$${Number(invoice.amount_paid).toFixed(2)} is already recorded — ` +
+          `check whether this payment was logged when it cleared Stripe.`,
+        already_paid: Number(invoice.amount_paid),
+        total: Number(invoice.total),
+        would_become: newAmountPaid,
+        overpay_ok_required: true,
+      });
+    }
     // Flip to 'partial' when some — but not all — of the total has been
     // paid, so the UI can show a distinct status badge and the admin can
     // see at a glance which invoices have a balance still due.
