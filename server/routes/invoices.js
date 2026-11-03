@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { fileURLToPath } from 'url';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
@@ -15,6 +16,11 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
 const DOMAIN = process.env.DOMAIN || 'https://tshirtbrothers.com';
 const BRAND_ORANGE = '#f97316';
 const BRAND_DARK = '#111827';
+
+// Splat logo for the invoice PDF header. Resolved from this module so it works
+// regardless of the process's working directory, and treated as optional — a
+// missing file must not take the invoice down with it.
+const LOGO_PATH = fileURLToPath(new URL('../../client/public/tsb-splat.png', import.meta.url));
 const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 
 function getStripe() {
@@ -413,12 +419,21 @@ router.get('/:id/pdf', async (req, res, next) => {
     const items = typeof inv.items === 'string' ? JSON.parse(inv.items) : (inv.items || []);
     const isPaid = inv.status === 'paid' || Number(inv.amount_due) <= 0;
 
-    // Header
-    doc.fillColor(BRAND_DARK).fontSize(22).font('Helvetica-Bold').text('TShirt Brothers', 50, 50);
+    // Header. The splat logo leads, with the shop block set beside it; if the
+    // image can't be read we fall back to the old text-only masthead rather
+    // than failing the download.
+    let headerX = 50;
+    try {
+      doc.image(LOGO_PATH, 50, 44, { width: 76 });
+      headerX = 138;
+    } catch (imgErr) {
+      console.warn(`[invoices] logo unavailable for PDF header: ${imgErr.message}`);
+    }
+    doc.fillColor(BRAND_DARK).fontSize(22).font('Helvetica-Bold').text('T-Shirt Brothers', headerX, 50);
     doc.fontSize(9).font('Helvetica').fillColor('#6b7280')
-      .text('6010 Renaissance Parkway', 50, 78)
-      .text('Fairburn, GA 30213', 50, 90)
-      .text('(470) 622-1392', 50, 102);
+      .text('6010 Renaissance Parkway', headerX, 78)
+      .text('Fairburn, GA 30213', headerX, 90)
+      .text('(470) 622-1392', headerX, 102);
     doc.fontSize(20).font('Helvetica-Bold').fillColor(BRAND_DARK).text('INVOICE', 400, 50, { align: 'right' });
     doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(inv.invoice_number, 400, 78, { align: 'right' });
     if (isPaid) {
