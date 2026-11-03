@@ -240,7 +240,9 @@ export async function fetchStyle(styleId) {
 export async function fetchStyleSkus(styleId) {
   const credentials = getCredentials();
   const response = await fetch(
-    `https://api.ssactivewear.com/v2/products/?styleid=${encodeURIComponent(styleId)}&fields=sku,skuID_Master,gtin,colorName,sizeName,customerPrice,salePrice,caseQty`,
+    // colorFrontImage rides along so the PO builder can show the garment in
+    // the colorway actually ordered instead of the style's default photo.
+    `https://api.ssactivewear.com/v2/products/?styleid=${encodeURIComponent(styleId)}&fields=sku,skuID_Master,gtin,colorName,sizeName,customerPrice,salePrice,caseQty,colorFrontImage`,
     {
       headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
       signal: AbortSignal.timeout(20000),
@@ -257,6 +259,7 @@ export async function fetchStyleSkus(styleId) {
     gtin: p.gtin ?? null,
     colorName: (p.colorName || '').trim(),
     sizeName: (p.sizeName || '').trim(),
+    colorImage: p.colorFrontImage ? toFullImageUrl(p.colorFrontImage) : null,
     price: Number(p.salePrice) > 0 && Number(p.salePrice) < Number(p.customerPrice)
       ? Number(p.salePrice)
       : (Number(p.customerPrice) || null),

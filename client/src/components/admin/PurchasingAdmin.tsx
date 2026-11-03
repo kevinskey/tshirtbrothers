@@ -10,6 +10,9 @@ interface SkuRow {
   sku: string;
   colorName: string;
   sizeName: string;
+  // S&S front photo for this SKU's colorway — the row thumbnail uses it so
+  // the picture matches the color being ordered.
+  colorImage?: string | null;
   price: number | null;
   caseQty: number | null;
   stock: number;
@@ -824,12 +827,20 @@ export default function PurchasingAdmin({ prefillQuoteId, prefillInvoiceId, onPr
                         skus.filter((s) => s.colorName.toLowerCase() === l.color.toLowerCase()).map((s) => s.sizeName)
                       )];
                       const loading = l.styleId ? loadingStyles[l.styleId] : false;
+                      // Show the garment in the colorway being ordered. The
+                      // prefill's image_url is the style's default shot — a
+                      // red tee next to a Navy line reads as the wrong
+                      // product (Kevin, 2026-11-02).
+                      const colorImage = l.color
+                        ? skus.find((s) => s.colorName.toLowerCase() === l.color.toLowerCase() && s.colorImage)?.colorImage
+                        : null;
+                      const rowImage = colorImage || l.imageUrl;
                       return (
                         <tr key={l.key} className="border-b last:border-0">
                           <td className="px-4 py-2 max-w-[240px]">
                             <div className="flex items-center gap-2">
-                              {l.imageUrl && (
-                                <img src={proxyImg(l.imageUrl)} alt="" loading="lazy" className="w-9 h-9 object-contain rounded border border-gray-100 bg-white flex-shrink-0" />
+                              {rowImage && (
+                                <img src={proxyImg(rowImage)} alt="" loading="lazy" className="w-9 h-9 object-contain rounded border border-gray-100 bg-white flex-shrink-0" />
                               )}
                               <div className="truncate" title={l.productName}>{l.productName || '—'}</div>
                             </div>
