@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, User, Menu, X, MessageCircle, LogOut, ChevronDown, Heart, ShoppingCart, Briefcase } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isSignedIn, isAdmin as isAdminUser } from '@/lib/session';
 
 type NavLink = { label: string; href: string; desktopOnly?: boolean; highlight?: boolean };
 type NavEntry = NavLink | { label: string; children: NavLink[]; desktopOnly?: boolean };
@@ -107,7 +108,10 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     }
   };
 
-  const isLoggedIn = !!localStorage.getItem('tsb_token');
+  const isLoggedIn = isSignedIn();
+  // Staff-only chrome. Holding a token is not the same as being an admin —
+  // every signed-in customer used to get the Admin Dashboard link.
+  const showAdminLink = isAdminUser();
 
   return (
     // overflow-x-hidden used to guard the (removed) scrollable sub-nav
@@ -241,14 +245,16 @@ export default function Navbar({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           <div className="border-b border-gray-200 mb-2 pb-2">
             {isLoggedIn ? (
               <>
-                <Link
-                  to="/admin"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold text-orange-600 hover:bg-orange-50 transition-colors"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <User className="h-4 w-4" />
-                  {t.admin}
-                </Link>
+                {showAdminLink && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold text-orange-600 hover:bg-orange-50 transition-colors"
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <User className="h-4 w-4" />
+                    {t.admin}
+                  </Link>
+                )}
                 <Link
                   to="/account"
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 hover:text-orange-600 hover:bg-gray-50 transition-colors"
