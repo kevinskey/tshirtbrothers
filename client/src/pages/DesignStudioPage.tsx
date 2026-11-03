@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { isAdmin as isAdminUser } from '@/lib/session';
 import {
   useFabricRendererFlag,
   LayersPanel,
@@ -1118,10 +1119,10 @@ export default function DesignStudioPage() {
   const [librarySaveName, setLibrarySaveName] = useState('');
   const [librarySaveCategory, setLibrarySaveCategory] = useState('general');
   const [librarySaving, setLibrarySaving] = useState(false);
-  const [isAdmin] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !!localStorage.getItem('tsb_token');
-  });
+  // Staff, not merely signed in. This used to be `!!localStorage.tsb_token`,
+  // which handed every logged-in customer the Customer Graphics panel and sent
+  // them on a pointless fetch of /api/quotes.
+  const [isAdmin] = useState(() => isAdminUser());
 
   // Art Library + customer quote graphics as placeable sources in the
   // Upload panel (library is public TSB art; customer graphics admin-only).
