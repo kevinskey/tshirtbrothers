@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, Copy, Loader2, Search, Calculator } from 'lucide-react';
+import { Plus, Trash2, Copy, Loader2, Search, Calculator, LayoutGrid, X } from 'lucide-react';
 import type { Product, Quote, QuoteItem } from '@/lib/api';
 import { fetchAdminProducts, replaceQuoteItems, calculateInstantPrice } from '@/lib/api';
 
@@ -574,6 +574,162 @@ export default function QuoteItemsEditor({
   );
 }
 
+// Full-screen catalog browser for the PRODUCT field.
+//
+// The typeahead below shows a 32px thumbnail, which is not enough to tell a
+// Heavy Cotton from a Softstyle or a youth cut from an adult one — picking a
+// blank is a visual decision, so this shows the garment at a size you can
+// actually judge (Kevin, 2026-11-02).
+type CatalogProduct = Product & {
+  style_number?: string;
+  base_price?: number | string;
+  retail_price?: number | string;
+  sizes?: string[];
+};
+
+function money(v: unknown): string | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : null;
+}
+
+function ProductBrowser({ initialQuery, onPick, onClose }: {
+  initialQuery: string;
+  onPick: (p: Product) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState(initialQuery);
+  const [items, setItems] = useState<CatalogProduct[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Esc closes, matching every other admin modal.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Page 1 refetches on every (debounced) search; later pages append, so
+  // "Load more" keeps what is already on screen.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const handle = setTimeout(async () => {
+      try {
+        const data = await fetchAdminProducts(query.trim() || undefined, page);
+        if (cancelled) return;
+        const incoming = data.products as CatalogProduct[];
+        setItems((prev) => (page === 1 ? incoming : [...prev, ...incoming]));
+        setTotalPages(data.totalPages || 1);
+        setTotal(data.total || incoming.length);
+      } catch {
+        if (!cancelled) { setItems((prev) => (page === 1 ? [] : prev)); }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, page === 1 ? 220 : 0);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [query, page]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 sm:p-8">
+      <div className="bg-white rounded-2xl w-full max-w-6xl max-h-full flex flex-col overflow-hidden">
+        <div className="border-b border-gray-200 px-5 py-3 flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              placeholder="Search the catalog — style number, brand, or name…"
+              className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+              style={{ fontSize: '16px' }}
+            />
+          </div>
+          <span className="text-xs text-gray-400 hidden sm:block whitespace-nowrap">
+            {total ? `${total.toLocaleString()} products` : ''}
+          </span>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-5">
+          {items.length === 0 && loading && (
+            <div className="py-20 flex justify-center text-gray-400">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+          )}
+          {items.length === 0 && !loading && (
+            <p className="py-20 text-center text-sm text-gray-500">No products match “{query}”.</p>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {items.map((p) => {
+              const blank = money(p.base_price);
+              const retail = money(p.retail_price);
+              const sizes = Array.isArray(p.sizes) ? p.sizes : [];
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => { onPick(p); onClose(); }}
+                  className="text-left border border-gray-200 rounded-xl overflow-hidden hover:border-red-400 hover:shadow-md transition group"
+                >
+                  <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
+                    {p.image_url ? (
+                      <img
+                        src={p.image_url}
+                        alt={p.name}
+                        loading="lazy"
+                        className="w-full h-full object-contain group-hover:scale-[1.03] transition-transform"
+                      />
+                    ) : (
+                      <span className="text-xs text-gray-300">No photo</span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{p.style_number || `#${p.id}`}</span>
+                      {blank && <span className="text-sm font-semibold text-gray-900">{blank}</span>}
+                    </div>
+                    <p className="text-xs text-gray-500">{p.brand}</p>
+                    <p className="text-sm text-gray-800 mt-0.5 line-clamp-2">{p.name}</p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      {sizes.length > 0 ? `${sizes[0]} – ${sizes[sizes.length - 1]}` : p.category}
+                      {retail && ` · retail ${retail}`}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {page < totalPages && (
+            <div className="pt-5 flex justify-center">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => setPage((n) => n + 1)}
+                className="border border-gray-300 hover:bg-gray-50 text-sm font-medium px-5 py-2 rounded-lg disabled:opacity-50 flex items-center gap-2"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Load more
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Live-search typeahead for picking a product from the 5k+-row catalog.
 // Falls back to free-form text — if the admin just types and tabs away,
 // product_name is set but product_id stays null. Suggestions list closes
@@ -590,6 +746,7 @@ function ProductPicker({
   const [results, setResults] = useState<Product[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   // Keep the input in sync if the parent draft changes the product_name from
@@ -632,23 +789,40 @@ function ProductPicker({
 
   return (
     <div ref={rootRef} className="relative">
-      <div className="relative">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => {
-            const v = e.target.value;
-            setQuery(v);
-            onName(v);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          placeholder="Search the catalog or type a custom name…"
-          className="w-full text-sm border border-gray-200 rounded pl-7 pr-2 py-1.5 bg-white"
-          style={{ fontSize: '16px' }}
-        />
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              const v = e.target.value;
+              setQuery(v);
+              onName(v);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            placeholder="Search the catalog or type a custom name…"
+            className="w-full text-sm border border-gray-200 rounded pl-7 pr-2 py-1.5 bg-white"
+            style={{ fontSize: '16px' }}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => { setOpen(false); setBrowsing(true); }}
+          title="Browse the catalog with photos"
+          className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium border border-gray-200 rounded px-2.5 py-2 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" /> Browse
+        </button>
       </div>
+      {browsing && (
+        <ProductBrowser
+          initialQuery={query}
+          onPick={pick}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
       {productId && (
         <p className="text-[10px] text-gray-400 mt-0.5">
           Catalog product #{productId}
