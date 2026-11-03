@@ -1,6 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { User, FileText, Palette, Package, Save, Lock, Loader2 } from 'lucide-react';
+import { User, FileText, Palette, Package, Save, Lock, Loader2, Trash2 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 
@@ -42,6 +42,12 @@ export default function AccountPage() {
   const [newPw, setNewPw] = useState('');
   const [pwMsg, setPwMsg] = useState('');
 
+  // Delete account (App Store 5.1.1(v)) — two steps, since there is no undo.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deletePw, setDeletePw] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState('');
+
   useEffect(() => {
     const token = getToken();
     if (!token) { navigate('/auth'); return; }
@@ -82,6 +88,19 @@ export default function AccountPage() {
       setPwMsg('Password changed!');
       setCurrentPw(''); setNewPw('');
     } catch (err) { setPwMsg((err as Error).message); }
+  }
+
+  async function handleDeleteAccount(e: FormEvent) {
+    e.preventDefault();
+    setDeleting(true); setDeleteMsg('');
+    try {
+      await api('/me', { method: 'DELETE', body: JSON.stringify({ password: deletePw }) });
+      localStorage.removeItem('tsb_token');
+      navigate('/?account_deleted=1', { replace: true });
+    } catch (err) {
+      setDeleteMsg((err as Error).message);
+      setDeleting(false);
+    }
   }
 
   const [openingDesignId, setOpeningDesignId] = useState<number | null>(null);
@@ -221,6 +240,42 @@ export default function AccountPage() {
                 {pwMsg && <span className={`text-sm font-medium ${pwMsg.includes('changed') ? 'text-green-600' : 'text-red-600'}`}>{pwMsg}</span>}
               </div>
             </form>
+
+            <div className="bg-white rounded-xl border border-red-200 p-6 space-y-4">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Trash2 className="w-4 h-4 text-red-600" /> Delete Account</h2>
+              <p className="text-sm text-gray-600">
+                Permanently closes your account and deletes your saved designs, uploaded
+                artwork and saved favorites. Quotes and orders you've already placed are
+                kept as business records, and your contact details stay on them so we can
+                finish any work in progress. This can't be undone.
+              </p>
+              {!confirmingDelete ? (
+                <button type="button" onClick={() => { setConfirmingDelete(true); setDeleteMsg(''); }}
+                  className="border border-red-300 text-red-600 hover:bg-red-50 font-semibold px-6 py-2.5 rounded-lg text-sm transition">
+                  Delete My Account
+                </button>
+              ) : (
+                <form onSubmit={handleDeleteAccount} className="space-y-4">
+                  <div className="sm:max-w-xs">
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Confirm your password</label>
+                    <input type="password" value={deletePw} onChange={e => setDeletePw(e.target.value)} required autoFocus
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500" style={{ fontSize: '16px' }} />
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button type="submit" disabled={deleting}
+                      className="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-2.5 rounded-lg text-sm transition disabled:opacity-50 flex items-center gap-2">
+                      {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {deleting ? 'Deleting...' : 'Permanently Delete'}
+                    </button>
+                    <button type="button" onClick={() => { setConfirmingDelete(false); setDeletePw(''); setDeleteMsg(''); }}
+                      className="text-gray-600 hover:text-gray-900 font-semibold px-2 py-2.5 text-sm transition">
+                      Cancel
+                    </button>
+                    {deleteMsg && <span className="text-sm font-medium text-red-600">{deleteMsg}</span>}
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         )}
 
