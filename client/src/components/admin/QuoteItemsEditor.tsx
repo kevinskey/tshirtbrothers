@@ -605,40 +605,65 @@ function money(v: unknown): string | null {
   return Number.isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : null;
 }
 
-// Colors + sizes for one product. Same two-step the line editor uses: the
-// catalog row first, then S&S live cost for rows that synced thin.
+// Colors + sizes for one product, richest source first.
+//
+//  1. the catalog row — already carries name/hex/swatch/image when the sync
+//     populated it, which for many styles it did not;
+//  2. GET /products/detail/:id — the live S&S dossier, cached 10 min server
+//     side, whose colorways include the per-color FRONT PHOTO. This is what
+//     lets the preview actually change color;
+//  3. live-cost — bare colorway names, the last resort. No photo, no hex.
+//
+// Step 2 is why the thin rows are no longer stuck with grey dots: live-cost
+// only ever returned names (Kevin, 2026-11-02 — "I need to see the product
+// changing colors").
 async function loadColorways(p: CatalogProduct): Promise<{ colors: Colorway[]; sizes: string[] }> {
   let colors: Colorway[] = [];
   let sizes: string[] = [];
+  const auth = { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` };
+  const clean = (list: unknown): Colorway[] =>
+    (Array.isArray(list) ? list : [])
+      .map((c) => (typeof c === 'string' ? { name: c } : (c as Colorway)))
+      .filter((c): c is Colorway => Boolean(c && c.name))
+      .map((c) => ({
+        name: c.name,
+        hex: c.hex || undefined,
+        swatch: c.swatch || undefined,
+        image: c.image || undefined,
+      }));
+
   try {
     const r = await fetch(`/api/products/${p.id}`);
-    if (r.ok) {
-      const prod = await r.json();
-      if (Array.isArray(prod?.colors)) {
-        colors = (prod.colors as Colorway[])
-          .filter((c) => c && c.name)
-          .map((c) => ({ name: c.name, hex: c.hex, swatch: c.swatch, image: c.image }));
-      }
-      if (Array.isArray(prod?.sizes)) sizes = prod.sizes.map(String).filter(Boolean);
+    const prod = r.ok ? await r.json() : null;
+    if (prod) {
+      colors = clean(prod.colors);
+      if (Array.isArray(prod.sizes)) sizes = prod.sizes.map(String).filter(Boolean);
+    }
 
-      if (colors.length === 0 && (prod?.ss_id || prod?.style_number || prod?.name)) {
-        const query = prod?.ss_id
-          ? `product_id=${p.id}`
-          : `styleQ=${encodeURIComponent(prod.style_number || prod.name)}`;
-        const lr = await fetch(`/api/quotes/admin/live-cost?${query}`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-        });
-        if (lr.ok) {
-          const live = await lr.json();
-          if (Array.isArray(live?.colors)) {
-            colors = (live.colors as unknown[])
-              .filter(Boolean)
-              .map((n) => (typeof n === 'string' ? { name: n } : (n as Colorway)))
-              .filter((c) => c.name);
-          }
-          if (sizes.length === 0 && live?.sizes && typeof live.sizes === 'object') {
-            sizes = Object.keys(live.sizes as Record<string, unknown>);
-          }
+    // Prefer live S&S whenever the catalog row gave us no photo to swap to.
+    if (!colors.some((c) => c.image)) {
+      const dr = await fetch(`/api/products/detail/${p.id}`, { headers: auth });
+      if (dr.ok) {
+        const detail = await dr.json();
+        const live = clean(detail?.live?.colors);
+        if (live.length > 0) colors = live;
+        const skus = Array.isArray(detail?.live?.skus) ? detail.live.skus : [];
+        if (sizes.length === 0 && skus.length > 0) {
+          sizes = [...new Set(skus.map((s: { sizeName?: string }) => s?.sizeName).filter(Boolean))] as string[];
+        }
+      }
+    }
+
+    if (colors.length === 0 && prod && (prod.ss_id || prod.style_number || prod.name)) {
+      const query = prod.ss_id
+        ? `product_id=${p.id}`
+        : `styleQ=${encodeURIComponent(prod.style_number || prod.name)}`;
+      const lr = await fetch(`/api/quotes/admin/live-cost?${query}`, { headers: auth });
+      if (lr.ok) {
+        const live = await lr.json();
+        colors = clean(live?.colors);
+        if (sizes.length === 0 && live?.sizes && typeof live.sizes === 'object') {
+          sizes = Object.keys(live.sizes as Record<string, unknown>);
         }
       }
     }
