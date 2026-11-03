@@ -1279,7 +1279,7 @@ export async function sendInvoiceSms(id: string): Promise<{ sent: boolean; sid: 
   });
 }
 
-export async function recordPayment(id: string, data: { amount: number; method: string }): Promise<Invoice> {
+export async function recordPayment(id: string, data: { amount: number; method: string; overpay_ok?: boolean }): Promise<Invoice> {
   return authRequest<Invoice>(`/invoices/${id}/record-payment`, {
     method: 'POST',
     body: JSON.stringify(data),
