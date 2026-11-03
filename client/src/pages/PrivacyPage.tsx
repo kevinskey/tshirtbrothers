@@ -100,15 +100,22 @@ export default function PrivacyPage() {
         <Section title="How long we keep it">
           <p>
             Order and quote records are kept as long as we need them for warranty, reprints, and
-            accounting. Uploaded artwork is kept so we can reprint your past orders. You can ask us
-            to delete your account or artwork at any time (see below).
+            accounting. Uploaded artwork is kept so we can reprint your past orders. You can delete
+            your account yourself at any time, or ask us to delete your artwork (see below).
           </p>
         </Section>
 
         <Section title="Your choices">
           <ul className="list-disc pl-6 space-y-1">
             <li>Ask for a copy of the personal information we hold about you.</li>
-            <li>Ask us to correct or delete it (we may keep what the law requires, like invoices).</li>
+            <li>
+              Delete your account yourself at any time from{' '}
+              <a href="/account" className="text-orange-600 hover:underline">My Account → Profile → Delete Account</a>,
+              in the app or on the web. This closes your sign-in and removes your saved designs,
+              favorites and push notifications. We keep past orders and invoices for warranty,
+              reprints and accounting.
+            </li>
+            <li>Ask us to correct it, or to delete anything else we hold.</li>
             <li>Unsubscribe from marketing email, reply STOP to texts, or disable push notifications.</li>
           </ul>
           <p>

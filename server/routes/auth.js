@@ -236,42 +236,80 @@ router.put('/me/password', authenticate, async (req, res, next) => {
 // DELETE /me - Close your own account.
 //
 // App Store guideline 5.1.1(v) requires any app that lets you create an
-// account to let you delete it from inside the app. Most FKs into users are
-// ON DELETE CASCADE or SET NULL, so the DELETE does the right thing on both
-// sides: the personal sidecars (push tokens, favorites, saved designs,
-// uploaded assets, customer notes) go away, while the quotes, mockups and
-// shipments we have to keep for accounting survive with a null user ref.
+// account to let you delete it from inside the app.
 //
-// Three columns are the exception — invoices.created_by, admin_designs.created_by
-// and gang_sheets.created_by are NO ACTION in production (the migrations that
-// created them say SET NULL; the live database disagrees). They only ever hold
-// staff ids, so a customer has no rows there, but a blocking FK would turn this
-// into a 500 instead of a deletion. Null them first, inside the transaction.
+// Anonymize-and-keep, not DELETE FROM users (Kevin's call, 2026-11-02). A
+// hard delete leaves quotes, mockups and shipments pointing at a null user,
+// which severs an order from the account that placed it — the shop needs that
+// link for warranty, reprints and accounting. So the row stays, every personal
+// field on it is scrubbed, and the password hash becomes something nobody can
+// type. Rows that are purely the customer's own are deleted outright.
 //
-// Admins can't self-delete — losing the only admin row would lock the shop
-// out of its own back office. Kevin closes those by hand.
+// Keeping the row also sidesteps a live schema drift: invoices.created_by,
+// admin_designs.created_by and gang_sheets.created_by are NO ACTION in
+// production even though the migrations that created them say SET NULL, so a
+// DELETE would be blocked by them rather than cleared.
+//
+// Staff accounts are refused — closing the only admin from the storefront
+// would lock the shop out of its own back office. Kevin closes those by hand.
+const PRIVILEGED_ROLES = ['admin', 'owner', 'assistant'];
+
 router.delete('/me', authenticate, async (req, res, next) => {
   const client = await pool.connect();
   try {
     const { password } = req.body || {};
     if (!password) return res.status(400).json({ error: 'Password required to delete your account' });
 
-    const { rows } = await client.query('SELECT password_hash, role FROM users WHERE id = $1', [req.user.id]);
+    const { rows } = await client.query(
+      'SELECT email, password_hash, role, deleted_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
     if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
-    if (rows[0].role !== 'customer') {
+    const user = rows[0];
+    if (user.deleted_at) return res.status(410).json({ error: 'This account has already been closed' });
+    if (PRIVILEGED_ROLES.includes(user.role)) {
       return res.status(403).json({ error: 'Staff accounts are closed by an administrator — contact kevin@tshirtbrothers.com' });
     }
 
-    const valid = await bcrypt.compare(password, rows[0].password_hash);
+    const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(400).json({ error: 'Password is incorrect' });
 
     await client.query('BEGIN');
-    for (const table of ['invoices', 'admin_designs', 'gang_sheets']) {
-      await client.query(`UPDATE ${table} SET created_by = NULL WHERE created_by = $1`, [req.user.id]);
-    }
-    await client.query('DELETE FROM users WHERE id = $1', [req.user.id]);
-    await client.query('COMMIT');
 
+    // A bcrypt hash of 32 random bytes: structurally valid, so comparison
+    // still runs in constant time, but unreachable by any input.
+    const deadHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
+
+    // The email is rewritten rather than nulled — the column is UNIQUE NOT
+    // NULL, and the id keeps it unique. It also frees the real address to
+    // sign up again later.
+    await client.query(
+      `UPDATE users
+          SET email          = 'deleted+' || id || '@deleted.tshirtbrothers.com',
+              password_hash  = $1,
+              name           = 'Deleted Account',
+              phone          = NULL,
+              address_street = NULL,
+              address_city   = NULL,
+              address_state  = NULL,
+              address_zip    = NULL,
+              deleted_at     = NOW()
+        WHERE id = $2`,
+      [deadHash, req.user.id]
+    );
+
+    await client.query('DELETE FROM push_tokens    WHERE user_id = $1', [req.user.id]);
+    await client.query('DELETE FROM user_favorites WHERE user_id = $1', [req.user.id]);
+    await client.query('DELETE FROM saved_designs  WHERE user_id = $1', [req.user.id]);
+    // activity_events has no FK, so it would otherwise keep orphan rows
+    // carrying the old address (same reason the signup-bot purges clean it).
+    await client.query(
+      'DELETE FROM activity_events WHERE user_id = $1 OR LOWER(email) = LOWER($2)',
+      [req.user.id, user.email]
+    );
+
+    await client.query('COMMIT');
+    console.warn(`[auth] account closed: user ${req.user.id}`);
     res.json({ deleted: true });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
