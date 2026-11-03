@@ -373,7 +373,14 @@ export default function QuoteItemsEditor({
                 <ProductPicker
                   productId={d.product_id}
                   productName={d.product_name}
-                  onPick={(p) => updateDraft(i, { product_id: Number(p.id), product_name: p.name })}
+                  onPick={(p, color) => updateDraft(i, {
+                    product_id: Number(p.id),
+                    product_name: p.name,
+                    // Only overwrite the line's color when the browser
+                    // actually produced one — the typeahead passes '' and
+                    // must not wipe a color already typed on the line.
+                    ...(color ? { color } : {}),
+                  })}
                   onName={(name) => updateDraft(i, { product_name: name })}
                 />
               </div>
@@ -585,16 +592,63 @@ type CatalogProduct = Product & {
   base_price?: number | string;
   retail_price?: number | string;
   sizes?: string[];
+  ss_id?: string | number;
 };
+
+// A colorway as the catalog stores it. Thin synced rows have no colors at
+// all; for those the live-cost endpoint answers with bare names, so hex and
+// swatch are both optional and the chip falls back to a plain label.
+type Colorway = { name: string; hex?: string; swatch?: string; image?: string };
 
 function money(v: unknown): string | null {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : null;
 }
 
+// Colors + sizes for one product. Same two-step the line editor uses: the
+// catalog row first, then S&S live cost for rows that synced thin.
+async function loadColorways(p: CatalogProduct): Promise<{ colors: Colorway[]; sizes: string[] }> {
+  let colors: Colorway[] = [];
+  let sizes: string[] = [];
+  try {
+    const r = await fetch(`/api/products/${p.id}`);
+    if (r.ok) {
+      const prod = await r.json();
+      if (Array.isArray(prod?.colors)) {
+        colors = (prod.colors as Colorway[])
+          .filter((c) => c && c.name)
+          .map((c) => ({ name: c.name, hex: c.hex, swatch: c.swatch, image: c.image }));
+      }
+      if (Array.isArray(prod?.sizes)) sizes = prod.sizes.map(String).filter(Boolean);
+
+      if (colors.length === 0 && (prod?.ss_id || prod?.style_number || prod?.name)) {
+        const query = prod?.ss_id
+          ? `product_id=${p.id}`
+          : `styleQ=${encodeURIComponent(prod.style_number || prod.name)}`;
+        const lr = await fetch(`/api/quotes/admin/live-cost?${query}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        });
+        if (lr.ok) {
+          const live = await lr.json();
+          if (Array.isArray(live?.colors)) {
+            colors = (live.colors as unknown[])
+              .filter(Boolean)
+              .map((n) => (typeof n === 'string' ? { name: n } : (n as Colorway)))
+              .filter((c) => c.name);
+          }
+          if (sizes.length === 0 && live?.sizes && typeof live.sizes === 'object') {
+            sizes = Object.keys(live.sizes as Record<string, unknown>);
+          }
+        }
+      }
+    }
+  } catch { /* best effort — the picker still works without colors */ }
+  return { colors, sizes };
+}
+
 function ProductBrowser({ initialQuery, onPick, onClose }: {
   initialQuery: string;
-  onPick: (p: Product) => void;
+  onPick: (p: Product, color: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(initialQuery);
@@ -605,14 +659,40 @@ function ProductBrowser({ initialQuery, onPick, onClose }: {
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Second step: a chosen product, its colorways, and the pick. Clicking a
+  // card used to close the modal immediately, which left the line with no
+  // color and sent you back to the dropdown (Kevin, 2026-11-02).
+  const [detail, setDetail] = useState<CatalogProduct | null>(null);
+  const [colors, setColors] = useState<Colorway[]>([]);
+  const [detailSizes, setDetailSizes] = useState<string[]>([]);
+  const [colorsLoading, setColorsLoading] = useState(false);
+  const [chosenColor, setChosenColor] = useState('');
+
+  useEffect(() => {
+    if (!detail) return;
+    let cancelled = false;
+    setColorsLoading(true);
+    setColors([]); setDetailSizes([]); setChosenColor('');
+    loadColorways(detail).then(({ colors: c, sizes: s }) => {
+      if (cancelled) return;
+      setColors(c);
+      setDetailSizes(s);
+      setColorsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [detail]);
+
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Esc closes, matching every other admin modal.
+  // Esc backs out of the colour step first, then closes.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (detail) setDetail(null); else onClose();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, detail]);
 
   // Page 1 refetches on every (debounced) search; later pages append, so
   // "Load more" keeps what is already on screen.
@@ -660,6 +740,105 @@ function ProductBrowser({ initialQuery, onPick, onClose }: {
           </button>
         </div>
 
+        {detail ? (
+          <div className="flex-1 overflow-auto p-5">
+            <button
+              type="button"
+              onClick={() => setDetail(null)}
+              className="text-sm text-gray-500 hover:text-gray-800 mb-4"
+            >
+              ← Back to results
+            </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="aspect-square bg-gray-50 rounded-xl flex items-center justify-center overflow-hidden">
+                {/* Swap to the colorway's own photo once one is chosen. */}
+                {(() => {
+                  const chosen = colors.find((c) => c.name === chosenColor);
+                  const src = chosen?.image || detail.image_url;
+                  return src
+                    ? <img src={src} alt={detail.name} className="w-full h-full object-contain" />
+                    : <span className="text-xs text-gray-300">No photo</span>;
+                })()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500">{detail.brand}</p>
+                <h3 className="text-lg font-semibold text-gray-900">{detail.name}</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {detail.style_number ? `Style ${detail.style_number}` : `Catalog #${detail.id}`}
+                  {money(detail.base_price) && ` · blank from ${money(detail.base_price)}`}
+                  {money(detail.retail_price) && ` · retail ${money(detail.retail_price)}`}
+                </p>
+                {detailSizes.length > 0 && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    Sizes: {detailSizes.join(', ')}
+                  </p>
+                )}
+
+                <div className="mt-4">
+                  <div className="flex items-baseline justify-between">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Color {colors.length > 0 && `(${colors.length})`}
+                    </p>
+                    {chosenColor && <p className="text-sm text-gray-900 font-medium">{chosenColor}</p>}
+                  </div>
+
+                  {colorsLoading && (
+                    <p className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
+                      <Loader2 className="w-3 h-3 animate-spin" /> Loading colors…
+                    </p>
+                  )}
+                  {!colorsLoading && colors.length === 0 && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      No colorways on file for this style — type the color on the line instead.
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {colors.map((c) => {
+                      const active = c.name === chosenColor;
+                      return (
+                        <button
+                          key={c.name}
+                          type="button"
+                          title={c.name}
+                          onClick={() => setChosenColor(active ? '' : c.name)}
+                          className={`flex items-center gap-1.5 border rounded-full pl-1 pr-2.5 py-1 text-xs transition ${
+                            active
+                              ? 'border-red-500 ring-2 ring-red-200 text-gray-900'
+                              : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                          }`}
+                        >
+                          {c.swatch ? (
+                            <img src={c.swatch} alt="" className="w-5 h-5 rounded-full object-cover border border-gray-200" />
+                          ) : (
+                            <span
+                              className="w-5 h-5 rounded-full border border-gray-200 inline-block"
+                              style={{ background: c.hex || '#e5e7eb' }}
+                            />
+                          )}
+                          <span className="max-w-[11rem] truncate">{c.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { onPick(detail, chosenColor); onClose(); }}
+                    className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg"
+                  >
+                    {chosenColor ? `Use this · ${chosenColor}` : 'Use this product'}
+                  </button>
+                  {!chosenColor && colors.length > 0 && (
+                    <span className="text-xs text-gray-400">Pick a color first, or add it on the line.</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 overflow-auto p-5">
           {items.length === 0 && loading && (
             <div className="py-20 flex justify-center text-gray-400">
@@ -679,7 +858,7 @@ function ProductBrowser({ initialQuery, onPick, onClose }: {
                 <button
                   key={p.id}
                   type="button"
-                  onClick={() => { onPick(p); onClose(); }}
+                  onClick={() => setDetail(p)}
                   className="text-left border border-gray-200 rounded-xl overflow-hidden hover:border-red-400 hover:shadow-md transition group"
                 >
                   <div className="aspect-square bg-gray-50 flex items-center justify-center overflow-hidden">
@@ -705,6 +884,24 @@ function ProductBrowser({ initialQuery, onPick, onClose }: {
                       {sizes.length > 0 ? `${sizes[0]} – ${sizes[sizes.length - 1]}` : p.category}
                       {retail && ` · retail ${retail}`}
                     </p>
+                    {/* Colorway strip. Only the catalog rows that synced with
+                        colors have these; thin rows show nothing here and
+                        resolve their colors on the next step. */}
+                    {Array.isArray(p.colors) && p.colors.length > 0 && (
+                      <div className="flex items-center gap-1 mt-2">
+                        {(p.colors as unknown as Colorway[]).slice(0, 8).map((c, idx) => (
+                          <span
+                            key={`${c?.name ?? idx}`}
+                            title={c?.name}
+                            className="w-3.5 h-3.5 rounded-full border border-gray-200 inline-block flex-shrink-0"
+                            style={{ background: c?.hex || '#e5e7eb' }}
+                          />
+                        ))}
+                        {p.colors.length > 8 && (
+                          <span className="text-[10px] text-gray-400 ml-0.5">+{p.colors.length - 8}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -725,6 +922,7 @@ function ProductBrowser({ initialQuery, onPick, onClose }: {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -739,7 +937,7 @@ function ProductPicker({
 }: {
   productId: number | null;
   productName: string;
-  onPick: (p: Product) => void;
+  onPick: (p: Product, color: string) => void;
   onName: (name: string) => void;
 }) {
   const [query, setQuery] = useState(productName);
@@ -781,8 +979,8 @@ function ProductPicker({
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [open]);
 
-  function pick(p: Product) {
-    onPick(p);
+  function pick(p: Product, color = '') {
+    onPick(p, color);
     setQuery(p.name);
     setOpen(false);
   }
