@@ -5480,7 +5480,7 @@ export default function AdminPage() {
                       <th className="px-4 py-3 font-medium">Product</th>
                       <th className="px-4 py-3 font-medium">Qty</th>
                       <th className="px-4 py-3 font-medium text-right">Total</th>
-                      <th className="px-4 py-3 font-medium text-right">Deposit Paid</th>
+                      <th className="px-4 py-3 font-medium text-right">Collected</th>
                       <th className="px-4 py-3 font-medium text-right">Balance Due</th>
                       <th className="px-4 py-3 font-medium">Status</th>
                       <th className="px-4 py-3 font-medium">Actions</th>
@@ -9200,8 +9200,11 @@ export default function AdminPage() {
                         {acceptedAt ? (
                           <>
                             <div className="flex justify-between">
-                              <span className="text-gray-600">Deposit Paid</span>
-                              <span className="font-semibold text-green-600">${depositRequired.toFixed(2)}</span>
+                              {/* deposit_amount accumulates: once the balance
+                                  clears it holds everything collected, not the
+                                  deposit, so "Deposit Paid" would be a lie. */}
+                              <span className="text-gray-600">{balancePaidAt ? 'Paid in Full' : 'Deposit Paid'}</span>
+                              <span className="font-semibold text-green-600">${paid.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between pt-1 border-t border-gray-200">
                               <span className="text-gray-600">Balance Due</span>

@@ -137,6 +137,72 @@ test('deposit percent reflects what was actually collected', () => {
   assert.equal(book.depositPercent, 50);
 });
 
+// ── Idempotency on the Stripe session id ────────────────────────────────
+// Quote #293 (2026-11-04): the checkout webhook and the /payment-success
+// fallback both booked the same $267.47 balance, two seconds apart, because
+// the balance_paid_at guard they rely on is not stamped until after this
+// function returns. Invoice 111 read $806.47 paid against a $543.06 total
+// off a single Stripe charge.
+test('the same Stripe session booked twice only counts once', () => {
+  const first = reconcileInvoicePayments({
+    total: 543.06,
+    priorPayments: [{ amount: 271.53, method: 'stripe', note: 'deposit', ref: 'cs_deposit' }],
+    chargeAmount: 267.47,
+    chargeDate: DATE,
+    chargeRef: 'cs_balance',
+  });
+  assert.equal(first.amountPaid, 539);
+  assert.equal(first.payments.length, 2);
+
+  // The loser of the race arrives with the same session id.
+  const second = reconcileInvoicePayments({
+    total: 543.06,
+    priorPayments: first.payments,
+    chargeAmount: 267.47,
+    chargeDate: '2026-11-04T12:39:53.681Z',
+    chargeRef: 'cs_balance',
+  });
+  assert.equal(second.payments.length, 2, 'the duplicate append is refused');
+  assert.equal(second.amountPaid, 539, 'not 806.47');
+});
+
+test('a different session against the same invoice still books', () => {
+  const book = reconcileInvoicePayments({
+    total: 543.06,
+    priorPayments: [{ amount: 271.53, method: 'stripe', ref: 'cs_deposit' }],
+    chargeAmount: 267.47,
+    chargeDate: DATE,
+    chargeRef: 'cs_balance',
+  });
+  assert.equal(book.payments.length, 2);
+  assert.equal(book.payments[1].ref, 'cs_balance');
+});
+
+test('refless history never matches, so legacy payments are left alone', () => {
+  // Every payment booked before the ref existed has no ref. A new charge
+  // must still append rather than silently collide with one of them.
+  const book = reconcileInvoicePayments({
+    total: 200,
+    priorPayments: [{ amount: 100, method: 'stripe' }],
+    chargeAmount: 100,
+    chargeDate: DATE,
+    chargeRef: 'cs_new',
+  });
+  assert.equal(book.payments.length, 2);
+  assert.equal(book.amountPaid, 200);
+});
+
+test('no chargeRef supplied behaves exactly as before', () => {
+  const book = reconcileInvoicePayments({
+    total: 200,
+    priorPayments: [{ amount: 100 }],
+    chargeAmount: 100,
+    chargeDate: DATE,
+  });
+  assert.equal(book.payments.length, 2);
+  assert.equal(book.payments[1].ref, undefined, 'no ref key on an unkeyed charge');
+});
+
 test('zero-total invoice does not divide by zero', () => {
   const book = reconcileInvoicePayments({
     total: 0,

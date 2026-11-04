@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 import * as theme from './emailTheme.js';
 import { mailRecipients, normalizeCcEmails, mockupRecipients } from './recipients.js';
+import { resolveFulfillmentMode } from './quoteFulfillment.js';
 
 // Re-exported so existing importers of email.js keep resolving them.
 export { mailRecipients, normalizeCcEmails, mockupRecipients };
@@ -1585,10 +1586,25 @@ function shipToLines(addr) {
 export async function sendBalancePaidConfirmation(quote, lang = 'en') {
   if (!quote.customer_email) return;
   const es = lang === 'es';
-  const pickup = quote.fulfillment_method !== 'ship';
+  // 'delivery' = they paid a courier fee, so never hand them the shop
+  // address and hours — see services/quoteFulfillment.js.
+  const mode = await resolveFulfillmentMode(quote);
+  const pickup = mode === 'pickup';
   const addrHtml = shipToLines(quote.shipping_address);
 
-  const nextBlock = pickup ? (es ? `
+  const deliveryBlock = es ? `
+    <div style="margin:16px 0;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#1e40af;">Te lo llevamos a</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${addrHtml || 'la dirección que acordamos'}</p>
+      <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">Te avisamos antes de salir para coordinar la entrega.</p>
+    </div>` : `
+    <div style="margin:16px 0;padding:16px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe;">
+      <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#1e40af;">We're delivering your order to</p>
+      <p style="margin:0;font-size:15px;color:#374151;">${addrHtml || 'the address we arranged'}</p>
+      <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">We'll reach out to confirm a drop-off time before we head out.</p>
+    </div>`;
+
+  const nextBlock = mode === 'delivery' ? deliveryBlock : pickup ? (es ? `
     <div style="margin:16px 0;padding:16px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
       <p style="margin:0 0 4px;font-size:14px;font-weight:600;color:#166534;">Recoge tu pedido aquí</p>
       <p style="margin:0;font-size:15px;color:#374151;">${SHOP_ADDRESS}</p>
@@ -1627,7 +1643,9 @@ export async function sendBalancePaidConfirmation(quote, lang = 'en') {
     await sendMail({
       from: FROM_EMAIL,
       to: mailRecipients(quote),
-      subject: es ? `Pedido #${quote.id} pagado — ${pickup ? 'listo para recoger' : 'lo enviamos pronto'}` : `Order #${quote.id} paid in full — ${pickup ? 'pickup details inside' : 'shipping soon'}`,
+      subject: es
+        ? `Pedido #${quote.id} pagado — ${mode === 'delivery' ? 'te lo llevamos' : pickup ? 'listo para recoger' : 'lo enviamos pronto'}`
+        : `Order #${quote.id} paid in full — ${mode === 'delivery' ? 'delivery details inside' : pickup ? 'pickup details inside' : 'shipping soon'}`,
       html: baseLayout(es ? 'Pagado por completo' : 'Paid in full', body),
     });
   } catch (err) {
@@ -1637,22 +1655,33 @@ export async function sendBalancePaidConfirmation(quote, lang = 'en') {
 
 /** Balance landed — tell the shop, with the customer's fulfillment choice. */
 export async function sendBalancePaidToAdmin(quote, amount) {
-  const pickup = quote.fulfillment_method !== 'ship';
+  // A paid courier/delivery fee counts as delivery even though the quote's
+  // fulfillment_method still reads pickup — see services/quoteFulfillment.js.
+  const mode = await resolveFulfillmentMode(quote);
+  const pickup = mode === 'pickup';
+  const fulfillmentLine = mode === 'ship' ? 'SHIP to customer'
+    : mode === 'delivery' ? 'DELIVER to customer (delivery fee paid)'
+    : 'PICKUP at the shop';
+  const instruction = mode === 'ship'
+    ? 'Ship it and hit Mark Shipped with the tracking number — the customer is expecting tracking.'
+    : mode === 'delivery'
+      ? 'They paid for delivery — drive it out, then hit Mark Picked Up to close the job.'
+      : 'They have the shop address and hours. Hand it over and hit Mark Picked Up.';
   const body = `
     <h2 style="margin:0 0 8px;font-size:20px;color:#15803d;">💰 Balance paid</h2>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${escapeHtml(quote.customer_name || quote.customer_email || 'Customer')}</strong> paid ${amount ? formatCurrency(amount) : 'the balance'} on Quote #${quote.id}${quote.product_name ? ` (${escapeHtml(quote.product_name)})` : ''}.</p>
     ${detailsTable(
-      detailRow('Fulfillment', pickup ? 'PICKUP at the shop' : 'SHIP to customer') +
-      (pickup ? '' : detailRow('Ship to', shipToLines(quote.shipping_address) || '⚠️ no address on file — contact the customer'))
+      detailRow('Fulfillment', fulfillmentLine) +
+      (pickup ? '' : detailRow(mode === 'delivery' ? 'Deliver to' : 'Ship to', shipToLines(quote.shipping_address) || '⚠️ no address on file — contact the customer'))
     )}
-    <p style="margin:0;font-size:14px;color:#6b7280;">${pickup ? 'They have the shop address and hours. Hand it over and hit Mark Picked Up.' : 'Ship it and hit Mark Shipped with the tracking number — the customer is expecting tracking.'}</p>
+    <p style="margin:0;font-size:14px;color:#6b7280;">${instruction}</p>
     ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
   `;
   try {
     await sendMail({
       from: FROM_EMAIL,
       to: [ADMIN_EMAIL],
-      subject: `Balance paid · Quote #${quote.id} · ${pickup ? 'pickup' : 'SHIP'} · ${quote.customer_name || ''}`,
+      subject: `Balance paid · Quote #${quote.id} · ${mode === 'ship' ? 'SHIP' : mode === 'delivery' ? 'DELIVER' : 'pickup'} · ${quote.customer_name || ''}`,
       html: baseLayout('Balance paid', body),
     });
   } catch (err) {
