@@ -40,6 +40,9 @@ import {
   Upload,
   GalleryHorizontal,
   Truck,
+  Home,
+  CircleDot,
+  Archive,
   Store,
   ShoppingBag,
   Target,
@@ -328,6 +331,14 @@ const POST_DEPOSIT_STATUSES = ['accepted', 'awaiting_approval', 'approved', 'in_
 // The in-production checklist, in the order the shop works it. Ordered and
 // received are separate ticks because the press schedules off goods in hand,
 // not off a PO number. Keys must match PRODUCTION_STEPS in routes/quotes.js.
+// One row shape for the quotes Actions menu, so every item lines up on the
+// same icon gutter and shares one hover state. Accent colours are added per
+// item; the default is inherited gray.
+const ROW_ACTION = 'w-full text-left px-3 py-2 text-sm flex items-center gap-2.5 hover:bg-gray-50 transition-colors';
+const ROW_SUB = 'w-full text-left px-3 py-1.5 text-sm flex items-center gap-2.5 hover:bg-gray-50 transition-colors';
+const MENU_HEADING = 'px-3 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400';
+const MENU_GROUP = 'border-t border-gray-100 mt-1 pt-0.5';
+
 const PRODUCTION_CHECKLIST = [
   ['blanks_ordered', 'Blanks ordered'],
   ['blanks_received', 'Blanks received'],
@@ -1849,6 +1860,31 @@ export default function AdminPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
     },
+  });
+
+  // Completing a job goes through /fulfill, the same endpoint the order
+  // detail page uses. The Actions menu used to post production-step
+  // { delivered } instead, which set status='completed' but stamped no
+  // picked_up_at/shipped_at, sent the customer nothing, and never fired the
+  // review request — so whether a customer heard that their order was done
+  // depended on which screen it was closed from.
+  const fulfillMutation = useMutation({
+    mutationFn: ({ id, method }: { id: string; method: 'pickup' | 'delivery' | 'ship' }) =>
+      fetch(`/api/quotes/admin/${id}/fulfill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token')}` },
+        body: JSON.stringify({ method }),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      }),
+    onSuccess: (_d, v) => {
+      toast(v.method === 'ship' ? 'Marked mailed — customer notified'
+        : v.method === 'delivery' ? 'Marked delivered — customer notified'
+        : 'Marked picked up — customer notified');
+      queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+    },
+    onError: () => toast('Could not complete the order', 'error'),
   });
 
   const syncMutation = useMutation({
@@ -3987,7 +4023,13 @@ export default function AdminPage() {
                           <div><BlanksBadge status={(q as any).blanks_status} poNumber={(q as any).blanks_po_number} /></div>
                           {quotePaidStage(q) && (() => {
                             const ps = q.production_steps || {};
-                            if (ps.delivered) return <div className="text-[10px] text-gray-500 capitalize">Delivered · {ps.delivered}</div>;
+                            if (ps.delivered) {
+                              // 'pickup' | 'delivery' | 'mailed' — the raw tag
+                              // read badly ("Delivered · delivery").
+                              const how = String(ps.delivered) === 'mailed' ? 'Mailed'
+                                : String(ps.delivered) === 'delivery' ? 'Delivered' : 'Picked up';
+                              return <div className="text-[10px] text-gray-500">{how}</div>;
+                            }
                             const done = PRODUCTION_CHECKLIST.filter(([k]) => ps[k]).length;
                             return done > 0 ? <div className="text-[10px] text-gray-500">Production {done}/{PRODUCTION_CHECKLIST.length}</div> : null;
                           })()}
@@ -4001,14 +4043,14 @@ export default function AdminPage() {
                           </button>
                           {openActionMenu === q.id && actionMenuPos && (
                             <div
-                              className="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 overflow-y-auto overscroll-contain"
+                              className="fixed z-50 bg-white rounded-xl shadow-xl ring-1 ring-black/5 py-1.5 w-60 overflow-y-auto overscroll-contain text-gray-700"
                               style={actionMenuPos}
                               data-row-action-menu
                             >
                               {(q.status === 'pending' || q.status === 'reviewed' || q.status === 'quoted') && (
                                 <button
                                   onClick={() => openPriceModal(q)}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-purple-700 font-medium"
+                                  className={`${ROW_ACTION} text-purple-700 font-medium`}
                                 >
                                   <DollarSign className="w-3.5 h-3.5" />
                                   {q.status === 'quoted' ? 'Re-Quote' : 'Send Price'}
@@ -4018,26 +4060,26 @@ export default function AdminPage() {
                                 <>
                                   <button
                                     onClick={() => { setOpenActionMenu(null); sendQuoteToArtLibrary(q); }}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-orange-700 font-medium"
+                                    className={`${ROW_ACTION} text-orange-700 font-medium`}
                                   >
-                                    <FolderOpen className="w-3.5 h-3.5" />
+                                    <FolderOpen className="w-4 h-4 shrink-0" />
                                     Send to Art Library
                                   </button>
                                   <button
                                     onClick={() => { setOpenActionMenu(null); downloadQuoteGraphic(q); }}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                    className={ROW_ACTION}
                                   >
-                                    <Download className="w-3.5 h-3.5" />
-                                    Download
+                                    <Download className="w-4 h-4 shrink-0 text-gray-400" />
+                                    Download artwork
                                   </button>
                                 </>
                               )}
                               {quotePaidStage(q) && !invoiceByQuoteId.has(Number(q.id)) && (
                                 <button
                                   onClick={() => { setOpenActionMenu(null); convertQuoteToInvoice(q); }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-emerald-700 font-medium"
+                                  className={`${ROW_ACTION} text-emerald-700 font-medium`}
                                 >
-                                  <Receipt className="w-3.5 h-3.5" />
+                                  <Receipt className="w-4 h-4 shrink-0" />
                                   Convert to Invoice
                                 </button>
                               )}
@@ -4048,10 +4090,10 @@ export default function AdminPage() {
                                     setPurchasingQuoteId(Number(q.id));
                                     setActiveSection('purchasing');
                                   }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                  className={ROW_ACTION}
                                 >
-                                  <Package className="w-3.5 h-3.5" />
-                                  Order blanks (S&S)
+                                  <Package className="w-4 h-4 shrink-0 text-gray-400" />
+                                  Order blanks (S&amp;S)
                                 </button>
                               )}
                               {/* Available at every stage: before the deposit
@@ -4061,17 +4103,17 @@ export default function AdminPage() {
                                   "Gang sheets ordered" on its own. */}
                               <button
                                 onClick={() => { setOpenActionMenu(null); navigate(`/admin/gangsheet?fromQuote=${q.id}`); }}
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                className={ROW_ACTION}
                               >
-                                <GalleryHorizontal className="w-3.5 h-3.5" />
+                                <GalleryHorizontal className="w-4 h-4 shrink-0 text-gray-400" />
                                 {quotePaidStage(q) ? 'Order gang sheets' : 'Price on Gang Sheet'}
                               </button>
                               <button
                                 onClick={() => { setOpenActionMenu(null); navigate(`/admin/order/${q.id}`); }}
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-gray-700 font-medium"
+                                className={ROW_ACTION}
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                Full Detail
+                                <Eye className="w-4 h-4 shrink-0 text-gray-400" />
+                                Open full detail
                               </button>
                               <button
                                 onClick={async () => {
@@ -4089,89 +4131,147 @@ export default function AdminPage() {
                                     toast('Could not update the quote', 'error');
                                   }
                                 }}
-                                className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 text-amber-700 font-medium"
+                                className={`${ROW_ACTION} text-amber-700 font-medium`}
                               >
-                                <FolderOpen className="w-3.5 h-3.5" />
+                                <Archive className="w-4 h-4 shrink-0" />
                                 {(q as any).archived_at ? 'Restore from archive' : 'Archive'}
                               </button>
                               {/* Every pipeline tab is reachable from the row
                                   (Doc, 2026-09-28): move the job between
-                                  stages without opening the detail page. */}
-                              <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                                Move to stage
-                              </p>
-                              {(quotePaidStage(q)
-                                ? ([['accepted', 'Deposit Paid'], ['awaiting_approval', 'Awaiting Approval'], ['approved', 'Approved'], ['in_production', 'In Production'], ['ready', 'Ready'], ['completed', 'Completed']] as const)
-                                : ([['pending', 'Pending'], ['quoted', 'Quoted']] as const)
-                              )
-                                .filter(([s]) => s !== q.status)
-                                .map(([s, label]) => (
-                                  <button
-                                    key={s}
-                                    onClick={() => { setOpenActionMenu(null); statusMutation.mutate({ id: q.id, status: s }); }}
-                                    className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                                  >
-                                    {label}
-                                  </button>
-                                ))}
+                                  stages without opening the detail page.
+                                  'Completed' is deliberately NOT here — the
+                                  three buttons at the bottom complete a job
+                                  properly (stamp + notify + review request);
+                                  this list only flips the status field, so a
+                                  'Completed' entry here was a second,
+                                  silent way to finish an order. */}
+                              <div className={MENU_GROUP}>
+                                <p className={MENU_HEADING}>Stage</p>
+                                {(quotePaidStage(q)
+                                  ? ([['accepted', 'Deposit Paid'], ['awaiting_approval', 'Awaiting Approval'], ['approved', 'Approved'], ['in_production', 'In Production'], ['ready', 'Ready']] as const)
+                                  : ([['pending', 'Pending'], ['quoted', 'Quoted']] as const)
+                                ).map(([s, label]) => {
+                                  // The current stage stays visible as a marked
+                                  // row. Filtering it out left gaps that read
+                                  // like missing options (and on a 'ready' job
+                                  // made the list look half-empty).
+                                  const current = s === q.status;
+                                  return current ? (
+                                    <div key={s} className={`${ROW_SUB} bg-gray-50 font-medium text-gray-900 cursor-default`}>
+                                      <CircleDot className="w-4 h-4 shrink-0 text-emerald-600" />
+                                      {label}
+                                      <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400">now</span>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      key={s}
+                                      onClick={() => { setOpenActionMenu(null); statusMutation.mutate({ id: q.id, status: s }); }}
+                                      className={ROW_SUB}
+                                    >
+                                      <span className="w-4 h-4 shrink-0 flex items-center justify-center">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                                      </span>
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                               {/* Production checklist (Doc, 2026-09-28):
                                   "in production" = blanks ordered, print
                                   ordered, press in progress, pressed —
                                   then balance paid + picked up / mailed. */}
                               {quotePaidStage(q) && (
                                 <>
-                                  <p className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-t border-gray-100 mt-1">
-                                    Production
-                                  </p>
-                                  {PRODUCTION_CHECKLIST.map(([s, label]) => {
-                                    const done = !!(q.production_steps || {})[s];
-                                    return (
-                                      <button
-                                        key={s}
-                                        onClick={() => productionStepMutation.mutate({ id: String(q.id), body: { step: s, done: !done } })}
-                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2"
-                                      >
-                                        <Check className={`w-3.5 h-3.5 ${done ? 'text-green-600' : 'text-gray-300'}`} />
-                                        <span className={done ? 'text-gray-900' : 'text-gray-600'}>{label}</span>
-                                      </button>
-                                    );
-                                  })}
-                                  {(q.production_steps || {}).delivered ? (
-                                    <p className="px-4 py-1.5 text-xs text-gray-400 capitalize">
-                                      Delivered — {(q.production_steps || {}).delivered}
+                                  <div className={MENU_GROUP}>
+                                    <p className={MENU_HEADING}>
+                                      Production
+                                      <span className="ml-1 font-normal normal-case tracking-normal text-gray-300">
+                                        {PRODUCTION_CHECKLIST.filter(([k]) => (q.production_steps || {})[k]).length}/{PRODUCTION_CHECKLIST.length}
+                                      </span>
                                     </p>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => { setOpenActionMenu(null); productionStepMutation.mutate({ id: String(q.id), body: { delivered: 'pickup' } }); }}
-                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                                      >
-                                        Picked up → Complete
-                                      </button>
-                                      <button
-                                        onClick={() => { setOpenActionMenu(null); productionStepMutation.mutate({ id: String(q.id), body: { delivered: 'mailed' } }); }}
-                                        className="w-full text-left px-4 py-1.5 text-sm hover:bg-gray-50 text-gray-700"
-                                      >
-                                        Mailed → Complete
-                                      </button>
-                                    </>
-                                  )}
+                                    {PRODUCTION_CHECKLIST.map(([s, label]) => {
+                                      const done = !!(q.production_steps || {})[s];
+                                      return (
+                                        <button
+                                          key={s}
+                                          onClick={() => productionStepMutation.mutate({ id: String(q.id), body: { step: s, done: !done } })}
+                                          className={ROW_SUB}
+                                        >
+                                          {/* A box, not a bare check: a gray
+                                              check on an unticked step read as
+                                              a disabled item rather than an
+                                              empty one. */}
+                                          <span className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center ${done ? 'bg-emerald-600 border-emerald-600' : 'border-gray-300'}`}>
+                                            {done && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
+                                          </span>
+                                          <span className={done ? 'text-gray-900' : 'text-gray-600'}>{label}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  <div className={MENU_GROUP}>
+                                    <p className={MENU_HEADING}>Complete the job</p>
+                                    {(q.production_steps || {}).delivered ? (
+                                      <div className={`${ROW_SUB} text-gray-500 cursor-default`}>
+                                        <Check className="w-4 h-4 shrink-0 text-emerald-600" />
+                                        <span className="capitalize">
+                                          {String((q.production_steps || {}).delivered) === 'mailed' ? 'Mailed'
+                                            : String((q.production_steps || {}).delivered) === 'delivery' ? 'Delivered'
+                                            : 'Picked up'}
+                                        </span>
+                                        <span className="ml-auto text-[10px] uppercase tracking-wide text-gray-400">done</span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <button
+                                          onClick={() => { setOpenActionMenu(null); fulfillMutation.mutate({ id: String(q.id), method: 'pickup' }); }}
+                                          className={ROW_SUB}
+                                        >
+                                          <Home className="w-4 h-4 shrink-0 text-gray-400" />
+                                          Picked up at the shop
+                                        </button>
+                                        {/* Local courier delivery — the
+                                            Courier/Delivery Fee path. Without
+                                            this the shop had to close a
+                                            delivered job as "picked up" or
+                                            "mailed", both of which emailed the
+                                            customer the wrong story. */}
+                                        <button
+                                          onClick={() => { setOpenActionMenu(null); fulfillMutation.mutate({ id: String(q.id), method: 'delivery' }); }}
+                                          className={ROW_SUB}
+                                        >
+                                          <Truck className="w-4 h-4 shrink-0 text-gray-400" />
+                                          Delivered to customer
+                                        </button>
+                                        <button
+                                          onClick={() => { setOpenActionMenu(null); fulfillMutation.mutate({ id: String(q.id), method: 'ship' }); }}
+                                          className={ROW_SUB}
+                                        >
+                                          <Mail className="w-4 h-4 shrink-0 text-gray-400" />
+                                          Mailed / shipped
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
                                 </>
                               )}
-                              {!quotePaidStage(q) && q.status !== 'rejected' && (
+                              {/* Destructive actions, fenced off at the bottom
+                                  and only before money has moved. */}
+                              {!quotePaidStage(q) && (
+                              <div className={MENU_GROUP}>
+                                {q.status !== 'rejected' && (
                                 <button
                                   onClick={async () => {
                                     setOpenActionMenu(null);
                                     if (!(await confirmDestructive(`Reject quote from ${q.customer_name || q.customerName || 'this customer'}? They will not be billed.`))) return;
                                     statusMutation.mutate({ id: q.id, status: 'rejected' });
                                   }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50"
+                                  className={`${ROW_ACTION} text-red-600 font-medium hover:bg-red-50`}
                                 >
+                                  <X className="w-4 h-4 shrink-0" />
                                   Reject
                                 </button>
-                              )}
-                              {!quotePaidStage(q) && (
-                              <div className="border-t border-gray-100 mt-1 pt-1">
+                                )}
                                 <button
                                   onClick={async () => {
                                     setOpenActionMenu(null);
@@ -4179,9 +4279,9 @@ export default function AdminPage() {
                                       deleteQuoteMutation.mutate(String(q.id));
                                     }
                                   }}
-                                  className="w-full text-left px-4 py-2 text-sm hover:bg-red-50 flex items-center gap-2 text-red-600 font-medium"
+                                  className={`${ROW_ACTION} text-red-600 font-medium hover:bg-red-50`}
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4 shrink-0" />
                                   Delete
                                 </button>
                               </div>

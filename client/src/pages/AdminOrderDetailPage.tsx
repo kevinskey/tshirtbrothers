@@ -273,7 +273,7 @@ export default function AdminOrderDetailPage() {
 
   // Complete the order via the fulfill endpoint — sets status, stamps the
   // pickup/ship date, and fires the customer notification + review request.
-  async function completeOrder(method: 'pickup' | 'ship') {
+  async function completeOrder(method: 'pickup' | 'delivery' | 'ship') {
     if (completing) return;
     if (totalDue > 0 && !window.confirm(`${money(totalDue)} is still due on this order. Complete it anyway?`)) return;
     setCompleting(true);
@@ -400,6 +400,17 @@ export default function AdminOrderDetailPage() {
               >
                 {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                 Picked up
+              </button>
+              {/* Local courier delivery — see services/quoteFulfillment.js.
+                  Completes like a pickup (no carrier, no tracking) but
+                  records that we drove it out. */}
+              <button
+                onClick={() => void completeOrder('delivery')}
+                disabled={completing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50"
+              >
+                {completing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Delivered
               </button>
               <span className="text-xs text-gray-400">or</span>
               <input
