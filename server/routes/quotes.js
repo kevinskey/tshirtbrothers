@@ -1754,19 +1754,31 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
   try {
     const { id } = req.params;
     const { method, tracking_number, carrier } = req.body || {};
-    if (!['pickup', 'ship'].includes(method)) {
-      return res.status(400).json({ error: "method must be 'pickup' or 'ship'" });
+    // 'delivery' = we drove it to them (the Courier/Delivery Fee path, see
+    // services/quoteFulfillment.js). It completes like a pickup — the goods
+    // left our hands with no carrier and no tracking — so it stamps
+    // picked_up_at rather than shipped_at, which keeps it out of
+    // shipNotify's tracking-email path.
+    if (!['pickup', 'ship', 'delivery'].includes(method)) {
+      return res.status(400).json({ error: "method must be 'pickup', 'delivery' or 'ship'" });
     }
-    const stamp = method === 'pickup' ? 'picked_up_at' : 'shipped_at';
+    const stamp = method === 'ship' ? 'shipped_at' : 'picked_up_at';
+    // production_steps.delivered is what the quotes table renders and what
+    // the Actions menu used to write on its own. Mirroring it here means the
+    // row badge and the order page can't disagree about a completed job —
+    // same reason 'pressed' is mirrored into order_stages below.
+    const deliveredTag = method === 'ship' ? 'mailed' : method;
     const { rows } = await pool.query(
       `UPDATE quotes
           SET status = 'completed',
               fulfillment_method = $2,
               ${stamp} = NOW(),
+              production_steps = COALESCE(production_steps, '{}'::jsonb)
+                || jsonb_build_object('delivered', $5::text, 'delivered_at', NOW()::text),
               tracking_number = COALESCE($3, tracking_number),
               tracking_carrier = COALESCE($4, tracking_carrier)
         WHERE id = $1 RETURNING *`,
-      [id, method, tracking_number || null, carrier || null],
+      [id, method, tracking_number || null, carrier || null, deliveredTag],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const quote = rows[0];
