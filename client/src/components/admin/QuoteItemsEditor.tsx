@@ -53,9 +53,26 @@ type DraftItem = {
   // Quantity for lines with NO per-size counts (digitizing/setup fees,
   // rush charges, flat services). Ignored whenever any size has a count.
   flat_quantity: string;
+  // 'fee' lines are non-apparel charges — no colorway, no size run, no print
+  // locations, and the server keeps them out of the quote's garment count.
+  item_type: 'product' | 'fee';
 };
 
 const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
+
+// The charge lines the shop actually bills. Free text is still allowed — this
+// is a starting point, not a closed list.
+const FEE_PRESETS = [
+  'Courier/Delivery Fee',
+  'Shipping',
+  'Bagging/Polybag Fee',
+  'Gift Wrapping',
+  'Art/Design Fee',
+  'Digitizing Fee',
+  'Screen Setup Fee',
+  'Rush Fee',
+  'Misc Fee',
+];
 
 function quoteItemToDraft(it: QuoteItem): DraftItem {
   const sizes = Array.isArray(it.sizes)
@@ -80,6 +97,7 @@ function quoteItemToDraft(it: QuoteItem): DraftItem {
       sizes.reduce((n, s2) => n + (Number(s2.quantity) || 0), 0) === 0 && Number(it.quantity) > 0
         ? String(it.quantity)
         : '',
+    item_type: it.item_type === 'fee' ? 'fee' : 'product',
   };
 }
 
@@ -125,6 +143,7 @@ export default function QuoteItemsEditor({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [recalcingIdx, setRecalcingIdx] = useState<number | null>(null);
+  const [feeMenuOpen, setFeeMenuOpen] = useState(false);
   const draftsRef = useRef<DraftItem[]>([]);
   useEffect(() => { draftsRef.current = drafts; });
   const autoPriceTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -232,8 +251,20 @@ export default function QuoteItemsEditor({
     setDrafts((prev) => [...prev, {
       product_id: null, product_name: '', color: '',
       sizes: [], print_areas: [], unit_price: '', line_total: '', notes: '',
-      flat_quantity: '',
+      flat_quantity: '', item_type: 'product',
     }]);
+  }
+
+  // Add a non-apparel charge line. Qty seeds to 1 — most fees are flat, and a
+  // zero-qty line prices at $0, which looks like a bug when it's really an
+  // unfilled field.
+  function addFee(name: string) {
+    setDrafts((prev) => [...prev, {
+      product_id: null, product_name: name, color: '',
+      sizes: [], print_areas: [], unit_price: '', line_total: '', notes: '',
+      flat_quantity: '1', item_type: 'fee',
+    }]);
+    setFeeMenuOpen(false);
   }
 
   // Copy a line right below itself — same product, sizes, print areas and
@@ -328,6 +359,7 @@ export default function QuoteItemsEditor({
         unit_price:   d.unit_price === '' ? null : Number(d.unit_price),
         line_total:   d.line_total === '' ? null : Number(d.line_total),
         notes:        d.notes.trim() || null,
+        item_type:    d.item_type,
       }));
       const updated = await replaceQuoteItems(String(quote.id), payload);
       onSaved(updated);
@@ -366,24 +398,68 @@ export default function QuoteItemsEditor({
 
       <ul className="space-y-3">
         {drafts.map((d, i) => (
-          <li key={i} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
+          <li
+            key={i}
+            className={`border rounded-lg p-3 space-y-2 ${
+              d.item_type === 'fee'
+                ? 'border-amber-200 bg-amber-50'
+                : 'border-gray-200 bg-gray-50'
+            }`}
+          >
             <div className="flex items-start gap-2">
               <div className="flex-1 min-w-0">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Product</label>
-                <ProductPicker
-                  productId={d.product_id}
-                  productName={d.product_name}
-                  onPick={(p, color) => updateDraft(i, {
-                    product_id: Number(p.id),
-                    product_name: p.name,
-                    // Only overwrite the line's color when the browser
-                    // actually produced one — the typeahead passes '' and
-                    // must not wipe a color already typed on the line.
-                    ...(color ? { color } : {}),
-                  })}
-                  onName={(name) => updateDraft(i, { product_name: name })}
-                />
+                <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  {d.item_type === 'fee' ? 'Fee / charge' : 'Product'}
+                </label>
+                {d.item_type === 'fee' ? (
+                  <>
+                    <input
+                      type="text"
+                      value={d.product_name}
+                      onChange={(e) => updateDraft(i, { product_name: e.target.value })}
+                      list="qie-fee-presets"
+                      placeholder="Delivery, digitizing, gift wrapping…"
+                      className="w-full text-sm border border-amber-200 rounded px-2 py-1.5 bg-white"
+                      style={{ fontSize: '16px' }}
+                    />
+                    <datalist id="qie-fee-presets">
+                      {FEE_PRESETS.map((f) => <option key={f} value={f} />)}
+                    </datalist>
+                  </>
+                ) : (
+                  <ProductPicker
+                    productId={d.product_id}
+                    productName={d.product_name}
+                    onPick={(p, color) => updateDraft(i, {
+                      product_id: Number(p.id),
+                      product_name: p.name,
+                      // Only overwrite the line's color when the browser
+                      // actually produced one — the typeahead passes '' and
+                      // must not wipe a color already typed on the line.
+                      ...(color ? { color } : {}),
+                    })}
+                    onName={(name) => updateDraft(i, { product_name: name })}
+                  />
+                )}
               </div>
+              <button
+                onClick={() => updateDraft(i, d.item_type === 'fee'
+                  ? { item_type: 'product' }
+                  // Flipping a garment line to a fee drops its apparel-only
+                  // fields — leaving sizes behind would keep its quantity in
+                  // the garment count on the next save.
+                  : { item_type: 'fee', sizes: [], print_areas: [], color: '',
+                      product_id: null,
+                      flat_quantity: d.flat_quantity || '1' })}
+                title={d.item_type === 'fee' ? 'Turn back into a product line' : 'Turn into a fee / charge line'}
+                className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full mt-4 shrink-0 ${
+                  d.item_type === 'fee'
+                    ? 'bg-amber-200 text-amber-900 hover:bg-amber-300'
+                    : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                }`}
+              >
+                {d.item_type === 'fee' ? 'Fee' : 'Item'}
+              </button>
               <button
                 onClick={() => duplicateDraft(i)}
                 title="Duplicate item"
@@ -400,6 +476,43 @@ export default function QuoteItemsEditor({
               </button>
             </div>
 
+            {d.item_type === 'fee' ? (
+              /* A charge line has no colorway, no size run and no print
+                 locations — just how many and how much. */
+              <div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Qty</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={d.flat_quantity}
+                      onChange={(e) => updateDraft(i, { flat_quantity: e.target.value, line_total: '' })}
+                      placeholder="1"
+                      className="w-full text-sm border border-amber-200 rounded px-2 py-1.5 bg-white"
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Amount each</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={d.unit_price}
+                      onChange={(e) => updateDraft(i, { unit_price: e.target.value, line_total: '' })}
+                      placeholder="0.00"
+                      className="w-full text-sm border border-amber-200 rounded px-2 py-1.5 bg-white"
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-600 mt-1">
+                  Charge: <span className="font-semibold text-gray-900">${draftLineTotal(d).toFixed(2)}</span>
+                  <span className="text-gray-500"> · counts toward the quote total, not the garment count</span>
+                </p>
+              </div>
+            ) : (
+            <>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Color</label>
@@ -531,6 +644,8 @@ export default function QuoteItemsEditor({
                 )}
               </button>
             </div>
+            </>
+            )}
 
             <div>
               <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Override line total (optional)</label>
@@ -561,12 +676,39 @@ export default function QuoteItemsEditor({
       </ul>
 
       <div className="flex items-center justify-between gap-2 mt-3">
-        <button
-          onClick={addBlank}
-          className="flex items-center gap-1 text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg"
-        >
-          <Plus className="w-4 h-4" /> Add product
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={addBlank}
+            className="flex items-center gap-1 text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg"
+          >
+            <Plus className="w-4 h-4" /> Add product
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => setFeeMenuOpen((o) => !o)}
+              className="flex items-center gap-1 text-sm font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-2 rounded-lg"
+            >
+              <Plus className="w-4 h-4" /> Add fee
+            </button>
+            {feeMenuOpen && (
+              <div className="absolute z-20 bottom-full mb-1 left-0 w-56 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                {FEE_PRESETS.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => addFee(f)}
+                    className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-amber-50 border-b border-gray-100 last:border-b-0"
+                  >{f}</button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => addFee('')}
+                  className="w-full text-left px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >Other / custom…</button>
+              </div>
+            )}
+          </div>
+        </div>
         <button
           onClick={save}
           disabled={saving}

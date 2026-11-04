@@ -176,6 +176,10 @@ export interface QuoteItem {
   unit_price?: number | string | null;
   line_total?: number | string | null;
   notes?: string | null;
+  // 'fee' = non-apparel charge line (delivery, bagging, gift wrap, art,
+  // digitizing, misc). Fees are excluded from the quote's garment count and
+  // can never become its headline product. Absent/anything else = 'product'.
+  item_type?: 'product' | 'fee' | string | null;
 }
 
 export interface Product {

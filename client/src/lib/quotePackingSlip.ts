@@ -34,6 +34,7 @@ export interface SlipItem {
   color?: string | null;
   sizes?: unknown;
   quantity?: number | null;
+  item_type?: string | null;
 }
 
 function sizesOf(raw: unknown): SizeCount[] {
@@ -64,7 +65,10 @@ function addressLines(raw: unknown, fallbackName: string | null | undefined): st
 }
 
 export function quoteSlipItems(quote: SlipQuote, items: SlipItem[]): PackingSlipItem[] {
-  const real = items.filter((it) => it.product_name || it.catalog_name || (Number(it.quantity) || 0) > 0);
+  // Charge lines (delivery, digitizing, gift wrap…) are money, not things in
+  // the box — a packing slip that lists "Art Fee × 1" reads as a missing item.
+  const real = items.filter((it) => it.item_type !== 'fee'
+    && (it.product_name || it.catalog_name || (Number(it.quantity) || 0) > 0));
   if (real.length === 0) {
     return [{
       title: quote.product_name || quote.productName || 'Custom apparel order',
