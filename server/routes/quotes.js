@@ -303,7 +303,8 @@ const QUOTE_ITEMS_SUBQUERY = `
       'design_url',   qi.design_url,
       'unit_price',   qi.unit_price,
       'line_total',   qi.line_total,
-      'notes',        qi.notes
+      'notes',        qi.notes,
+      'item_type',    qi.item_type
     ) ORDER BY qi.position, qi.id)
     FROM quote_items qi
     WHERE qi.quote_id = quotes.id
@@ -467,6 +468,14 @@ function totalQtyFromSizes(sizes) {
   return sizes.reduce((n, s) => n + (Number(s?.quantity) || 0), 0);
 }
 
+// Line items are either garments ('product') or non-apparel charge lines
+// ('fee' — delivery, bagging, gift wrap, art, digitizing, misc). Anything
+// unrecognised is a product: the column is NOT NULL, and mistyping a garment
+// as a fee would quietly drop it from the quote's garment count.
+function normalizeItemType(v) {
+  return String(v ?? '').toLowerCase() === 'fee' ? 'fee' : 'product';
+}
+
 // Helper: compute line_total when not explicitly given.
 function deriveLineTotal({ unit_price, quantity, line_total }) {
   if (line_total != null && line_total !== '') return Number(line_total);
@@ -489,16 +498,17 @@ async function rebuildQuoteTotals(quoteId, client = pool) {
              SELECT SUM(line_total) FROM quote_items WHERE quote_id = $1
            ), q.estimated_price),
            quantity = COALESCE((
-             SELECT SUM(quantity) FROM quote_items WHERE quote_id = $1
+             SELECT SUM(quantity) FROM quote_items
+               WHERE quote_id = $1 AND item_type <> 'fee'
            ), q.quantity),
            product_id = COALESCE((
              SELECT product_id FROM quote_items
-               WHERE quote_id = $1
+               WHERE quote_id = $1 AND item_type <> 'fee'
                ORDER BY position, id LIMIT 1
            ), q.product_id),
            product_name = COALESCE((
              SELECT product_name FROM quote_items
-               WHERE quote_id = $1
+               WHERE quote_id = $1 AND item_type <> 'fee'
                ORDER BY position, id LIMIT 1
            ), q.product_name)
      WHERE q.id = $1`,
@@ -537,6 +547,7 @@ router.post('/:id/items', authenticate, adminOnly, async (req, res, next) => {
       line_total,
       notes        = null,
       position,
+      item_type,
     } = req.body || {};
 
     const exists = await pool.query('SELECT 1 FROM quotes WHERE id = $1', [id]);
@@ -555,11 +566,12 @@ router.post('/:id/items', authenticate, adminOnly, async (req, res, next) => {
     const inserted = await pool.query(
       `INSERT INTO quote_items
          (quote_id, position, product_id, product_name, color, sizes, quantity,
-          print_areas, design_url, unit_price, line_total, notes)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12)
+          print_areas, design_url, unit_price, line_total, notes, item_type)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12,$13)
        RETURNING *`,
       [id, pos, product_id, product_name, color, JSON.stringify(sizes),
-       qty, JSON.stringify(print_areas), design_url, unit_price, lt, notes],
+       qty, JSON.stringify(print_areas), design_url, unit_price, lt, notes,
+       normalizeItemType(item_type)],
     );
 
     await rebuildQuoteTotals(id);
@@ -577,12 +589,13 @@ router.patch('/:id/items/:itemId', authenticate, adminOnly, async (req, res, nex
 
     const allowed = ['product_id', 'product_name', 'color', 'sizes', 'quantity',
                      'print_areas', 'design_url', 'unit_price', 'line_total',
-                     'notes', 'position'];
+                     'notes', 'position', 'item_type'];
     const sets = [];
     const params = [];
     for (const key of allowed) {
       if (!(key in (req.body || {}))) continue;
-      params.push(['sizes', 'print_areas'].includes(key)
+      if (key === 'item_type') { params.push(normalizeItemType(req.body[key])); }
+      else params.push(['sizes', 'print_areas'].includes(key)
         ? JSON.stringify(req.body[key] ?? [])
         : req.body[key]);
       sets.push(`${key} = $${params.length}${['sizes','print_areas'].includes(key) ? '::jsonb' : ''}`);
@@ -663,12 +676,13 @@ router.put('/:id/items', authenticate, adminOnly, async (req, res, next) => {
       await client.query(
         `INSERT INTO quote_items
            (quote_id, position, product_id, product_name, color, sizes, quantity,
-            print_areas, design_url, unit_price, line_total, notes)
-         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12)`,
+            print_areas, design_url, unit_price, line_total, notes, item_type)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8::jsonb,$9,$10,$11,$12,$13)`,
         [id, i, it.product_id ?? null, it.product_name ?? null, it.color ?? null,
          JSON.stringify(it.sizes ?? []), qty,
          JSON.stringify(it.print_areas ?? []), it.design_url ?? null,
-         it.unit_price ?? null, lt, it.notes ?? null],
+         it.unit_price ?? null, lt, it.notes ?? null,
+         normalizeItemType(it.item_type)],
       );
     }
     await rebuildQuoteTotals(id, client);
