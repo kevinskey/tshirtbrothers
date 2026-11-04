@@ -107,16 +107,39 @@ const router = Router();
 // deposits via createDepositInvoiceForQuote, offline cash/check via
 // POST /invoices/:id/record-payment. So priorPayments IS the record. If it
 // is empty, nothing was collected.
-export function reconcileInvoicePayments({ total, priorPayments = [], chargeAmount, chargeDate }) {
+//
+// chargeRef is the Stripe checkout session id. The webhook and the
+// /payment-success fallback both book the same session, and the
+// `balance_paid_at IS NULL` guard they rely on to stay mutually exclusive
+// is not stamped until AFTER this function returns — so they race and the
+// same charge lands twice. Quote #293 (2026-11-04) booked its $267.47
+// balance at 12:39:51 and again at 12:39:53, reading $806.47 paid against
+// a $543.06 invoice off a single Stripe charge. Refusing a ref we already
+// hold makes the append idempotent no matter how many callers race.
+export function reconcileInvoicePayments({
+  total, priorPayments = [], chargeAmount, chargeDate, chargeRef = null,
+}) {
   const invoiceTotal = +(Number(total) || 0).toFixed(2);
   const charge = +(Number(chargeAmount) || 0).toFixed(2);
   const prior = (Array.isArray(priorPayments) ? priorPayments : []).filter(
     (p) => p && Number.isFinite(Number(p.amount)),
   );
-  const payments = [
-    ...prior,
-    { amount: charge, method: 'stripe', date: chargeDate || new Date().toISOString() },
-  ];
+  // Payments booked before this guard existed carry no ref, so they never
+  // match and are left exactly as recorded.
+  const alreadyBooked = chargeRef
+    ? prior.some((p) => p.ref && String(p.ref) === String(chargeRef))
+    : false;
+  const payments = alreadyBooked
+    ? prior
+    : [
+      ...prior,
+      {
+        amount: charge,
+        method: 'stripe',
+        date: chargeDate || new Date().toISOString(),
+        ...(chargeRef ? { ref: String(chargeRef) } : {}),
+      },
+    ];
   const amountPaid = +payments.reduce((sum, p) => sum + Number(p.amount), 0).toFixed(2);
   const amountDue = Math.max(0, +(invoiceTotal - amountPaid).toFixed(2));
   return {
@@ -133,9 +156,10 @@ export function reconcileInvoicePayments({ total, priorPayments = [], chargeAmou
 
 // ── Create/advance the invoice for a quote when a balance or full payment
 // clears, and email a receipt IF the order is actually settled. Idempotent:
-// an existing linked invoice just gets this charge appended.
+// an existing linked invoice just gets this charge appended — and a charge
+// whose Stripe session id is already on the invoice is not appended at all.
 // Returns the invoice row (or null if creation failed).
-async function createPaidInvoiceForQuote(quote, amountPaidCents) {
+async function createPaidInvoiceForQuote(quote, amountPaidCents, chargeRef = null) {
   try {
     const total = Number(quote.estimated_price || 0);
     const amountPaid = (amountPaidCents || 0) / 100;
@@ -167,6 +191,7 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
         priorPayments,
         chargeAmount: chargedNow,
         chargeDate: nowIso,
+        chargeRef,
       });
       // $4 is cast on BOTH uses. Without the casts Postgres deduces varchar
       // from `status = $4` (the column type) and text from `$4 = 'paid'` (an
@@ -194,6 +219,7 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
         priorPayments: [],
         chargeAmount: chargedNow,
         chargeDate: nowIso,
+        chargeRef,
       });
       const { rows } = await pool.query(
         `INSERT INTO invoices
@@ -264,12 +290,20 @@ async function createPaidInvoiceForQuote(quote, amountPaidCents) {
 // invoice just gets the deposit recorded (if nothing is recorded yet).
 // The balance/full-payment paths later flip this same invoice to 'paid'
 // via createPaidInvoiceForQuote.
-async function createDepositInvoiceForQuote(quote, depositCents) {
+async function createDepositInvoiceForQuote(quote, depositCents, chargeRef = null) {
   try {
     const deposit = (depositCents || 0) / 100;
     const total = Number(quote.estimated_price || 0) || deposit;
     const nowIso = new Date().toISOString();
-    const depositEntry = { amount: +deposit.toFixed(2), method: 'stripe', note: 'deposit', date: nowIso };
+    // ref carries the Stripe session id so the later balance charge can
+    // tell itself apart from this one — see reconcileInvoicePayments.
+    const depositEntry = {
+      amount: +deposit.toFixed(2),
+      method: 'stripe',
+      note: 'deposit',
+      date: nowIso,
+      ...(chargeRef ? { ref: String(chargeRef) } : {}),
+    };
 
     const existing = await pool.query(
       'SELECT * FROM invoices WHERE quote_id = $1 ORDER BY id DESC LIMIT 1',
@@ -1431,7 +1465,7 @@ async function handleCheckoutSessionCompleted(session) {
         if (result.rows.length > 0) {
           const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' balance payment: $' + (netTotalCents / 100));
-          const invoice = await createPaidInvoiceForQuote(quote, netTotalCents);
+          const invoice = await createPaidInvoiceForQuote(quote, netTotalCents, session.id);
           const settled = invoice ? Number(invoice.amount_due) <= 0 : false;
           if (!settled) {
             const owed = invoice ? Number(invoice.amount_due).toFixed(2) : '?';
@@ -1477,7 +1511,7 @@ async function handleCheckoutSessionCompleted(session) {
         if (result.rows.length > 0) {
           const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' paid in full: $' + (netTotalCents / 100));
-          await createPaidInvoiceForQuote(quote, netTotalCents);
+          await createPaidInvoiceForQuote(quote, netTotalCents, session.id);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
           sendPushToAdmins({
@@ -1504,7 +1538,7 @@ async function handleCheckoutSessionCompleted(session) {
         if (result.rows.length > 0) {
           const quote = result.rows[0];
           console.log('[Stripe] Quote #' + quoteId + ' deposit paid: $' + (netTotalCents / 100));
-          await createDepositInvoiceForQuote(quote, netTotalCents);
+          await createDepositInvoiceForQuote(quote, netTotalCents, session.id);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
@@ -1959,7 +1993,7 @@ router.get('/success', async (req, res, next) => {
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' balance payment verified: $' + (fbNetCents / 100));
-          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents, stripeDetails.session.id);
           if (invoiceForQuote && Number(invoiceForQuote.amount_due) <= 0) {
             await pool.query(
               'UPDATE quotes SET balance_paid_at = COALESCE(balance_paid_at, NOW()) WHERE id = $1',
@@ -2001,7 +2035,7 @@ router.get('/success', async (req, res, next) => {
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' full payment verified: $' + (fbNetCents / 100));
-          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents);
+          invoiceForQuote = await createPaidInvoiceForQuote(quote, fbNetCents, stripeDetails.session.id);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
         } else {
@@ -2027,7 +2061,7 @@ router.get('/success', async (req, res, next) => {
         if (updated.rows.length > 0) {
           quote = updated.rows[0];
           console.log('[Payment Success] Quote #' + quoteId + ' deposit verified & accepted: $' + (fbNetCents / 100));
-          invoiceForQuote = await createDepositInvoiceForQuote(quote, fbNetCents);
+          invoiceForQuote = await createDepositInvoiceForQuote(quote, fbNetCents, stripeDetails.session.id);
           sendQuoteAcceptedNotification(quote).catch(() => {});
           sendDepositReceiptToCustomer(quote).catch(() => {});
           smsQuoteAcceptedToAdmin(quote).catch(() => {});
