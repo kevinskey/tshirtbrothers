@@ -9,10 +9,11 @@ import {
 import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
 import { logActivityOnce } from '@/lib/activity';
 import {
-  SHEET_WIDTH_PX, PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
+  PX_PER_FOOT, DISPLAY_SCALE, MAX_SHEET_LENGTH_FT, MIN_SHEET_LENGTH_FT,
   EDGE_PADDING_PX, PRICING, GRID_COLOR_MINOR, GRID_LABEL_COLOR,
+  SHEET_WIDTH_OPTIONS_IN, DEFAULT_SHEET_WIDTH_IN, sheetWidthPx as widthToPx, normalizeSheetWidth,
   pxToInches, pxToFeet, inchesToPx, feetToPx,
-  type PricingTier
+  type PricingTier, type SheetWidthIn
 } from '@/lib/gangsheet/constants';
 import { calculateDPI, getDPIStatus, getImageDimensions, DPI_COLORS } from '@/lib/gangsheet/dpiUtils';
 import { packDesigns, type PackItem } from '@/lib/gangsheet/binPacking';
@@ -285,6 +286,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // dataURL sanity check remain the real backstop for that path.
   const BUILDER_MAX_FT = configLimits.maxFt;
 
+  /* ── Sheet width ────────────────────────────────────────────────────
+     The store sells a 22" and a 34" roll. Width drives the canvas, the
+     bin packer, every clamp, and the $/ft rate, so it lives here and
+     everything below reads sheetWidthPx rather than a constant. */
+  const [sheetWidthIn, setSheetWidthIn] = useState<SheetWidthIn>(DEFAULT_SHEET_WIDTH_IN);
+  const sheetWidthPx = widthToPx(sheetWidthIn);
+
   // Live $/ft rates from the store's admin-editable settings — the PRICING
   // constants below are stale display copy (e.g. $6/$8/$12) that don't match
   // what /dtf actually charges (server-side rates.standard/rush/hot_rush,
@@ -292,25 +300,51 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // back to PRICING only if the fetch never succeeds. Fetched in BOTH
   // modes — admin should see the true price too, since total_cost persists
   // into gang_sheets and surfaces in AdminPage's sheet list.
-  const [liveRates, setLiveRates] = useState<Record<PricingTier, number> | null>(null);
+  //
+  // Keyed by width now: each roll is a separate vendor SKU with its own
+  // ladder, so a 34" sheet priced off the 22" rates would undercharge by
+  // about 50%.
+  const [liveRatesByWidth, setLiveRatesByWidth] =
+    useState<Record<number, Record<PricingTier, number>> | null>(null);
+  // Widths the store is actually selling right now. 34" can be switched
+  // off in /admin, and the selector must not offer what checkout rejects.
+  const [offeredWidths, setOfferedWidths] = useState<readonly number[]>(SHEET_WIDTH_OPTIONS_IN);
   useEffect(() => {
-    fetch('/api/gangsheet-store/config')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
-      .then((data: { rates?: { standard?: unknown; rush?: unknown; hot_rush?: unknown }; min_ft?: unknown; max_ft?: unknown }) => {
-        const rates = data.rates;
-        if (
-          !rates || typeof rates.standard !== 'number' || typeof rates.rush !== 'number'
-          || typeof rates.hot_rush !== 'number'
-        ) {
-          throw new Error('unexpected /config shape');
-        }
+    type RateShape = { standard?: unknown; rush?: unknown; hot_rush?: unknown };
+    const toTiers = (r: RateShape): Record<PricingTier, number> | null => (
+      !r || typeof r.standard !== 'number' || typeof r.rush !== 'number' || typeof r.hot_rush !== 'number'
+        ? null
         // Server cents -> display dollars; hot_rush (server) -> hotRush
         // (PricingTier) is the only key that doesn't map 1:1.
-        setLiveRates({
-          standard: rates.standard / 100,
-          rush: rates.rush / 100,
-          hotRush: rates.hot_rush / 100,
-        });
+        : { standard: r.standard / 100, rush: r.rush / 100, hotRush: r.hot_rush / 100 }
+    );
+    fetch('/api/gangsheet-store/config')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`config ${r.status}`))))
+      .then((data: {
+        rates?: RateShape; min_ft?: unknown; max_ft?: unknown;
+        widths?: Array<{ in?: unknown; rates?: RateShape }>;
+      }) => {
+        const byWidth: Record<number, Record<PricingTier, number>> = {};
+        // Preferred shape. Falls back to the flat `rates` key, which is
+        // the 22" ladder and predates widths — an older server still
+        // prices the default roll correctly instead of showing nothing.
+        if (Array.isArray(data.widths)) {
+          for (const w of data.widths) {
+            const tiers = toTiers(w?.rates as RateShape);
+            if (typeof w?.in === 'number' && tiers) byWidth[w.in] = tiers;
+          }
+        }
+        if (!Object.keys(byWidth).length) {
+          const flat = toTiers(data.rates as RateShape);
+          if (!flat) throw new Error('unexpected /config shape');
+          byWidth[DEFAULT_SHEET_WIDTH_IN] = flat;
+        }
+        setLiveRatesByWidth(byWidth);
+        const widths = Object.keys(byWidth).map(Number).sort((a, b) => a - b);
+        setOfferedWidths(widths);
+        // A roll that was switched off while this tab was open would
+        // otherwise leave the builder laying out a sheet nobody can buy.
+        setSheetWidthIn((w) => (widths.includes(w) ? w : DEFAULT_SHEET_WIDTH_IN));
         // min_ft/max_ft (I2) travel with the same response but are validated
         // separately — a malformed rates shape above already threw, so a bad
         // shape here just leaves configLimits at its static-constant default
@@ -323,6 +357,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         console.error('[gangsheet] failed to load live store rates — falling back to static PRICING constants:', err);
       });
   }, []);
+  const liveRates = liveRatesByWidth?.[sheetWidthIn] ?? null;
   const effectiveRates: Record<PricingTier, number> = liveRates ?? {
     standard: PRICING.standard.rate,
     rush: PRICING.rush.rate,
@@ -369,7 +404,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
     const initialHeight = feetToPx(1); // 12 inches (1 ft) — user changes via the Length input
     const canvas = new FabricCanvas(canvasRef.current, {
-      width: SHEET_WIDTH_PX,
+      width: sheetWidthPx,
       height: initialHeight,
       backgroundColor: '#ffffff',
       selection: true,
@@ -382,10 +417,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // handles the downscale.
     const container = containerRef.current;
     const viewportWidth = container ? container.clientWidth - 40 : 800;
-    const scale = viewportWidth / SHEET_WIDTH_PX;
+    const scale = viewportWidth / sheetWidthPx;
     canvas.setZoom(scale);
     canvas.setDimensions({
-      width: SHEET_WIDTH_PX * scale,
+      width: sheetWidthPx * scale,
       height: initialHeight * scale,
     });
 
@@ -418,7 +453,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const visH = t ? t.h * h : h;
       const sheetH = canvas.getHeight() / (canvas.getZoom() || 1);
       const minLeft = EDGE_PADDING_PX - offX;
-      const maxLeft = SHEET_WIDTH_PX - EDGE_PADDING_PX - visW - offX;
+      const maxLeft = sheetWidthPx - EDGE_PADDING_PX - visW - offX;
       const minTop = EDGE_PADDING_PX - offY;
       const maxTop = Math.max(minTop, sheetH - EDGE_PADDING_PX - visH - offY);
       const left = Math.min(Math.max(obj.left || 0, minLeft), Math.max(minLeft, maxLeft));
@@ -476,7 +511,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // can see how much sheet each foot of length buys them.
     for (let ft = 1; ft <= pxToFeet(height); ft++) {
       const y = ft * PX_PER_FOOT;
-      const line = new Line([0, y, SHEET_WIDTH_PX, y], {
+      const line = new Line([0, y, sheetWidthPx, y], {
         stroke: '#cbd5e1',
         strokeWidth: 6,
         strokeDashArray: [50, 35],
@@ -516,7 +551,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
 
     // Border
-    const border = new Line([SHEET_WIDTH_PX - 1, 0, SHEET_WIDTH_PX - 1, height], {
+    const border = new Line([sheetWidthPx - 1, 0, sheetWidthPx - 1, height], {
       stroke: '#d1d5db',
       strokeWidth: 2,
       selectable: false,
@@ -531,7 +566,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const safeZone = new Rect({
       left: EDGE_PADDING_PX,
       top: EDGE_PADDING_PX,
-      width: SHEET_WIDTH_PX - 2 * EDGE_PADDING_PX,
+      width: sheetWidthPx - 2 * EDGE_PADDING_PX,
       height: height - 2 * EDGE_PADDING_PX,
       fill: 'rgba(0,0,0,0)',
       stroke: '#ea580c',
@@ -619,7 +654,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           }
         }
         const candidateLeft = rightmostOnLastRow + spacingPx;
-        if (candidateLeft + targetW <= SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+        if (candidateLeft + targetW <= sheetWidthPx - EDGE_PADDING_PX) {
           startLeft = candidateLeft;
           startTop = lastRowTop;
         } else {
@@ -645,8 +680,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         scale,
         fabricWidth: img.width,
         renderedCanvasPx: natW * scale,
-        sheetPx: SHEET_WIDTH_PX,
-        pctOfSheet: `${((natW * scale) / SHEET_WIDTH_PX * 100).toFixed(1)}%`,
+        sheetPx: sheetWidthPx,
+        pctOfSheet: `${((natW * scale) / sheetWidthPx * 100).toFixed(1)}%`,
         existingCount: existingObjs.length,
         placedAt: { left: startLeft, top: startTop },
       });
@@ -664,7 +699,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         let cursorX = startLeft + copyW + spacingPx;
         let cursorY = startTop;
         for (let i = 0; i < copies; i++) {
-          if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+          if (cursorX + copyW > sheetWidthPx - EDGE_PADDING_PX) {
             cursorX = EDGE_PADDING_PX;
             cursorY += copyH + spacingPx;
           }
@@ -833,7 +868,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // the sheet width, wrap to the next row.
     let cursorX = (anchor.left || EDGE_PADDING_PX) + copyW + spacingPx;
     let cursorY = (anchor.top || EDGE_PADDING_PX);
-    if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+    if (cursorX + copyW > sheetWidthPx - EDGE_PADDING_PX) {
       cursorX = EDGE_PADDING_PX;
       cursorY += copyH + spacingPx;
     }
@@ -849,7 +884,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       });
       canvas.add(img);
       cursorX += copyW + spacingPx;
-      if (cursorX + copyW > SHEET_WIDTH_PX - EDGE_PADDING_PX) {
+      if (cursorX + copyW > sheetWidthPx - EDGE_PADDING_PX) {
         cursorX = EDGE_PADDING_PX;
         cursorY += copyH + spacingPx;
       }
@@ -880,7 +915,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     for (const obj of objects) {
       const right = (obj.left || 0) + (obj.getScaledWidth?.() || 0);
       const bottom = (obj.top || 0) + (obj.getScaledHeight?.() || 0);
-      if (right > SHEET_WIDTH_PX + 1) overWidth = true;
+      if (right > sheetWidthPx + 1) overWidth = true;
       if (bottom > maxY) maxY = bottom;
     }
     const declaredSheetPx = feetToPx(declaredFt);
@@ -890,14 +925,14 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // Grow canvas visually if needed so all copies are visible.
     if (Math.abs(neededPx - currentSheetPxHeight) > 1) {
       canvas.setDimensions({
-        width: SHEET_WIDTH_PX * zoom,
+        width: sheetWidthPx * zoom,
         height: neededPx * zoom,
       });
       drawGrid(canvas, neededPx);
       canvas.renderAll();
     }
     if (overWidth) {
-      setFitError(`Graphic is wider than the 22" sheet. Reduce the width.`);
+      setFitError(`Graphic is wider than the ${sheetWidthIn}" sheet. Reduce the width, or switch to a wider sheet.`);
       return false;
     }
     if (maxY > declaredSheetPx + 1) {
@@ -1187,7 +1222,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         natW,
         scale,
         renderedCanvasPx: natW * scale,
-        pctOfSheet: `${((natW * scale) / SHEET_WIDTH_PX * 100).toFixed(1)}%`,
+        pctOfSheet: `${((natW * scale) / sheetWidthPx * 100).toFixed(1)}%`,
       });
     }
     canvas.renderAll();
@@ -1273,7 +1308,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const newHeight = feetToPx(newFt);
     // Resize both bitmap and CSS so the zoom factor alone governs display scale
     canvas.setDimensions({
-      width: SHEET_WIDTH_PX * zoom,
+      width: sheetWidthPx * zoom,
       height: newHeight * zoom,
     });
     drawGrid(canvas, newHeight);
@@ -1292,7 +1327,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // the sheet? Pack both ways; if landscape wins, bake a 90° turn into
     // those designs' bitmaps (house style — no live fabric rotation, so
     // exports and the server compose contract stay rotation: 0).
-    const usable = SHEET_WIDTH_PX - 2 * EDGE_PADDING_PX;
+    const usable = sheetWidthPx - 2 * EDGE_PADDING_PX;
     const baseDims: Record<string, ReturnType<typeof packDims>> = {};
     for (const d of designs) baseDims[d.id] = packDims(d);
     const wantsSwap = (d: DesignItem) => {
@@ -1425,7 +1460,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const sheetPxHeight = currentBitmapHeight / currentZoom;
     canvas.setZoom(newZoom);
     canvas.setDimensions({
-      width: SHEET_WIDTH_PX * newZoom,
+      width: sheetWidthPx * newZoom,
       height: sheetPxHeight * newZoom,
     });
     setZoom(newZoom);
@@ -1434,9 +1469,55 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   function fitToWidth() {
     const container = containerRef.current;
     if (!container) return;
-    const scale = (container.clientWidth - 40) / SHEET_WIDTH_PX;
+    const scale = (container.clientWidth - 40) / sheetWidthPx;
     handleZoom(scale - zoom);
   }
+
+  /* ── Reflow on width change ──────────────────────────────────────────
+     initCanvas() runs once and bails if a canvas already exists, so
+     switching rolls has to resize the live one. Three things must happen
+     together or the sheet lies about itself: the bitmap takes the new
+     width, the foot grid and safe zone are redrawn at it, and anything
+     now hanging off the right edge (34" -> 22") is pulled back inside
+     rather than silently composed off-sheet. Zoom is refit so the whole
+     width stays visible instead of the wider roll running off-screen.
+
+     Keyed on canvasReady too: the width can resolve from /config before
+     the canvas mounts, and this would otherwise no-op on a null ref. */
+  useEffect(() => {
+    const canvas = fabricRef.current;
+    if (!canvas) return;
+    const container = containerRef.current;
+    const nextZoom = container ? (container.clientWidth - 40) / sheetWidthPx : zoom;
+    const sheetPxHeight = canvas.getHeight() / (canvas.getZoom() || 1);
+
+    let movedAny = false;
+    for (const obj of canvas.getObjects()) {
+      if ((obj as any).data?.isGrid) continue;
+      const w = obj.getScaledWidth?.() || 0;
+      const maxLeft = sheetWidthPx - EDGE_PADDING_PX - w;
+      if ((obj.left || 0) > maxLeft) {
+        obj.set({ left: Math.max(EDGE_PADDING_PX, maxLeft) });
+        obj.setCoords();
+        movedAny = true;
+      }
+    }
+
+    canvas.setZoom(nextZoom);
+    canvas.setDimensions({ width: sheetWidthPx * nextZoom, height: sheetPxHeight * nextZoom });
+    drawGrid(canvas, sheetPxHeight);
+    canvas.renderAll();
+    setZoom(nextZoom);
+    // Re-run the fit check so an graphic too wide for the narrower roll
+    // surfaces its error immediately, not at checkout.
+    checkFit();
+    if (movedAny) {
+      setFitError(`Switched to the ${sheetWidthIn}" roll — some graphics were moved back inside the sheet. Check the layout.`);
+    }
+    // checkFit/drawGrid are stable within a render and intentionally not
+    // deps: including them would re-run this on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetWidthIn, canvasReady]);
 
   // ─── Export ─────────────────────────────────────────────────────────────
 
@@ -1475,7 +1556,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // friendly copy, instead of letting toDataURL() hang or crash the tab.
     // Segmented exports (crop) are budgeted per segment, which is what lets
     // long sheets export at all.
-    if (SHEET_WIDTH_PX * exportHeight > 250_000_000) {
+    if (sheetWidthPx * exportHeight > 250_000_000) {
       throw new Error('TOO_LARGE');
     }
 
@@ -1491,7 +1572,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     try {
       // Render at full resolution
       canvas.setZoom(1);
-      canvas.setDimensions({ width: SHEET_WIDTH_PX, height: exportHeight }, { cssOnly: false });
+      canvas.setDimensions({ width: sheetWidthPx, height: exportHeight }, { cssOnly: false });
       canvas.backgroundColor = '';
 
       const dataUrl = canvas.toDataURL({
@@ -1499,7 +1580,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         multiplier: 1,
         left: 0,
         top: crop?.top ?? 0,
-        width: SHEET_WIDTH_PX,
+        width: sheetWidthPx,
         height: exportHeight,
       });
       // I3: a truncated/empty data URL means the render silently failed
@@ -1514,7 +1595,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       canvas.backgroundColor = savedBackgroundColor;
       canvas.setZoom(savedZoom);
       canvas.setDimensions({
-        width: SHEET_WIDTH_PX * savedZoom,
+        width: sheetWidthPx * savedZoom,
         height: exportHeight * savedZoom,
       });
       canvas.getObjects().forEach(obj => {
@@ -1573,7 +1654,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const inches = (px: number) => Math.round(px / 300);
       if (totalHeight <= SEGMENT_PX) {
         const { dataUrl, heightPx } = await generateFullResExport();
-        await downloadDataUrl(dataUrl, `${base}-part1of1-${inches(SHEET_WIDTH_PX)}x${inches(heightPx)}inches-300dpi.png`);
+        await downloadDataUrl(dataUrl, `${base}-part1of1-${inches(sheetWidthPx)}x${inches(heightPx)}inches-300dpi.png`);
         return;
       }
 
@@ -1603,7 +1684,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         const { dataUrl } = await generateFullResExport(seg);
         await downloadDataUrl(
           dataUrl,
-          `${base}-part${i + 1}of${segments.length}-${inches(SHEET_WIDTH_PX)}x${inches(seg.height)}inches-300dpi.png`
+          `${base}-part${i + 1}of${segments.length}-${inches(sheetWidthPx)}x${inches(seg.height)}inches-300dpi.png`
         );
         // Small pause so the browser registers each download separately.
         await new Promise((r) => setTimeout(r, 400));
@@ -1669,7 +1750,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const composeRes = await fetch('/api/gangsheet-store/compose', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ placements }),
+      body: JSON.stringify({ placements, width_in: sheetWidthIn }),
     });
     const composeData = await composeRes.json().catch(() => ({}));
     if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose the sheet — try again');
@@ -1857,7 +1938,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const composeRes = await fetch('/api/gangsheet-store/compose', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ placements }),
+        body: JSON.stringify({ placements, width_in: sheetWidthIn }),
       });
       const composeData = await composeRes.json().catch(() => ({}));
       if (!composeRes.ok) throw new Error(composeData.error || 'Could not compose your sheet — try again');
@@ -1947,7 +2028,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     try {
       const canvas = fabricRef.current;
       if (canvas && designs.length > 0) {
-        const mult = 440 / (SHEET_WIDTH_PX * (canvas.getZoom() || 1));
+        const mult = 440 / (sheetWidthPx * (canvas.getZoom() || 1));
         const jpeg = canvas.toDataURL({ format: 'jpeg', quality: 0.72, multiplier: mult });
         const hosted = await uploadDataUrlToSpaces(jpeg, `${sheetName || 'sheet'}-preview.jpg`);
         if (!hosted.startsWith('data:')) previewUrl = hosted;
@@ -1957,6 +2038,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const body = {
       name: sheetName,
       sheet_length_ft: sheetLengthFt,
+      width_in: sheetWidthIn,
       pricing_tier: pricingTier,
       total_cost: totalCost,
       designs: persistable,
@@ -2022,6 +2104,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const data = await res.json();
       setSheetName(data.name);
       setPricingTier(data.pricing_tier || 'standard');
+      // Restore the roll BEFORE the designs go on: addDesignToCanvas
+      // clamps each graphic to the sheet width, so loading a 34" layout
+      // onto a still-22" canvas would squeeze it as it rebuilt.
+      // normalizeSheetWidth covers rows saved before widths existed
+      // (null -> 22) and any value we no longer sell.
+      setSheetWidthIn(normalizeSheetWidth(data.width_in));
       if (data.designs && Array.isArray(data.designs)) {
         // Rebuild the design list THROUGH addDesignToCanvas (it appends its
         // own fresh entries) — pre-seeding state with the saved rows here
@@ -2400,7 +2488,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         open={vendorDialogOpen}
         onClose={() => setVendorDialogOpen(false)}
         onSend={handleVendorSend}
-        subject={`${sheetName || 'Untitled Sheet'} — 22in × ${sheetLengthFt}ft`}
+        subject={`${sheetName || 'Untitled Sheet'} — ${sheetWidthIn}in × ${sheetLengthFt}ft`}
       />
 
       {/* File > Email/Text Sheet dialog — sends a 7-day presigned link to the
@@ -2678,6 +2766,38 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                 {/* Sheet size controls */}
                 <div className="bg-gray-50 rounded-xl p-3 space-y-2">
                   <p className="text-xs font-semibold text-gray-500 uppercase">Sheet Size</p>
+                  {/* Width first: it changes the canvas and the $/ft, so
+                      picking it after laying designs out means a reflow.
+                      Only rendered when there's an actual choice — one
+                      roll on offer should read as a fact, not a control. */}
+                  {offeredWidths.length > 1 && (
+                    <div>
+                      <span className="text-xs text-gray-600">Width</span>
+                      <div className="mt-1 grid grid-cols-2 gap-1.5">
+                        {offeredWidths.map((w) => {
+                          const active = w === sheetWidthIn;
+                          const rate = liveRatesByWidth?.[w]?.[pricingTier];
+                          return (
+                            <button
+                              key={w}
+                              type="button"
+                              onClick={() => setSheetWidthIn(normalizeSheetWidth(w))}
+                              className={`rounded-lg border px-2 py-1.5 text-center transition ${
+                                active
+                                  ? 'border-orange-500 bg-orange-50 text-orange-700'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-orange-300'
+                              }`}
+                            >
+                              <span className="block text-xs font-bold">{w}&quot;</span>
+                              <span className="block text-[10px] opacity-80">
+                                {rate != null ? `$${rate.toFixed(2)}/ft` : '—/ft'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                   <label className="flex items-center justify-between gap-2">
                     <span className="text-xs text-gray-600">
                       Length (ft)
@@ -2696,7 +2816,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
                     </div>
                   </label>
-                  <p className="text-[10px] text-gray-400">Width fixed at 22" · length {configLimits.minFt}–{BUILDER_MAX_FT} ft. Set the length manually — if your graphics don't fit you'll get a warning.</p>
+                  <p className="text-[10px] text-gray-400">{sheetWidthIn}&quot; wide · length {configLimits.minFt}–{BUILDER_MAX_FT} ft, sold in 1 ft (12&quot;) steps. Set the length manually — if your graphics don&apos;t fit you&apos;ll get a warning.</p>
                 </div>
 
                 {/* Design list */}
@@ -3101,7 +3221,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                 {/* Sheet dimensions */}
                 <div className="bg-blue-50 rounded-xl p-3 text-xs text-blue-700">
                   <p className="font-semibold mb-1"><Info className="w-3 h-3 inline mr-1" />Sheet Specs</p>
-                  <p>Width: 22" (6,600px at 300 DPI)</p>
+                  <p>Width: {sheetWidthIn}&quot; ({sheetWidthPx.toLocaleString()}px at 300 DPI)</p>
                   <p>Length: {sheetLengthFt}ft ({(sheetLengthFt * 12).toFixed(0)}" / {(sheetLengthFt * PX_PER_FOOT).toLocaleString()}px)</p>
                   <p>Resolution: 300 DPI (print-ready)</p>
                 </div>

@@ -2197,13 +2197,13 @@ export async function sendGangSheetPaidToCustomer({ order }) {
     ? 'Ships to you — we\'ll email tracking once it\'s on the way'
     : `Pickup — ${SHOP_ADDRESS}`;
   const turnaround = await gangSheetTurnaround(order.tier);
-  const subject = `Order #${order.id} confirmed — DTF Gang Sheet 22in × ${order.length_ft} ft`;
+  const subject = `Order #${order.id} confirmed — DTF Gang Sheet ${order.width_in || 22}in × ${order.length_ft} ft`;
   const body = `
     <p>Hi ${escapeHtml(order.customer_name || 'there')},</p>
     <p>Thanks for your order — we've got it and we're getting started.</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
-      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
       detailRow('Turnaround', turnaround) +
       detailRow('Total', `<strong>${total}</strong>`) +
       detailRow('Delivery', deliveryValue)
@@ -2241,7 +2241,7 @@ export async function sendGangSheetReadyToCustomer({ order }) {
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Good news — your DTF gang sheet order is ready!</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
-      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
       detailRow('Total', `<strong>${total}</strong>`)
     )}
     ${deliveryBlock}
@@ -2439,7 +2439,7 @@ export async function sendGangSheetPaidToAdmin({ order }) {
   const body = `
     <p><strong>${escapeHtml(order.customer_name || '(no name)')} &lt;${escapeHtml(order.customer_email || 'no email')}&gt;</strong> just paid for a gang sheet order.</p>
     ${detailsTable(
-      detailRow('Size', `22in &times; ${order.length_ft} ft`) +
+      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
       detailRow('Tier', turnaround) +
       detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
       (shipAddr ? detailRow('Ship to', escapeHtml(`${shipAddr.line1 || ''}, ${shipAddr.city || ''}, ${shipAddr.state || ''} ${shipAddr.zip || ''}`)) : '') +

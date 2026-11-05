@@ -16,8 +16,13 @@ import Seo from '@/components/Seo';
 
 type TierKey = 'standard' | 'rush' | 'hot_rush';
 type TierAvailability = { available: boolean; reason?: string };
+type SheetWidthOption = { in: number; px: number; rates: Record<TierKey, number> };
 type DtfConfig = {
-  rates: Record<TierKey, number>;          // cents / ft
+  rates: Record<TierKey, number>;          // cents / ft — the 22" ladder
+  // One entry per roll the store currently sells. Optional so a cached
+  // SPA bundle talking to an older server still renders (it falls back
+  // to `rates`, which has always been 22").
+  widths?: SheetWidthOption[];
   tiers: Record<TierKey, TierAvailability>;
   min_ft: number;
   max_ft: number;
@@ -31,7 +36,9 @@ type DtfConfig = {
 // `preview` is a small screen-resolution snapshot data-URL the builder
 // stashes at checkout so the customer can SEE the sheet they built —
 // the composed file itself is private in Spaces and not client-fetchable.
-type UploadedFile = { file_key: string; width_px: number; height_px: number; fileName?: string; preview?: string };
+// width_in is the roll the server MATCHED the file to (22 or 34) — not a
+// guess from width_px, which carries the ±2% upload tolerance.
+type UploadedFile = { file_key: string; width_px: number; height_px: number; width_in?: number; fileName?: string; preview?: string };
 
 type ShipAddress = { line1: string; city: string; state: string; zip: string };
 
@@ -239,8 +246,15 @@ export default function DtfStorePage() {
     }
 
     const dims = await probeImageDimensions(file);
-    if (dims && Math.abs(dims.width - 6600) > 132) {
-      setUploadError(`Sheet must be 6,600 px wide (22" at 300 DPI); got ${dims.width} px`);
+    // Mirror of the server check: the file has to BE one of the rolls we
+    // print (22" = 6,600 px, 34" = 10,200 px at 300 DPI), ±2%. Catching
+    // it here saves uploading a 90 MB file just to be told no.
+    const offered = config?.widths?.length
+      ? config.widths
+      : [{ in: 22, px: 6600, rates: config?.rates ?? ({} as Record<TierKey, number>) }];
+    if (dims && !offered.some((w) => Math.abs(dims.width - w.px) <= w.px * 0.02)) {
+      const expected = offered.map((w) => `${w.px.toLocaleString()} px (${w.in}")`).join(' or ');
+      setUploadError(`Sheet must be ${expected} wide at 300 DPI; got ${dims.width} px`);
       return;
     }
 
@@ -267,7 +281,8 @@ export default function DtfStorePage() {
       const body = await r.json();
       if (!r.ok) throw new Error(body.error || 'Upload failed');
       const uploaded: UploadedFile = {
-        file_key: body.file_key, width_px: body.width_px, height_px: body.height_px, fileName: file.name,
+        file_key: body.file_key, width_px: body.width_px, height_px: body.height_px,
+        width_in: body.width_in, fileName: file.name,
       };
       setUploadedFile(uploaded);
       try {
@@ -285,7 +300,8 @@ export default function DtfStorePage() {
           setUploadError(`Your file is ${neededFt} ft long — our max sheet is ${config.max_ft} ft. Split it into two sheets.`);
         } else {
           const clampedFt = clamp(neededFt, config.min_ft, config.max_ft);
-          const rate = config.rates[tier ?? 'standard'];
+          const rate = (uploaded.width_in && config.widths?.find((w) => w.in === uploaded.width_in)?.rates
+            || config.rates)[tier ?? 'standard'];
           setBumpSuggestion({ ft: clampedFt, extraCents: Math.max(0, (clampedFt - currentFt) * rate) });
         }
       }
@@ -352,7 +368,21 @@ export default function DtfStorePage() {
     }
   }
 
-  const rateCents = config && tier ? config.rates[tier] : 0;
+  /* ── Which roll, and therefore which rate ───────────────────────────
+     On this page the FILE decides the width — the server matches the
+     uploaded PNG to a roll and tells us which. Before an upload there's
+     nothing to go on, so the estimate shows the 22" ladder (the common
+     case) and re-prices the moment a 34" file lands. The server prices
+     the order independently off the same detected width, so a mismatch
+     here would surface as a wrong estimate, never a wrong charge. */
+  const widthOptions: SheetWidthOption[] = config
+    ? (config.widths?.length ? config.widths : [{ in: 22, px: 6600, rates: config.rates }])
+    : [];
+  const activeWidth = widthOptions.find((w) => w.in === uploadedFile?.width_in)
+    ?? widthOptions.find((w) => w.in === 22)
+    ?? widthOptions[0];
+  const ratesForSheet = activeWidth?.rates ?? config?.rates;
+  const rateCents = ratesForSheet && tier ? ratesForSheet[tier] : 0;
   const lineTotalCents = (lengthFt ?? 0) * rateCents;
   const shippingCents = delivery === 'ship' ? (config?.shipping_flat_cents ?? 0) : 0;
   const totalCents = lineTotalCents + shippingCents;
@@ -440,7 +470,7 @@ export default function DtfStorePage() {
                   <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </span>
                 <span className="mt-1 block text-[11px] leading-snug text-gray-400">
-                  Already print-ready? PNG, 300 DPI, 6,600 px wide.
+                  Already print-ready? PNG, 300 DPI, 22&Prime; or 34&Prime; wide.
                 </span>
               </a>
             </div>
@@ -541,6 +571,9 @@ export default function DtfStorePage() {
               const fileFt = Math.ceil(uploadedFile.height_px / 3600);
               const chosenFt = lengthFt ?? fileFt;
               const chosenPx = chosenFt * 3600;
+              // The frame must be the shape of the roll actually bought —
+              // a 34" sheet drawn at 22" proportions is visibly too tall.
+              const previewWidthPx = (uploadedFile.width_in ?? 22) * 300;
               const cropped = chosenPx < uploadedFile.height_px;
               // Deliberately uncapped: >100% when the chosen length is
               // shorter than the artwork, so the art renders at TRUE scale
@@ -570,8 +603,8 @@ export default function DtfStorePage() {
                       <div
                         className="relative mx-auto overflow-hidden rounded-md border border-gray-200"
                         style={{
-                          aspectRatio: `6600 / ${chosenPx}`,
-                          width: `min(100%, max(6rem, calc(20rem * 6600 / ${chosenPx})))`,
+                          aspectRatio: `${previewWidthPx} / ${chosenPx}`,
+                          width: `min(100%, max(6rem, calc(20rem * ${previewWidthPx} / ${chosenPx})))`,
                         }}
                       >
                         <img
@@ -602,7 +635,7 @@ export default function DtfStorePage() {
                       </div>
                       </div>
                       <p className="mt-1 text-center text-[11px] text-gray-500">
-                        {uploadedFile.fileName ?? 'Your sheet'} · buying 22&Prime; × {chosenFt} ft
+                        {uploadedFile.fileName ?? 'Your sheet'} · buying {uploadedFile.width_in ?? 22}&Prime; × {chosenFt} ft
                         {chosenFt !== fileFt ? ` (artwork fills ${fileFt} ft)` : ''}
                       </p>
                     </div>
@@ -713,7 +746,7 @@ export default function DtfStorePage() {
                       }`}
                     >
                       <span className="block font-display text-sm font-bold text-gray-900">{TIER_LABEL[t]}</span>
-                      <span className="block text-xs text-gray-600">{money(config.rates[t])}/ft</span>
+                      <span className="block text-xs text-gray-600">{money((ratesForSheet ?? config.rates)[t])}/ft</span>
                       <span className="mt-1 block text-[11px] text-gray-500">{config.promises[t]}</span>
                       {!info.available && info.reason && (
                         <span className="mt-1 block text-[11px] font-semibold text-red-600">{info.reason}</span>
@@ -801,7 +834,12 @@ export default function DtfStorePage() {
             <section id="upload" className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5 scroll-mt-24">
               <h2 className="font-display text-base sm:text-lg font-bold text-gray-900">Upload your art</h2>
               <ul className="mt-1 text-xs text-gray-500">
-                <li>PNG · transparent background · 300 DPI · 22&quot; / 6,600 px wide · max 100 MB</li>
+<li>PNG · transparent background · 300 DPI · max 100 MB</li>
+                <li>
+                  {widthOptions.length
+                    ? widthOptions.map((w) => `${w.in}" (${w.px.toLocaleString()} px)`).join(' or ')
+                    : '22" (6,600 px)'} wide — the width of your file picks the roll
+                </li>
               </ul>
               {/* The escape hatch, deliberately one compact line: the hero
                   already made the choice loudly, so repeating the full pitch
@@ -833,7 +871,7 @@ export default function DtfStorePage() {
                   <>
                     <CheckCircle2 className="h-6 w-6 text-green-600" />
                     <span className="font-semibold text-gray-700">
-                      File uploaded — {uploadedFile.width_px} × {uploadedFile.height_px} px
+                      File uploaded — {uploadedFile.width_in ?? 22}&Prime; roll · {uploadedFile.width_px} × {uploadedFile.height_px} px
                     </span>
                     {uploadedFile.fileName && (
                       <span className="text-xs text-gray-500">{uploadedFile.fileName}</span>
@@ -905,7 +943,7 @@ export default function DtfStorePage() {
                     {TIER_ORDER.map((t) => (
                       <tr key={t} className="border-t border-gray-100">
                         <td className="py-1.5 pr-4 font-semibold text-gray-900">{TIER_LABEL[t]}</td>
-                        <td className="py-1.5 pr-4 text-gray-600">{money(config.rates[t])}/ft</td>
+                        <td className="py-1.5 pr-4 text-gray-600">{money((ratesForSheet ?? config.rates)[t])}/ft</td>
                         <td className="py-1.5 text-gray-600">{config.promises[t]}</td>
                       </tr>
                     ))}
@@ -1062,7 +1100,17 @@ export default function DtfStorePage() {
                     <h3 className="font-display text-lg font-bold text-gray-900">
                       {t === 'standard' ? 'Standard' : t === 'rush' ? 'Rush' : 'Hot Rush'}
                     </h3>
-                    <span className="font-display text-xl font-bold text-orange-600">{money(config.rates[t])}<span className="text-xs font-medium text-gray-400">/ft</span></span>
+                    {/* Both rolls, not just 22" — this is the public rate
+                        card, and quoting one width while selling two is
+                        how a customer arrives at checkout surprised. */}
+                    <span className="text-right">
+                      {widthOptions.map((w) => (
+                        <span key={w.in} className="block leading-tight">
+                          <span className="font-display text-xl font-bold text-orange-600">{money(w.rates[t])}</span>
+                          <span className="text-xs font-medium text-gray-400">/ft · {w.in}&Prime;</span>
+                        </span>
+                      ))}
+                    </span>
                   </div>
                   <p className="mt-1.5 text-sm text-gray-600">{config.promises[t]}</p>
                   {t === 'standard' && (
@@ -1083,7 +1131,7 @@ export default function DtfStorePage() {
             {[
               {
                 q: 'What files work?',
-                a: 'Transparent-background PNG, 6,600 px wide (22″ at 300 DPI), up to 100 MB. What you upload is exactly what prints — we don’t edit your file.',
+                a: 'Transparent-background PNG, up to 100 MB — 6,600 px wide for a 22″ sheet or 10,200 px for a 34″ sheet (both 300 DPI). The width of your file picks the roll. What you upload is exactly what prints — we don’t edit your file.',
               },
               {
                 q: 'What do transfers press onto?',
