@@ -812,7 +812,7 @@ function HeroSliderCard({ title, href, images, count, primary }: {
     return () => clearInterval(t);
   }, [images.length]);
   return (
-    <a href={href} className="group relative block rounded-2xl overflow-hidden shadow-xl aspect-[4/3] bg-gray-100">
+    <a href={href} className="group relative block rounded-2xl overflow-hidden shadow-xl aspect-[4/3] bg-white">
       {images.length === 0 ? (
         <div className="absolute inset-0 flex items-center justify-center" style={{ background: primary }}>
           <ShoppingBag className="w-14 h-14 text-white/70" />
@@ -824,7 +824,7 @@ function HeroSliderCard({ title, href, images, count, primary }: {
             src={src}
             alt=""
             loading={i === 0 ? 'eager' : 'lazy'}
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+            className="absolute inset-0 w-full h-full object-contain p-5 pb-14 transition-opacity duration-700"
             style={{ opacity: i === idx ? 1 : 0 }}
           />
         ))
