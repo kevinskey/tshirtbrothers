@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Loader2, XCircle, CheckCircle2, CreditCard } from 'lucide-react';
+import { Printer, Loader2, XCircle, CheckCircle2, CreditCard, Mail } from 'lucide-react';
+import { getToken } from '@/lib/session';
 
 interface PublicInvoice {
   id: number;
@@ -72,16 +73,68 @@ export default function InvoiceViewPage() {
   const [payError, setPayError] = useState<string | null>(null);
   const toggleGroup = (k: string) => setOpenGroups((p) => ({ ...p, [k]: !p[k] }));
 
+  // The capability token from the emailed link. Invoices sent before the
+  // token existed have none, so `needsEmail` drives the recovery prompt
+  // below rather than dead-ending a customer who is trying to pay us.
+  const [token, setToken] = useState<string | null>(searchParams.get('token'));
+  const [needsEmail, setNeedsEmail] = useState(false);
+  const [emailTry, setEmailTry] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+
+  // Admins (the ?print=1 view) and the signed-in customer whose invoice this
+  // is are both allowed through without a token — the server checks the JWT.
+  const authHeaders = (): Record<string, string> => {
+    const jwt = getToken();
+    return jwt ? { Authorization: `Bearer ${jwt}` } : {};
+  };
+  const withToken = (path: string) => (token ? `${path}?token=${encodeURIComponent(token)}` : path);
+
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/invoices/public/${id}`)
+    let cancelled = false;
+    fetch(withToken(`/api/invoices/public/${id}`), { headers: authHeaders() })
       .then(async (r) => {
+        if (r.status === 403) {
+          // Known invoice, wrong/absent credential — recoverable.
+          const err = new Error('needs-email');
+          (err as Error & { recoverable?: boolean }).recoverable = true;
+          throw err;
+        }
         if (!r.ok) throw new Error('Invoice not found');
         return r.json();
       })
-      .then(setInv)
-      .catch((e) => setError(e?.message || 'Failed to load invoice'));
-  }, [id]);
+      .then((data) => { if (!cancelled) { setInv(data); setNeedsEmail(false); } })
+      .catch((e) => {
+        if (cancelled) return;
+        if ((e as Error & { recoverable?: boolean }).recoverable) setNeedsEmail(true);
+        else setError(e?.message || 'Failed to load invoice');
+      });
+    return () => { cancelled = true; };
+  }, [id, token]);
+
+  // Trade the email the invoice was sent to for its token, then let the
+  // effect above re-run and load the invoice.
+  const verifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !emailTry.trim()) return;
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const res = await fetch(`/api/invoices/public/${id}/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailTry.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) throw new Error(data.error || 'Could not verify that email.');
+      setToken(data.token);
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : 'Could not verify that email.');
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   useEffect(() => {
     if (!autoPrint || !inv) return;
@@ -107,7 +160,10 @@ export default function InvoiceViewPage() {
     setPaying(true);
     setPayError(null);
     try {
-      const res = await fetch(`/api/invoices/public/${id}/create-checkout`, { method: 'POST' });
+      const res = await fetch(withToken(`/api/invoices/public/${id}/create-checkout`), {
+        method: 'POST',
+        headers: authHeaders(),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.checkoutUrl) {
         throw new Error(data.error || 'Could not start checkout. Please try again.');
@@ -125,6 +181,46 @@ export default function InvoiceViewPage() {
         <XCircle className="w-16 h-16 text-red-500 mb-4" />
         <h1 className="text-2xl font-bold text-gray-900">Invoice Not Found</h1>
         <p className="text-gray-500 mt-2">{error}</p>
+      </div>
+    );
+  }
+  // Older invoice emails carry no token, so confirm the recipient instead of
+  // turning a customer who wants to pay away at the door.
+  if (needsEmail) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50">
+        <form
+          onSubmit={verifyEmail}
+          className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-6 text-center"
+        >
+          <Mail className="w-12 h-12 text-orange-600 mx-auto mb-3" />
+          <h1 className="text-xl font-bold text-gray-900">Confirm it&rsquo;s you</h1>
+          <p className="text-gray-600 mt-2 text-sm">
+            This invoice link is an older one. Enter the email address we sent the invoice to and
+            we&rsquo;ll open it right up.
+          </p>
+          <input
+            type="email"
+            required
+            autoComplete="email"
+            value={emailTry}
+            onChange={(e) => setEmailTry(e.target.value)}
+            placeholder="you@example.com"
+            aria-label="The email address this invoice was sent to"
+            className="mt-4 w-full rounded-xl border border-gray-300 px-4 py-3 text-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+          />
+          {verifyError && <p className="mt-3 text-sm text-red-600">{verifyError}</p>}
+          <button
+            type="submit"
+            disabled={verifying}
+            className="mt-4 w-full rounded-xl bg-orange-600 px-4 py-3 font-semibold text-white hover:bg-orange-700 disabled:opacity-60"
+          >
+            {verifying ? 'Checking&hellip;' : 'View my invoice'}
+          </button>
+          <p className="mt-4 text-xs text-gray-600">
+            Trouble getting in? Call us at (470) 622-1392 and we&rsquo;ll send a fresh link.
+          </p>
+        </form>
       </div>
     );
   }

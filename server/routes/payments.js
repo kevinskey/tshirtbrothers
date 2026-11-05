@@ -26,6 +26,7 @@ import {
   BackofficeError,
 } from '../services/storeBackoffice.js';
 import { generateInvoiceNumber, cardFeeCents } from './invoices.js';
+import { invoicePdfUrl } from '../lib/invoiceLinks.js';
 
 // ── Store promo codes ────────────────────────────────────────────────────
 // Store checkouts used to set `allow_promotion_codes: true`, which is an
@@ -1963,7 +1964,7 @@ router.get('/success', async (req, res, next) => {
         paid_at: new Date().toISOString(),
         transaction_id: stripeDetails?.transaction_id || null,
         receipt_url: stripeDetails?.receipt_url || null,
-        invoice_pdf_url: `/api/invoices/${inv.id}/pdf`,
+        invoice_pdf_url: invoicePdfUrl(inv, { absolute: false }),
         payment_method: stripeDetails?.payment_method || null,
       });
     }
@@ -2100,7 +2101,7 @@ router.get('/success', async (req, res, next) => {
       paid_at: new Date().toISOString(),
       transaction_id: stripeDetails?.transaction_id || null,
       receipt_url: stripeDetails?.receipt_url || null,
-      invoice_pdf_url: invoiceForQuote ? `/api/invoices/${invoiceForQuote.id}/pdf` : null,
+      invoice_pdf_url: invoiceForQuote ? invoicePdfUrl(invoiceForQuote, { absolute: false }) : null,
       payment_method: stripeDetails?.payment_method || null,
     });
   } catch (err) {

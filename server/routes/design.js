@@ -1,5 +1,6 @@
 import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
+import { safeFetch, assertSafeUrl } from '../lib/safeFetch.js';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { generateDesign } from '../services/openai.js';
@@ -17,9 +18,63 @@ const execFileAsync = promisify(execFile);
 const router = Router();
 const replicate = new Replicate({ auth: process.env.REPLICATE_API_KEY });
 
+// Where an `imageUrl` in a request body is allowed to point.
+//
+// These routes are mounted without router-level auth (index.js) so the Design
+// Studio works for a visitor with no account, and several of them fetched
+// req.body.imageUrl server-side and returned the bytes — which on this
+// droplet meant `http://169.254.169.254/metadata/v1/user-data` was readable
+// by anyone. Every one of them also accepts imageBase64, which is what the
+// studio actually sends, so restricting the URL form costs nothing.
+// Includes blob.core.windows.net and api.iconify.design because a design in
+// the studio legitimately carries those: DALL-E output lives on the former,
+// clipart on the latter, and both get passed straight back as `imageUrl`.
+const CUSTOMER_IMAGE_HOSTS = [
+  'digitaloceanspaces.com',
+  'res.cloudinary.com',
+  'replicate.delivery',
+  'ssactivewear.com',
+  'blob.core.windows.net',
+  'api.iconify.design',
+];
+
+// A data: URL is inline bytes, not an outbound request, so there is nothing
+// to SSRF and it skips the host check. It reaches here because
+// uploadDataUrlIfNeeded() in DesignWorkspace.tsx falls back to sending the
+// data URL as `imageUrl` when the Spaces upload fails — host-checking that
+// would have broken background removal exactly when uploads were already
+// having a bad day.
+const isDataUrl = (v) => typeof v === 'string' && v.startsWith('data:');
+
+// These routes each spend real money per call — OpenAI for /generate,
+// Replicate for the rest — and sat unauthenticated and unmetered, so a
+// script could run the API budget to zero. Deliberately a limiter rather
+// than an auth requirement: the studio is meant to work before signup.
+const aiDesignLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many design operations — give it a few minutes, or call us at (470) 622-1392.' },
+});
+
+// Reject an imageUrl that points somewhere it shouldn't before we hand it to
+// a paid upstream. Returns true when the request has already been answered.
+function rejectUnsafeImageUrl(req, res, imageUrl) {
+  if (!imageUrl || isDataUrl(imageUrl)) return false;
+  try {
+    assertSafeUrl(imageUrl, { allowHosts: CUSTOMER_IMAGE_HOSTS });
+    return false;
+  } catch (err) {
+    res.status(400).json({ error: err.message || 'imageUrl not allowed' });
+    return true;
+  }
+}
+
 // Helper: fetch a remote image and return a base64 data URL
 async function fetchImageAsBase64(url) {
-  const res = await fetch(url);
+  if (isDataUrl(url)) return url;
+  const res = await safeFetch(url, { allowHosts: CUSTOMER_IMAGE_HOSTS });
   if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
   const contentType = res.headers.get('content-type') || 'image/png';
   const buffer = await res.arrayBuffer();
@@ -76,7 +131,10 @@ const MAX_INPUT_PX = { 4: 2_000_000, 2: 6_000_000 };
 
 async function toInputBuffer(imageInput) {
   if (typeof imageInput === 'string' && /^https?:\/\//.test(imageInput)) {
-    const r = await fetch(imageInput);
+    // Callers validate imageUrl at the route; guarded again here because this
+    // helper takes a bare string and is easy to reuse from somewhere that
+    // doesn't.
+    const r = await safeFetch(imageInput, { allowHosts: CUSTOMER_IMAGE_HOSTS });
     if (!r.ok) throw new Error(`Failed to fetch source image: ${r.status}`);
     return Buffer.from(await r.arrayBuffer());
   }
@@ -292,7 +350,7 @@ ${svgLayers.join('\n')}
 // `vectorize=false` returns the transparent PNG instead — useful when an
 // admin specifically wants raster (e.g. for photography-like prompts that
 // don't trace well).
-router.post('/generate', async (req, res, next) => {
+router.post('/generate', aiDesignLimiter, async (req, res, next) => {
   try {
     const {
       prompt, color, garmentType,
@@ -405,9 +463,10 @@ router.post('/generate', async (req, res, next) => {
 
 // ── POST /remove-bg — Remove background ($0.004/image) ─────────────────────
 
-router.post('/remove-bg', async (req, res, next) => {
+router.post('/remove-bg', aiDesignLimiter, async (req, res, next) => {
   try {
     let { imageBase64, imageUrl } = req.body;
+    if (rejectUnsafeImageUrl(req, res, imageUrl)) return;
 
     let replicateInput;
     if (imageUrl) {
@@ -619,7 +678,7 @@ router.post('/blank-photo', blankPhotoLimiter, async (req, res, next) => {
 //
 // Body: { imageBase64 or imageUrl, color: "#000000", fuzz: 25 }
 
-router.post('/remove-color', express.json({ limit: '25mb' }), async (req, res, next) => {
+router.post('/remove-color', aiDesignLimiter, express.json({ limit: '25mb' }), async (req, res, next) => {
   const tmpDir = await mkdtemp(join(tmpdir(), 'remove-color-'));
   const inPath = join(tmpDir, 'in.png');
   const outPath = join(tmpDir, 'out.png');
@@ -630,8 +689,10 @@ router.post('/remove-color', express.json({ limit: '25mb' }), async (req, res, n
     }
 
     let srcBuffer;
-    if (imageUrl) {
-      const r = await fetch(imageUrl);
+    if (isDataUrl(imageUrl)) {
+      srcBuffer = Buffer.from(String(imageUrl).replace(/^data:[^;]+;base64,/, ''), 'base64');
+    } else if (imageUrl) {
+      const r = await safeFetch(imageUrl, { allowHosts: CUSTOMER_IMAGE_HOSTS });
       if (!r.ok) return res.status(400).json({ error: `Failed to fetch imageUrl (${r.status})` });
       srcBuffer = Buffer.from(await r.arrayBuffer());
     } else {
@@ -665,9 +726,10 @@ router.post('/remove-color', express.json({ limit: '25mb' }), async (req, res, n
 
 // ── POST /upscale — Upscale low-res images ($0.0017/image) ──────────────────
 
-router.post('/upscale', async (req, res, next) => {
+router.post('/upscale', aiDesignLimiter, async (req, res, next) => {
   try {
     let { imageBase64, imageUrl, scale = 4 } = req.body;
+    if (rejectUnsafeImageUrl(req, res, imageUrl)) return;
 
     let replicateInput;
     if (imageUrl) {
@@ -701,7 +763,7 @@ router.post('/upscale', async (req, res, next) => {
 
 // ── POST /vectorize — Convert PNG to cut-ready SVG (free, local potrace) ────
 
-router.post('/vectorize', async (req, res, next) => {
+router.post('/vectorize', aiDesignLimiter, async (req, res, next) => {
   try {
     let { imageBase64, imageUrl, colors = 1 } = req.body;
 
@@ -726,9 +788,10 @@ router.post('/vectorize', async (req, res, next) => {
 
 // ── POST /prep-vinyl — Full pipeline: remove shadow → vectorize to SVG ──────
 
-router.post('/prep-vinyl', async (req, res, next) => {
+router.post('/prep-vinyl', aiDesignLimiter, async (req, res, next) => {
   try {
     let { imageBase64, imageUrl, colors = 1 } = req.body;
+    if (rejectUnsafeImageUrl(req, res, imageUrl)) return;
 
     console.log('[prep-vinyl] Starting full pipeline...');
 
