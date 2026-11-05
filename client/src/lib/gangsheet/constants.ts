@@ -6,8 +6,15 @@ export const SHEET_WIDTH_INCHES = 22;
 export const SHEET_WIDTH_PX = SHEET_WIDTH_INCHES * DPI; // 6,600
 export const INCHES_PER_FOOT = 12;
 export const PX_PER_FOOT = INCHES_PER_FOOT * DPI; // 3,600
-export const MAX_SHEET_LENGTH_FT = 10;
-export const MAX_SHEET_HEIGHT_PX = MAX_SHEET_LENGTH_FT * PX_PER_FOOT; // 72,000
+// DISPLAY FALLBACK ONLY, same contract as PRICING below: the builder and
+// /dtf both read the real ceiling from /api/gangsheet-store/config
+// (gang_sheet_store_settings.max_ft, admin-editable 1–40), and /compose
+// and /checkout re-validate it server-side. This only governs the moment
+// before that fetch resolves, or if it never does. Kept level with the
+// configured 34 ft so a flaky config request doesn't silently refuse a
+// long sheet the store actually sells.
+export const MAX_SHEET_LENGTH_FT = 34;
+export const MAX_SHEET_HEIGHT_PX = MAX_SHEET_LENGTH_FT * PX_PER_FOOT; // 122,400
 export const MIN_SHEET_LENGTH_FT = 1;
 
 // Display
