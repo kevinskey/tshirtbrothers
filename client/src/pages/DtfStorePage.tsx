@@ -244,6 +244,20 @@ export default function DtfStorePage() {
       return;
     }
 
+    // 100 MB is multer's limit AND Cloudflare's edge cap, so past it the
+    // POST dies at the edge and the catch below shows a bare "Upload
+    // failed" with no clue why. Long sheets are the realistic way to hit
+    // this now that 34 ft is on offer, and the builder is the answer —
+    // it POSTs placement JSON and the server composes the file, so no
+    // sheet-sized upload crosses the wire at all.
+    if (file.size > 100 * 1024 * 1024) {
+      setUploadError(
+        `That file is ${(file.size / 1024 / 1024).toFixed(0)} MB — uploads top out at 100 MB. `
+        + 'Flatten it, or build the sheet online instead (no upload limit, we render it here).',
+      );
+      return;
+    }
+
     setUploading(true);
     trackEvent('dtf-upload');
     try {
@@ -540,15 +554,24 @@ export default function DtfStorePage() {
                   </p>
                   {uploadedFile.preview && (
                     <div className="mt-3 rounded-xl border border-orange-200 bg-white p-2">
+                      {/* Only the frame scrolls — the caption below it has to
+                          stay put, or on a long sheet the one line naming
+                          what you're buying scrolls out of view. */}
+                      <div className="max-h-80 overflow-y-auto">
                       {/* Frame = the sheet being purchased (22" × chosenFt) */}
                       {/* Width derives from the height cap via the ratio, so
                           the sheet never distorts: the old maxHeight clamp
-                          squashed tall sheets because w-full held the width. */}
+                          squashed tall sheets because w-full held the width.
+                          The 6rem floor is what makes long sheets viewable at
+                          all — fitting a 34 ft sheet inside 20rem of height
+                          left a 17px-wide thread. Past roughly 11 ft the
+                          frame stops shrinking and the wrapper scrolls
+                          instead, so the art stays big enough to recognise. */}
                       <div
                         className="relative mx-auto overflow-hidden rounded-md border border-gray-200"
                         style={{
                           aspectRatio: `6600 / ${chosenPx}`,
-                          width: `min(100%, calc(20rem * 6600 / ${chosenPx}))`,
+                          width: `min(100%, max(6rem, calc(20rem * 6600 / ${chosenPx})))`,
                         }}
                       >
                         <img
@@ -576,6 +599,7 @@ export default function DtfStorePage() {
                             cut off below this line
                           </div>
                         )}
+                      </div>
                       </div>
                       <p className="mt-1 text-center text-[11px] text-gray-500">
                         {uploadedFile.fileName ?? 'Your sheet'} · buying 22&Prime; × {chosenFt} ft
@@ -633,6 +657,37 @@ export default function DtfStorePage() {
                   22&quot; × <strong className="text-gray-900">{lengthFt} ft</strong>
                 </p>
               </div>
+              {/* Jump buttons. The ±1 stepper was fine when the ceiling was
+                  10 ft; at 34 it's 33 taps to the top, and the typed input
+                  is easy to miss next to two big round buttons. Presets are
+                  derived from the live range, so lowering max_ft in /admin
+                  drops the ones that no longer exist instead of offering a
+                  length checkout would reject. */}
+              {(() => {
+                const presets = [...new Set([5, 10, 20, config.max_ft])]
+                  .filter((n) => n > config.min_ft && n <= config.max_ft)
+                  .sort((a, b) => a - b);
+                if (presets.length < 2) return null;
+                return (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-gray-500">Jump to:</span>
+                    {presets.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setLengthFt(n)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          lengthFt === n
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-gray-300 text-gray-600 hover:border-orange-400 hover:text-orange-700'
+                        }`}
+                      >
+                        {n} ft
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
               <p className="mt-2 text-xs text-gray-500">{config.min_ft}–{config.max_ft} ft per sheet.</p>
             </section>
 
