@@ -171,10 +171,11 @@ import JdsAdmin from '@/components/admin/JdsAdmin';
 import MailAdmin from '@/components/admin/MailAdmin';
 import ArtLibraryAdmin from '@/components/admin/ArtLibraryAdmin';
 import ShelfStockAdmin from '@/components/admin/ShelfStockAdmin';
+import RhinestoneAdmin from '@/components/admin/RhinestoneAdmin';
 import { classifyQuote, draftReply, suggestPrice, type QuoteTriage, type DraftReply, type PriceSuggestion } from '@/services/deepseek';
 
-type Section = 'dashboard' | 'quotes' | 'products' | 'shelf-stock' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'mail' | 'texts' | 'settings';
-const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'shelf-stock', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'mail', 'texts', 'settings'];
+type Section = 'dashboard' | 'quotes' | 'products' | 'shelf-stock' | 'art-library' | 'categories' | 'designs' | 'customers' | 'orders' | 'invoices' | 'blog' | 'pricing' | 'instant-quote-pricing' | 'promotions' | 'workspace' | 'gangsheet' | 'embroidery' | 'mockups' | 'fonts' | 'campaigns' | 'newsletters' | 'hero-slides' | 'prospects' | 'purchasing' | 'jds' | 'bling' | 'mail' | 'texts' | 'settings';
+const VALID_SECTIONS: Section[] = ['dashboard', 'quotes', 'products', 'shelf-stock', 'art-library', 'categories', 'designs', 'customers', 'orders', 'invoices', 'blog', 'pricing', 'instant-quote-pricing', 'promotions', 'workspace', 'gangsheet', 'embroidery', 'mockups', 'fonts', 'campaigns', 'newsletters', 'hero-slides', 'prospects', 'purchasing', 'jds', 'bling', 'mail', 'texts', 'settings'];
 
 // Which section a fresh mount should land on, read straight off the URL.
 // This has to be the useState initializer, not an effect: the URL-sync
@@ -279,6 +280,10 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     { key: 'stitch-estimator', label: 'Stitch Estimator', icon: Calculator, to: '/stitch-estimator' },
     { key: 'fonts',     label: 'Custom Fonts',     icon: Type },
     { key: 'stonecut',  label: 'StoneCut',         icon: Gem, to: 'https://rhinestones.tshirtbrothers.com', external: true },
+    // The rate card behind /bling plus gallery curation for designs published
+    // out of StoneCut. Sits next to StoneCut because that's where the designs
+    // it curates come from.
+    { key: 'bling',     label: 'Bling Pricing',    icon: Gem },
     { key: 'purchasing', label: 'Blanks (S&S)',    icon: Package },
     { key: 'jds',        label: 'Blanks (JDS)',    icon: Package },
   ]},
@@ -8563,6 +8568,8 @@ export default function AdminPage() {
         )}
 
         {activeSection === 'jds' && <JdsAdmin />}
+
+        {activeSection === 'bling' && <RhinestoneAdmin />}
 
         {activeSection === 'hero-slides' && <HeroSlidesAdmin />}
 
