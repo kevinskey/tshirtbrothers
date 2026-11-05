@@ -3,6 +3,7 @@ import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 import * as theme from './emailTheme.js';
 import { mailRecipients, normalizeCcEmails, mockupRecipients } from './recipients.js';
 import { resolveFulfillmentMode } from './quoteFulfillment.js';
+import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 
 // Re-exported so existing importers of email.js keep resolving them.
 export { mailRecipients, normalizeCcEmails, mockupRecipients };
@@ -963,8 +964,8 @@ export async function sendQuoteUpdatedToCustomer(quote, { total, depositPaid, ba
 // Pure HTML builder — exported for previews; sendPaidInvoiceReceipt wraps it.
 export async function buildPaidReceiptHtml(invoice) {
   const items = Array.isArray(invoice.items) ? invoice.items : (() => { try { return JSON.parse(invoice.items || '[]'); } catch { return []; } })();
-  const invoiceUrl = `${DOMAIN}/invoice/view/${invoice.id}`;
-  const pdfUrl = `${DOMAIN}/api/invoices/${invoice.id}/pdf`;
+  const invoiceUrl = invoiceViewUrl(invoice, { domain: DOMAIN });
+  const pdfUrl = invoicePdfUrl(invoice, { domain: DOMAIN });
   const placeId = process.env.GOOGLE_PLACE_ID || 'ChIJ1wdXkcfp9IgRuigC9YYhM3I';
   const reviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
   const promo = await theme.getActivePromotion();

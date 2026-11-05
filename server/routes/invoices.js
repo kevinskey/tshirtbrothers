@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { fileURLToPath } from 'url';
+import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import Stripe from 'stripe';
 import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
+import { tokenMatches } from '../lib/acceptToken.js';
+import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 import pool from '../db.js';
 import { ensureOrderForInvoice } from '../lib/orderFromInvoice.js';
 import * as theme from '../services/emailTheme.js';
@@ -235,7 +239,7 @@ async function createInvoiceCheckoutSession(invoice, owed) {
     success_url: `${DOMAIN}/payment/success?invoice=${invoice.id}&session_id={CHECKOUT_SESSION_ID}`,
     // Back to the invoice, which carries its own Pay button — so backing out
     // of Stripe is no longer a dead end the customer can't recover from.
-    cancel_url: `${DOMAIN}/invoice/view/${invoice.id}`,
+    cancel_url: invoiceViewUrl(invoice, { domain: DOMAIN }),
     customer_email: invoice.customer_email,
     metadata: {
       invoice_id: String(invoice.id),
@@ -271,7 +275,7 @@ export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
     ? (owedNow.paymentType === 'balance' ? 'On delivery' : 'Upon receipt')
     : null;
   const promo = await theme.getActivePromotion();
-  const pdfUrl = `${DOMAIN}/api/invoices/${invoice.id}/pdf`;
+  const pdfUrl = invoicePdfUrl(invoice, { domain: DOMAIN });
 
   const itemRows = (items || []).map((it) => ({
     name: it.description || '\u2014',
@@ -400,9 +404,80 @@ export async function buildInvoiceEmailHtml(invoice, paymentUrl) {
   });
 }
 
-// All routes require admin auth
+// ── Who may see an invoice without an admin session ───────────────────────
+//
+// These three routes are reachable without auth so the link in the customer's
+// email works for someone who has no account. They used to take nothing but
+// the integer id, which meant `for id in 1..N` dumped every customer's name,
+// email, phone, address and balance. They now need the capability token from
+// that email — same shape as quotes.accept_token.
+//
+// Two authenticated exceptions, because the UI already links here without a
+// token: an admin (the print view at AdminPage.tsx), and the customer whose
+// own invoice it is (CustomerPage.tsx). Soft-decode on purpose — a missing or
+// bad Authorization header is not an error here, it just means "fall back to
+// the token".
+function softUser(req) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) return null;
+  try {
+    return jwt.verify(header.split(' ')[1], process.env.JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+export function mayViewInvoice(req, invoice) {
+  const supplied = req.query.token || req.body?.token;
+  if (invoice.public_token && tokenMatches(invoice.public_token, supplied)) return true;
+  const user = softUser(req);
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  const owner = (invoice.customer_email || '').trim().toLowerCase();
+  return !!owner && owner === (user.email || '').trim().toLowerCase();
+}
+
+// Recover the token for an invoice link that predates it.
+//
+// Every invoice emailed before migrations/invoice_public_token.sql has a
+// tokenless /invoice/view/:id link sitting in a customer's inbox, and some of
+// those invoices are unpaid. 403'ing them would stop real customers paying
+// us, so the viewer falls back to this: prove you know the address the
+// invoice went to, and we hand back the token.
+//
+// This is not a weaker gate than the token itself. A guesser has to already
+// know the (id, email) pair, and the email is the main thing the token is
+// protecting — so there is nothing here to harvest. The limiter is what keeps
+// it from being used to test an address list against a known invoice.
+const invoiceVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts — try again in a few minutes.' },
+});
+
+router.post('/public/:id/verify', invoiceVerifyLimiter, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT customer_email, public_token FROM invoices WHERE id = $1',
+      [req.params.id],
+    );
+    // Identical answer whether the invoice is missing or the email is wrong,
+    // so this can't be used to probe which invoice ids exist.
+    const bad = { error: "That doesn't match the email this invoice was sent to." };
+    if (rows.length === 0) return res.status(403).json(bad);
+
+    const supplied = String(req.body?.email || '').trim().toLowerCase();
+    const actual = String(rows[0].customer_email || '').trim().toLowerCase();
+    if (!supplied || !actual || supplied !== actual) return res.status(403).json(bad);
+
+    res.json({ token: rows[0].public_token });
+  } catch (err) { next(err); }
+});
+
 // Public: minimal invoice view (for customer print/share link). Returns only
-// customer-visible fields. Does NOT require auth so the email link works.
+// customer-visible fields. Needs ?token= (or an admin/owner session).
 router.get('/public/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
@@ -417,6 +492,7 @@ router.get('/public/:id', async (req, res, next) => {
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     const i = rows[0];
+    if (!mayViewInvoice(req, i)) return res.status(403).json({ error: 'Invalid token' });
     const owed = computeAmountOwed(i);
     res.json({
       id: i.id,
@@ -456,15 +532,17 @@ router.get('/public/:id', async (req, res, next) => {
 });
 
 // POST /public/:id/create-checkout - Mint a fresh Stripe Checkout session for
-// an invoice and hand back its URL. Public for the same reason GET /public/:id
-// is: the customer paying has no account. Creating a session leaks nothing —
-// the worst an id-guesser achieves is paying someone else's bill.
+// an invoice and hand back its URL. Unauthenticated for the same reason
+// GET /public/:id is: the customer paying has no account. Token-gated all the
+// same — the hosted Stripe page shows the customer's email and line items, so
+// an id-guesser does rather more than "pay someone else's bill".
 router.post('/public/:id/create-checkout', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = rows[0];
+    if (!mayViewInvoice(req, invoice)) return res.status(403).json({ error: 'Invalid token' });
     const owed = computeAmountOwed(invoice);
     if (owed.amount <= 0) {
       return res.status(400).json({ error: 'This invoice is already paid in full.' });
@@ -478,12 +556,14 @@ router.post('/public/:id/create-checkout', async (req, res, next) => {
 });
 
 // Public: PDF of the invoice. Accessed from the customer success page's
-// "Download invoice" button — no auth, just the invoice id.
+// "Download invoice" button, so it carries the same capability token as the
+// invoice view rather than trusting the id alone.
 router.get('/:id/pdf', async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM invoices WHERE id = $1', [req.params.id]);
     if (rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
     const inv = rows[0];
+    if (!mayViewInvoice(req, inv)) return res.status(403).json({ error: 'Invalid token' });
 
     // Fetched before the stream opens: once headers are out we can no longer
     // answer with an error, so any mockup trouble has to surface here.
@@ -724,7 +804,7 @@ router.post('/:id/send-sms', async (req, res, next) => {
   try {
     const { smsInvoiceLinkToCustomer } = await import('../services/sms.js');
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
-    const sid = await smsInvoiceLinkToCustomer(inv, `${domain}/invoice/view/${inv.id}`);
+    const sid = await smsInvoiceLinkToCustomer(inv, invoiceViewUrl(inv, { domain }));
     res.json({ sent: true, sid });
   } catch (err) {
     // Reported here rather than handed to the generic error middleware, which

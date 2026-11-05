@@ -1,4 +1,5 @@
 import twilio from 'twilio';
+import { invoiceViewUrl } from '../lib/invoiceLinks.js';
 
 const client = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
@@ -175,7 +176,7 @@ export async function smsInvoiceReceiptToCustomer(invoice) {
   if (!phone) return;
   const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
   const amount = Number(invoice.amount_paid || invoice.total || 0).toFixed(2);
-  const body = `TShirt Brothers: Payment received. Invoice ${invoice.invoice_number} paid in full ($${amount}). View/print: ${domain}/invoice/view/${invoice.id}`;
+  const body = `TShirt Brothers: Payment received. Invoice ${invoice.invoice_number} paid in full ($${amount}). View/print: ${invoiceViewUrl(invoice, { domain })}`;
   await sendSMS(phone, body);
 }
 
