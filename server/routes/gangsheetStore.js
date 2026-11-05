@@ -5,7 +5,9 @@ import fs from 'fs';
 import Stripe from 'stripe';
 import rateLimit from 'express-rate-limit';
 import sharp from 'sharp';
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand,
+} from '@aws-sdk/client-s3';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces.js';
@@ -269,9 +271,12 @@ const upload = multer({
 // uploads and creates real Stripe Checkout sessions, so it's a target for
 // both storage-filling and checkout-spam abuse. Pattern copied from
 // server/routes/deepseek.js's publicLimiter/adminLimiter.
+// 20, not 10: the presigned lane spends TWO calls per sheet
+// (/upload-url then /upload-complete), so the old budget let an honest
+// customer re-pick a file only four times before being locked out.
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many uploads. Please try again in a few minutes.' },
@@ -303,6 +308,56 @@ function pngDimensions(buf) {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
+/**
+ * Everything a customer sheet must satisfy before it can be ordered,
+ * shared by the two upload lanes (multipart /upload and the presigned
+ * /upload-url -> /upload-complete pair). Lives in one place because the
+ * lanes feed the SAME checkout trust boundary — a rule enforced on one
+ * and not the other is a rule that isn't enforced.
+ *
+ * Returns { error } to reject, or the facts the caller needs to store.
+ */
+async function validateSheetBuffer(fileBuf, settings) {
+  const dims = pngDimensions(fileBuf.subarray(0, 24));
+  if (!dims) return { error: 'File must be a PNG' };
+  // Match the file against every width the store currently sells (22" =
+  // 6,600 px, 34" = 10,200 px at 300 DPI), ±2% tolerance per spec.
+  const offered = activeWidths(settings);
+  const matchedWidth = offered.find(
+    (w) => Math.abs(dims.width - SHEET_WIDTHS[w].px) <= SHEET_WIDTHS[w].px * 0.02,
+  );
+  if (!matchedWidth) {
+    const expected = offered.map((w) => `${SHEET_WIDTHS[w].px.toLocaleString()} px (${w}")`).join(' or ');
+    return { error: `Sheet must be ${expected} wide at 300 DPI; got ${dims.width} px` };
+  }
+  // Reject up front if the file is taller than the shop's max sheet length
+  // even with the checkout bump-to-max-length suggestion applied — letting
+  // it upload just to dead-end the customer at checkout isn't actionable.
+  if (dims.height > settings.max_ft * 3600 * 1.02) {
+    return {
+      error: `Your file is ${Math.ceil(dims.height / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
+    };
+  }
+  const maxSheetPx = maxSheetPixels(settings);
+  // A whole-sheet PNG with a solid white background would print the
+  // entire sheet in white ink — hard-stop it here with an actionable
+  // message rather than letting it reach production (order #17 lesson).
+  if (await looksWhiteBackground(fileBuf, maxSheetPx)) {
+    return {
+      error: 'This sheet has a solid white background — DTF prints white areas as white ink. Export your PNG with a transparent background and re-upload.',
+    };
+  }
+  return { dims, matchedWidth, maxSheetPx };
+}
+
+// Embed the server-parsed dims directly in the key so /checkout can derive
+// width/height from the key itself instead of trusting whatever the client
+// claims in the checkout request body (C1 fix).
+function mintSheetKey(dims) {
+  const month = new Date().toISOString().slice(0, 7);
+  return `gangsheet-orders/${month}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
+}
+
 router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, next) => {
   const tmpPath = req.file?.path;
   try {
@@ -314,45 +369,11 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     // comfortably in droplet RAM, so we read the whole tmp file into a
     // Buffer here rather than streaming it.
     const fileBuf = fs.readFileSync(tmpPath);
-    const dims = pngDimensions(fileBuf.subarray(0, 24));
-    if (!dims) return res.status(400).json({ error: 'File must be a PNG' });
     const settings = await loadSettings();
-    // Match the file against every width the store currently sells (22" =
-    // 6,600 px, 34" = 10,200 px at 300 DPI), ±2% tolerance per spec. The
-    // matched width rides the response so the client knows which rate
-    // ladder applies without guessing from the pixel count itself.
-    const offered = activeWidths(settings);
-    const matchedWidth = offered.find(
-      (w) => Math.abs(dims.width - SHEET_WIDTHS[w].px) <= SHEET_WIDTHS[w].px * 0.02,
-    );
-    if (!matchedWidth) {
-      const expected = offered.map((w) => `${SHEET_WIDTHS[w].px.toLocaleString()} px (${w}")`).join(' or ');
-      return res.status(400).json({ error: `Sheet must be ${expected} wide at 300 DPI; got ${dims.width} px` });
-    }
-    // Pixel ceilings scale with the widest roll on offer, not a literal
-    // 6,600 — a 34" sheet is 55% more pixels per foot and would trip a
-    // 22"-shaped limit well before reaching max_ft.
-    const maxSheetPx = maxSheetPixels(settings);
-    // Reject up front if the file is taller than the shop's max sheet length
-    // even with the checkout bump-to-max-length suggestion applied — letting
-    // it upload just to dead-end the customer at checkout isn't actionable.
-    if (dims.height > settings.max_ft * 3600 * 1.02) {
-      return res.status(400).json({
-        error: `Your file is ${Math.ceil(dims.height / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
-      });
-    }
-    // A whole-sheet PNG with a solid white background would print the
-    // entire sheet in white ink — hard-stop it here with an actionable
-    // message rather than letting it reach production (order #17 lesson).
-    if (await looksWhiteBackground(fileBuf, maxSheetPx)) {
-      return res.status(400).json({
-        error: 'This sheet has a solid white background — DTF prints white areas as white ink. Export your PNG with a transparent background and re-upload.',
-      });
-    }
-    // Embed the server-parsed dims directly in the key so /checkout can
-    // derive width/height from the key itself instead of trusting whatever
-    // the client claims in the checkout request body (C1 fix).
-    const key = `gangsheet-orders/${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}-${dims.width}x${dims.height}.png`;
+    const check = await validateSheetBuffer(fileBuf, settings);
+    if (check.error) return res.status(400).json({ error: check.error });
+    const { dims, matchedWidth, maxSheetPx } = check;
+    const key = mintSheetKey(dims);
     // Customer production files must stay private — override uploadObject's
     // public-read default via its `acl` param.
     await uploadObject({ key, body: fileBuf, contentType: 'image/png', acl: 'private' });
@@ -363,6 +384,108 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     });
   } catch (err) { next(err); }
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
+});
+
+/**
+ * Direct-to-Spaces customer upload, because Cloudflare will not carry a
+ * gang sheet.
+ *
+ * tshirtbrothers.com sits behind Cloudflare, which caps a request body at
+ * 100 MB and answers anything larger with its own HTML 413 — the origin
+ * never sees it, so neither nginx's limit nor multer's ever came into
+ * play. A 34" x 20 ft sheet is 734 million pixels and routinely clears
+ * 100 MB, so /upload above simply cannot accept one. (Same finding and
+ * same fix as the admin vendor-send lane further down this file.)
+ *
+ * Three steps: mint a key + presigned PUT here, the browser PUTs the
+ * bytes straight at the Spaces endpoint (not proxied, no 100 MB cap),
+ * then /upload-complete validates what landed and promotes it.
+ *
+ * Writes go to a STAGING prefix, never gangsheet-orders/. A checkout key
+ * has to carry server-parsed dims in its name (FILE_KEY_RE), and at
+ * presign time nobody has seen the pixels yet — so the client can only
+ * ever write somewhere checkout refuses to look.
+ */
+const STAGING_PREFIX = 'gangsheet-staging/';
+// Ceiling for the presigned lane. Not a Cloudflare or Spaces limit (the
+// PUT bypasses one and the other allows 5 GB) — it's what /upload-complete
+// can responsibly pull into droplet memory to sniff the background and
+// render a thumbnail. Comfortably past a full 34" x 20 ft sheet.
+const MAX_STAGED_BYTES = 500 * 1024 * 1024;
+
+router.post('/upload-url', uploadLimiter, async (req, res, next) => {
+  try {
+    const key = `${STAGING_PREFIX}${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.png`;
+    const url = await getSignedUrl(
+      getSpacesClient(),
+      new PutObjectCommand({
+        Bucket: SPACES_BUCKET, Key: key, ContentType: 'image/png', ACL: 'private',
+      }),
+      { expiresIn: 3600 },
+    );
+    res.json({ key, url, max_bytes: MAX_STAGED_BYTES });
+  } catch (err) { next(err); }
+});
+
+router.post('/upload-complete', uploadLimiter, async (req, res, next) => {
+  const { key } = req.body || {};
+  // Only keys this server minted above. Without this a client could point
+  // the promote step at any object in the bucket and have it copied into
+  // the orders prefix under a name checkout trusts.
+  if (typeof key !== 'string' || !key.startsWith(STAGING_PREFIX) || key.includes('..')) {
+    return res.status(400).json({ error: 'Upload your sheet first' });
+  }
+  const client = getSpacesClient();
+  // Best-effort cleanup so a rejected sheet doesn't sit in the bucket
+  // forever. Never allowed to mask the real error.
+  const discard = () => client.send(new DeleteObjectCommand({ Bucket: SPACES_BUCKET, Key: key }))
+    .catch((e) => console.error('[dtf-store] staging cleanup failed:', e.message));
+  try {
+    let head;
+    try {
+      head = await client.send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
+    } catch (headErr) {
+      if (headErr.name === 'NotFound' || headErr.$metadata?.httpStatusCode === 404) {
+        return res.status(400).json({ error: 'Upload your sheet first' });
+      }
+      throw headErr;
+    }
+    const bytes = Number(head.ContentLength) || 0;
+    if (bytes > MAX_STAGED_BYTES) {
+      await discard();
+      return res.status(400).json({
+        error: `That file is ${Math.round(bytes / 1024 / 1024)} MB — the limit is ${MAX_STAGED_BYTES / 1024 / 1024} MB. Split it into two sheets.`,
+      });
+    }
+
+    const obj = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }));
+    const fileBuf = Buffer.from(await obj.Body.transformToByteArray());
+    const settings = await loadSettings();
+    const check = await validateSheetBuffer(fileBuf, settings);
+    if (check.error) {
+      await discard();
+      return res.status(400).json({ error: check.error });
+    }
+    const { dims, matchedWidth, maxSheetPx } = check;
+
+    // Promote to the orders prefix under a dims-bearing key. Server-side
+    // copy — the bytes never make the round trip back out through us.
+    const finalKey = mintSheetKey(dims);
+    await client.send(new CopyObjectCommand({
+      Bucket: SPACES_BUCKET,
+      CopySource: `/${SPACES_BUCKET}/${key}`,
+      Key: finalKey,
+      ACL: 'private',
+      ContentType: 'image/png',
+      MetadataDirective: 'REPLACE',
+    }));
+    await uploadSheetThumb(finalKey, fileBuf, maxSheetPx);
+    await discard();
+    res.json({
+      file_key: finalKey, width_px: dims.width, height_px: dims.height,
+      width_in: matchedWidth, bytes,
+    });
+  } catch (err) { next(err); }
 });
 
 // Server-generated /upload keys embed the server-parsed PNG dims as
