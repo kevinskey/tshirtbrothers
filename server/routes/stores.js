@@ -17,6 +17,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { storeApiKey } from '../middleware/storeApiKey.js';
+import { normalizeFeeConfig } from '../lib/feeConfig.js';
 
 const router = Router();
 
@@ -167,6 +168,16 @@ router.post('/:slug/agreements', async (req, res, next) => {
     if (!fee_config_json || typeof fee_config_json !== 'object') {
       return res.status(400).json({ error: 'fee_config_json is required' });
     }
+    // Clamped, not trusted. This route is reached with a store API key, so
+    // the partner was posting their own revenue split: {percent_of_retail: 0}
+    // then a product that freezes the agreement credits them 100% of retail
+    // and TSB $0 on every subsequent order.
+    let feeConfig;
+    try {
+      feeConfig = normalizeFeeConfig(fee_config_json);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
     if (!payout_terms_json || typeof payout_terms_json !== 'object') {
       return res.status(400).json({ error: 'payout_terms_json is required' });
     }
@@ -180,7 +191,7 @@ router.post('/:slug/agreements', async (req, res, next) => {
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, kind, campaign_ref, fee_config_json, payout_terms_json,
                  accepted_by_email, accepted_at`,
-      [storeId, kind, campaign_ref ?? null, fee_config_json, payout_terms_json, accepted_by_email],
+      [storeId, kind, campaign_ref ?? null, feeConfig, payout_terms_json, accepted_by_email],
     );
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }

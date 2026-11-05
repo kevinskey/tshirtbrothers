@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pool from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -154,8 +154,23 @@ router.post('/register', registerLimiter, async (req, res, next) => {
   }
 });
 
+// Credential stuffing had nothing in its way: registerLimiter guards
+// /register but /login had no limiter and no per-account lockout, against
+// 90-day tokens that carry `role` in the payload. Keyed on email as well as
+// IP so a distributed attempt still accumulates against one account, and
+// skipSuccessfulRequests so a busy office signing in normally never trips it.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}|${String(req.body?.email || '').toLowerCase()}`,
+  message: { error: 'Too many sign-in attempts — try again in a few minutes.' },
+});
+
 // POST /login
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body;
 

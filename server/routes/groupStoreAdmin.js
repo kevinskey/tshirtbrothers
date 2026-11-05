@@ -22,6 +22,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import pool from '../db.js';
 import { storeAdminSession, requireRole, _hashToken } from '../middleware/storeAdminSession.js';
 import * as backoffice from '../services/storeBackoffice.js';
@@ -29,10 +30,17 @@ import * as connect from '../services/stripeConnect.js';
 import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
 import { uploadObject } from '../services/spaces.js';
+import * as theme from '../services/emailTheme.js';
 
 const router = Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.FROM_EMAIL || 'T-Shirt Brothers <noreply@tshirtbrothers.com>';
+// FROM_EMAIL on the droplet is a bare address, so compose "Name <addr>" the
+// same way services/email.js does — otherwise these are the only TSB emails
+// that land with no sender name.
+const FROM_EMAIL_RAW = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
+const FROM = FROM_EMAIL_RAW.includes('<')
+  ? FROM_EMAIL_RAW
+  : `${process.env.FROM_NAME || 'T-Shirt Brothers'} <${FROM_EMAIL_RAW}>`;
 
 const CODE_TTL_MINUTES = 15;
 const SESSION_TTL_DAYS = 14;
@@ -51,11 +59,52 @@ function hashCode(code) {
   return crypto.createHash('sha256').update(code).digest('hex');
 }
 
+// A 6-digit code over a 15-minute window is only a secret if the number of
+// guesses is bounded. These routes had no limiter at all, and winning gives
+// a 14-day session over a store's orders, buyer emails, prices, promo codes
+// and Stripe onboarding.
+//
+// Keyed on email as well as IP: per-IP alone is trivially distributed, and
+// per-email alone lets one attacker lock out every store owner in turn.
+const loginRequestLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 6,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}|${String(req.body?.email || '').toLowerCase()}`,
+  message: { error: 'Too many login codes requested — try again in a few minutes.' },
+});
+
+const loginVerifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}|${String(req.body?.email || '').toLowerCase()}`,
+  message: { error: 'Too many attempts — request a fresh code in a few minutes.' },
+});
+
+// /login/find emails whoever asks a list of the stores that address
+// administers. The list goes to the submitted address, so it leaks nothing to
+// the sender — but unthrottled it is an open "email anybody, unlimited" relay.
+const loginFindLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip)}|${String(req.body?.email || '').toLowerCase()}`,
+  message: { error: 'Too many lookups — try again later.' },
+});
+
+// Total wrong guesses allowed against one store+email's outstanding codes
+// before they are all burned. Bounds a slow grind that waits out the limiter.
+const MAX_CODE_ATTEMPTS = 5;
+
 async function findGroupStore(slug) {
   // Accept either the store slug or its subdomain — on
   // <sub>.tshirtbrothers.com the client passes the subdomain label.
   const { rows } = await pool.query(
-    `SELECT id, slug, name, store_type, status
+    `SELECT id, slug, name, store_type, status, gleeworld_tenant_slug
        FROM stores
       WHERE slug = $1 OR lower(subdomain) = lower($1)`,
     [slug],
@@ -69,12 +118,82 @@ async function findGroupStore(slug) {
   return s;
 }
 
+// ── Branded login emails ────────────────────────────────────────────────
+// Same shell as the quote/invoice/receipt templates so a store owner's
+// sign-in mail looks like it came from TSB and not from a dev console.
+
+function codePanel(code) {
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${theme.CREAM};border:1px solid #fed7aa;border-radius:12px;margin:4px 0 18px;">
+    <tr><td style="padding:22px;text-align:center;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:${theme.INK};">YOUR SIGN-IN CODE</div>
+      <div style="margin:10px 0 0;font-size:38px;line-height:1.1;letter-spacing:8px;font-weight:800;color:${theme.NAVY};">${theme.escapeHtml(code)}</div>
+      <div style="margin-top:8px;font-size:13px;color:${theme.GRAY};">Expires in ${CODE_TTL_MINUTES} minutes.</div>
+    </td></tr>
+  </table>`;
+}
+
+function ignoreNote() {
+  return `<p style="margin:0 0 22px;font-size:12px;line-height:1.6;color:${theme.GRAY};">If you didn't request this, you can safely ignore this email — no one can sign in without the code above.</p>`;
+}
+
+export function buildLoginCodeEmail({ store, code }) {
+  return theme.emailShell({
+    title: `${store.name} store login code`,
+    headerTr: theme.docHeader({
+      metaLines: ['Store Dashboard', theme.escapeHtml(store.name)],
+      pill: theme.statusPill('Sign-in requested', 'navy'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your store',
+        titleAccent: 'sign-in code',
+        greeting: `Hi ${store.name} team,`,
+        copy: 'Enter the code below on the sign-in screen to open your store dashboard — orders, products, designs, and payouts.',
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle('Finish signing in')}
+        ${codePanel(code)}
+        ${ignoreNote()}
+      `),
+    ],
+  });
+}
+
+export function buildStoreLinksEmail({ stores }) {
+  const many = stores.length > 1;
+  const links = stores.map((s) => `
+    <tr><td style="padding:10px 0;border-bottom:1px solid ${theme.LINE};">
+      <a href="https://tshirtbrothers.com/stores/${encodeURIComponent(s.slug)}/admin"
+         style="font-size:16px;font-weight:800;color:${theme.ORANGE};text-decoration:none;">${theme.escapeHtml(s.name)} &rarr;</a>
+      <div style="font-size:12px;color:${theme.GRAY};margin-top:2px;">tshirtbrothers.com/stores/${theme.escapeHtml(s.slug)}/admin</div>
+    </td></tr>`).join('');
+
+  return theme.emailShell({
+    title: `Your store dashboard${many ? 's' : ''}`,
+    headerTr: theme.docHeader({ metaLines: ['TSB Pro', 'Store Dashboard Links'] }),
+    sections: [
+      theme.hero({
+        titleTop: many ? 'Your store' : 'Your store',
+        titleAccent: many ? 'dashboards' : 'dashboard',
+        greeting: 'Hi there,',
+        copy: `Here ${many ? 'are the stores' : 'is the store'} you manage. Open ${many ? 'one' : 'it'} and enter this same email address to get a sign-in code.`,
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle(many ? 'Your stores' : 'Your store')}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">${links}</table>
+        ${ignoreNote()}
+      `),
+    ],
+  });
+}
+
 // ── POST /login/request ──────────────────────────────────────────────────
 // Body: { slug, email }
 // If email is a registered admin for this store, email them a code.
 // Response is identical whether the email is registered or not — avoids
 // leaking which emails are admins.
-router.post('/login/request', async (req, res, next) => {
+router.post('/login/request', loginRequestLimiter, async (req, res, next) => {
   try {
     const { slug, email } = req.body ?? {};
     if (!slug || !email) return res.status(400).json({ error: 'slug + email required' });
@@ -92,6 +211,15 @@ router.post('/login/request', async (req, res, next) => {
     const codeHash = hashCode(code);
     const expiresAt = new Date(Date.now() + CODE_TTL_MINUTES * 60_000);
 
+    // Burn any code still outstanding for this store+email first. Every
+    // request used to add ANOTHER valid row, so an attacker could keep a
+    // dozen codes live at once and divide the keyspace by a dozen.
+    await pool.query(
+      `UPDATE store_admin_login_codes SET consumed_at = NOW()
+        WHERE store_id = $1 AND lower(email) = lower($2) AND consumed_at IS NULL`,
+      [store.id, admin.rows[0].email],
+    );
+
     await pool.query(
       `INSERT INTO store_admin_login_codes (store_id, email, code_hash, expires_at)
        VALUES ($1, $2, $3, $4)`,
@@ -104,16 +232,16 @@ router.post('/login/request', async (req, res, next) => {
         from: FROM,
         to: admin.rows[0].email,
         subject: `Your ${store.name} store login code: ${code}`,
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;">
-          <h2 style="margin:0 0 12px;">${store.name} store</h2>
-          <p style="margin:0 0 16px;color:#4b5563;">Use this code to sign in to your store dashboard. It expires in ${CODE_TTL_MINUTES} minutes.</p>
-          <p style="font-size:32px;letter-spacing:6px;font-weight:700;margin:16px 0;color:#111827;">${code}</p>
-          <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can ignore this email.</p>
-        </div>`,
+        html: buildLoginCodeEmail({ store, code }),
       }).catch((err) => console.error('[groupStoreAdmin] login email failed:', err.message));
-    } else {
-      // Dev: log the code so we can test without Resend configured
+    } else if (process.env.NODE_ENV !== 'production') {
+      // Dev only. This used to be an unconditional else, gated on
+      // RESEND_API_KEY being set at RUNTIME rather than on the environment —
+      // so a production host mid-key-rotation printed every live login code
+      // straight into the pm2 log.
       console.log(`[groupStoreAdmin] login code for ${admin.rows[0].email} @ ${slug}: ${code}`);
+    } else {
+      console.error('[groupStoreAdmin] RESEND_API_KEY unset — login code not delivered');
     }
 
     res.json({ ok: true });
@@ -126,7 +254,7 @@ router.post('/login/request', async (req, res, next) => {
 // Emails the person direct links to every store dashboard they admin.
 // Always responds { ok: true } — same anti-enumeration stance as
 // /login/request, so nothing about membership leaks on-screen.
-router.post('/login/find', async (req, res, next) => {
+router.post('/login/find', loginFindLimiter, async (req, res, next) => {
   try {
     const { email } = req.body ?? {};
     if (!email || typeof email !== 'string') {
@@ -144,20 +272,12 @@ router.post('/login/find', async (req, res, next) => {
     );
     if (rows.length === 0) return res.json({ ok: true });
 
-    const links = rows.map((s) =>
-      `<p style="margin:8px 0;"><a href="https://tshirtbrothers.com/stores/${s.slug}/admin" style="color:#ea580c;font-weight:600;">${s.name}</a></p>`,
-    ).join('');
     if (process.env.RESEND_API_KEY) {
       resend.emails.send({
         from: FROM,
         to: email.trim(),
         subject: 'Your TSB Pro store dashboard link' + (rows.length > 1 ? 's' : ''),
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;">
-          <h2 style="margin:0 0 12px;">Your store dashboard${rows.length > 1 ? 's' : ''}</h2>
-          <p style="margin:0 0 16px;color:#4b5563;">Click your store below, then enter this same email address to get a sign-in code.</p>
-          ${links}
-          <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can ignore this email.</p>
-        </div>`,
+        html: buildStoreLinksEmail({ stores: rows }),
       }).catch((err) => console.error('[groupStoreAdmin] find email failed:', err.message));
     } else {
       console.log(`[groupStoreAdmin] store links for ${email}:`, rows.map((s) => s.slug).join(', '));
@@ -169,7 +289,7 @@ router.post('/login/find', async (req, res, next) => {
 // ── POST /login/verify ───────────────────────────────────────────────────
 // Body: { slug, email, code }
 // Consumes the code and issues a session token.
-router.post('/login/verify', async (req, res, next) => {
+router.post('/login/verify', loginVerifyLimiter, async (req, res, next) => {
   try {
     const { slug, email, code } = req.body ?? {};
     if (!slug || !email || !code) {
@@ -190,7 +310,27 @@ router.post('/login/verify', async (req, res, next) => {
         LIMIT 1`,
       [store.id, email, codeHash],
     );
-    if (!rows[0]) return res.status(401).json({ error: 'Invalid or expired code' });
+    if (!rows[0]) {
+      // Count the miss against this store+email's outstanding codes, and burn
+      // them once the cap is hit. The limiter bounds the rate; this bounds
+      // the total, so waiting out the window doesn't buy another 12 guesses.
+      const { rows: tried } = await pool.query(
+        `UPDATE store_admin_login_codes SET attempts = attempts + 1
+          WHERE store_id = $1 AND lower(email) = lower($2)
+            AND consumed_at IS NULL AND expires_at > NOW()
+        RETURNING attempts`,
+        [store.id, email],
+      );
+      if (tried.some((r) => r.attempts >= MAX_CODE_ATTEMPTS)) {
+        await pool.query(
+          `UPDATE store_admin_login_codes SET consumed_at = NOW()
+            WHERE store_id = $1 AND lower(email) = lower($2) AND consumed_at IS NULL`,
+          [store.id, email],
+        );
+        console.warn(`[groupStoreAdmin] burned login codes for ${email} @ ${slug} after ${MAX_CODE_ATTEMPTS} wrong guesses`);
+      }
+      return res.status(401).json({ error: 'Invalid or expired code' });
+    }
 
     // Consume the code
     await pool.query(
@@ -262,14 +402,23 @@ router.post('/sso-exchange', async (req, res, next) => {
 
     let payload;
     try {
-      payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
+      // maxAge matters because jwt.verify only enforces `exp` when the claim
+      // is present: a token minted WITHOUT one would otherwise be valid
+      // forever. supabase/functions/tsb-store-sso sets exp to 2 minutes, so
+      // 5 is slack for clock skew, not a loosening.
+      payload = jwt.verify(token, secret, { algorithms: ['HS256'], maxAge: '5m' });
     } catch (err) {
       return res.status(401).json({ error: `SSO token invalid: ${err.message}` });
     }
     if (payload.iss && payload.iss !== 'gleeworld') {
       return res.status(401).json({ error: 'SSO token issuer mismatch' });
     }
-    const { store_slug, email, name } = payload;
+    // Belt and braces with maxAge above — reject a token that carries no
+    // expiry at all rather than relying on the window.
+    if (!payload.exp) {
+      return res.status(401).json({ error: 'SSO token has no expiry' });
+    }
+    const { store_slug, email, name, tenant_slug } = payload;
     if (!store_slug || !email) {
       return res.status(400).json({ error: 'SSO token missing store_slug or email' });
     }
@@ -277,8 +426,29 @@ router.post('/sso-exchange', async (req, res, next) => {
     const store = await findGroupStore(store_slug);
     if (!store) return res.status(404).json({ error: 'Store not found' });
 
+    // Only a store that GleeWorld actually provisioned can be claimed this
+    // way. store_slug comes out of the signed payload, so without this check
+    // anyone able to mint a token — anyone holding GLEEWORLD_SSO_SECRET —
+    // became 'owner' of ANY group or business store under an email of their
+    // choosing: tsb-direct, Sensory Seasons, Live Hard Truth, every
+    // staff-created school store. gleeworld_tenant_slug is written only by
+    // gleeworldProvisioning.js, so it is NULL on all of those.
+    if (!store.gleeworld_tenant_slug) {
+      console.warn(`[sso-exchange] refused: store '${store.slug}' is not GleeWorld-provisioned (email ${email})`);
+      return res.status(403).json({ error: 'This store is not managed through GleeWorld' });
+    }
+
+    // The issuer derives store_slug from the caller's own tenant, so there is
+    // no tenant claim to compare today. Honour one if it ever appears, so
+    // adding it to tsb-store-sso tightens this automatically.
+    if (tenant_slug && tenant_slug !== store.gleeworld_tenant_slug) {
+      console.warn(`[sso-exchange] refused: tenant '${tenant_slug}' does not own store '${store.slug}'`);
+      return res.status(403).json({ error: 'SSO token tenant does not match this store' });
+    }
+
     // Upsert store_admin. First-time SSO lands as 'owner' — GleeWorld
-    // only issues SSO for the tenant super-admin, so this is safe.
+    // only issues SSO for the tenant super-admin, and the store has now been
+    // proven to belong to a GleeWorld tenant.
     // Subsequent SSOs for the same email leave the role untouched (an
     // owner who's been demoted to viewer stays a viewer).
     const upserted = await pool.query(

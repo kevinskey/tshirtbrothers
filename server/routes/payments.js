@@ -467,8 +467,11 @@ router.post('/create-checkout', async (req, res, next) => {
 
     const quote = quoteResult.rows[0];
 
-    // Validate accept token if provided
-    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
+    // Mandatory, not "validate if supplied". Omitting the token used to skip
+    // this entirely, so any quoteId returned a Stripe session whose hosted
+    // page carries another customer's email and line items. Every quote has
+    // an accept_token since migrations/quote_accept_token_default.sql.
+    if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
@@ -553,7 +556,11 @@ router.post('/create-full-checkout', async (req, res, next) => {
 
     const quote = quoteResult.rows[0];
 
-    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
+    // Mandatory, not "validate if supplied". Omitting the token used to skip
+    // this entirely, so any quoteId returned a Stripe session whose hosted
+    // page carries another customer's email and line items. Every quote has
+    // an accept_token since migrations/quote_accept_token_default.sql.
+    if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 
@@ -616,8 +623,11 @@ router.post('/create-balance-checkout', async (req, res, next) => {
 
     const quote = quoteResult.rows[0];
 
-    // Validate accept token if provided
-    if (token && quote.accept_token && !tokenMatches(quote.accept_token, token)) {
+    // Mandatory, not "validate if supplied". Omitting the token used to skip
+    // this entirely, so any quoteId returned a Stripe session whose hosted
+    // page carries another customer's email and line items. Every quote has
+    // an accept_token since migrations/quote_accept_token_default.sql.
+    if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
 

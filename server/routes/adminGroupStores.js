@@ -15,6 +15,7 @@ import { fetchProducts, fetchStyleColors, fetchStyleSkuData } from '../services/
 import { uploadObject } from '../services/spaces.js';
 import * as backoffice from '../services/storeBackoffice.js';
 import { BackofficeError } from '../services/storeBackoffice.js';
+import { feeConfigFromContribution } from '../lib/feeConfig.js';
 
 const router = Router();
 router.use(authenticate, adminOnly);
@@ -143,15 +144,10 @@ router.post('/', async (req, res, next) => {
       // display-only. A percent contribution of N to the org means TSB
       // keeps (100 − N)% — without this translation TSB's take computes
       // to $0 and the store gets credited the full retail.
-      const contribPct = fundraiser_json?.contribution_type === 'percent'
-        ? Math.min(100, Math.max(0, Number(fundraiser_json.contribution_value) || 0))
-        : 0;
-      const feeConfig = {
-        percent_of_retail: 100 - contribPct,
-        min_per_item_cents: 0,
-        contribution_type: fundraiser_json?.contribution_type ?? 'percent',
-        contribution_value: contribPct,
-      };
+      // lib/feeConfig.js owns this translation now — it was correct here and
+      // wrong in routes/gleeworldProvisioning.js and routes/stores.js, which
+      // is exactly the argument for one copy.
+      const feeConfig = feeConfigFromContribution(fundraiser_json ?? {});
 
       await client.query(
         `INSERT INTO store_agreements
