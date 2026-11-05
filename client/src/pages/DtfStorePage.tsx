@@ -67,9 +67,66 @@ const TIER_LABEL: Record<TierKey, string> = { standard: 'Standard', rush: 'Rush'
 const SUCCESS_STASH_KEY = 'dtf_last_order';
 
 // Survives a Stripe redirect-out-and-back (hitting the browser back button
-// from Checkout) so the customer doesn't have to re-upload a 100 MB file.
+// from Checkout) so the customer doesn't have to re-upload a huge file.
 // Cleared right before we hand off to Stripe, and ignored (not just left
 // stale) once it's more than 2h old.
+// Matches MAX_STAGED_BYTES on the server. Not a Cloudflare limit any
+// more — the bytes go straight to Spaces, bypassing the 100 MB edge cap
+// that used to make a full 34" sheet unpostable. This is simply what the
+// droplet will pull back in to sniff the background and build a thumb.
+const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+
+type UploadResult = { file_key: string; width_px: number; height_px: number; width_in?: number };
+
+/**
+ * Upload a sheet, preferring the direct-to-Spaces lane.
+ *
+ * Cloudflare answers any request body over 100 MB with its own 413 before
+ * the origin ever sees it, so posting a real 34" gang sheet through the
+ * API is impossible. Instead: ask for a presigned PUT, send the bytes
+ * straight at Spaces (not proxied), then have the server validate what
+ * landed and promote it into the orders prefix.
+ *
+ * Falls back to the old multipart POST if the presign step fails — that
+ * route still works for anything under 100 MB, so a Spaces hiccup
+ * degrades to the previous behaviour instead of blocking every order.
+ */
+async function uploadSheetFile(file: File): Promise<UploadResult> {
+  let presign: { key: string; url: string } | null = null;
+  try {
+    const r = await fetch('/api/gangsheet-store/upload-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (r.ok) presign = await r.json();
+  } catch { /* fall through to the multipart lane */ }
+
+  if (presign?.url) {
+    const put = await fetch(presign.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/png', 'x-amz-acl': 'private' },
+      body: file,
+    });
+    if (!put.ok) throw new Error('Upload failed — check your connection and try again');
+    const done = await fetch('/api/gangsheet-store/upload-complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: presign.key }),
+    });
+    const body = await done.json().catch(() => ({}));
+    if (!done.ok) throw new Error(body.error || 'Upload failed');
+    return body as UploadResult;
+  }
+
+  const form = new FormData();
+  form.append('file', file);
+  const r = await fetch('/api/gangsheet-store/upload', { method: 'POST', body: form });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || 'Upload failed');
+  return body as UploadResult;
+}
+
 const UPLOAD_STASH_KEY = 'dtf_upload_stash';
 const UPLOAD_STASH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
@@ -258,16 +315,11 @@ export default function DtfStorePage() {
       return;
     }
 
-    // 100 MB is multer's limit AND Cloudflare's edge cap, so past it the
-    // POST dies at the edge and the catch below shows a bare "Upload
-    // failed" with no clue why. Long sheets are the realistic way to hit
-    // this now that 34 ft is on offer, and the builder is the answer —
-    // it POSTs placement JSON and the server composes the file, so no
-    // sheet-sized upload crosses the wire at all.
-    if (file.size > 100 * 1024 * 1024) {
+    if (file.size > MAX_UPLOAD_BYTES) {
       setUploadError(
-        `That file is ${(file.size / 1024 / 1024).toFixed(0)} MB — uploads top out at 100 MB. `
-        + 'Flatten it, or build the sheet online instead (no upload limit, we render it here).',
+        `That file is ${(file.size / 1024 / 1024).toFixed(0)} MB — the limit is `
+        + `${MAX_UPLOAD_BYTES / 1024 / 1024} MB. Split it into two sheets, or build it online `
+        + 'instead (we render the file here, so nothing large is uploaded at all).',
       );
       return;
     }
@@ -275,11 +327,7 @@ export default function DtfStorePage() {
     setUploading(true);
     trackEvent('dtf-upload');
     try {
-      const form = new FormData();
-      form.append('file', file);
-      const r = await fetch('/api/gangsheet-store/upload', { method: 'POST', body: form });
-      const body = await r.json();
-      if (!r.ok) throw new Error(body.error || 'Upload failed');
+      const body = await uploadSheetFile(file);
       const uploaded: UploadedFile = {
         file_key: body.file_key, width_px: body.width_px, height_px: body.height_px,
         width_in: body.width_in, fileName: file.name,
@@ -834,7 +882,7 @@ export default function DtfStorePage() {
             <section id="upload" className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5 scroll-mt-24">
               <h2 className="font-display text-base sm:text-lg font-bold text-gray-900">Upload your art</h2>
               <ul className="mt-1 text-xs text-gray-500">
-<li>PNG · transparent background · 300 DPI · max 100 MB</li>
+<li>PNG · transparent background · 300 DPI · max 500 MB</li>
                 <li>
                   {widthOptions.length
                     ? widthOptions.map((w) => `${w.in}" (${w.px.toLocaleString()} px)`).join(' or ')
@@ -1131,7 +1179,7 @@ export default function DtfStorePage() {
             {[
               {
                 q: 'What files work?',
-                a: 'Transparent-background PNG, up to 100 MB — 6,600 px wide for a 22″ sheet or 10,200 px for a 34″ sheet (both 300 DPI). The width of your file picks the roll. What you upload is exactly what prints — we don’t edit your file.',
+                a: 'Transparent-background PNG, up to 500 MB — 6,600 px wide for a 22″ sheet or 10,200 px for a 34″ sheet (both 300 DPI). The width of your file picks the roll. What you upload is exactly what prints — we don’t edit your file.',
               },
               {
                 q: 'What do transfers press onto?',
