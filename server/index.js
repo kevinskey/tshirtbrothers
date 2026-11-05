@@ -72,7 +72,19 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.set('trust proxy', 1);
+//
+// Two proxies sit in front of node, not one: Cloudflare (DNS moved there
+// 2026-10-25) and then nginx, whose `proxy_set_header X-Forwarded-For
+// $proxy_add_x_forwarded_for` APPENDS rather than replaces. So the chain
+// Express walks is [socket 127.0.0.1, cloudflare-PoP, real client] and
+// `trust proxy 1` handed back the Cloudflare PoP as req.ip — which means
+// every per-IP rate limiter in this app was bucketing unrelated visitors
+// together: simultaneously bypassable (rotate PoPs) and self-DoS-prone (one
+// busy PoP exhausts the bucket for everyone behind it).
+//
+// If Cloudflare is ever taken out of the path, or nginx is changed to set
+// X-Forwarded-For instead of appending to it, this has to come back to 1.
+app.set('trust proxy', 2);
 app.use(cors());
 
 // Stripe webhook needs raw body - must come before json parser

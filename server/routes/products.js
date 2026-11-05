@@ -6,6 +6,7 @@ import {
   fetchStyle, fetchStyleColors, fetchStyleSkus, fetchStyleInventory,
 } from '../services/ssActivewear.js';
 import { expandRetailCategory, groupIntoRetailCategories } from '../lib/retailCategories.js';
+import { safeFetch, isSafeUrl } from '../lib/safeFetch.js';
 
 const router = Router();
 
@@ -21,6 +22,22 @@ const IMG_INFLIGHT = new Map(); // url -> Promise<{ buf, type }>
 const IMG_TTL_MS = 24 * 60 * 60 * 1000;
 const IMG_CACHE_MAX = 600;
 
+// Hosts the proxy will fetch from. Matched on hostname by exact or
+// dot-suffix comparison in lib/safeFetch.js — NOT by substring, which is how
+// `http://169.254.169.254/latest/meta-data/?x=ssactivewear.com` used to get
+// through and hand droplet metadata back to the caller.
+// sanmar.com was missing from the old substring list as well — 27 of the
+// first 123 image URLs in the live catalog are cdnm.sanmar.com, so it belongs
+// here whether or not anything proxies them today.
+const IMG_PROXY_HOSTS = [
+  'ssactivewear.com',
+  'sanmar.com',
+  'digitaloceanspaces.com',
+  'api.iconify.design',
+  'blob.core.windows.net',
+  'res.cloudinary.com',
+];
+
 async function fetchProxiedImage(url) {
   const existing = IMG_INFLIGHT.get(url);
   if (existing) return existing;
@@ -28,8 +45,9 @@ async function fetchProxiedImage(url) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       // www.ssactivewear.com started 429-ing requests with no User-Agent
       // (Node fetch's default) in Oct 2026; any browser-ish UA passes.
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(10000),
+      const response = await safeFetch(url, {
+        allowHosts: IMG_PROXY_HOSTS,
+        timeoutMs: 10000,
         headers: { 'user-agent': 'Mozilla/5.0 (compatible; TSB-ImageProxy/1.0; +https://tshirtbrothers.com)' },
       });
       if (response.ok) {
@@ -60,9 +78,7 @@ router.get('/image-proxy', async (req, res) => {
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'Invalid URL' });
   }
-  // Only allow S&S Activewear and our own DO Spaces images
-  const allowed = url.includes('ssactivewear.com') || url.includes('digitaloceanspaces.com') || url.includes('api.iconify.design') || url.includes('oaidalleapi') || url.includes('blob.core.windows.net') || url.includes('res.cloudinary.com');
-  if (!allowed) {
+  if (!isSafeUrl(url, { allowHosts: IMG_PROXY_HOSTS })) {
     return res.status(400).json({ error: 'URL not allowed' });
   }
 
