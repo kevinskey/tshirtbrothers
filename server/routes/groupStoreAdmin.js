@@ -29,10 +29,17 @@ import * as connect from '../services/stripeConnect.js';
 import { BackofficeError } from '../services/storeBackoffice.js';
 import { Resend } from 'resend';
 import { uploadObject } from '../services/spaces.js';
+import * as theme from '../services/emailTheme.js';
 
 const router = Router();
 const resend = new Resend(process.env.RESEND_API_KEY);
-const FROM = process.env.FROM_EMAIL || 'T-Shirt Brothers <noreply@tshirtbrothers.com>';
+// FROM_EMAIL on the droplet is a bare address, so compose "Name <addr>" the
+// same way services/email.js does — otherwise these are the only TSB emails
+// that land with no sender name.
+const FROM_EMAIL_RAW = process.env.FROM_EMAIL || 'noreply@tshirtbrothers.com';
+const FROM = FROM_EMAIL_RAW.includes('<')
+  ? FROM_EMAIL_RAW
+  : `${process.env.FROM_NAME || 'T-Shirt Brothers'} <${FROM_EMAIL_RAW}>`;
 
 const CODE_TTL_MINUTES = 15;
 const SESSION_TTL_DAYS = 14;
@@ -67,6 +74,76 @@ async function findGroupStore(slug) {
   if (s.store_type !== 'group' && s.store_type !== 'business') return null;
   if (s.status !== 'active') return null;
   return s;
+}
+
+// ── Branded login emails ────────────────────────────────────────────────
+// Same shell as the quote/invoice/receipt templates so a store owner's
+// sign-in mail looks like it came from TSB and not from a dev console.
+
+function codePanel(code) {
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${theme.CREAM};border:1px solid #fed7aa;border-radius:12px;margin:4px 0 18px;">
+    <tr><td style="padding:22px;text-align:center;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;color:${theme.INK};">YOUR SIGN-IN CODE</div>
+      <div style="margin:10px 0 0;font-size:38px;line-height:1.1;letter-spacing:8px;font-weight:800;color:${theme.NAVY};">${theme.escapeHtml(code)}</div>
+      <div style="margin-top:8px;font-size:13px;color:${theme.GRAY};">Expires in ${CODE_TTL_MINUTES} minutes.</div>
+    </td></tr>
+  </table>`;
+}
+
+function ignoreNote() {
+  return `<p style="margin:0 0 22px;font-size:12px;line-height:1.6;color:${theme.GRAY};">If you didn't request this, you can safely ignore this email — no one can sign in without the code above.</p>`;
+}
+
+export function buildLoginCodeEmail({ store, code }) {
+  return theme.emailShell({
+    title: `${store.name} store login code`,
+    headerTr: theme.docHeader({
+      metaLines: ['Store Dashboard', theme.escapeHtml(store.name)],
+      pill: theme.statusPill('Sign-in requested', 'navy'),
+    }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your store',
+        titleAccent: 'sign-in code',
+        greeting: `Hi ${store.name} team,`,
+        copy: 'Enter the code below on the sign-in screen to open your store dashboard — orders, products, designs, and payouts.',
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle('Finish signing in')}
+        ${codePanel(code)}
+        ${ignoreNote()}
+      `),
+    ],
+  });
+}
+
+export function buildStoreLinksEmail({ stores }) {
+  const many = stores.length > 1;
+  const links = stores.map((s) => `
+    <tr><td style="padding:10px 0;border-bottom:1px solid ${theme.LINE};">
+      <a href="https://tshirtbrothers.com/stores/${encodeURIComponent(s.slug)}/admin"
+         style="font-size:16px;font-weight:800;color:${theme.ORANGE};text-decoration:none;">${theme.escapeHtml(s.name)} &rarr;</a>
+      <div style="font-size:12px;color:${theme.GRAY};margin-top:2px;">tshirtbrothers.com/stores/${theme.escapeHtml(s.slug)}/admin</div>
+    </td></tr>`).join('');
+
+  return theme.emailShell({
+    title: `Your store dashboard${many ? 's' : ''}`,
+    headerTr: theme.docHeader({ metaLines: ['TSB Pro', 'Store Dashboard Links'] }),
+    sections: [
+      theme.hero({
+        titleTop: 'Your store',
+        titleAccent: many ? 'dashboards' : 'dashboard',
+        greeting: 'Hi there,',
+        copy: `Here ${many ? 'are the stores' : 'is the store'} you manage. Open ${many ? 'one' : 'it'} and enter this same email address to get a sign-in code.`,
+      }),
+      theme.bodySection(`
+        ${theme.sectionTitle(many ? 'Your stores' : 'Your store')}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">${links}</table>
+        ${ignoreNote()}
+      `),
+    ],
+  });
 }
 
 // ── POST /login/request ──────────────────────────────────────────────────
@@ -104,12 +181,7 @@ router.post('/login/request', async (req, res, next) => {
         from: FROM,
         to: admin.rows[0].email,
         subject: `Your ${store.name} store login code: ${code}`,
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;">
-          <h2 style="margin:0 0 12px;">${store.name} store</h2>
-          <p style="margin:0 0 16px;color:#4b5563;">Use this code to sign in to your store dashboard. It expires in ${CODE_TTL_MINUTES} minutes.</p>
-          <p style="font-size:32px;letter-spacing:6px;font-weight:700;margin:16px 0;color:#111827;">${code}</p>
-          <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can ignore this email.</p>
-        </div>`,
+        html: buildLoginCodeEmail({ store, code }),
       }).catch((err) => console.error('[groupStoreAdmin] login email failed:', err.message));
     } else {
       // Dev: log the code so we can test without Resend configured
@@ -144,20 +216,12 @@ router.post('/login/find', async (req, res, next) => {
     );
     if (rows.length === 0) return res.json({ ok: true });
 
-    const links = rows.map((s) =>
-      `<p style="margin:8px 0;"><a href="https://tshirtbrothers.com/stores/${s.slug}/admin" style="color:#ea580c;font-weight:600;">${s.name}</a></p>`,
-    ).join('');
     if (process.env.RESEND_API_KEY) {
       resend.emails.send({
         from: FROM,
         to: email.trim(),
         subject: 'Your TSB Pro store dashboard link' + (rows.length > 1 ? 's' : ''),
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:24px;">
-          <h2 style="margin:0 0 12px;">Your store dashboard${rows.length > 1 ? 's' : ''}</h2>
-          <p style="margin:0 0 16px;color:#4b5563;">Click your store below, then enter this same email address to get a sign-in code.</p>
-          ${links}
-          <p style="margin:16px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can ignore this email.</p>
-        </div>`,
+        html: buildStoreLinksEmail({ stores: rows }),
       }).catch((err) => console.error('[groupStoreAdmin] find email failed:', err.message));
     } else {
       console.log(`[groupStoreAdmin] store links for ${email}:`, rows.map((s) => s.slug).join(', '));
