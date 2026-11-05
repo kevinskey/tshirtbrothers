@@ -2,10 +2,36 @@
 // All measurements in pixels at 300 DPI unless noted
 
 export const DPI = 300;
-export const SHEET_WIDTH_INCHES = 22;
-export const SHEET_WIDTH_PX = SHEET_WIDTH_INCHES * DPI; // 6,600
 export const INCHES_PER_FOOT = 12;
 export const PX_PER_FOOT = INCHES_PER_FOOT * DPI; // 3,600
+
+/* ── Sheet widths ──────────────────────────────────────────────────────
+   The store sells two rolls, both by the linear foot. Mirrors
+   SHEET_WIDTHS in server/routes/gangsheetStore.js — the server is
+   authoritative (it re-derives the width from the rendered pixels and
+   prices off that), these are for layout and display. */
+export const SHEET_WIDTH_OPTIONS_IN = [22, 34] as const;
+export type SheetWidthIn = (typeof SHEET_WIDTH_OPTIONS_IN)[number];
+
+export const DEFAULT_SHEET_WIDTH_IN: SheetWidthIn = 22;
+
+export function sheetWidthPx(widthIn: number): number {
+  return Math.round(widthIn * DPI); // 22" → 6,600 · 34" → 10,200
+}
+
+export function isSheetWidth(v: unknown): v is SheetWidthIn {
+  return SHEET_WIDTH_OPTIONS_IN.includes(Number(v) as SheetWidthIn);
+}
+
+export function normalizeSheetWidth(v: unknown): SheetWidthIn {
+  return isSheetWidth(v) ? (Number(v) as SheetWidthIn) : DEFAULT_SHEET_WIDTH_IN;
+}
+
+// Legacy aliases. Both used to be the only width in the app and are still
+// read in a few display-only spots; they mean "the default roll" now, NOT
+// "the sheet width" — anything doing layout must take the width as input.
+export const SHEET_WIDTH_INCHES = DEFAULT_SHEET_WIDTH_IN;
+export const SHEET_WIDTH_PX = sheetWidthPx(DEFAULT_SHEET_WIDTH_IN); // 6,600
 // DISPLAY FALLBACK ONLY, same contract as PRICING below: the builder and
 // /dtf both read the real ceiling from /api/gangsheet-store/config
 // (gang_sheet_store_settings.max_ft, admin-editable 1–40), and /compose

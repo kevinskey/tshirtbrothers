@@ -22,6 +22,9 @@ type OrderRow = {
   customer_email: string | null;
   customer_phone: string | null;
   length_ft: number;
+  // Which roll to load on the press. Older orders predate widths and come
+  // back 22 via the column default, never null.
+  width_in: number;
   tier: TierKey;
   price_cents: number;
   shipping_cents: number;
@@ -142,7 +145,7 @@ function printDtfPackingSlip(order: OrderRow) {
       : undefined,
     shippingMethod: order.delivery === 'ship' ? 'Shipped' : null,
     items: [{
-      title: `DTF gang sheet — ${order.length_ft} ft`,
+      title: `DTF gang sheet — ${order.width_in ?? 22}in × ${order.length_ft} ft`,
       detail: [
         `${TIER_LABEL[order.tier]} turnaround`,
         designs > 0 ? `${designs} print${designs === 1 ? '' : 's'} on sheet` : null,
@@ -225,6 +228,10 @@ type SettingsRow = {
   rate_standard_cents: number;
   rate_rush_cents: number;
   rate_hot_rush_cents: number;
+  rate_34_standard_cents: number;
+  rate_34_rush_cents: number;
+  rate_34_hot_rush_cents: number;
+  width_34_active: boolean;
   cutoff_rush: string;      // 'HH:MM:SS' (Postgres TIME, as text)
   cutoff_hot_rush: string;
   min_ft: number;
@@ -243,6 +250,10 @@ type SettingsForm = {
   rate_standard: string;   // dollars
   rate_rush: string;
   rate_hot_rush: string;
+  rate_34_standard: string;
+  rate_34_rush: string;
+  rate_34_hot_rush: string;
+  width_34_active: boolean;
   cutoff_rush: string;     // 'HH:MM' (type="time" shape)
   cutoff_hot_rush: string;
   min_ft: string;
@@ -268,6 +279,10 @@ function settingsToForm(s: SettingsRow): SettingsForm {
     rate_standard: centsToDollarStr(s.rate_standard_cents),
     rate_rush: centsToDollarStr(s.rate_rush_cents),
     rate_hot_rush: centsToDollarStr(s.rate_hot_rush_cents),
+    rate_34_standard: centsToDollarStr(s.rate_34_standard_cents),
+    rate_34_rush: centsToDollarStr(s.rate_34_rush_cents),
+    rate_34_hot_rush: centsToDollarStr(s.rate_34_hot_rush_cents),
+    width_34_active: s.width_34_active,
     cutoff_rush: toHHMM(s.cutoff_rush),
     cutoff_hot_rush: toHHMM(s.cutoff_hot_rush),
     min_ft: String(s.min_ft),
@@ -327,11 +342,15 @@ function SettingsCard() {
     const rateStandardCents = dollarsToCents(form.rate_standard);
     const rateRushCents = dollarsToCents(form.rate_rush);
     const rateHotRushCents = dollarsToCents(form.rate_hot_rush);
+    const rate34StandardCents = dollarsToCents(form.rate_34_standard);
+    const rate34RushCents = dollarsToCents(form.rate_34_rush);
+    const rate34HotRushCents = dollarsToCents(form.rate_34_hot_rush);
     const shippingFlatCents = dollarsToCents(form.shipping_flat);
     const minFt = intOrNull(form.min_ft);
     const maxFt = intOrNull(form.max_ft);
     if (
       rateStandardCents === null || rateRushCents === null || rateHotRushCents === null
+      || rate34StandardCents === null || rate34RushCents === null || rate34HotRushCents === null
       || shippingFlatCents === null || minFt === null || maxFt === null
     ) {
       toast.error('Check your inputs — some values look invalid');
@@ -346,6 +365,10 @@ function SettingsCard() {
           rate_standard_cents: rateStandardCents,
           rate_rush_cents: rateRushCents,
           rate_hot_rush_cents: rateHotRushCents,
+          rate_34_standard_cents: rate34StandardCents,
+          rate_34_rush_cents: rate34RushCents,
+          rate_34_hot_rush_cents: rate34HotRushCents,
+          width_34_active: form.width_34_active,
           cutoff_rush: form.cutoff_rush,
           cutoff_hot_rush: form.cutoff_hot_rush,
           min_ft: minFt,
@@ -409,6 +432,49 @@ function SettingsCard() {
                     className={inputCls} style={{ fontSize: '16px' }}
                   />
                 </label>
+              </div>
+
+              {/* 34" roll. Its own rates, not a multiplier on the 22"
+                  ladder — the two are separate vendor SKUs whose prices
+                  move independently. */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <input
+                    type="checkbox" checked={form.width_34_active}
+                    onChange={(e) => patch({ width_34_active: e.target.checked })}
+                  />
+                  Offer 34&quot; wide sheets
+                </label>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Turn this off and the store sells 22&quot; only — the builder hides the
+                  width picker and checkout rejects a 34&quot; upload.
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className={labelCls}>
+                    34&quot; standard ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_34_standard}
+                      onChange={(e) => patch({ rate_34_standard: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                  <label className={labelCls}>
+                    34&quot; rush ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_34_rush}
+                      onChange={(e) => patch({ rate_34_rush: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                  <label className={labelCls}>
+                    34&quot; hot rush ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_34_hot_rush}
+                      onChange={(e) => patch({ rate_34_hot_rush: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -805,7 +871,7 @@ function DtfOrdersQueue() {
                           {TIER_LABEL[order.tier]}
                         </span>
                         <div className="mt-0.5 text-xs text-gray-500">
-                          {order.length_ft} ft ordered
+                          {order.width_in ?? 22}&Prime; × {order.length_ft} ft ordered
                           {fileFt !== null && (
                             <span className={fileMismatch ? 'ml-1 font-semibold text-red-600' : 'ml-1 text-gray-400'}>
                               · file {fileFt} ft{fileMismatch ? ' ⚠' : ''}
@@ -1030,7 +1096,7 @@ function DtfOrdersQueue() {
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
               <div>
                 <h3 className="font-bold text-gray-900">
-                  Order #{viewOrder.id} — 22in × {viewOrder.length_ft} ft sheet
+                  Order #{viewOrder.id} — {viewOrder.width_in ?? 22}in × {viewOrder.length_ft} ft sheet
                 </h3>
                 <p className="text-xs text-gray-500">
                   {viewOrder.customer_name || viewOrder.customer_email || ''}
@@ -1088,7 +1154,7 @@ function DtfOrdersQueue() {
               ? `${vendorFiles.map((f) => f.name).join('')} (${(vendorFiles.reduce((s, f) => s + f.size, 0) / 1024 / 1024).toFixed(1)} MB)`
               : `${vendorFiles.length} files: ${vendorFiles.map((f) => f.name).join(', ')} (${(vendorFiles.reduce((s, f) => s + f.size, 0) / 1024 / 1024).toFixed(1)} MB total)`
             : vendorOrder
-              ? `Order #${vendorOrder.id} — 22in × ${vendorOrder.length_ft}ft`
+              ? `Order #${vendorOrder.id} — ${vendorOrder.width_in ?? 22}in × ${vendorOrder.length_ft}ft`
               : ''
         }
       />

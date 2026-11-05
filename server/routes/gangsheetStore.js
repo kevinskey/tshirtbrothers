@@ -157,16 +157,77 @@ export function tierAvailability(settings, now = new Date()) {
   return out;
 }
 
-export function priceCents(settings, lengthFt, tier) {
+/* ── Sheet widths ───────────────────────────────────────────────────────
+   The store sells two rolls, both by the linear foot. Width lives here as
+   data rather than the bare 6600 that used to be sprinkled through this
+   file, so every pixel bound, price lookup and validation reads the same
+   source. Adding a third roll means one entry here plus its rate columns.
+
+   `px` is the width at 300 DPI, which is also the exact pixel width an
+   uploaded print-ready file must match. */
+export const SHEET_WIDTHS = {
+  22: { in: 22, px: 6600, rateCols: ['rate_standard_cents', 'rate_rush_cents', 'rate_hot_rush_cents'] },
+  34: { in: 34, px: 10200, rateCols: ['rate_34_standard_cents', 'rate_34_rush_cents', 'rate_34_hot_rush_cents'] },
+};
+const TIER_ORDER = ['standard', 'rush', 'hot_rush'];
+
+// Normalize anything a client sends into a width we actually sell. Falls
+// back to 22 for absent/garbage input so every pre-34" caller (saved
+// layouts, old sessions, the admin tooling) keeps working untouched.
+export function normalizeWidthIn(v) {
+  const n = Number(v);
+  return SHEET_WIDTHS[n] ? n : 22;
+}
+
+export function widthPx(widthIn) {
+  return SHEET_WIDTHS[normalizeWidthIn(widthIn)].px;
+}
+
+// Which roll a file IS, read from its real pixel width (±2%, the same
+// tolerance /upload accepts). This is the trust boundary for pricing: the
+// file key embeds the server-parsed dims, so checkout derives the width
+// from the file itself and never from a client-sent field — otherwise a
+// 34" sheet could be checked out at the 22" rate just by lying about it.
+// Returns null when the width isn't one we sell.
+export function widthInFromPx(px) {
+  const n = Number(px);
+  for (const w of Object.values(SHEET_WIDTHS)) {
+    if (Math.abs(n - w.px) <= w.px * 0.02) return w.in;
+  }
+  return null;
+}
+
+// Per-foot rates for one width, keyed by tier.
+export function ratesForWidth(settings, widthIn) {
+  const { rateCols } = SHEET_WIDTHS[normalizeWidthIn(widthIn)];
+  const out = {};
+  TIER_ORDER.forEach((tier, i) => { out[tier] = settings[rateCols[i]]; });
+  return out;
+}
+
+// Which widths a customer may actually pick right now. 22" is always on —
+// it's the house roll and there's no kill switch for it; 34" can be turned
+// off in /admin without a deploy if KolorMatrix's wide roll is out.
+export function activeWidths(settings) {
+  return [22, ...(settings.width_34_active ? [34] : [])];
+}
+
+// sharp's limitInputPixels for anything that reads or creates a whole
+// sheet whose width isn't known up front (thumbnails of stored files,
+// white-background sniffing of a fresh upload). Sized to the WIDEST roll
+// we've ever sold, not the active list -- a 34" order placed before the
+// width was switched off still has to render its thumbnail. 10% headroom.
+export function maxSheetPixels(settings) {
+  const widest = Math.max(...Object.values(SHEET_WIDTHS).map((w) => w.px));
+  return Math.ceil(widest * settings.max_ft * 3600 * 1.1);
+}
+
+export function priceCents(settings, lengthFt, tier, widthIn = 22) {
   const ft = Math.ceil(Number(lengthFt));
   if (!Number.isFinite(ft) || ft < settings.min_ft || ft > settings.max_ft) {
     throw new Error('invalid length');
   }
-  const rate = {
-    standard: settings.rate_standard_cents,
-    rush: settings.rate_rush_cents,
-    hot_rush: settings.rate_hot_rush_cents,
-  }[tier];
+  const rate = ratesForWidth(settings, widthIn)[tier];
   // == null (not falsy) so a legitimately-configured 0 rate still prices —
   // only an unrecognized tier key should throw.
   if (rate == null) throw new Error('invalid tier');
@@ -177,7 +238,15 @@ router.get('/config', async (req, res, next) => {
   try {
     const s = await loadSettings();
     res.json({
-      rates: { standard: s.rate_standard_cents, rush: s.rate_rush_cents, hot_rush: s.rate_hot_rush_cents },
+      // `rates` stays the 22" ladder at the top level: it predates the
+      // width option and older clients (a cached SPA bundle, the iOS app)
+      // read it directly. `widths` is the width-aware shape.
+      rates: ratesForWidth(s, 22),
+      widths: activeWidths(s).map((w) => ({
+        in: w,
+        px: SHEET_WIDTHS[w].px,
+        rates: ratesForWidth(s, w),
+      })),
       tiers: tierAvailability(s),
       min_ft: s.min_ft,
       max_ft: s.max_ft,
@@ -247,14 +316,26 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     const fileBuf = fs.readFileSync(tmpPath);
     const dims = pngDimensions(fileBuf.subarray(0, 24));
     if (!dims) return res.status(400).json({ error: 'File must be a PNG' });
-    // 22" x 300 DPI = 6,600 px, ±2% tolerance per spec.
-    if (Math.abs(dims.width - 6600) > 132) {
-      return res.status(400).json({ error: `Sheet must be 6,600 px wide (22" at 300 DPI); got ${dims.width} px` });
+    const settings = await loadSettings();
+    // Match the file against every width the store currently sells (22" =
+    // 6,600 px, 34" = 10,200 px at 300 DPI), ±2% tolerance per spec. The
+    // matched width rides the response so the client knows which rate
+    // ladder applies without guessing from the pixel count itself.
+    const offered = activeWidths(settings);
+    const matchedWidth = offered.find(
+      (w) => Math.abs(dims.width - SHEET_WIDTHS[w].px) <= SHEET_WIDTHS[w].px * 0.02,
+    );
+    if (!matchedWidth) {
+      const expected = offered.map((w) => `${SHEET_WIDTHS[w].px.toLocaleString()} px (${w}")`).join(' or ');
+      return res.status(400).json({ error: `Sheet must be ${expected} wide at 300 DPI; got ${dims.width} px` });
     }
+    // Pixel ceilings scale with the widest roll on offer, not a literal
+    // 6,600 — a 34" sheet is 55% more pixels per foot and would trip a
+    // 22"-shaped limit well before reaching max_ft.
+    const maxSheetPx = maxSheetPixels(settings);
     // Reject up front if the file is taller than the shop's max sheet length
     // even with the checkout bump-to-max-length suggestion applied — letting
     // it upload just to dead-end the customer at checkout isn't actionable.
-    const settings = await loadSettings();
     if (dims.height > settings.max_ft * 3600 * 1.02) {
       return res.status(400).json({
         error: `Your file is ${Math.ceil(dims.height / 3600)} ft long — our max sheet is ${settings.max_ft} ft. Split it into two sheets.`,
@@ -263,7 +344,7 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     // A whole-sheet PNG with a solid white background would print the
     // entire sheet in white ink — hard-stop it here with an actionable
     // message rather than letting it reach production (order #17 lesson).
-    if (await looksWhiteBackground(fileBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1))) {
+    if (await looksWhiteBackground(fileBuf, maxSheetPx)) {
       return res.status(400).json({
         error: 'This sheet has a solid white background — DTF prints white areas as white ink. Export your PNG with a transparent background and re-upload.',
       });
@@ -275,8 +356,11 @@ router.post('/upload', uploadLimiter, upload.single('file'), async (req, res, ne
     // Customer production files must stay private — override uploadObject's
     // public-read default via its `acl` param.
     await uploadObject({ key, body: fileBuf, contentType: 'image/png', acl: 'private' });
-    await uploadSheetThumb(key, fileBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1));
-    res.json({ file_key: key, width_px: dims.width, height_px: dims.height, bytes: req.file.size });
+    await uploadSheetThumb(key, fileBuf, maxSheetPx);
+    res.json({
+      file_key: key, width_px: dims.width, height_px: dims.height,
+      width_in: matchedWidth, bytes: req.file.size,
+    });
   } catch (err) { next(err); }
   finally { if (tmpPath) fs.unlink(tmpPath, () => {}); }
 });
@@ -351,8 +435,16 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     // fallback branch.
     const fileWidthPx = Number(keyMatch[1]);
     const fileHeightPx = Number(keyMatch[2]);
+    // Price the roll the FILE is, not the roll the request claims to be.
+    const widthIn = widthInFromPx(fileWidthPx);
+    if (!widthIn) {
+      return res.status(400).json({ error: 'That file isn\'t a width we print — re-upload a 22" or 34" sheet' });
+    }
+    if (!activeWidths(s).includes(widthIn)) {
+      return res.status(400).json({ error: `${widthIn}" sheets aren't available right now.` });
+    }
     let cents;
-    try { cents = priceCents(s, length_ft, tier); }
+    try { cents = priceCents(s, length_ft, tier, widthIn); }
     catch { return res.status(400).json({ error: `Length must be ${s.min_ft}–${s.max_ft} ft` }); }
     // Height must fit the purchased length (1 ft = 3,600 px, +2% tolerance).
     // Uses the server-parsed height from the file key, never a client-sent
@@ -397,10 +489,10 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
 
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
-        (customer_name, customer_email, customer_phone, user_id, length_ft, tier, price_cents, shipping_cents,
+        (customer_name, customer_email, customer_phone, user_id, length_ft, width_in, tier, price_cents, shipping_cents,
          delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
-      [customerName, customerEmail, customerPhone, userId, Math.ceil(Number(length_ft)), tier, cents, shippingCents,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+      [customerName, customerEmail, customerPhone, userId, Math.ceil(Number(length_ft)), widthIn, tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
        file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag],
     );
@@ -415,7 +507,7 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       price_data: {
         currency: 'usd',
         product_data: {
-          name: `DTF Gang Sheet 22in × ${Math.ceil(Number(length_ft))} ft — ${tierLabel}`,
+          name: `DTF Gang Sheet ${widthIn}in × ${Math.ceil(Number(length_ft))} ft — ${tierLabel}`,
           // Live copy — `s` (settings) is already loaded above for pricing,
           // so this reflects the same cutoffs /config and the emails show.
           description: tierPromises(s)[tier],
@@ -455,7 +547,7 @@ const SHEET_CAP = 20;
 router.get('/sheets', authenticate, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, sheet_length_ft, status, preview_url, updated_at
+      `SELECT id, name, sheet_length_ft, width_in, status, preview_url, updated_at
        FROM gang_sheets WHERE created_by = $1
        ORDER BY updated_at DESC LIMIT 20`,
       [req.user.id],
@@ -504,6 +596,13 @@ router.put('/sheets/:id', authenticate, async (req, res, next) => {
     // the query instead of letting Postgres throw on the int cast.
     if (!Number.isInteger(Number(req.params.id))) return res.status(404).json({ error: 'Sheet not found' });
     const { name, sheet_length_ft, pricing_tier, total_cost, layout_json, designs, status, preview_url } = req.body || {};
+    // A saved 34" sheet reopened on a 22" canvas would silently reflow
+    // every graphic, so the roll is part of the sheet, not a UI setting.
+    // Absent -> null -> COALESCE keeps whatever the row already has
+    // (22 by column default for everything saved before widths existed).
+    const widthIn = req.body?.width_in === undefined || req.body?.width_in === null
+      ? null
+      : normalizeWidthIn(req.body.width_in);
     if (sheet_length_ft !== undefined && sheet_length_ft !== null) {
       const n = Number(sheet_length_ft);
       if (!Number.isFinite(n) || n < 1 || n > 20) {
@@ -534,12 +633,13 @@ router.put('/sheets/:id', authenticate, async (req, res, next) => {
         designs = COALESCE($6, designs),
         status = COALESCE($7, status),
         preview_url = COALESCE($8, preview_url),
+        width_in = COALESCE($9, width_in),
         updated_at = NOW()
-      WHERE id = $9 AND created_by = $10 RETURNING *`,
+      WHERE id = $10 AND created_by = $11 RETURNING *`,
       [name, sheet_length_ft, pricing_tier, total_cost,
        layout_json ? JSON.stringify(layout_json) : null,
        designs ? JSON.stringify(designs) : null,
-       status, preview_url || null, req.params.id, req.user.id],
+       status, preview_url || null, widthIn, req.params.id, req.user.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Sheet not found' });
     res.json(rows[0]);
@@ -649,6 +749,15 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     if (!Array.isArray(placements) || placements.length < 1 || placements.length > 400) {
       return res.status(400).json({ error: 'Send between 1 and 400 placements' });
     }
+    // Which roll the builder laid these placements out on. Unlike
+    // /checkout (which derives width from the uploaded file) this one has
+    // to come from the request -- the file doesn't exist yet, we're about
+    // to render it. That's safe because /checkout re-derives the width
+    // from the pixels we're about to write and prices off THAT, so a
+    // client lying here only produces a sheet it then gets charged for
+    // correctly. normalizeWidthIn() rejects anything but a real roll.
+    const sheetWidthIn = normalizeWidthIn(req.body?.width_in);
+    const sheetWidthPx = widthPx(sheetWidthIn);
 
     const cleaned = [];
     const uniqueUrls = new Set();
@@ -670,17 +779,17 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
       if (typeof top !== 'number' || !Number.isFinite(top) || top < 0) {
         return res.status(400).json({ error: 'Invalid placement position' });
       }
-      if (typeof width !== 'number' || !Number.isFinite(width) || width < 30 || width > 6600) {
+      if (typeof width !== 'number' || !Number.isFinite(width) || width < 30 || width > sheetWidthPx) {
         return res.status(400).json({ error: 'Invalid placement size' });
       }
-      if (typeof height !== 'number' || !Number.isFinite(height) || height < 30 || height > 6600) {
+      if (typeof height !== 'number' || !Number.isFinite(height) || height < 30 || height > sheetWidthPx) {
         return res.status(400).json({ error: 'Invalid placement size' });
       }
       const l = Math.round(left);
       const t = Math.round(top);
       const w = Math.round(width);
       const h = Math.round(height);
-      if (l + w > 6600) {
+      if (l + w > sheetWidthPx) {
         return res.status(400).json({ error: 'A design extends past the sheet width' });
       }
       uniqueUrls.add(imageUrl);
@@ -711,7 +820,7 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     // design's source file can legitimately have intrinsic dimensions
     // larger than its placed size — e.g. a hi-res original getting
     // downscaled to fit its box) and the output canvas create() call.
-    const pixelLimit = Math.ceil(6600 * settings.max_ft * 3600 * 1.1);
+    const pixelLimit = Math.ceil(sheetWidthPx * settings.max_ft * 3600 * 1.1);
 
     // Fetch each unique source image exactly once, even if it's placed
     // multiple times (quantity > 1 on the same design).
@@ -758,7 +867,7 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
     try {
       composedBuf = await sharp({
         create: {
-          width: 6600,
+          width: sheetWidthPx,
           height: sheetHeightPx,
           channels: 4,
           background: { r: 0, g: 0, b: 0, alpha: 0 },
@@ -821,6 +930,10 @@ const SETTINGS_FIELDS = [
   ['rate_hot_rush_cents', (v) => Number.isInteger(v) && v >= 0],
   ['cutoff_rush', (v) => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)],
   ['cutoff_hot_rush', (v) => typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)],
+  ['rate_34_standard_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_34_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_34_hot_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['width_34_active', (v) => typeof v === 'boolean'],
   ['min_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
   ['max_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
   ['shipping_flat_cents', (v) => Number.isInteger(v) && v >= 0],
@@ -899,7 +1012,7 @@ router.get('/admin/library-art', ...adminGuard, async (req, res, next) => {
           ORDER BY ca.created_at DESC LIMIT 200`,
       ),
       pool.query(
-        `SELECT id, customer_name, customer_email, file_key, length_ft, created_at
+        `SELECT id, customer_name, customer_email, file_key, length_ft, width_in, created_at
            FROM gang_sheet_orders
           WHERE status NOT IN ('pending_payment', 'canceled')
           ORDER BY id DESC LIMIT 30`,
@@ -930,6 +1043,7 @@ router.get('/admin/library-art', ...adminGuard, async (req, res, next) => {
       id: o.id,
       customer_name: o.customer_name || o.customer_email || `Order ${o.id}`,
       length_ft: o.length_ft,
+      width_in: o.width_in,
       created_at: o.created_at,
       file_url: await presign(o.file_key),
       thumb_url: await presign(thumbKeyFor(o.file_key)),
@@ -1070,7 +1184,7 @@ router.get('/admin/orders/:id/thumb', ...adminGuard, async (req, res, next) => {
       const full = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
       const fullBuf = Buffer.from(await full.Body.transformToByteArray());
       const settings = await loadSettings();
-      buf = await makeSheetThumb(fullBuf, Math.ceil(6600 * settings.max_ft * 3600 * 1.1));
+      buf = await makeSheetThumb(fullBuf, maxSheetPixels(settings));
       uploadObject({ key: tKey, body: buf, contentType: 'image/png', acl: 'private' })
         .catch((e) => console.error('[dtf-store] thumb backfill upload failed:', e.message));
     }
