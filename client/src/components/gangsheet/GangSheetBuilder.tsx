@@ -921,12 +921,20 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     const declaredSheetPx = feetToPx(declaredFt);
     const neededPx = Math.max(declaredSheetPx, maxY + spacingPx);
     const currentBitmapHeight = canvas.getHeight();
-    const currentSheetPxHeight = currentBitmapHeight / (zoom || 1);
+    // Fabric's own zoom, never the React state: callers routinely run
+    // setZoom() and then checkFit() in the same tick, and the `zoom`
+    // closure is still the PREVIOUS value until React re-renders. Reading
+    // it here re-sized the canvas with the old scale — switching 22" ->
+    // 34" left a 10,200 px sheet drawn at the 22" zoom, 1,127 CSS px wide
+    // inside a 777 px pane, hanging off the left edge. Same stale-closure
+    // trap the declaredFt parameter above exists to dodge.
+    const z = canvas.getZoom() || zoom || 1;
+    const currentSheetPxHeight = currentBitmapHeight / z;
     // Grow canvas visually if needed so all copies are visible.
     if (Math.abs(neededPx - currentSheetPxHeight) > 1) {
       canvas.setDimensions({
-        width: sheetWidthPx * zoom,
-        height: neededPx * zoom,
+        width: sheetWidthPx * z,
+        height: neededPx * z,
       });
       drawGrid(canvas, neededPx);
       canvas.renderAll();
@@ -1306,10 +1314,12 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     if (!canvas) return;
     const newFt = Math.max(configLimits.minFt, Math.min(BUILDER_MAX_FT, Math.round(ft)));
     const newHeight = feetToPx(newFt);
-    // Resize both bitmap and CSS so the zoom factor alone governs display scale
+    // Resize both bitmap and CSS so the zoom factor alone governs display
+    // scale. Fabric's zoom, not the React mirror — see checkFit.
+    const z = canvas.getZoom() || zoom || 1;
     canvas.setDimensions({
-      width: sheetWidthPx * zoom,
-      height: newHeight * zoom,
+      width: sheetWidthPx * z,
+      height: newHeight * z,
     });
     drawGrid(canvas, newHeight);
     canvas.renderAll();
@@ -1456,7 +1466,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     // canvas.getHeight() returns the bitmap height which we want to keep
     // proportional to newZoom.
     const currentBitmapHeight = canvas.getHeight();
-    const currentZoom = zoom || 1;
+    const currentZoom = canvas.getZoom() || zoom || 1;
     const sheetPxHeight = currentBitmapHeight / currentZoom;
     canvas.setZoom(newZoom);
     canvas.setDimensions({
