@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Minus, Plus, Upload, Loader2, CheckCircle2, AlertTriangle, ArrowUpCircle,
-  LayoutGrid, ArrowRight, FileImage,
+  LayoutGrid, ArrowRight,
 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import { AddressAutocompleteInput, AddressVerify } from '@/components/AddressAutocomplete';
@@ -396,32 +396,40 @@ export default function DtfStorePage() {
             <p className="mt-4 max-w-md text-sm leading-relaxed text-gray-300 sm:text-base">
               22-inch gang sheets at 300 DPI with white-ink underbase, hot-peel film
               {heroRate && <>, from <strong className="text-white">{heroRate}/ft</strong></>}.
-              Upload a print-ready sheet, or lay one out in your browser.
             </p>
-            {/* The builder leads: most customers do NOT have a print-ready
-                22" / 300 DPI PNG, and as a ghost-outline second button the
-                builder went unnoticed. Solid orange + icon makes it the
-                obvious first move; uploading is the alternate path. */}
-            <div className="mt-6 flex flex-wrap gap-3">
+            {/* The ONLY fork on the page. The builder leads because most
+                customers do not have a print-ready 22" / 300 DPI PNG, and
+                as a ghost-outline second button it went unnoticed. Each
+                button carries its own one-line "is this me?" caption, so
+                the choice needs no explanatory card repeating it below. */}
+            <div className="mt-6 grid max-w-md gap-3 sm:grid-cols-2">
               <Link
                 to="/dtf/builder"
-                className="inline-flex items-center gap-2 rounded-xl bg-orange-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-orange-900/30 transition hover:bg-orange-700"
+                className="group rounded-xl bg-orange-600 px-5 py-4 text-left shadow-lg shadow-orange-900/30 transition hover:bg-orange-700"
               >
-                <LayoutGrid className="h-4 w-4" />
-                Build my sheet online
-                <ArrowRight className="h-4 w-4" />
+                <span className="flex items-center gap-2 text-sm font-bold text-white">
+                  <LayoutGrid className="h-4 w-4 flex-shrink-0" />
+                  Build my sheet
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                </span>
+                <span className="mt-1 block text-[11px] leading-snug text-orange-50/90">
+                  Free layout tool — drop in images, it packs the film for you.
+                </span>
               </Link>
               <a
-                href="#order"
-                className="inline-flex items-center gap-2 rounded-xl border-2 border-gray-500 px-6 py-3 text-sm font-bold text-gray-100 transition hover:border-white hover:text-white"
+                href="#upload"
+                className="group rounded-xl border-2 border-gray-600 px-5 py-4 text-left transition hover:border-gray-400"
               >
-                <Upload className="h-4 w-4" />
-                I have a print-ready file
+                <span className="flex items-center gap-2 text-sm font-bold text-gray-100">
+                  <Upload className="h-4 w-4 flex-shrink-0" />
+                  Upload a sheet
+                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                </span>
+                <span className="mt-1 block text-[11px] leading-snug text-gray-400">
+                  Already print-ready? PNG, 300 DPI, 6,600 px wide.
+                </span>
               </a>
             </div>
-            <p className="mt-3 text-xs text-gray-400">
-              Free layout tool — drop in your images, it packs them onto the film for you.
-            </p>
             <p className="mt-6 font-mono text-[11px] uppercase tracking-wider text-gray-500">
               300 DPI · hot peel · pickup in Fairburn or ships nationwide
             </p>
@@ -585,60 +593,6 @@ export default function DtfStorePage() {
               );
             })()}
 
-            {/* ── Pick a path ─────────────────────────────────────────────
-                The upload dropzone sits four sections down, and the only
-                hint that a free layout tool exists was one underlined link
-                inside it — so customers with loose images got as far as the
-                length stepper never knowing they could build a sheet here.
-                This fork is the first thing in the order flow. Hidden once
-                they arrive from the builder: the sheet is already loaded. */}
-            {!(fromBuilder && uploadedFile) && !uploadedFile && (
-              <section className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
-                <h2 className="font-display text-base sm:text-lg font-bold text-gray-900">
-                  How do you want to start?
-                </h2>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Link
-                    to="/dtf/builder"
-                    className="group flex flex-col rounded-xl border-2 border-orange-500 bg-orange-50 p-4 transition hover:bg-orange-100"
-                  >
-                    <span className="inline-flex items-center gap-2 text-sm font-bold text-orange-800">
-                      <LayoutGrid className="h-5 w-5" />
-                      Build my sheet online
-                      <span className="rounded-full bg-orange-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-                        free
-                      </span>
-                    </span>
-                    <span className="mt-1.5 text-xs leading-relaxed text-orange-900/80">
-                      Drop in your images at any size — the builder packs them onto the
-                      22&Prime; film, shows the length, and sends it straight back here.
-                    </span>
-                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-orange-700">
-                      Open the builder
-                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                    </span>
-                  </Link>
-                  <a
-                    href="#upload"
-                    className="group flex flex-col rounded-xl border-2 border-gray-200 bg-white p-4 transition hover:border-gray-400"
-                  >
-                    <span className="inline-flex items-center gap-2 text-sm font-bold text-gray-900">
-                      <FileImage className="h-5 w-5 text-gray-500" />
-                      I already have a sheet
-                    </span>
-                    <span className="mt-1.5 text-xs leading-relaxed text-gray-600">
-                      A print-ready PNG — transparent background, 300 DPI, 6,600 px wide.
-                      Upload it below and pick your turnaround.
-                    </span>
-                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-gray-700">
-                      Jump to upload
-                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                    </span>
-                  </a>
-                </div>
-              </section>
-            )}
-
             {/* ── Length stepper ── */}
             <section className="rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
               <h2 className="font-display text-base sm:text-lg font-bold text-gray-900">How long is your sheet?</h2>
@@ -794,22 +748,18 @@ export default function DtfStorePage() {
               <ul className="mt-1 text-xs text-gray-500">
                 <li>PNG · transparent background · 300 DPI · 22&quot; / 6,600 px wide · max 100 MB</li>
               </ul>
-              {/* A full-width button, not an inline link — this is the escape
-                  hatch for anyone who hit the dropzone without a print-ready
-                  file, and underlined body text was invisible to them. */}
+              {/* The escape hatch, deliberately one compact line: the hero
+                  already made the choice loudly, so repeating the full pitch
+                  here would read as the same button twice. This only has to
+                  catch someone staring at the dropzone with no sheet. */}
               <Link
                 to="/dtf/builder"
-                className="mt-3 flex items-center justify-between gap-3 rounded-xl border-2 border-orange-300 bg-orange-50 px-4 py-3 transition hover:border-orange-500 hover:bg-orange-100"
+                className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2 transition hover:border-orange-500 hover:bg-orange-100"
               >
-                <span className="flex items-center gap-2.5">
-                  <LayoutGrid className="h-5 w-5 flex-shrink-0 text-orange-700" />
-                  <span>
-                    <span className="block text-sm font-bold text-orange-800">
-                      No print-ready file? Build your sheet online
-                    </span>
-                    <span className="block text-xs text-orange-900/75">
-                      Free layout tool — any images, any size. It lays them out for you.
-                    </span>
+                <span className="flex items-center gap-2">
+                  <LayoutGrid className="h-4 w-4 flex-shrink-0 text-orange-700" />
+                  <span className="text-xs font-semibold text-orange-800">
+                    No print-ready file? Build your sheet online — free
                   </span>
                 </span>
                 <ArrowRight className="h-4 w-4 flex-shrink-0 text-orange-700" />
