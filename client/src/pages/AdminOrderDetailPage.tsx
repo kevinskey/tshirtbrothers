@@ -40,6 +40,7 @@ interface Detail {
     status: string; estimated_price: string | null; quantity: number; notes: string | null;
     mockup_image_url: string | null; mockup_image_url_back: string | null;
     created_at: string; accepted_at: string | null; balance_paid_at: string | null;
+    date_needed: string | null;
     order_stages: Record<string, string> | null;
     shipping_method: string | null; fulfillment_method: string | null;
     picked_up_at: string | null; shipped_at: string | null;
@@ -68,6 +69,86 @@ const money = (n: string | number | null | undefined) =>
   n === null || n === undefined || n === '' ? '—' : `$${Number(n).toFixed(2)}`;
 const dt = (d: string | null | undefined) => (d ? new Date(d).toLocaleString() : null);
 const day = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString() : '—');
+
+/* ── Due date ───────────────────────────────────────────────────────────
+   The shop runs on "how many days have I got", and that number was
+   nowhere on the order page — date_needed came back in the payload and
+   was never rendered. It's the biggest thing in the header now, colored
+   by how much room is left. */
+
+// date_needed is a DATE column: `new Date('2026-11-10')` is UTC midnight,
+// which prints as the 9th anywhere west of Greenwich. Build a LOCAL date
+// from the parts so the badge never shows a due date a day early.
+function parseLocalDate(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Business days from today to the due date, weekends skipped and the due
+// date itself counted. 0 = due today; negative = CALENDAR days overdue
+// (an order three days late is three days late, business or not).
+function businessDaysUntil(due: Date): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+  if (target.getTime() === today.getTime()) return 0;
+  if (target.getTime() < today.getTime()) {
+    return -Math.round((today.getTime() - target.getTime()) / 86_400_000);
+  }
+  let n = 0;
+  const cur = new Date(today);
+  while (cur.getTime() < target.getTime()) {
+    cur.setDate(cur.getDate() + 1);
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) n += 1;
+  }
+  return n;
+}
+
+// Kevin's bands: >4 business days green, 3–4 yellow, 1–2 red. Due-today
+// and overdue fall through to red too — there is no calmer state than
+// "red" once you're inside two days, so they share it and differ only in
+// wording (and overdue gets the solid fill so it can't be skimmed past).
+function dueTone(days: number): { box: string; sub: string; label: string } {
+  if (days < 0) {
+    return {
+      box: 'border-red-600 bg-red-600 text-white',
+      sub: 'text-red-100',
+      label: `${-days} day${days === -1 ? '' : 's'} overdue`,
+    };
+  }
+  if (days === 0) return { box: 'border-red-500 bg-red-50 text-red-800', sub: 'text-red-600', label: 'Due today' };
+  if (days <= 2) return { box: 'border-red-500 bg-red-50 text-red-800', sub: 'text-red-600', label: `${days} business day${days === 1 ? '' : 's'} left` };
+  if (days <= 4) return { box: 'border-yellow-500 bg-yellow-50 text-yellow-800', sub: 'text-yellow-700', label: `${days} business days left` };
+  return { box: 'border-green-600 bg-green-50 text-green-800', sub: 'text-green-700', label: `${days} business days left` };
+}
+
+function DueDateBadge({ dateNeeded }: { dateNeeded: string | null }) {
+  const due = dateNeeded ? parseLocalDate(dateNeeded) : null;
+  if (!due) {
+    // Deliberately still a badge, not blank space: a missing due date is
+    // itself worth seeing on an order that's already in production.
+    return (
+      <div className="rounded-xl border-2 border-dashed border-gray-300 px-5 py-2.5 text-center">
+        <div className="text-base font-bold text-gray-400">No due date</div>
+        <div className="text-[11px] text-gray-400">Set one on the quote</div>
+      </div>
+    );
+  }
+  const days = businessDaysUntil(due);
+  const tone = dueTone(days);
+  return (
+    <div className={`rounded-xl border-2 px-5 py-2.5 text-center ${tone.box}`}>
+      <div className="text-[10px] font-bold uppercase tracking-[0.15em] opacity-75">Due</div>
+      <div className="text-2xl font-black leading-tight">
+        {due.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+      </div>
+      <div className={`text-xs font-semibold ${tone.sub}`}>{tone.label}</div>
+    </div>
+  );
+}
 
 const QUOTE_STATUS_STYLE: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -312,6 +393,11 @@ export default function AdminOrderDetailPage() {
               {quote.customer_email}{quote.customer_phone ? ` · ${quote.customer_phone}` : ''}
               {' · '}{quote.quantity} pcs · est. {money(quote.estimated_price)}
             </div>
+          </div>
+          {/* Centre of the header, between the name block and the money —
+              the first thing you should see when the page opens. */}
+          <div className="flex flex-1 justify-center">
+            <DueDateBadge dateNeeded={quote.date_needed} />
           </div>
           <div className="text-right text-sm">
             <button
