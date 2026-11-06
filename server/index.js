@@ -7,6 +7,7 @@ import { readdir, readFile } from 'fs/promises';
 import pool from './db.js';
 
 import { storeOgHandler } from './lib/storeOg.js';
+import { isSpaRoute } from './lib/spaRoutes.js';
 import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
@@ -187,6 +188,53 @@ app.get('/api/health', (req, res) => {
 // Deeper paths (product, cart, admin) also resolve so the SPA boots over them.
 app.get('/stores/:slug', storeOgHandler);
 app.get('/stores/:slug/*', storeOgHandler);
+
+// ── SPA fallback, with real 404s ──────────────────────────────────────────
+//
+// nginx used to end `location /` with `try_files $uri $uri/index.html
+// /index.html`, so every unmatched path returned HTTP **200** and the
+// prerendered homepage — canonical tag and all. Verified live: /wp-admin,
+// /occasions/graduation and /shop/product/1002523 were each 200 with the same
+// 268,118 bytes. That is an unbounded set of duplicate homepages for Google
+// to crawl, and it also meant a typo'd link looked like a working page.
+//
+// nginx now falls through to Express (`try_files ... @spa`) instead, and this
+// decides: a path the router can actually render gets the SPA shell at 200,
+// anything else gets the prerendered 404 page at 404 with noindex. Known
+// routes that ARE prerendered never reach here — nginx still serves those
+// straight off disk.
+const DIST = join(__dirname, '..', 'client', 'dist');
+
+app.get('*', async (req, res, next) => {
+  // Anything that looks like an API call has already missed every router
+  // above, so it is a genuine 404 and should stay JSON rather than suddenly
+  // returning HTML to a fetch().
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+
+  const known = isSpaRoute(req.path);
+  const file = join(DIST, known ? 'index.html' : '404.html');
+
+  res.status(known ? 200 : 404);
+  // The whole point is to stop these being indexed as homepage copies.
+  if (!known) res.set('X-Robots-Tag', 'noindex, nofollow');
+  // index.html is rebuilt with a new asset hash on every deploy, so a cached
+  // shell 404s on its own script tags (the white-screen incident of
+  // 2026-10-07). nginx sets this for the files it serves; set it here too.
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+
+  res.sendFile(file, (err) => {
+    if (!err) return;
+    // A missing 404.html (an old build, or prerender having failed) must not
+    // turn into a 500. Fall back to a plain-text 404.
+    if (!res.headersSent) {
+      res.status(known ? 200 : 404).type('text/plain')
+        .send(known ? 'Loading…' : 'Not found');
+    }
+    console.warn(`[spa] could not send ${file}: ${err.message}`);
+  });
+});
 
 // Error handling middleware
 app.use((err, req, res, next) => {
