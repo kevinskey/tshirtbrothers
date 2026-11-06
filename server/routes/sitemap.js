@@ -44,6 +44,34 @@ const STATIC_PAGES = [
   // /spiritwear renders the same page but canonicalizes to /bling, so only
   // /bling belongs in the sitemap.
   { path: '/bling',               priority: '0.8', changefreq: 'weekly' },
+
+  // Real public pages that were never in this list, so prerender.mjs (which
+  // takes its route list from here) never built them — and because nginx fell
+  // back to /index.html for anything it couldn't find on disk, they were
+  // served the prerendered HOMEPAGE, canonical tag included. /embroidery is a
+  // money page with the $25 digitizing engine behind it; /gift-club is the
+  // whole Custom Gift Club storefront.
+  { path: '/embroidery',          priority: '0.8', changefreq: 'monthly'},
+  { path: '/sale',                priority: '0.7', changefreq: 'weekly' },
+  { path: '/instant-quote',       priority: '0.7', changefreq: 'monthly'},
+  { path: '/gangsheets',          priority: '0.7', changefreq: 'monthly'},
+  { path: '/stitch-estimator',    priority: '0.5', changefreq: 'monthly'},
+
+  // Custom Gift Club. On this host the sub-app mounts at /gift-club/*, so its
+  // pages live under that prefix — NOT at /occasions/:slug, which is where
+  // they sit only on a dedicated CGC host.
+  { path: '/gift-club',                           priority: '0.8', changefreq: 'weekly' },
+  { path: '/gift-club/shop',                      priority: '0.8', changefreq: 'daily' },
+  { path: '/gift-club/business',                  priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/holiday',                   priority: '0.7', changefreq: 'weekly' },
+  { path: '/gift-club/occasions/birthday',              priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/wedding-anniversary',   priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/graduation',            priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/retirement',            priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/awards-recognition',    priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/holiday',               priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/housewarming',          priority: '0.7', changefreq: 'monthly'},
+  { path: '/gift-club/occasions/sports-fan-gifts',      priority: '0.7', changefreq: 'monthly'},
 ];
 
 const SHOP_CATEGORIES = ['T-Shirts', 'Fleece', 'Headwear', 'Polos', 'Outerwear'];

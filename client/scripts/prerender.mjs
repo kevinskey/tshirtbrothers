@@ -255,6 +255,50 @@ async function main() {
   }
   const failCount = stillFailed.length;
 
+  // dist/404.html — what the server returns, with a real 404 status, for a
+  // path the router doesn't know. Rendered from a deliberately bogus URL so
+  // React resolves it to NotFoundPage, then written to a fixed filename
+  // rather than through pathToFile (there is no /404 route).
+  //
+  // ensureCanonical is deliberately NOT applied: a self-referencing canonical
+  // on an error page would point at whichever bogus URL we happened to use.
+  // Any canonical Seo emitted is stripped for the same reason.
+  try {
+    const page = await browser.newPage();
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const url = req.url();
+      if (url.includes('/api/') && url.startsWith(base)) {
+        const upstream = url.replace(base, API_ORIGIN);
+        fetch(upstream, { method: req.method(), headers: req.headers() })
+          .then(async (r) => req.respond({
+            status: r.status,
+            headers: Object.fromEntries(r.headers.entries()),
+            body: Buffer.from(await r.arrayBuffer()),
+          }))
+          .catch(() => req.abort());
+        return;
+      }
+      req.continue();
+    });
+    await page.goto(`${base}/__prerender_not_found__`, { waitUntil: 'networkidle0', timeout: 30_000 });
+    await new Promise((r) => setTimeout(r, 250));
+    let html = await page.content();
+    html = html.replace(/<link[^>]+rel="canonical"[^>]*>\s*/gi, '');
+    if (!/noindex/i.test(html)) {
+      // NotFoundPage passes noindex via Seo; if that ever stops reaching the
+      // output, say so loudly rather than shipping an indexable error page.
+      console.warn('    ! 404.html has no robots noindex — check Seo on NotFoundPage');
+    }
+    await writeFile(join(DIST, '404.html'), html, 'utf8');
+    await page.close();
+    console.log('  \u2713 404.html');
+  } catch (err) {
+    // Not fatal: server/index.js falls back to a plain-text 404 if the file
+    // is missing. Still worth shouting about.
+    console.error(`  \u2717 404.html: ${err.message}`);
+  }
+
   await browser.close();
   await server.httpServer.close();
 
