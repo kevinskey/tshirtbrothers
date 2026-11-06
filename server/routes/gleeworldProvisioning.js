@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { gleeworldServiceKey } from '../middleware/gleeworldService.js';
+import { feeConfigFromContribution } from '../lib/feeConfig.js';
 
 const router = Router();
 router.use(gleeworldServiceKey);
@@ -132,12 +133,15 @@ router.post('/provision-store', async (req, res, next) => {
 
       // Every group store needs a default agreement so publishing
       // products doesn't blow up on the NOT NULL active_agreement_id.
+      // contribution_type/contribution_value alone are DISPLAY-ONLY keys.
+      // computeLineSplit reads percent_of_retail, defaulting it to 0 when
+      // absent — so this block used to create agreements that credited the
+      // store 100% of retail and TSB $0 on every order. Also clamps, because
+      // contribution_value arrives in the request body and one shared
+      // service key could otherwise provision a store at a 100% give-away.
       const feeConfig = is_fundraiser && fundraiser_json?.contribution_type
-        ? {
-            contribution_type: fundraiser_json.contribution_type,
-            contribution_value: fundraiser_json.contribution_value,
-          }
-        : { contribution_type: 'percent', contribution_value: 0 };
+        ? feeConfigFromContribution(fundraiser_json)
+        : feeConfigFromContribution({ contribution_type: 'percent', contribution_value: 0 });
 
       await client.query(
         `INSERT INTO store_agreements
