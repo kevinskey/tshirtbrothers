@@ -88,5 +88,22 @@ git checkout -- package-lock.json client/package-lock.json server/package-lock.j
 echo "==> Pinging IndexNow..."
 node "$APP_DIR/client/scripts/indexnow-ping.mjs" || true
 
+# Advertised prices vs what the API actually charges.
+#
+# check-business-facts.mjs already existed and worked, but was wired into
+# nothing -- so businessFacts.ts advertised a 10 ft DTF maximum while the API
+# had been selling 20, and never mentioned the 34" roll at all. Nobody ran
+# it, so nobody knew.
+#
+# Runs AFTER the restart, because it reads the live pricing API. Non-blocking
+# on purpose: prices are DB-backed admin settings, so a legitimate price
+# change in admin will read as drift until the copy catches up, and that must
+# not wedge deploys. Drift prints loudly in the deploy log instead.
+echo "==> Checking advertised prices against the live API..."
+if ! node "$APP_DIR/client/scripts/check-business-facts.mjs"; then
+  echo "!!  ADVERTISED PRICES DO NOT MATCH THE API (see above) -- fix"
+  echo "!!  client/src/data/businessFacts.ts or the admin setting."
+fi
+
 echo "==> Done."
 pm2 status

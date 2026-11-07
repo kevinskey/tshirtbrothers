@@ -32,6 +32,9 @@ const STATIC_PAGES = [
   { path: '/design',            priority: '0.8', changefreq: 'weekly' },
   { path: '/quote',             priority: '0.8', changefreq: 'monthly'},
   { path: '/dtf',               priority: '0.8', changefreq: 'weekly' },
+  // Commercial-intent DTF landing page. /dtf is the ordering tool; this is
+  // the page that answers "dtf transfers atlanta".
+  { path: '/dtf-transfers-atlanta', priority: '0.9', changefreq: 'monthly'},
   { path: '/blog',              priority: '0.8', changefreq: 'weekly' },
   { path: '/brands',            priority: '0.7', changefreq: 'weekly' },
   { path: '/drinkware',         priority: '0.7', changefreq: 'monthly'},

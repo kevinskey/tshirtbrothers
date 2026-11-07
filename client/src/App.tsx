@@ -53,6 +53,7 @@ const CustomerPage = lazy(() => import('@/pages/CustomerPage'));
 const DesignStudioPage = lazy(() => import('@/pages/DesignStudioPage'));
 const DrinkwarePage = lazy(() => import('@/pages/DrinkwarePage'));
 const DtfBuilderPage = lazy(() => import('@/pages/DtfBuilderPage'));
+const DtfAtlantaPage = lazy(() => import('@/pages/DtfAtlantaPage'));
 const DtfStorePage = lazy(() => import('@/pages/DtfStorePage'));
 const DtfSuccessPage = lazy(() => import('@/pages/DtfSuccessPage'));
 const EasyQuotePage = lazy(() => import('@/pages/EasyQuotePage'));
@@ -187,6 +188,7 @@ function App() {
           <Route path="/shop" element={<ShopPage />} />
           <Route path="/sale" element={<SalePage />} />
           <Route path="/dtf" element={<DtfStorePage />} />
+          <Route path="/dtf-transfers-atlanta" element={<DtfAtlantaPage />} />
           <Route path="/dtf/builder" element={<DtfBuilderPage />} />
           <Route path="/dtf/builder/:id" element={<DtfBuilderPage />} />
           <Route path="/dtf/success" element={<DtfSuccessPage />} />

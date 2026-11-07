@@ -10,6 +10,7 @@
     "prerender": "node scripts/prerender.mjs",
     "preview": "vite preview",
     "validate:schema": "node scripts/validate-structured-data.mjs",
+    "check:facts": "node scripts/check-business-facts.mjs",
     "test:referral": "node --test scripts/referral.test.mjs"
   },
   "dependencies": {
