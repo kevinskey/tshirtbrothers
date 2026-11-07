@@ -302,6 +302,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   ]},
 ];
 
+// Backdrop for every artwork thumbnail on a quote. Print files are exported
+// on a transparent background, so white or pale art rendered on a white card
+// looks like an empty box — the shop reads it as "the customer attached
+// nothing" (quote #300). A checkerboard makes transparency visible and keeps
+// light ink readable.
+const ART_TILE = 'border border-gray-200 [background-image:repeating-conic-gradient(#d4d4d8_0%_25%,#ffffff_0%_50%)] [background-size:14px_14px]';
+
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-yellow-100 text-yellow-800',
   reviewed: 'bg-orange-100 text-orange-800',
@@ -3788,7 +3795,7 @@ export default function AdminPage() {
                       <img
                         src={q.mockup_image_url || q.design_url || ''}
                         alt="Customer design"
-                        className="w-12 h-12 shrink-0 object-contain rounded-lg border border-gray-200 bg-gray-50"
+                        className={`w-12 h-12 shrink-0 object-contain rounded-lg ${ART_TILE}`}
                       />
                     )}
                     <div className="text-sm text-gray-700 min-w-0">
@@ -3798,14 +3805,14 @@ export default function AdminPage() {
                   </div>
                   {cardOpen && (q.mockup_image_url || q.design_url) && (
                     <div className="mt-1">
-                      <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className="w-full max-h-40 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                      <img src={q.mockup_image_url || q.design_url || ''} alt="Customer design" className={`w-full max-h-40 object-contain rounded-lg ${ART_TILE}`} />
                     </div>
                   )}
                   {cardOpen && q.extra_design_urls && q.extra_design_urls.length > 0 && (
                     <div className="mt-2 grid grid-cols-3 gap-2">
                       {q.extra_design_urls.map((u, i) => (
                         <a key={`${u}-${i}`} href={u} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="block">
-                          <img src={u} alt={`Extra design ${i + 1}`} className="w-full h-20 object-contain rounded border border-gray-200 bg-gray-50" />
+                          <img src={u} alt={`Extra design ${i + 1}`} className={`w-full h-20 object-contain rounded ${ART_TILE}`} />
                         </a>
                       ))}
                     </div>
@@ -8866,11 +8873,11 @@ export default function AdminPage() {
                         <div className="relative">
                           <div className="grid grid-cols-2 gap-2">
                             <a href={q.mockup_image_url} target="_blank" rel="noreferrer" className="block">
-                              <img src={q.mockup_image_url} alt="Mockup front" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                              <img src={q.mockup_image_url} alt="Mockup front" className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
                               <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Front</p>
                             </a>
                             <a href={q.mockup_image_url_back} target="_blank" rel="noreferrer" className="block">
-                              <img src={q.mockup_image_url_back} alt="Mockup back" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                              <img src={q.mockup_image_url_back} alt="Mockup back" className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
                               <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Back</p>
                             </a>
                           </div>
@@ -8885,7 +8892,7 @@ export default function AdminPage() {
                       ) : (
                         <div className="relative">
                           <a href={q.design_url || q.mockup_image_url || '#'} target="_blank" rel="noreferrer" className="block">
-                            <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className="w-full max-h-64 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                            <img src={q.mockup_image_url || q.design_url || ''} alt="Design" className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
                           </a>
                           <button
                             aria-label={q.mockup_image_url ? 'Remove mockup' : 'Remove uploaded graphic'}
@@ -8896,6 +8903,16 @@ export default function AdminPage() {
                           >✕</button>
                         </div>
                       )}
+                      {/* The preview above prefers the mockup, which would
+                          otherwise bury the print file the shop actually
+                          prints from. Show it alongside whenever it's a
+                          different image. */}
+                      {q.mockup_image_url && q.design_url && q.design_url !== q.mockup_image_url && (
+                        <a href={q.design_url} target="_blank" rel="noreferrer" className="mt-2 block w-28">
+                          <img src={q.design_url} alt="Print file" className={`w-28 h-28 object-contain rounded-lg ${ART_TILE}`} />
+                          <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Print file</p>
+                        </a>
+                      )}
                       {q.extra_design_urls && q.extra_design_urls.length > 0 && (
                         <div className="mt-2 grid grid-cols-3 gap-2">
                           {q.extra_design_urls.map((u, i) => {
@@ -8903,7 +8920,7 @@ export default function AdminPage() {
                             return (
                               <div key={`${u}-${i}`} className="relative">
                                 <a href={u} target="_blank" rel="noreferrer" className="block">
-                                  <img src={u} alt={name || `Extra design ${i + 1}`} className="w-full h-24 object-contain rounded-lg border border-gray-200 bg-gray-50" />
+                                  <img src={u} alt={name || `Extra design ${i + 1}`} className={`w-full h-24 object-contain rounded-lg ${ART_TILE}`} />
                                   {name && <p className="mt-1 truncate text-[10px] text-gray-600" title={name}>{name}</p>}
                                 </a>
                                 <button
@@ -9848,7 +9865,7 @@ export default function AdminPage() {
                           <img
                             src={priceModalQuote.mockup_image_url || priceModalQuote.design_url || ''}
                             alt="Customer design"
-                            className="w-28 h-28 rounded-lg border border-gray-200 bg-white object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition"
+                            className={`w-28 h-28 rounded-lg object-contain cursor-pointer hover:ring-2 hover:ring-blue-400 transition ${ART_TILE}`}
                           />
                           <span className="text-[10px] text-blue-600 mt-1 block text-center">Click to enlarge</span>
                         </a>
@@ -9859,7 +9876,7 @@ export default function AdminPage() {
                                 <img
                                   src={u}
                                   alt={`Extra design ${i + 1}`}
-                                  className="w-12 h-12 rounded border border-gray-200 bg-white object-contain hover:ring-2 hover:ring-blue-400 transition"
+                                  className={`w-12 h-12 rounded object-contain hover:ring-2 hover:ring-blue-400 transition ${ART_TILE}`}
                                 />
                               </a>
                             ))}
