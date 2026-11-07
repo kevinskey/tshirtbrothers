@@ -673,19 +673,20 @@ export default function DesignStudioPage() {
   // When set (no edit/attach context), saving creates a brand-new mockup
   // row via the same screenshot flow used elsewhere.
   const newMockupMode = searchParams.get('newMockup') === '1';
-  // Auth gate — require login before designing. Store admins arriving
-  // via the GleeWorld SSO handoff use a store_admin_sessions bearer
-  // (localStorage key tsb_gsa_<slug>) instead of the staff tsb_token,
-  // so allow those through. Skip the redirect while SSO is still
-  // exchanging so a fresh handoff doesn't bounce mid-request.
+  // NO auth gate on entry.
+  //
+  // This used to redirect every signed-out visitor straight to
+  // /auth?reason=design before a single pixel was drawn — so somebody who
+  // tapped "Design Studio" met a six-field signup form (name, email,
+  // company website, phone, password, confirm password) instead of the tool
+  // that is the best reason to choose this shop over a national printer.
+  //
+  // Design first, ask later: the account is needed to SAVE, not to try. When
+  // a save needs an identity, requireAuthForSave() stashes the work and
+  // sends them to /auth, and the stash is restored on the way back so
+  // nothing is lost in the round trip.
   const authNav = useNavigate();
-  useEffect(() => {
-    if (ssoBusy) return;
-    const staffToken = localStorage.getItem('tsb_token');
-    if (staffToken) return;
-    if (storeAdminSession) return;
-    authNav('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search) + '&reason=design');
-  }, [authNav, ssoBusy, storeAdminSession]);
+
 
 
   const location = useLocation();
@@ -801,6 +802,58 @@ export default function DesignStudioPage() {
       ? loadState.canvasInchesH
       : 12,
   );
+
+  // What has to survive the sign-in round trip. Deliberately small: the
+  // elements, the blank, and the canvas size. Anything derived is recomputed
+  // on load, and keeping it small matters because localStorage is ~5MB and a
+  // design's base64 artwork is already most of that.
+  const STUDIO_STASH_KEY = 'tsb_studio_stash_v1';
+
+  const requireAuthForSave = useCallback((reason = 'design') => {
+    try {
+      localStorage.setItem(STUDIO_STASH_KEY, JSON.stringify({
+        at: Date.now(),
+        designElements,
+        productSsId: selectedProduct?.ss_id ?? null,
+        canvasInches,
+        canvasInchesH,
+      }));
+    } catch (err) {
+      // A quota failure must not block sign-in — they just lose the restore.
+      console.warn('[studio] could not stash design before auth:', err);
+    }
+    authNav('/auth?redirect=' + encodeURIComponent(window.location.pathname + window.location.search)
+      + '&reason=' + encodeURIComponent(reason));
+  }, [authNav, designElements, selectedProduct, canvasInches, canvasInchesH]);
+
+  // Restore after sign-in. Only when we arrive signed in with an empty
+  // canvas and no explicit load, so it can never clobber real work or a
+  // design opened from the library. One hour, because a week-old stash
+  // reappearing under someone is worse than losing it.
+  const stashRestored = useRef(false);
+  useEffect(() => {
+    if (stashRestored.current || ssoBusy) return;
+    const signedIn = !!localStorage.getItem('tsb_token') || !!storeAdminSession;
+    if (!signedIn) return;
+    const raw = localStorage.getItem(STUDIO_STASH_KEY);
+    if (!raw) return;
+    stashRestored.current = true;
+    localStorage.removeItem(STUDIO_STASH_KEY);
+    try {
+      const stash = JSON.parse(raw);
+      if (!stash?.designElements?.length) return;
+      if (Date.now() - Number(stash.at || 0) > 60 * 60 * 1000) return;
+      if (designElements.length > 0) return;
+      setDesignElements(stash.designElements);
+      if (stash.canvasInches) setCanvasInches(stash.canvasInches);
+      if (stash.canvasInchesH) setCanvasInchesH(stash.canvasInchesH);
+    } catch (err) {
+      console.warn('[studio] could not restore stashed design:', err);
+    }
+    // designElements intentionally omitted: this must run once on arrival,
+    // not every time the canvas changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ssoBusy, storeAdminSession]);
 
   // ── Product-area detection (JDS awards / engraving items) ─────────
   // Single-photo products sit on white; scanning the photo for non-white
@@ -1167,6 +1220,12 @@ export default function DesignStudioPage() {
     if (!librarySaveName.trim() || librarySaving) return;
     const front = designElements.filter(el => (el.side ?? 'front') === 'front');
     if (front.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
+    // This is the moment an identity is actually needed — not the moment
+    // somebody opened the studio. Stashes the work and comes back to it.
+    if (!localStorage.getItem('tsb_token') && !storeAdminSession) {
+      requireAuthForSave('design-save');
+      return;
+    }
     setLibrarySaving(true);
     const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
       let timer: ReturnType<typeof setTimeout> | undefined;

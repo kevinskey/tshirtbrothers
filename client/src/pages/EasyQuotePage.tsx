@@ -84,7 +84,17 @@ function formatPhone(v: string): string {
 // "What do you want printed?" instead of name/phone). The customer invests
 // in describing the job before being asked who they are, and the contact
 // steps still sit before 'quote' so a priced quote always has a person on it.
-const STEPS = ['products', 'qty', 'color', 'quality', 'date', 'art', 'name', 'phone', 'email', 'quote'] as const;
+// Price BEFORE contact details.
+//
+// 'quote' used to sit last, behind name -> phone -> email: three full-screen
+// "give us your data" steps standing between a motivated buyer and a number
+// the engine had already worked out from steps 1-5. Nothing after 'art' feeds
+// the calculation, so there was never a reason to collect it first.
+//
+// The numbers are now shown as soon as they exist, and only ACCEPTING is
+// gated on contact info — which is the same trade /bling already makes with
+// its live slider, and the pattern that page converts on.
+const STEPS = ['products', 'qty', 'color', 'quality', 'date', 'art', 'quote', 'name', 'phone', 'email'] as const;
 type Step = typeof STEPS[number];
 
 /**
@@ -565,6 +575,10 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       // min attribute, so enforce the cutoff here too.
       case 'date': return !!needBy && needBy >= minNeedBy;
       case 'art': return artUploading === 0; // optional — just wait for uploads
+      // The quote screen is a review step: advance once the figures have
+      // actually loaded, so nobody is sent to the contact questions while
+      // the price is still a spinner.
+      case 'quote': return !calcBusy && !!calcLines;
       default: return false;
     }
   })();
@@ -704,6 +718,30 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   className="mt-2 w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 text-base text-gray-900 focus:border-orange-500 focus:outline-none"
                 />
               )}
+            </div>
+
+            {/* Accepting lives here now, on the last step, because this is
+                where we finally have an email to send the quote to. The
+                price itself was shown three screens ago. */}
+            <div className="mt-6 space-y-3 border-t border-gray-200 pt-5">
+              <button type="button" disabled={!!submitBusy || !canNext}
+                onClick={() => submit('deposit')}
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg disabled:opacity-60"
+                style={{ background: ORANGE }}>
+                {submitBusy === 'deposit' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
+                {pricedTotal > 0
+                  ? tr(`Accept $${pricedTotal.toFixed(2)} & Pay Deposit`, `Aceptar $${pricedTotal.toFixed(2)} y Pagar Dep\u00f3sito`)
+                  : tr('Accept Quote & Pay Deposit', 'Aceptar y Pagar Dep\u00f3sito')}
+              </button>
+              <button type="button" disabled={!!submitBusy || !canNext}
+                onClick={() => submit('draft')}
+                className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full border-2 border-gray-300 font-bold disabled:opacity-60 hover:border-gray-900">
+                {submitBusy === 'draft' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mail className="w-5 h-5" />}
+                {tr('Email me this quote', 'Env\u00edenme esta cotizaci\u00f3n')}
+              </button>
+              <p className="text-center text-xs text-gray-600">
+                {tr('Paying the deposit starts your order.', 'Al pagar el dep\u00f3sito, tu pedido comienza.')}
+              </p>
             </div>
           </Card>
         )}
@@ -1013,22 +1051,18 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   </div>
                 </div>
 
+                {/* No submit here any more — this screen exists to show the
+                    number. The Next button below carries on to the three
+                    contact questions, where accepting actually happens. */}
                 <div className="mt-6 space-y-3">
-                  <button type="button" disabled={!!submitBusy}
-                    onClick={() => submit('deposit')}
-                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full text-white font-bold text-lg shadow-lg disabled:opacity-60"
-                    style={{ background: ORANGE }}>
-                    {submitBusy === 'deposit' ? <Loader2 className="w-5 h-5 animate-spin" /> : <CreditCard className="w-5 h-5" />}
-                    {tr('Accept Quote & Pay Deposit', 'Aceptar y Pagar Depósito')}
-                  </button>
-                  <button type="button" disabled={!!submitBusy}
-                    onClick={() => submit('draft')}
-                    className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-full border-2 border-gray-300 font-bold disabled:opacity-60 hover:border-gray-900">
-                    {submitBusy === 'draft' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mail className="w-5 h-5" />}
-                    {tr('Save Draft (email it to me)', 'Guardar Borrador (envíamelo por correo)')}
-                  </button>
+                  <p className="text-center text-sm text-gray-600">
+                    {tr(
+                      'That\u2019s the price. Next we\u2019ll grab your name and email so we can send it over \u2014 nothing is charged yet.',
+                      'Ese es el precio. Ahora tomamos tu nombre y correo para envi\u00e1rtelo \u2014 todav\u00eda no se cobra nada.',
+                    )}
+                  </p>
                   <p className="text-center text-xs text-gray-600">
-                    {tr('Paying the deposit starts your order.', 'Al pagar el depósito, tu pedido comienza.')} <Sparkles className="inline w-3 h-3" /> {tr('Prefer the full calculator?', '¿Prefieres la calculadora completa?')} <Link to="/quote/classic" className="underline">{tr('Classic version', 'Versión clásica')}</Link>
+                    <Sparkles className="inline w-3 h-3" /> {tr('Prefer the full calculator?', '\u00bfPrefieres la calculadora completa?')} <Link to="/quote/classic" className="underline">{tr('Classic version', 'Versi\u00f3n cl\u00e1sica')}</Link>
                   </p>
                 </div>
               </>
@@ -1046,7 +1080,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           into (Kevin's screenshot, 2026-10-14). The return key already
           advances the step, and closing the keyboard brings Next back.
           Spacer keeps the card content scrollable past the button. */}
-      {step !== 'quote' && (
+      {step !== 'email' && (
         <>
           <div className="sm:hidden" style={{ height: 84 }} />
           <div className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pointer-events-none transition-all duration-150 ${kbOffset > 80 ? 'opacity-0 translate-y-6' : ''}`}>
