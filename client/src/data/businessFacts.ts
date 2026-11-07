@@ -81,13 +81,34 @@ export const HOURS = {
  * The builder and checkout price from the server, NOT from this file.
  */
 export const DTF_GANG_SHEET = {
+  /**
+   * The 22" roll, which is the advertised entry product. A 34" roll was
+   * added later at a higher rate -- see `widths` below. Kept as a scalar
+   * because a dozen components read it directly.
+   */
   sheetWidthInches: 22,
   minFeet: 1,
-  maxFeet: 10,
+  /**
+   * Was 10 here while the API had been charging up to 20 since the 34"
+   * launch -- caught by scripts/check-business-facts.mjs, which detected the
+   * drift correctly but was wired into nothing, so nobody ever ran it. It is
+   * now an npm script and a post-deploy step.
+   */
+  maxFeet: 20,
   standardRatePerFoot: 11.99,
   rushRatePerFoot: 12.99,
   hotRushRatePerFoot: 17.0,
   flatShipping: 6.99,
+  /**
+   * Every roll width we actually sell, verified against
+   * /api/gangsheet-store/config on 2026-11-07. The 34" roll was shipped by
+   * a separate change and never made it into this file, and the drift check
+   * did not cover widths at all -- so it was invisible twice over.
+   */
+  widths: [
+    { inches: 22, standardRatePerFoot: 11.99, rushRatePerFoot: 12.99, hotRushRatePerFoot: 17.0 },
+    { inches: 34, standardRatePerFoot: 17.99, rushRatePerFoot: 18.99, hotRushRatePerFoot: 23.0 },
+  ],
   /** Turnaround promises as configured in admin, verified 2026-10-23. */
   turnaround: {
     standard: 'Ready in 2 business days',

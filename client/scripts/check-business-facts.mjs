@@ -70,6 +70,26 @@ compare('DTF flat shipping',    readFact(src, 'flatShipping'),        cfg.shippi
 compare('DTF min feet',         readFact(src, 'minFeet'),             cfg.min_ft);
 compare('DTF max feet',         readFact(src, 'maxFeet'),             cfg.max_ft);
 
+// Widths were not checked at all, which is how a whole second roll size
+// (34" at $17.99/ft) shipped without this file ever hearing about it. Every
+// width the API sells must be advertised, at the API's rate.
+const advertisedWidths = [...src.matchAll(/\{\s*inches:\s*([\d.]+)[^}]*?standardRatePerFoot:\s*([\d.]+)/g)]
+  .map((m) => ({ inches: Number(m[1]), rate: Number(m[2]) }));
+for (const w of cfg.widths ?? []) {
+  const mine = advertisedWidths.find((a) => a.inches === w.in);
+  if (!mine) {
+    problems.push(`DTF ${w.in}" roll: the API sells it at $${(w.rates.standard / 100).toFixed(2)}/ft but businessFacts.ts does not list it`);
+    checks.push({ label: `DTF ${w.in}" roll`, advertised: 'absent', actual: w.rates.standard / 100 });
+    continue;
+  }
+  compare(`DTF ${w.in}" standard rate/ft`, mine.rate, w.rates.standard / 100);
+}
+for (const a of advertisedWidths) {
+  if (!(cfg.widths ?? []).some((w) => w.in === a.inches)) {
+    problems.push(`DTF ${a.inches}" roll: businessFacts.ts advertises it but the API does not sell it`);
+  }
+}
+
 // Turnaround promises are free text in admin; compare them verbatim so a
 // reworded promise surfaces here instead of silently contradicting the
 // copy on /dtf and the rush page.

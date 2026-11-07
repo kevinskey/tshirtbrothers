@@ -48,6 +48,7 @@ export const SPA_ROUTE_PATTERNS = [
   '/design',
   '/drinkware',
   '/dtf',
+  '/dtf-transfers-atlanta',
   '/dtf/builder',
   '/dtf/builder/:id',
   '/dtf/success',
