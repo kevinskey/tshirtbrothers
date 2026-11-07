@@ -302,6 +302,13 @@ router.post('/calculate', async (req, res, next) => {
   }
 });
 
+// Studio mockups arrive as URLs the browser already uploaded through
+// POST /api/quotes/upload-design. Only accept links into our own bucket so
+// the public save endpoint can't graffiti arbitrary images onto a quote.
+function ownBucketUrl(u) {
+  return typeof u === 'string' && /^https:\/\/[a-z0-9.-]*digitaloceanspaces\.com\//i.test(u) ? u : null;
+}
+
 /* ---------------------------------------------------------------------------
  * POST /api/quote/save — persist a calculated quote, email customer + admin.
  *
@@ -314,7 +321,10 @@ router.post('/calculate', async (req, res, next) => {
 router.post('/save', async (req, res, next) => {
   const client = await pool.connect();
   try {
-    const { items, customer_name, customer_email, customer_phone, notes } = req.body;
+    const {
+      items, customer_name, customer_email, customer_phone, notes,
+      mockup_image_url, mockup_image_url_back,
+    } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'items array is required' });
     }
@@ -493,8 +503,9 @@ router.post('/save', async (req, res, next) => {
         (customer_name, customer_email, customer_phone, product_name, quantity,
          design_type, inputs_json, calculated_price,
          design_url, extra_design_urls,
+         mockup_image_url, mockup_image_url_back,
          estimated_price, notes, status)
-       VALUES ($1, $2, $3, $4, $5, 'instant-quote', $6::jsonb, $7, $8, $9::jsonb, $10, $11, 'pending')
+       VALUES ($1, $2, $3, $4, $5, 'instant-quote', $6::jsonb, $7, $8, $9::jsonb, $10, $11, $12, $13, 'pending')
        RETURNING id, customer_name, customer_email, created_at`,
       [
         cleanName,
@@ -506,6 +517,8 @@ router.post('/save', async (req, res, next) => {
         grandTotal,
         firstItem.design_url || null,
         JSON.stringify(firstItem.extra_design_urls),
+        ownBucketUrl(mockup_image_url),
+        ownBucketUrl(mockup_image_url_back),
         grandTotal,
         notes || null,
       ],

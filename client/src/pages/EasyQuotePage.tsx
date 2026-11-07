@@ -471,8 +471,6 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       const notes = [
         `Easy Quote wizard`,
         studio && 'Designed in Design Studio',
-        studio?.mockupUrl && `Studio mockup (front): ${studio.mockupUrl}`,
-        studio?.mockupUrlBack && `Studio mockup (back): ${studio.mockupUrlBack}`,
         color && `Color: ${color}`,
         quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
         `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
@@ -491,6 +489,13 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           customer_name: name.trim(),
           customer_email: email.trim(),
           customer_phone: phone.trim(),
+          // The studio's on-garment mockups ride their own columns so the
+          // admin quote card renders them as images. They used to go out as
+          // raw URLs inside `notes`, where nothing displayed them — a
+          // white-on-transparent print file was then the only picture on the
+          // quote, and it vanished against the admin's white card (#300).
+          mockup_image_url: studio?.mockupUrl || null,
+          mockup_image_url_back: studio?.mockupUrlBack || null,
           notes,
           lang,
         }),
