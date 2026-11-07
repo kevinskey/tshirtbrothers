@@ -1459,15 +1459,29 @@ router.get('/dashboard-ops', async (req, res, next) => {
           COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted')::int AS quoted,
           COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'quoted'), 0)::numeric(12,2) AS quoted_value,
           COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '3 days')::int AS quotes_need_follow_up,
-          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '14 days')::int AS abandoned_quotes,
+          -- 14 days could never match: archiveNonResponsiveQuotes sweeps
+          -- 'quoted' at QUOTE_EXPIRY_DAYS = 7, so this tile also read 0
+          -- forever. Count the ones actually archived unanswered instead,
+          -- which is the number worth looking at.
+          COUNT(*) FILTER (WHERE archived_at IS NOT NULL AND archive_reason = 'non-responsive'
+            AND archived_at > now() - interval '90 days')::int AS abandoned_quotes,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed'))::int AS won,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected')
             OR (archived_at IS NOT NULL AND status NOT IN ('accepted', 'completed')))::int AS decided,
           COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
           COALESCE(SUM(GREATEST(estimated_price - COALESCE(deposit_amount, 0), 0))
             FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
-          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND mockup_sent_at IS NOT NULL
-            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval
+          -- status must be 'awaiting_approval', not 'accepted': mockups.js
+          -- sets BOTH in the same UPDATE that stamps mockup_sent_at, so the
+          -- old filter was mutually exclusive and this tile read 0 forever
+          -- while real proofs sat unanswered.
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'awaiting_approval'
+            AND mockup_sent_at IS NOT NULL
+            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval,
+          -- The subset that has been waiting long enough to chase.
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'awaiting_approval'
+            AND mockup_sent_at < now() - interval '48 hours'
+            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS proofs_stale_48h
         FROM quotes`),
       pool.query(`
         SELECT
@@ -1759,6 +1773,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
       })),
       attention: {
         proofs_waiting: qa.awaiting_approval,
+        proofs_stale_48h: qa.proofs_stale_48h,
         quotes_unanswered_24h: qa.pending_over_24h,
         orders_overdue: atRisk,
         awaiting_payment: inv.awaiting_payment,

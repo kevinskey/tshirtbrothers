@@ -192,3 +192,48 @@ export async function smsInvoiceLinkToCustomer(invoice, viewUrl) {
   const body = `TShirt Brothers: Invoice ${invoice.invoice_number} for $${amount}. View: ${viewUrl}`;
   return await sendSMSOrThrow(phone, body);
 }
+
+/**
+ * Day-3 nudge on a quote we already priced and sent.
+ *
+ * This is the one that was missing entirely. runAbandonedQuoteFollowUps
+ * chased only status='pending' while the archive cron swept up 'quoted' too,
+ * so a customer who asked for a price, got one, and went quiet heard nothing
+ * before the quote vanished. Texted rather than emailed because the emailed
+ * quote is the thing they already didn't answer.
+ *
+ * Signed with a name on purpose — a national printer can't truthfully say
+ * "Kevin priced this by hand", and that is the whole difference.
+ */
+export async function smsQuoteFollowUpToCustomer(quote, { lockInUrl } = {}) {
+  const phone = quote.customer_phone;
+  if (!phone) return null;
+  const name = (quote.customer_name || '').split(' ')[0];
+  const qty = quote.quantity ? `${quote.quantity} ` : '';
+  const item = quote.product_name || 'your order';
+  const total = Number(quote.estimated_price) > 0
+    ? ` at $${Number(quote.estimated_price).toFixed(2)}`
+    : '';
+  const body = `Hey${name ? ' ' + name : ''} — Kevin at T-Shirt Brothers. Your quote for ${qty}${item} is still good${total}. `
+    + `Want anything changed — qty, colors, add a hoodie? Just text me back.`
+    + (lockInUrl ? `\n\nLock it in: ${lockInUrl}` : '')
+    + `\n(Reply STOP to opt out.)`;
+  return sendSMS(phone, body);
+}
+
+/**
+ * Carrier says the box landed.
+ *
+ * trackingRefresh has detected 'delivered' every 20 minutes and done nothing
+ * with it. This is the highest-open moment in the whole journey and it costs
+ * nothing — and asking them to count it today is how a shortage becomes a
+ * same-week reprint instead of a chargeback six weeks later.
+ */
+export async function smsDeliveredToCustomer(quote) {
+  const phone = quote.customer_phone;
+  if (!phone) return null;
+  return sendSMS(
+    phone,
+    `Carrier says your T-Shirt Brothers box landed. Open it, count it, and if anything's off, text this number today — we fix our own mistakes.`,
+  );
+}

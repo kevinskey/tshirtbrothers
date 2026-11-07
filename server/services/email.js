@@ -2655,3 +2655,138 @@ export async function sendEmbroideryQuoteToCustomer({ request }) {
 // Mirrors the Lighthouse terms: customer-supplied goods carry a 2% spoilage
 // allowance and the customer assumes workmanship liability on their goods.
 const SPOILAGE_NOTE = 'please allow up to 2% for spoilage on customer-supplied goods; spoilage beyond 2% is credited.';
+
+/**
+ * Day-5 "one question before we close out your quote".
+ *
+ * The third rung of the ladder, and deliberately the plainest: by now two
+ * cheerful messages have gone unanswered, so this one names the three real
+ * reasons a quote stalls and makes "no" an easy, respected answer. Giving
+ * people a clean way out is what makes the earlier nudges feel like service
+ * rather than pestering.
+ */
+export async function sendQuoteLastCall(quote) {
+  const es = quoteLang(quote) === 'es';
+  const lockInUrl = `${DOMAIN}/quote?id=${quote.id}&token=${quote.accept_token || ''}`;
+  const total = quote.estimated_price ? formatCurrency(Number(quote.estimated_price)) : null;
+
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Una pregunta antes de cerrar tu cotización</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${escapeHtml(quote.customer_name || '')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Con franqueza: si el precio estaba alto, dímelo y déjame ver qué puedo hacer con la prenda. Si tu fecha cambió, avísame y lo cotizo de nuevo. Y si elegiste otro camino, no hay problema — responde &ldquo;paso&rdquo; y no te escribo más.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">De cualquier manera, tu arte se queda archivado con nosotros.</p>
+    ${total ? primaryButton(`Retomar mi cotización — ${total}`, lockInUrl) : primaryButton('Retomar mi cotización', lockInUrl)}
+    <p style="margin:20px 0 0;font-size:15px;color:${BRAND_DARK};">— Kevin, T-Shirt Brothers · Fairburn, GA · (470) 622-1392</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">One question before we close out your quote</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(quote.customer_name || 'there')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Straight up &mdash; if the number came in high, tell me and let me see what I can do on the blank. If your date moved, say the word and I&rsquo;ll re-quote it. And if you went another direction, no hard feelings at all; just reply &ldquo;pass&rdquo; and I&rsquo;ll stop.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Either way we hold your art on file, so picking this back up later is one reply.</p>
+    ${total ? primaryButton(`Pick my quote back up — ${total}`, lockInUrl) : primaryButton('Pick my quote back up', lockInUrl)}
+    <p style="margin:20px 0 0;font-size:15px;color:${BRAND_DARK};">&mdash; Kevin, T-Shirt Brothers &middot; Fairburn, GA &middot; (470) 622-1392</p>
+  `;
+
+  try {
+    await sendMail({
+      from: FROM_EMAIL,
+      to: mailRecipients(quote),
+      subject: es
+        ? 'Una pregunta antes de cerrar tu cotización · TShirt Brothers'
+        : 'One question before we close out your quote · TShirt Brothers',
+      html: baseLayout(es ? 'Tu Cotización' : 'Your Quote', body),
+    });
+    console.log(`[Email] Quote last-call sent to ${quote.customer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send quote last-call:', err);
+  }
+}
+
+/**
+ * Sent as the quote is archived, so the relationship ends with a note
+ * instead of silence.
+ *
+ * archiveNonResponsiveQuotes used to move a quote to the non-responsive
+ * archive and record the customer in non_buying_customers without telling
+ * them anything. "We still have your art" is both true and the cheapest
+ * reason for them to come back.
+ */
+export async function sendQuoteClosingNote(quote) {
+  const es = quoteLang(quote) === 'es';
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Cerramos tu cotización &mdash; tu arte se queda</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${escapeHtml(quote.customer_name || '')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Estamos archivando la cotización #${quote.id}. No se pierde nada: tu diseño se queda con nosotros, así que cuando vuelva tu fecha, una sola respuesta la reabre.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Seguimos aquí en Fairburn cuando nos necesites.</p>
+    <p style="margin:20px 0 0;font-size:15px;color:${BRAND_DARK};">&mdash; Kevin, T-Shirt Brothers &middot; (470) 622-1392</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Closing your quote &mdash; but your art stays on file</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(quote.customer_name || 'there')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">We&rsquo;re archiving Quote #${quote.id}. Nothing&rsquo;s lost &mdash; your design stays with us, so when your date comes back around, one reply reopens it.</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">We&rsquo;re still here in Fairburn whenever you need us.</p>
+    <p style="margin:20px 0 0;font-size:15px;color:${BRAND_DARK};">&mdash; Kevin, T-Shirt Brothers &middot; (470) 622-1392</p>
+  `;
+  try {
+    await sendMail({
+      from: FROM_EMAIL,
+      to: mailRecipients(quote),
+      subject: es
+        ? `Cerramos la cotización #${quote.id} — tu arte se queda archivado`
+        : `Closing Quote #${quote.id} — your art stays on file`,
+      html: baseLayout(es ? 'Cotización Archivada' : 'Quote Closed', body),
+    });
+    console.log(`[Email] Quote closing note sent to ${quote.customer_email}`);
+  } catch (err) {
+    console.error('[Email] Failed to send quote closing note:', err);
+  }
+}
+
+/**
+ * Instant acknowledgement that a quote request landed.
+ *
+ * POST /api/quotes notified the SHOP (sendQuoteRequestNotification +
+ * smsNewQuoteToAdmin) and nobody else, so the person who had just typed in
+ * their details heard nothing until a human got round to pricing it. That
+ * silence is exactly when they open a second tab and fill in a national
+ * printer's form.
+ *
+ * Deliberately promises a person and a timeframe rather than a price.
+ */
+export async function sendQuoteRequestAckToCustomer(quote) {
+  const es = quoteLang(quote) === 'es';
+  const rows = [
+    quote.product_name ? detailRow(es ? 'Producto' : 'Product', escapeHtml(quote.product_name)) : '',
+    quote.quantity ? detailRow(es ? 'Cantidad' : 'Quantity', escapeHtml(String(quote.quantity))) : '',
+    quote.date_needed ? detailRow(es ? 'Fecha Necesaria' : 'Date needed', escapeHtml(String(quote.date_needed))) : '',
+  ].join('');
+
+  const body = es ? `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">Recibimos tu solicitud &mdash; respuesta de una persona real, hoy</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hola ${escapeHtml(quote.customer_name || '')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Gracias por enviárnoslo. Ya está frente a nosotros &mdash; no en una fila en otro estado. Somos un taller familiar en Fairburn y cotizamos cada trabajo a mano.</p>
+    ${rows ? detailsTable(rows) : ''}
+    <p style="margin:16px 0 0;font-size:15px;color:#6b7280;"><strong>Qué sigue:</strong> un precio real de una persona real, normalmente el mismo día hábil.</p>
+    <p style="margin:16px 0 0;font-size:15px;color:#6b7280;">Si tu fecha está apretada, llama a Kevin al (470) 622-1392 &mdash; preferimos escucharte a fallarte la fecha.</p>
+  ` : `
+    <h2 style="margin:0 0 8px;font-size:22px;color:${BRAND_DARK};">We got your quote request &mdash; a real answer, today</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(quote.customer_name || 'there')},</p>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Thanks for sending this over. It&rsquo;s in front of us now &mdash; not in a queue in another state. We&rsquo;re a family shop in Fairburn and we price every job by hand, so you&rsquo;re not paying for somebody&rsquo;s guess.</p>
+    ${rows ? detailsTable(rows) : ''}
+    <p style="margin:16px 0 0;font-size:15px;color:#6b7280;"><strong>What happens next:</strong> a real price from a real person, usually the same business day.</p>
+    <p style="margin:16px 0 0;font-size:15px;color:#6b7280;">If your date is tight, call Kevin at (470) 622-1392 &mdash; we&rsquo;d rather hear your voice than miss your deadline.</p>
+  `;
+
+  try {
+    await sendMail({
+      from: FROM_EMAIL,
+      to: mailRecipients(quote),
+      subject: es
+        ? 'Recibimos tu solicitud de cotización · TShirt Brothers'
+        : 'We got your quote request · TShirt Brothers',
+      html: baseLayout(es ? 'Solicitud Recibida' : 'Request Received', body),
+    });
+    console.log(`[Email] Quote request ack sent to ${quote.customer_email}`);
+  } catch (err) {
+    // Never let the acknowledgement take down the quote submission itself.
+    console.error('[Email] Failed to send quote request ack:', err);
+  }
+}

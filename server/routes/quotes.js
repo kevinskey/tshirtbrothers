@@ -7,6 +7,7 @@ import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import {
   sendQuoteRequestNotification,
+  sendQuoteRequestAckToCustomer,
   sendQuotePriceToCustomer,
   sendQuoteAcceptedNotification,
   sendQuoteStatusUpdate,
@@ -269,6 +270,19 @@ router.post('/', async (req, res, next) => {
     // Fire-and-forget: notify admin of new quote
     sendQuoteRequestNotification(quote).catch(() => {});
     smsNewQuoteToAdmin(quote).catch(() => {});
+
+    // ...and the customer. This block notified the SHOP and nobody else, so
+    // the person who had just typed in their details heard nothing until a
+    // human got round to pricing it — which is exactly when they open a
+    // second tab and fill in a national printer's form. Fire-and-forget and
+    // stamped, so a mail hiccup can never fail the submission itself.
+    if (quote.customer_email) {
+      sendQuoteRequestAckToCustomer(quote)
+        .then(() => pool.query(
+          'UPDATE quotes SET request_ack_sent_at = NOW() WHERE id = $1', [quote.id],
+        ))
+        .catch((err) => console.error(`[quotes] request ack failed for ${quote.id}:`, err.message));
+    }
     sendPushToAdmins({
       title: 'New quote request',
       body: `${quote.customer_name || 'Customer'} — ${quote.product_name || 'custom order'}${quote.quantity ? ` ×${quote.quantity}` : ''}`,
