@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { recordOptIn } from '../services/smsConsent.js';
 import { notifyShipped } from '../services/shipNotify.js';
 import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
@@ -276,6 +277,22 @@ router.post('/', async (req, res, next) => {
     // human got round to pricing it — which is exactly when they open a
     // second tab and fill in a national printer's form. Fire-and-forget and
     // stamped, so a mail hiccup can never fail the submission itself.
+    // Record marketing-SMS consent against the phone number, not the quote:
+    // the same number turns up on many quotes with no account behind any of
+    // them, and both consent and opt-out have to hold across all of them.
+    if (req.body?.sms_consent === true && quote.customer_phone) {
+      recordOptIn(quote.customer_phone, {
+        source: 'quote_form',
+        text: 'Text me order updates and the occasional offer. Msg & data rates may apply. '
+            + "Reply STOP to opt out — consent isn't required to order.",
+      })
+        .then(() => pool.query(
+          `UPDATE quotes SET sms_consent_at = NOW(), sms_consent_source = 'quote_form' WHERE id = $1`,
+          [quote.id],
+        ))
+        .catch((err) => console.error(`[quotes] sms consent write failed for ${quote.id}:`, err.message));
+    }
+
     if (quote.customer_email) {
       sendQuoteRequestAckToCustomer(quote)
         .then(() => pool.query(
