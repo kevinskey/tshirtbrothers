@@ -37,10 +37,17 @@ const FAQ = [
   },
   {
     q: 'Can I get DTF transfers the same day in Atlanta?',
-    a: `Yes. ${DTF_GANG_SHEET.turnaround.hotRush} Next business day is `
-      + `${money(DTF_GANG_SHEET.widths[0]!.hotRushRatePerFoot)}/ft on a 22" sheet — `
-      + `${DTF_GANG_SHEET.turnaround.rush.toLowerCase()}. Rush and same-day run Monday to Friday. `
-      + `Standard orders are ${DTF_GANG_SHEET.turnaround.standard.toLowerCase()}.`,
+    // Promise strings used verbatim, no case surgery. An earlier version
+    // lowercased them (turning "11:00 AM" into "11:00 am") and then tried to
+    // splice the sentence, which produced "same day if you — order by 10:00
+    // am". Plain sentences beat clever string work.
+    a: `Yes. ${DTF_GANG_SHEET.turnaround.hotRush} \u2014 `
+      + `${money(DTF_GANG_SHEET.widths[0]!.hotRushRatePerFoot)}/ft on a ${DTF_GANG_SHEET.widths[0]!.inches}" sheet. `
+      + `${DTF_GANG_SHEET.turnaround.rush} \u2014 `
+      + `${money(DTF_GANG_SHEET.widths[0]!.rushRatePerFoot)}/ft. `
+      + `Rush and same-day tiers run Monday to Friday. `
+      + `${DTF_GANG_SHEET.turnaround.standard} is the standard tier at `
+      + `${money(DTF_GANG_SHEET.widths[0]!.standardRatePerFoot)}/ft.`,
   },
   {
     q: 'What is a DTF gang sheet?',
@@ -80,8 +87,8 @@ export default function DtfAtlantaPage() {
       <Seo
         title={`DTF Transfers in Atlanta — ${DTF_GANG_SHEET.fromPriceLabel} Gang Sheets | ${BUSINESS.name}`}
         description={
-          `DTF gang sheets from ${DTF_GANG_SHEET.fromPriceLabel}. Same-day available — `
-          + `${DTF_GANG_SHEET.turnaround.hotRush.toLowerCase()}. No minimums, no setup fees, `
+          `DTF gang sheets from ${DTF_GANG_SHEET.fromPriceLabel}. `
+          + `${DTF_GANG_SHEET.turnaround.hotRush}. No minimums, no setup fees, `
           + `free pickup in ${LOCATION.addressLocality} GA or flat ${money(DTF_GANG_SHEET.flatShipping)} shipping.`
         }
         path="/dtf-transfers-atlanta"
@@ -180,7 +187,10 @@ export default function DtfAtlantaPage() {
       <section className="mx-auto max-w-5xl px-4 py-12">
         <div className="grid gap-4 sm:grid-cols-3">
           {[
-            { icon: Clock, head: 'Same day available', body: `${DTF_GANG_SHEET.turnaround.hotRush}. Next business day: ${DTF_GANG_SHEET.turnaround.rush.toLowerCase()}. Standard is ${DTF_GANG_SHEET.turnaround.standard.toLowerCase()}. Rush tiers run Mon–Fri.` },
+            // The promise strings already say "Ready next business day", so a
+            // "Next business day:" label in front of them read as
+            // "Next business day: ready next business day".
+            { icon: Clock, head: 'Same day available', body: `${DTF_GANG_SHEET.turnaround.hotRush}. ${DTF_GANG_SHEET.turnaround.rush}. ${DTF_GANG_SHEET.turnaround.standard} as standard. Rush tiers run Mon–Fri.` },
             { icon: Ruler, head: 'Two roll widths', body: `${w22.inches}" at ${money(w22.standardRatePerFoot)}/ft and ${w34.inches}" at ${money(w34.standardRatePerFoot)}/ft, from ${DTF_GANG_SHEET.minFeet} to ${DTF_GANG_SHEET.maxFeet} feet.` },
             { icon: Truck, head: 'Pickup or ship', body: `Free pickup at ${LOCATION.streetAddress}, ${LOCATION.addressLocality}. Flat ${money(DTF_GANG_SHEET.flatShipping)} shipping anywhere in the US.` },
           ].map((c) => (
