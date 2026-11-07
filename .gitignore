@@ -1,6 +1,14 @@
 node_modules/
 dist/
+# Every env flavour, not just the bare one: .env.production and .env.local
+# were both untracked only by luck.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 *.log
 .DS_Store
 *.bak

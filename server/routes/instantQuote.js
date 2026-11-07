@@ -7,6 +7,7 @@ import { sendInstantQuoteToCustomer, sendInstantQuoteToAdmin } from '../services
 import { recordActivity } from './events.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { cardFeeCents } from './invoices.js';
+import { retailPrice } from '../lib/pricing.js';
 
 const router = Router();
 
@@ -273,9 +274,7 @@ async function resolvePickedProductPrice(ss_id) {
   );
   if (!rows.length) return null;
   const p = rows[0];
-  const yourPrice = p.custom_price != null && Number(p.custom_price) > 0
-    ? Number(p.custom_price)
-    : (Number(p.base_price) > 0 ? Number(p.base_price) * 2 : 0);
+  const yourPrice = retailPrice(p);
   if (!(yourPrice > 0)) return null;
   return { ss_id: p.ss_id, name: p.name, your_price: yourPrice };
 }

@@ -189,6 +189,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  // Marketing-SMS consent. Unchecked by default; see the label at the phone step.
+  const [smsConsent, setSmsConsent] = useState(false);
   const [email, setEmail] = useState('');
 
   // "How did you hear about us?" — optional, never gates submission.
@@ -496,6 +498,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           // quote, and it vanished against the admin's white card (#300).
           mockup_image_url: studio?.mockupUrl || null,
           mockup_image_url_back: studio?.mockupUrlBack || null,
+          // Consent for MARKETING texts only; order updates are unaffected.
+          sms_consent: smsConsent,
           notes,
           lang,
         }),
@@ -626,6 +630,24 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             <BigInput autoFocus type="tel" value={phone} onChange={(v) => setPhone(formatPhone(v))}
               placeholder="404-555-1234"
               onEnter={() => canNext && go(1)} />
+            {/* UNCHECKED by default, and never required — TCPA consent has to
+                be affirmative, and conditioning the quote on it would make it
+                worthless. Order updates ride the business relationship and go
+                out regardless; this covers the marketing sends only. */}
+            <label className="mt-5 flex items-start gap-3 text-left cursor-pointer">
+              <input
+                type="checkbox"
+                checked={smsConsent}
+                onChange={(e) => setSmsConsent(e.target.checked)}
+                className="mt-1 h-5 w-5 shrink-0 rounded border-gray-300 text-orange-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
+              />
+              <span className="text-sm text-gray-600">
+                {tr(
+                  'Text me order updates and the occasional offer. Msg & data rates may apply. Reply STOP to opt out — consent isn\u2019t required to order.',
+                  'Env\u00edenme actualizaciones del pedido y ofertas ocasionales. Pueden aplicar tarifas de mensajes y datos. Responde STOP para cancelar \u2014 no es obligatorio para ordenar.',
+                )}
+              </span>
+            </label>
           </Card>
         )}
 

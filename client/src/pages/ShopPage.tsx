@@ -5,6 +5,7 @@ import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import ProductFinder from '@/components/shop/ProductFinder';
 import { Search, Loader2, X, Heart } from 'lucide-react';
+import { retailPrice } from '@/lib/pricing';
 
 function favAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('tsb_token') || '';
@@ -592,9 +593,7 @@ export default function ShopPage() {
 
                 <div className="space-y-4 text-sm">
                   {(() => {
-                    const custom = Number(p.custom_price || 0);
-                    const wholesale = Number(p.base_price || 0);
-                    const retail = custom > 0 ? custom : wholesale * 2;
+                    const retail = retailPrice(p);
                     if (!(retail > 0)) return null;
                     return (
                       <div className="rounded-xl bg-orange-50 border border-orange-200 px-4 py-3">

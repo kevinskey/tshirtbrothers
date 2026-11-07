@@ -54,6 +54,7 @@ import {
   Gem,
   Boxes,
 } from 'lucide-react';
+import { QUOTE_MARKUP } from '@/lib/pricing';
 import {
   fetchQuotes,
   fetchGangSheetOrders,
@@ -1448,7 +1449,8 @@ export default function AdminPage() {
   const TAX_RATE = 0.0775; // Fairburn, GA combined sales tax
   // House rule: garments sell at 70% over wholesale unless a custom_price
   // says otherwise. Feeds the invoice Price prefill next to the Cost column.
-  const STANDARD_MARKUP = 1.7;
+  // Named and shared now — see client/src/lib/pricing.ts. Value unchanged.
+  const STANDARD_MARKUP = QUOTE_MARKUP;
   // Gang-sheet calculator inputs
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcGraphicW, setCalcGraphicW] = useState('10');

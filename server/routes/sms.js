@@ -11,6 +11,9 @@ import twilio from 'twilio';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { sendSMSOrThrow, sendSMS } from '../services/sms.js';
+import {
+  classifyKeyword, recordOptOut, recordOptIn, HELP_REPLY, STOP_REPLY,
+} from '../services/smsConsent.js';
 
 // Loose US numbers get +1; anything already in E.164 is left alone. Same
 // rule the sender uses, so a thread keyed by phone matches both directions.
@@ -91,6 +94,39 @@ publicRouter.post('/inbound', async (req, res) => {
     // A choir broadcast command is not a customer conversation.
     if (GLEEWORLD_BROADCAST_RE.test(body.trim())) {
       return res.type('text/xml').send(gleeworldReply || '<Response/>');
+    }
+
+    // STOP / START / HELP.
+    //
+    // Carriers require all three keyword families to work, and several of
+    // our own messages have been printing "Reply STOP to opt out" while
+    // nothing on the server could honour it. Handled before the message is
+    // logged as a conversation, and answered directly rather than being
+    // left to the carrier, so the customer gets a reply that names the
+    // business.
+    const keyword = classifyKeyword(body);
+    if (keyword) {
+      const twiml = (msg) => `<Response><Message>${msg.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</Message></Response>`;
+      try {
+        if (keyword === 'stop') {
+          await recordOptOut(from, 'inbound STOP');
+          return res.type('text/xml').send(twiml(STOP_REPLY));
+        }
+        if (keyword === 'start') {
+          await recordOptIn(from, { source: 'inbound START' });
+          return res.type('text/xml').send(twiml(
+            "T-Shirt Brothers: you're subscribed again. Reply STOP any time to opt out.",
+          ));
+        }
+        return res.type('text/xml').send(twiml(HELP_REPLY));
+      } catch (err) {
+        // A failed consent write must not swallow the keyword silently —
+        // log loudly, and still answer so the customer isn't left hanging.
+        console.error(`[sms] ${keyword} handling failed for ${from}:`, err.message);
+        return res.type('text/xml').send(twiml(
+          keyword === 'stop' ? STOP_REPLY : HELP_REPLY,
+        ));
+      }
     }
     const sid = req.body?.MessageSid || null;
     const numMedia = Number(req.body?.NumMedia || 0) || 0;
