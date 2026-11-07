@@ -607,7 +607,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             <ArrowLeft className="w-5 h-5 text-gray-500" />
           </Link>
         )}
-        <div className="flex-1 h-2 rounded-full bg-black/10 overflow-hidden">
+        {/* Was a bare pair of divs: assistive tech had no idea this was a
+            progress indicator, let alone how far along the form was. */}
+        <div className="flex-1 h-2 rounded-full bg-black/10 overflow-hidden"
+          role="progressbar"
+          aria-label={tr('Quote progress', 'Progreso de la cotizaci\u00f3n')}
+          aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPct)}>
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%`, background: ORANGE }} />
         </div>
         <span className="text-xs font-semibold text-gray-500">{stepIdx + 1}/{STEPS.length}</span>
@@ -618,6 +623,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           <Card title={tr("Hi! 👋 What's your name?", '¡Hola! 👋 ¿Cómo te llamas?')}
             sub={studio ? tr('Your design is saved & attached — a few quick questions to price it.', 'Tu diseño está guardado y adjunto — unas preguntas rápidas para cotizarlo.') : undefined}>
             <BigInput autoFocus value={name} onChange={setName} placeholder={tr('Your name', 'Tu nombre')}
+              label={tr('Your name', 'Tu nombre')} autoComplete="name"
               onEnter={() => canNext && go(1)} />
           </Card>
         )}
@@ -628,6 +634,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             `¡Mucho gusto, ${name.trim().split(' ')[0] || 'amigo'}! ¿Cuál es tu teléfono?`,
           )}>
             <BigInput autoFocus type="tel" value={phone} onChange={(v) => setPhone(formatPhone(v))}
+              label={tr('Your phone number', 'Tu n\u00famero de tel\u00e9fono')} autoComplete="tel"
               placeholder="404-555-1234"
               onEnter={() => canNext && go(1)} />
             {/* UNCHECKED by default, and never required — TCPA consent has to
@@ -655,6 +662,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           <Card title={tr('And your email?', '¿Y tu correo electrónico?')}
             sub={tr('Your quote lands here.', 'Aquí llegará tu cotización.')}>
             <BigInput autoFocus type="email" value={email} onChange={setEmail} placeholder={tr('you@email.com', 'tu@correo.com')}
+              label={tr('Your email address', 'Tu correo electr\u00f3nico')} autoComplete="email"
               onEnter={() => canNext && go(1)} />
 
             {/* "How did you hear about us?" — deliberately placed on the
@@ -673,7 +681,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             <div className="mt-6 border-t border-gray-200 pt-5">
               <label htmlFor="heard-from" className="block text-sm font-bold text-gray-800">
                 {tr('How did you hear about us?', '¿Cómo nos conociste?')}
-                <span className="ml-1.5 font-normal text-gray-400">{tr('(optional)', '(opcional)')}</span>
+                <span className="ml-1.5 font-normal text-gray-600">{tr('(optional)', '(opcional)')}</span>
               </label>
               <select
                 id="heard-from"
@@ -708,11 +716,15 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                 const on = picked.includes(p.key);
                 return (
                   <button key={p.key} type="button"
+                    // Selection was conveyed by background colour alone, so a
+                    // screen reader announced every option identically
+                    // (WCAG 4.1.2). aria-pressed makes it a real toggle.
+                    aria-pressed={on}
                     onClick={() => {
                       setPicked((prev) => on ? prev.filter((k) => k !== p.key) : [...prev, p.key]);
                       if (p.key === 'other' && on) { setOtherAcked(false); setOtherText(''); }
                     }}
-                    className={`rounded-2xl border-2 px-3 py-4 text-left transition-all ${
+                    className={`rounded-2xl border-2 px-3 py-4 text-left transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600 ${
                       on ? 'text-white shadow-lg scale-[1.02]' : 'bg-white border-gray-200 hover:border-gray-400'
                     }`}
                     style={on ? { background: ORANGE, borderColor: ORANGE } : undefined}
@@ -785,7 +797,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               {pricedTypes.map((p) => (
                 <div key={p.key}>
                   <p className="font-bold mb-2">{p.emoji} {pLabel(p)}
-                    <span className="ml-2 text-xs font-semibold text-gray-400">{typeQty(p.key)} {tr('pcs', 'pzas')}</span>
+                    <span className="ml-2 text-xs font-semibold text-gray-600">{typeQty(p.key)} {tr('pcs', 'pzas')}</span>
                   </p>
                   <div className="grid grid-cols-4 gap-2">
                     {SIZES.map((s) => (
@@ -854,7 +866,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   >
                     <span className="flex items-baseline justify-between">
                       <span className="font-bold text-lg">{qLabel(t)}</span>
-                      <span className={`font-black ${on ? '' : 'text-gray-400'}`}>{t.dollars}</span>
+                      <span className={`font-black ${on ? '' : 'text-gray-600'}`}>{t.dollars}</span>
                     </span>
                     <span className={`block mt-1 text-sm ${on ? 'text-white/85' : 'text-gray-500'}`}>{es ? t.blurbEs : t.blurb}</span>
                   </button>
@@ -868,7 +880,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           <Card title={tr('When do you need it?', '¿Para cuándo lo necesitas?')}
             sub={tr('Pick your in-hands date.', 'Elige la fecha en que lo necesitas en mano.')}>
             <label className="flex items-center gap-3 rounded-2xl border-2 border-gray-200 bg-white px-4 py-4 focus-within:border-gray-900">
-              <CalendarDays className="w-6 h-6 text-gray-400" />
+              <CalendarDays className="w-6 h-6 text-gray-600" />
               <input type="date" required value={needBy}
                 min={minNeedBy}
                 onChange={(e) => setNeedBy(e.target.value)}
@@ -917,7 +929,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 bg-white px-4 py-10 text-center hover:border-gray-500 transition-colors">
               <p className="text-3xl">📂</p>
               <p className="mt-2 font-bold">{tr('Tap to upload', 'Toca para subir')}</p>
-              <p className="text-xs text-gray-400 mt-1">{tr('PNG, JPG — as many files as you need', 'PNG, JPG — todos los archivos que necesites')}</p>
+              <p className="text-xs text-gray-600 mt-1">{tr('PNG, JPG — as many files as you need', 'PNG, JPG — todos los archivos que necesites')}</p>
             </button>
             <input ref={artInputRef} type="file" accept=".png,.jpg,.jpeg,.webp" multiple className="hidden"
               onChange={(e) => { uploadArt(e.target.files); e.target.value = ''; }} />
@@ -953,7 +965,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                 ))}
                 {Array.from({ length: artUploading }).map((_, i) => (
                   <div key={`up-${i}`} className="rounded-xl border border-gray-200 bg-gray-50 aspect-square flex items-center justify-center">
-                    <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                    <Loader2 className="w-5 h-5 animate-spin text-gray-600" />
                   </div>
                 ))}
               </div>
@@ -965,7 +977,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           <Card title={tr('Your quote 🎉', 'Tu cotización 🎉')}
             sub={tr('Standard pricing — final numbers confirmed by the shop.', 'Precios estándar — el taller confirma los números finales.')}>
             {calcBusy && (
-              <div className="py-10 text-center"><Loader2 className="w-7 h-7 animate-spin text-gray-400 mx-auto" /></div>
+              <div className="py-10 text-center"><Loader2 className="w-7 h-7 animate-spin text-gray-600 mx-auto" /></div>
             )}
             {!calcBusy && calcLines && (
               <>
@@ -985,7 +997,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                         <p className="font-semibold">{p.key === 'other' ? (otherText.trim() || tr('Other', 'Otro')) : pLabel(p)} × {typeQty(p.key) || 1}</p>
                         <p className="text-xs text-amber-600 font-semibold">{tr('priced by the shop after review', 'el taller lo cotiza tras revisión')}</p>
                       </div>
-                      <p className="font-bold text-gray-400 shrink-0">TBD</p>
+                      <p className="font-bold text-gray-600 shrink-0">TBD</p>
                     </div>
                   ))}
                   <div className="px-4 py-3 bg-gray-50">
@@ -1015,7 +1027,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                     {submitBusy === 'draft' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mail className="w-5 h-5" />}
                     {tr('Save Draft (email it to me)', 'Guardar Borrador (envíamelo por correo)')}
                   </button>
-                  <p className="text-center text-xs text-gray-400">
+                  <p className="text-center text-xs text-gray-600">
                     {tr('Paying the deposit starts your order.', 'Al pagar el depósito, tu pedido comienza.')} <Sparkles className="inline w-3 h-3" /> {tr('Prefer the full calculator?', '¿Prefieres la calculadora completa?')} <Link to="/quote/classic" className="underline">{tr('Classic version', 'Versión clásica')}</Link>
                   </p>
                 </div>
@@ -1130,17 +1142,31 @@ function Card({ title, sub, children }: { title: string; sub?: string; children:
   );
 }
 
-function BigInput({ value, onChange, onEnter, placeholder, type = 'text', autoFocus }: {
+// The quote wizard's only text input, used for name, phone and email.
+//
+// It had no label of any kind (placeholder-only, which fails WCAG 3.3.2 and
+// disappears the moment you start typing), and no autocomplete — so on a
+// phone, where most of this traffic is, nobody got the one-tap fill for
+// their own name, number and address. The autocomplete attribute is the
+// accessibility fix that also measurably speeds up completion.
+function BigInput({
+  value, onChange, onEnter, placeholder, type = 'text', autoFocus, label, autoComplete,
+}: {
   value: string; onChange: (v: string) => void; onEnter?: () => void;
   placeholder?: string; type?: string; autoFocus?: boolean;
+  label: string; autoComplete?: string;
 }) {
   return (
     <input
       type={type} value={value} autoFocus={autoFocus} placeholder={placeholder}
       enterKeyHint="next"
+      aria-label={label}
+      autoComplete={autoComplete}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => { if (e.key === 'Enter') onEnter?.(); }}
-      className="w-full rounded-2xl border-2 border-gray-200 bg-white px-5 py-4 text-xl font-semibold focus:border-gray-900 focus:outline-none"
+      // focus-visible, not focus: the old `focus:outline-none` left keyboard
+      // users with only a 2px border change to go on (WCAG 2.4.7).
+      className="w-full rounded-2xl border-2 border-gray-200 bg-white px-5 py-4 text-xl font-semibold focus:border-gray-900 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600"
     />
   );
 }

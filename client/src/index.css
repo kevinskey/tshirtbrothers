@@ -115,3 +115,29 @@
     max-height: 35vh !important;
   }
 }
+
+/* ── Keyboard focus ───────────────────────────────────────────────────────
+ *
+ * There was no :focus-visible rule anywhere in the app, and several
+ * components set `focus:outline-none` with only a colour or border change to
+ * replace it — so a keyboard user could lose track of where they were
+ * entirely (WCAG 2.4.7 Focus Visible, and 2.4.13 Focus Appearance).
+ *
+ * :focus-visible rather than :focus on purpose: mouse and touch users never
+ * see a ring, which is why the outlines were removed in the first place.
+ * Scoped with :where() so it adds no specificity and any component can still
+ * override it deliberately.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #ea580c; /* orange-600 — AA against both white and navy */
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Windows high-contrast mode replaces colours wholesale; the system accent
+ * is the only ring guaranteed to remain visible there. */
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid Highlight;
+  }
+}

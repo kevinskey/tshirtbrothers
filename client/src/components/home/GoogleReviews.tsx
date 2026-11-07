@@ -160,17 +160,13 @@ export default function GoogleReviews() {
                 bestRating: 5,
                 worstRating: 1,
               },
-              review: data.reviews.slice(0, 5).map((rv) => ({
-                '@type': 'Review',
-                author: { '@type': 'Person', name: rv.author },
-                reviewRating: {
-                  '@type': 'Rating',
-                  ratingValue: rv.rating,
-                  bestRating: 5,
-                },
-                reviewBody: rv.text,
-                datePublished: rv.time,
-              })),
+              // No review[] array here on purpose. Google has disallowed
+              // self-serving reviews -- a business publishing reviews of
+              // itself -- on LocalBusiness since 2019: they earn no rich
+              // result, and their presence risks the whole node being
+              // discarded, which would take the aggregateRating with it.
+              // The reviews still render on the page for humans; only the
+              // structured-data copy is dropped.
             }),
           }}
         />
