@@ -714,6 +714,21 @@ export default function ShopPage() {
                   category: (p as { category?: string }).category || 'Apparel',
                   sku: getProductId(p),
                   url: `https://tshirtbrothers.com/shop?product=${encodeURIComponent(getProductId(p))}`,
+                  // Without `offers` a Product is ineligible for any merchant
+                  // listing or price rich result -- all 50 entries on this
+                  // page were being emitted without one. Priced through the
+                  // same retailPrice() the cards render, so the structured
+                  // data can never disagree with what the customer sees.
+                  ...(retailPrice(p) > 0 ? {
+                    offers: {
+                      '@type': 'Offer',
+                      priceCurrency: 'USD',
+                      price: retailPrice(p).toFixed(2),
+                      availability: 'https://schema.org/InStock',
+                      itemCondition: 'https://schema.org/NewCondition',
+                      seller: { '@id': 'https://tshirtbrothers.com/#business' },
+                    },
+                  } : {}),
                 },
               })),
             }),
