@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -15,70 +15,84 @@ function ScrollToTop() {
 }
 
 import HomePage from '@/pages/HomePage';
-import ServicesPage from '@/pages/ServicesPage';
-import ShopPage from '@/pages/ShopPage';
-import SalePage from '@/pages/SalePage';
-import InstantQuotePage from '@/pages/InstantQuotePage';
-import EasyQuotePage from '@/pages/EasyQuotePage';
-import EmbroideryQuotePage from '@/pages/EmbroideryQuotePage';
-import StitchEstimatorPage from '@/pages/StitchEstimatorPage';
-import EmbroideryThanksPage from '@/pages/EmbroideryThanksPage';
-import DesignStudioPage from '@/pages/DesignStudioPage';
-import AdminPage from '@/pages/AdminPage';
-import AuthPage from '@/pages/AuthPage';
+
 import NotFoundPage from '@/pages/NotFoundPage';
-import BrandsPage from '@/pages/BrandsPage';
-import DrinkwarePage from '@/pages/DrinkwarePage';
-import RhinestoneQuotePage from '@/pages/RhinestoneQuotePage';
-import BlingPage from '@/pages/BlingPage';
-import AwardsPage from '@/pages/AwardsPage';
-import QualityTiersPage from '@/pages/QualityTiersPage';
-import WebstoresPage from '@/pages/WebstoresPage';
-import WebstoresBusinessPage from '@/pages/WebstoresBusinessPage';
-import TsbProPage from '@/pages/TsbProPage';
-import HolidayCardsPage from '@/pages/HolidayCardsPage';
-import ProLoginPage from '@/pages/ProLoginPage';
-import GiftsStorePage from '@/pages/GiftsStorePage';
-import BlogPage from '@/pages/BlogPage';
-import BlogPostPage from '@/pages/BlogPostPage';
-import AccountPage from '@/pages/AccountPage';
-import FavoritesPage from '@/pages/FavoritesPage';
-import GangSheetPage from '@/pages/GangSheetPage';
-import CustomerPage from '@/pages/CustomerPage';
-import DtfStorePage from '@/pages/DtfStorePage';
-import DtfBuilderPage from '@/pages/DtfBuilderPage';
-import DtfSuccessPage from '@/pages/DtfSuccessPage';
-import AdminDtfOrdersPage from '@/pages/AdminDtfOrdersPage';
-import AdminVendorSendPage from '@/pages/AdminVendorSendPage';
-import AdminOrderDetailPage from '@/pages/AdminOrderDetailPage';
-import MockupApprovalPage from '@/pages/MockupApprovalPage';
-import QuoteDeclinePage from '@/pages/QuoteDeclinePage';
-import QuoteArtworkPage from '@/pages/QuoteArtworkPage';
-import QuoteAcceptedPage from '@/pages/QuoteAcceptedPage';
-import InvoiceViewPage from '@/pages/InvoiceViewPage';
-import LocalBusinessesPage from '@/pages/LocalBusinessesPage';
-import CityLandingPage from '@/pages/CityLandingPage';
-import VerticalLandingPage from '@/pages/VerticalLandingPage';
-import AboutPage from '@/pages/AboutPage';
-import PrivacyPage from '@/pages/PrivacyPage';
-import TermsPage from '@/pages/TermsPage';
-import FaqPage from '@/pages/FaqPage';
-import HomePageEs from '@/pages/HomePageEs';
+
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
-import StoreFrontPage from '@/pages/StoreFrontPage';
-import StoreProductPage from '@/pages/StoreProductPage';
-import StoreSuccessPage from '@/pages/StoreSuccessPage';
-import StoresDirectoryPage from '@/pages/stores/StoresDirectoryPage';
-import GroupStorePage from '@/pages/stores/GroupStorePage';
-import GroupStoreProductPage from '@/pages/stores/GroupStoreProductPage';
-import GroupStoreCartPage from '@/pages/stores/GroupStoreCartPage';
-import GroupStoreAdminPage from '@/pages/stores/GroupStoreAdminPage';
-import AdminGroupStoresPage from '@/pages/admin/AdminGroupStoresPage';
-import AdminGroupStoreDetailPage from '@/pages/admin/AdminGroupStoreDetailPage';
-import AdminStoreOrderPage from '@/pages/admin/AdminStoreOrderPage';
-import AdminStoreOrdersPage from '@/pages/admin/AdminStoreOrdersPage';
-import PostOfficePage from '@/pages/admin/PostOfficePage';
+
 import { getStoreSubdomain } from '@/lib/storeSubdomain';
+
+// Route-level code splitting.
+//
+// Every page was a static import, so the entry chunk was 2,516 KB and a
+// homepage visitor downloaded the whole admin surface (~31,600 LOC) and all
+// three sister-brand storefronts (~9,000 LOC) before seeing anything. A
+// group-store subdomain visitor downloaded AdminPage to render six routes.
+//
+// HomePage and NotFoundPage stay eager: the first is the LCP route, where an
+// extra round trip is exactly what we are trying to avoid, and the second is
+// what the prerendered 404.html renders.
+const AboutPage = lazy(() => import('@/pages/AboutPage'));
+const AccountPage = lazy(() => import('@/pages/AccountPage'));
+const AdminDtfOrdersPage = lazy(() => import('@/pages/AdminDtfOrdersPage'));
+const AdminGroupStoreDetailPage = lazy(() => import('@/pages/admin/AdminGroupStoreDetailPage'));
+const AdminGroupStoresPage = lazy(() => import('@/pages/admin/AdminGroupStoresPage'));
+const AdminOrderDetailPage = lazy(() => import('@/pages/AdminOrderDetailPage'));
+const AdminPage = lazy(() => import('@/pages/AdminPage'));
+const AdminStoreOrderPage = lazy(() => import('@/pages/admin/AdminStoreOrderPage'));
+const AdminStoreOrdersPage = lazy(() => import('@/pages/admin/AdminStoreOrdersPage'));
+const AdminVendorSendPage = lazy(() => import('@/pages/AdminVendorSendPage'));
+const AuthPage = lazy(() => import('@/pages/AuthPage'));
+const AwardsPage = lazy(() => import('@/pages/AwardsPage'));
+const BlingPage = lazy(() => import('@/pages/BlingPage'));
+const BlogPage = lazy(() => import('@/pages/BlogPage'));
+const BlogPostPage = lazy(() => import('@/pages/BlogPostPage'));
+const BrandsPage = lazy(() => import('@/pages/BrandsPage'));
+const CityLandingPage = lazy(() => import('@/pages/CityLandingPage'));
+const CustomerPage = lazy(() => import('@/pages/CustomerPage'));
+const DesignStudioPage = lazy(() => import('@/pages/DesignStudioPage'));
+const DrinkwarePage = lazy(() => import('@/pages/DrinkwarePage'));
+const DtfBuilderPage = lazy(() => import('@/pages/DtfBuilderPage'));
+const DtfStorePage = lazy(() => import('@/pages/DtfStorePage'));
+const DtfSuccessPage = lazy(() => import('@/pages/DtfSuccessPage'));
+const EasyQuotePage = lazy(() => import('@/pages/EasyQuotePage'));
+const EmbroideryQuotePage = lazy(() => import('@/pages/EmbroideryQuotePage'));
+const EmbroideryThanksPage = lazy(() => import('@/pages/EmbroideryThanksPage'));
+const FaqPage = lazy(() => import('@/pages/FaqPage'));
+const FavoritesPage = lazy(() => import('@/pages/FavoritesPage'));
+const GangSheetPage = lazy(() => import('@/pages/GangSheetPage'));
+const GiftsStorePage = lazy(() => import('@/pages/GiftsStorePage'));
+const GroupStoreAdminPage = lazy(() => import('@/pages/stores/GroupStoreAdminPage'));
+const GroupStoreCartPage = lazy(() => import('@/pages/stores/GroupStoreCartPage'));
+const GroupStorePage = lazy(() => import('@/pages/stores/GroupStorePage'));
+const GroupStoreProductPage = lazy(() => import('@/pages/stores/GroupStoreProductPage'));
+const HolidayCardsPage = lazy(() => import('@/pages/HolidayCardsPage'));
+const HomePageEs = lazy(() => import('@/pages/HomePageEs'));
+const InstantQuotePage = lazy(() => import('@/pages/InstantQuotePage'));
+const InvoiceViewPage = lazy(() => import('@/pages/InvoiceViewPage'));
+const LocalBusinessesPage = lazy(() => import('@/pages/LocalBusinessesPage'));
+const MockupApprovalPage = lazy(() => import('@/pages/MockupApprovalPage'));
+const PostOfficePage = lazy(() => import('@/pages/admin/PostOfficePage'));
+const PrivacyPage = lazy(() => import('@/pages/PrivacyPage'));
+const ProLoginPage = lazy(() => import('@/pages/ProLoginPage'));
+const QualityTiersPage = lazy(() => import('@/pages/QualityTiersPage'));
+const QuoteAcceptedPage = lazy(() => import('@/pages/QuoteAcceptedPage'));
+const QuoteArtworkPage = lazy(() => import('@/pages/QuoteArtworkPage'));
+const QuoteDeclinePage = lazy(() => import('@/pages/QuoteDeclinePage'));
+const RhinestoneQuotePage = lazy(() => import('@/pages/RhinestoneQuotePage'));
+const SalePage = lazy(() => import('@/pages/SalePage'));
+const ServicesPage = lazy(() => import('@/pages/ServicesPage'));
+const ShopPage = lazy(() => import('@/pages/ShopPage'));
+const StitchEstimatorPage = lazy(() => import('@/pages/StitchEstimatorPage'));
+const StoreFrontPage = lazy(() => import('@/pages/StoreFrontPage'));
+const StoreProductPage = lazy(() => import('@/pages/StoreProductPage'));
+const StoreSuccessPage = lazy(() => import('@/pages/StoreSuccessPage'));
+const StoresDirectoryPage = lazy(() => import('@/pages/stores/StoresDirectoryPage'));
+const TermsPage = lazy(() => import('@/pages/TermsPage'));
+const TsbProPage = lazy(() => import('@/pages/TsbProPage'));
+const VerticalLandingPage = lazy(() => import('@/pages/VerticalLandingPage'));
+const WebstoresBusinessPage = lazy(() => import('@/pages/WebstoresBusinessPage'));
+const WebstoresPage = lazy(() => import('@/pages/WebstoresPage'));
 import CgcStandaloneApp, { CgcRoutes } from '@/cgc/CgcApp';
 import { isCgcHost } from '@/cgc/lib/brand';
 import ApcStandaloneApp, { ApcRoutes } from '@/apc/ApcApp';
@@ -111,6 +125,15 @@ function SubdomainApp() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ScrollToTop />
+        <Suspense fallback={null}>
+          {/* Deliberately empty.
+            //
+            // A spinner here would be captured by the prerenderer if a lazy
+            // chunk resolved late, baking a loading state into the HTML
+            // Google indexes. Rendering nothing means the worst case is a
+            // blank frame for one paint instead of a page whose indexed
+            // content is a spinner. Verified: prerendered pages still carry
+            // their real titles and body copy. */}
         <Routes>
           <Route path="/" element={<GroupStorePage />} />
           <Route path="/product/:productSlug" element={<GroupStoreProductPage />} />
@@ -119,6 +142,7 @@ function SubdomainApp() {
           <Route path="/admin" element={<GroupStoreAdminPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>
@@ -143,6 +167,15 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ScrollToTop />
+        <Suspense fallback={null}>
+          {/* Deliberately empty.
+            //
+            // A spinner here would be captured by the prerenderer if a lazy
+            // chunk resolved late, baking a loading state into the HTML
+            // Google indexes. Rendering nothing means the worst case is a
+            // blank frame for one paint instead of a page whose indexed
+            // content is a spinner. Verified: prerendered pages still carry
+            // their real titles and body copy. */}
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/es" element={<HomePageEs />} />
@@ -241,6 +274,7 @@ function App() {
           <Route path="/admin/group-stores/:id" element={<AdminGroupStoreDetailPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </QueryClientProvider>
