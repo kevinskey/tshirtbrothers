@@ -1827,7 +1827,14 @@ export async function sendOrderShippedToCustomer(quote, { carrier, trackingNumbe
 
 import crypto from 'crypto';
 
-const UNSUB_SECRET = process.env.UNSUB_SECRET || process.env.JWT_SECRET || 'tsb-unsub-fallback';
+// No literal fallback: with both vars unset, 'tsb-unsub-fallback' is a
+// published constant in a public repo, and anyone could forge an
+// unsubscribe token for any address. JWT_SECRET has no fallback anywhere
+// else either — failing closed is the house style.
+const UNSUB_SECRET = process.env.UNSUB_SECRET || process.env.JWT_SECRET;
+if (!UNSUB_SECRET) {
+  console.error('[email] UNSUB_SECRET and JWT_SECRET are both unset — unsubscribe links cannot be signed');
+}
 
 export function unsubscribeToken(email) {
   return crypto.createHmac('sha256', UNSUB_SECRET).update(email.toLowerCase()).digest('hex').slice(0, 24);

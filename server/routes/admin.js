@@ -8,50 +8,14 @@ import pool from '../db.js';
 
 const router = Router();
 
-// Public diagnostic — calls the same fetchStyleSizes the sync uses.
-// Lets us isolate whether the function itself is broken vs the worker
-// pool / upsert step.
-router.get('/debug-fetchsizes-public/:styleId', async (req, res, next) => {
-  try {
-    const sizes = await fetchStyleSizes(req.params.styleId);
-    return res.json({ styleId: req.params.styleId, sizes, count: sizes.length });
-  } catch (err) {
-    return res.json({ error: err.message, styleId: req.params.styleId });
-  }
-});
-
-// Public diagnostic — temporary, see comment in handler. Revealed data is
-// public product info (S&S styles + sizes), not a secret.
-router.get('/debug-sizes-public/:styleId', async (req, res, next) => {
-  try {
-    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
-    const apiKey = process.env.SS_API_KEY;
-    if (!accountNumber || !apiKey) {
-      return res.json({ error: 'S&S credentials not configured', accountSet: !!accountNumber, keySet: !!apiKey });
-    }
-    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
-    const url = `https://api.ssactivewear.com/v2/products/?styleid=${req.params.styleId}&fields=sizeName,colorName`;
-    const r = await fetch(url, {
-      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
-    });
-    const text = await r.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch { parsed = null; }
-    const sample = Array.isArray(parsed) ? parsed.slice(0, 3) : null;
-    return res.json({
-      url,
-      status: r.status,
-      ok: r.ok,
-      isArray: Array.isArray(parsed),
-      itemCount: Array.isArray(parsed) ? parsed.length : null,
-      sample,
-      rawFirst300: text.slice(0, 300),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
+// Everything below this point is admin-only.
+//
+// Two "temporary" public diagnostics used to sit ABOVE this line:
+// /debug-fetchsizes-public/:styleId and /debug-sizes-public/:styleId. Both
+// were unauthenticated and unthrottled, and the second echoed the request
+// URL, confirmed whether SS_ACCOUNT_NUMBER / SS_API_KEY were set, and
+// proxied live S&S calls on our credentials for any style id a stranger
+// cared to supply. Nothing in the client ever called either one.
 router.use(authenticate, adminOnly);
 
 // POST /sync-products - Sync products from S&S Activewear
