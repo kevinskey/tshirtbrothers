@@ -11,6 +11,7 @@
 // so the manual button and the background job can never disagree.
 import pool from '../db.js';
 import { getClient } from '../routes/shipping.js';
+import { smsDeliveredToCustomer } from './sms.js';
 
 /** Parcels we stop asking about: delivered, or refunded/voided labels. */
 const OPEN_FILTER = `status = 'purchased' AND COALESCE(tracking_status, '') <> 'delivered'`;
@@ -41,16 +42,35 @@ async function markSubjectDelivered(type, id) {
     // Same shape the Delivered button writes (quotes.js production-step):
     // the checklist flag plus the terminal status, so a mailed job looks
     // identical however it got there.
-    await pool.query(
+    const { rows } = await pool.query(
       `UPDATE quotes
           SET production_steps = COALESCE(production_steps, '{}'::jsonb)
                                  || jsonb_build_object('delivered', 'mailed',
                                                        'delivered_at', NOW()::text),
               status = 'completed'
         WHERE id = $1 AND archived_at IS NULL
-          AND status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')`,
+          AND status IN ('accepted', 'awaiting_approval', 'approved', 'in_production', 'ready')
+      RETURNING id, customer_name, customer_phone, delivered_notified_at`,
       [id],
     );
+
+    // Tell the customer. We have known the box landed every 20 minutes for
+    // as long as this job has existed and said nothing — the highest-open
+    // moment in the journey, free. Asking them to count it TODAY is also how
+    // a shortage becomes a same-week reprint instead of a chargeback six
+    // weeks later.
+    //
+    // Guarded by the RETURNING row (so a no-op UPDATE sends nothing) and by
+    // delivered_notified_at (so a repeated 'delivered' scan can't re-text).
+    const q = rows[0];
+    if (q && !q.delivered_notified_at && q.customer_phone) {
+      try {
+        await smsDeliveredToCustomer(q);
+        await pool.query('UPDATE quotes SET delivered_notified_at = NOW() WHERE id = $1', [id]);
+      } catch (err) {
+        console.error(`[tracking] delivered SMS failed for quote ${id}:`, err.message);
+      }
+    }
   }
 }
 

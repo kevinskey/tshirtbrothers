@@ -8,50 +8,14 @@ import pool from '../db.js';
 
 const router = Router();
 
-// Public diagnostic — calls the same fetchStyleSizes the sync uses.
-// Lets us isolate whether the function itself is broken vs the worker
-// pool / upsert step.
-router.get('/debug-fetchsizes-public/:styleId', async (req, res, next) => {
-  try {
-    const sizes = await fetchStyleSizes(req.params.styleId);
-    return res.json({ styleId: req.params.styleId, sizes, count: sizes.length });
-  } catch (err) {
-    return res.json({ error: err.message, styleId: req.params.styleId });
-  }
-});
-
-// Public diagnostic — temporary, see comment in handler. Revealed data is
-// public product info (S&S styles + sizes), not a secret.
-router.get('/debug-sizes-public/:styleId', async (req, res, next) => {
-  try {
-    const accountNumber = process.env.SS_ACCOUNT_NUMBER;
-    const apiKey = process.env.SS_API_KEY;
-    if (!accountNumber || !apiKey) {
-      return res.json({ error: 'S&S credentials not configured', accountSet: !!accountNumber, keySet: !!apiKey });
-    }
-    const credentials = Buffer.from(`${accountNumber}:${apiKey}`).toString('base64');
-    const url = `https://api.ssactivewear.com/v2/products/?styleid=${req.params.styleId}&fields=sizeName,colorName`;
-    const r = await fetch(url, {
-      headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json' },
-    });
-    const text = await r.text();
-    let parsed;
-    try { parsed = JSON.parse(text); } catch { parsed = null; }
-    const sample = Array.isArray(parsed) ? parsed.slice(0, 3) : null;
-    return res.json({
-      url,
-      status: r.status,
-      ok: r.ok,
-      isArray: Array.isArray(parsed),
-      itemCount: Array.isArray(parsed) ? parsed.length : null,
-      sample,
-      rawFirst300: text.slice(0, 300),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
+// Everything below this point is admin-only.
+//
+// Two "temporary" public diagnostics used to sit ABOVE this line:
+// /debug-fetchsizes-public/:styleId and /debug-sizes-public/:styleId. Both
+// were unauthenticated and unthrottled, and the second echoed the request
+// URL, confirmed whether SS_ACCOUNT_NUMBER / SS_API_KEY were set, and
+// proxied live S&S calls on our credentials for any style id a stranger
+// cared to supply. Nothing in the client ever called either one.
 router.use(authenticate, adminOnly);
 
 // POST /sync-products - Sync products from S&S Activewear
@@ -1459,15 +1423,29 @@ router.get('/dashboard-ops', async (req, res, next) => {
           COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted')::int AS quoted,
           COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'quoted'), 0)::numeric(12,2) AS quoted_value,
           COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '3 days')::int AS quotes_need_follow_up,
-          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'quoted' AND created_at < now() - interval '14 days')::int AS abandoned_quotes,
+          -- 14 days could never match: archiveNonResponsiveQuotes sweeps
+          -- 'quoted' at QUOTE_EXPIRY_DAYS = 7, so this tile also read 0
+          -- forever. Count the ones actually archived unanswered instead,
+          -- which is the number worth looking at.
+          COUNT(*) FILTER (WHERE archived_at IS NOT NULL AND archive_reason = 'non-responsive'
+            AND archived_at > now() - interval '90 days')::int AS abandoned_quotes,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed'))::int AS won,
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected')
             OR (archived_at IS NOT NULL AND status NOT IN ('accepted', 'completed')))::int AS decided,
           COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
           COALESCE(SUM(GREATEST(estimated_price - COALESCE(deposit_amount, 0), 0))
             FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
-          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND mockup_sent_at IS NOT NULL
-            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval
+          -- status must be 'awaiting_approval', not 'accepted': mockups.js
+          -- sets BOTH in the same UPDATE that stamps mockup_sent_at, so the
+          -- old filter was mutually exclusive and this tile read 0 forever
+          -- while real proofs sat unanswered.
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'awaiting_approval'
+            AND mockup_sent_at IS NOT NULL
+            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS awaiting_approval,
+          -- The subset that has been waiting long enough to chase.
+          COUNT(*) FILTER (WHERE archived_at IS NULL AND status = 'awaiting_approval'
+            AND mockup_sent_at < now() - interval '48 hours'
+            AND mockup_approved_at IS NULL AND mockup_rejected_at IS NULL AND in_production_at IS NULL)::int AS proofs_stale_48h
         FROM quotes`),
       pool.query(`
         SELECT
@@ -1759,6 +1737,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
       })),
       attention: {
         proofs_waiting: qa.awaiting_approval,
+        proofs_stale_48h: qa.proofs_stale_48h,
         quotes_unanswered_24h: qa.pending_over_24h,
         orders_overdue: atRisk,
         awaiting_payment: inv.awaiting_payment,

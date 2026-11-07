@@ -8,6 +8,7 @@ import pool from './db.js';
 
 import { storeOgHandler } from './lib/storeOg.js';
 import { isSpaRoute } from './lib/spaRoutes.js';
+import cspReportRouter from './routes/cspReport.js';
 import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
@@ -112,6 +113,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(join(__dirname, 'uploads')));
 
 // API routes
+// Must be mounted before the global express.json(): CSP reports arrive as
+// application/csp-report, which the default parser ignores.
+app.use('/api/csp-report', cspReportRouter);
+
 app.use('/api/products', productsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/quotes', quotesRouter);

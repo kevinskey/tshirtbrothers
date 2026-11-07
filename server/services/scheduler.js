@@ -7,7 +7,12 @@
 import cron from 'node-cron';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import pool from '../db.js';
-import { sendAbandonedQuoteFollowUp } from './email.js';
+import {
+  sendAbandonedQuoteFollowUp,
+  sendQuoteLastCall,
+  sendQuoteClosingNote,
+} from './email.js';
+import { smsQuoteFollowUpToCustomer } from './sms.js';
 import { runPayoutJob } from './storePayoutJob.js';
 import { runNewsletterSchedules } from './newsletterBlast.js';
 import { refreshTracking } from './trackingRefresh.js';
@@ -15,39 +20,94 @@ import { runJdsCatalogSync } from './jdsSync.js';
 import { fetchAllStylePrices } from './ssActivewear.js';
 import { getSpacesClient, SPACES_BUCKET } from './spaces.js';
 
-// Find quotes that were saved 24-72h ago but never moved past 'pending'
-// AND haven't already been followed up. The 24h floor lets the customer
-// breathe — if they save and lock in the same day, we never bother them.
-// The 72h ceiling avoids chasing genuinely cold quotes that would feel
-// stalker-ish.
+// Three touches on a quote that has gone quiet, inside the 7-day window
+// before archiveNonResponsiveQuotes sweeps it up.
+//
+// THE LEAK THIS CLOSES: this job chased only `status = 'pending'`, while the
+// archive cron below sweeps `status IN ('pending','quoted')`. So a quote that
+// was priced and SENT -- someone who asked for a number, got one, and went
+// quiet, i.e. the highest-intent lead in the pipeline -- was never nudged
+// once, then disappeared into non_buying_customers on day 7 in silence.
+//
+// The 24h floor still lets a same-day buyer alone. The ladder fits inside
+// QUOTE_EXPIRY_DAYS rather than extending it: 7 days was a deliberate change
+// down from 14 (Doc, 2026-10-30).
+//
+//   touch 1  24-72h   email   "Still thinking it over?"   (as before)
+//   touch 2  day 3    SMS     Kevin, by name, offers to change something
+//   touch 3  day 5    email   "One question before we close out your quote"
+//
+// One stamp per touch, so a partial failure can't silently re-fire, and each
+// query excludes quotes the later touches have already handled.
+const FOLLOW_UPS = [
+  {
+    label: 'touch 1 (email)',
+    column: 'follow_up_sent_at',
+    // Unchanged from the original job, except that 'quoted' is now included.
+    where: `follow_up_sent_at IS NULL
+            AND created_at < NOW() - INTERVAL '24 hours'
+            AND created_at > NOW() - INTERVAL '72 hours'`,
+    send: (quote) => sendAbandonedQuoteFollowUp(quote),
+  },
+  {
+    label: 'touch 2 (sms)',
+    column: 'follow_up_2_sent_at',
+    // Texted, not emailed: the emailed quote is the thing they already
+    // didn't answer. Skipped silently when we have no phone number.
+    where: `follow_up_sent_at IS NOT NULL
+            AND follow_up_2_sent_at IS NULL
+            AND customer_phone IS NOT NULL
+            AND created_at < NOW() - INTERVAL '3 days'`,
+    send: (quote) => smsQuoteFollowUpToCustomer(quote, {
+      lockInUrl: `${process.env.DOMAIN || 'https://tshirtbrothers.com'}/quote?id=${quote.id}&token=${quote.accept_token || ''}`,
+    }),
+  },
+  {
+    label: 'touch 3 (email)',
+    column: 'follow_up_3_sent_at',
+    where: `follow_up_sent_at IS NOT NULL
+            AND follow_up_3_sent_at IS NULL
+            AND created_at < NOW() - INTERVAL '5 days'`,
+    send: (quote) => sendQuoteLastCall(quote),
+  },
+];
+
 async function runAbandonedQuoteFollowUps() {
-  try {
-    const { rows } = await pool.query(`
-      SELECT id, customer_name, customer_email, product_name, quantity,
-             estimated_price, accept_token, created_at
-        FROM quotes
-       WHERE status = 'pending'
-         AND follow_up_sent_at IS NULL
-         AND customer_email IS NOT NULL
-         AND created_at < NOW() - INTERVAL '24 hours'
-         AND created_at > NOW() - INTERVAL '72 hours'
-       LIMIT 50
-    `);
-    if (rows.length === 0) return;
-    console.log(`[scheduler] abandoned-quote follow-up: ${rows.length} candidates`);
-    for (const quote of rows) {
-      try {
-        await sendAbandonedQuoteFollowUp(quote);
-        await pool.query(
-          'UPDATE quotes SET follow_up_sent_at = NOW() WHERE id = $1',
-          [quote.id],
-        );
-      } catch (err) {
-        console.error(`[scheduler] follow-up failed for quote ${quote.id}:`, err.message);
+  for (const step of FOLLOW_UPS) {
+    try {
+      const { rows } = await pool.query(`
+        SELECT id, customer_name, customer_email, customer_phone, product_name,
+               quantity, estimated_price, accept_token, created_at,
+               -- quoteLang() reads inputs_json, NOT a quote_lang column;
+               -- omitting it silently sends English to Spanish customers.
+               inputs_json
+          FROM quotes
+         WHERE status IN ('pending', 'quoted')
+           AND archived_at IS NULL
+           AND accepted_at IS NULL
+           AND customer_email IS NOT NULL
+           AND ${step.where}
+         LIMIT 50
+      `);
+      if (rows.length === 0) continue;
+      console.log(`[scheduler] quote follow-up ${step.label}: ${rows.length} candidate(s)`);
+      for (const quote of rows) {
+        try {
+          await step.send(quote);
+          // Stamped even when the send was a no-op (no phone on an SMS
+          // touch), so the ladder always advances instead of re-querying the
+          // same rows every hour forever.
+          await pool.query(
+            `UPDATE quotes SET ${step.column} = NOW() WHERE id = $1`,
+            [quote.id],
+          );
+        } catch (err) {
+          console.error(`[scheduler] ${step.label} failed for quote ${quote.id}:`, err.message);
+        }
       }
+    } catch (err) {
+      console.error(`[scheduler] runAbandonedQuoteFollowUps ${step.label} failed:`, err.message);
     }
-  } catch (err) {
-    console.error('[scheduler] runAbandonedQuoteFollowUps failed:', err.message);
   }
 }
 
@@ -103,10 +163,27 @@ async function archiveNonResponsiveQuotes() {
          AND status IN ('pending', 'quoted')
          AND created_at < NOW() - make_interval(days => $1)
        RETURNING id, customer_name, customer_email, customer_phone,
-                 estimated_price, calculated_price, shipping_address, created_at
+                 estimated_price, calculated_price, shipping_address, created_at,
+                 -- quoteLang() reads inputs_json, so the closing note needs it
+                 -- to go out in the language the quote was taken in.
+                 inputs_json
     `, [QUOTE_EXPIRY_DAYS]);
     if (rows.length === 0) return;
     console.log(`[scheduler] archived ${rows.length} non-responsive quote(s): ${rows.map((r) => r.id).join(', ')}`);
+
+    // Tell them before they hear nothing again. Archiving used to move the
+    // quote to the non-responsive list and record the customer in
+    // non_buying_customers without a word -- "we still have your art" is
+    // both true and the cheapest reason for them to come back.
+    for (const q of rows) {
+      if (!q.customer_email) continue;
+      try {
+        await sendQuoteClosingNote(q);
+        await pool.query('UPDATE quotes SET closing_note_sent_at = NOW() WHERE id = $1', [q.id]);
+      } catch (err) {
+        console.error(`[scheduler] closing note failed for quote ${q.id}:`, err.message);
+      }
+    }
 
     for (const q of rows) {
       const email = String(q.customer_email || '').trim().toLowerCase();

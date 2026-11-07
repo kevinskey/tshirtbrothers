@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Loader2, Tag } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import { RETAIL_MARKUP } from '@/lib/pricing';
 
 const SALE_PCT = 0.15;
 
@@ -30,12 +31,12 @@ function useRetailPrice(p: SaleProduct): number {
       if (!r.ok) return 0;
       const body = await r.json();
       const wholesale = Number(body?.pricing?.customerPrice || body?.pricing?.piecePrice || 0);
-      return wholesale * 2;
+      return wholesale * RETAIL_MARKUP;
     },
     enabled: !!p.ss_id,
     staleTime: 60 * 60 * 1000,
   });
-  const fallback = Number(p.base_price || 0) * 2;
+  const fallback = Number(p.base_price || 0) * RETAIL_MARKUP;
   return data && data > 0 ? data : fallback;
 }
 

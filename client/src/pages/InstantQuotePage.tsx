@@ -6,6 +6,7 @@ import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
 import { logActivityOnce } from '@/lib/activity';
 import { DTF_GANG_SHEET } from '@/data/businessFacts';
+import { retailPrice } from '@/lib/pricing';
 import {
   Shirt,
   Palette,
@@ -1809,10 +1810,9 @@ function SaveQuoteModal({
 
 function SelectedProductBanner({ product, noun, onClear }: { product: CatalogProduct; noun: string; onClear: () => void }) {
   const img = product.image_url || product.imageUrl;
-  const wholesale = Number(product.base_price || 0);
-  const yourPrice = product.custom_price != null && Number(product.custom_price) > 0
-    ? Number(product.custom_price)
-    : wholesale > 0 ? wholesale * 2 : null;
+  // `|| null` preserves the previous semantics: unpriced must stay null so
+  // the caller hides the figure rather than rendering $0.00.
+  const yourPrice = retailPrice(product) || null;
   return (
     <div className="mb-4 flex items-center gap-3 rounded-2xl border-2 border-orange-300 bg-orange-50/50 p-3">
       <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
@@ -1888,10 +1888,7 @@ function ProductPickerModal({ onPick, onClose }: { onPick: (p: CatalogProduct) =
           ) : (
             results.map((p) => {
               const img = p.image_url || p.imageUrl;
-              const wholesale = Number(p.base_price || 0);
-              const yourPrice = p.custom_price != null && Number(p.custom_price) > 0
-                ? Number(p.custom_price)
-                : wholesale > 0 ? wholesale * 2 : null;
+              const yourPrice = retailPrice(p) || null;
               return (
                 <button
                   key={p.ss_id || p.id}
