@@ -132,6 +132,10 @@ export interface Quote {
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
   mockup_image_url_back?: string | null;
+  /** Sleeve proofs. A quote can carry one without a back, so anything that
+   *  reads only front+back shows an incomplete proof. */
+  mockup_image_url_sleeve?: string | null;
+  mockup_image_url_sleeve_left?: string | null;
   /** Set when the customer rules on a proof; cleared when a revision goes
    *  out, which is what distinguishes a first send from a re-approval. */
   /** Additional addresses copied on every customer-facing send for this

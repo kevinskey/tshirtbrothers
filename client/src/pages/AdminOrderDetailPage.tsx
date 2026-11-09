@@ -39,6 +39,7 @@ interface Detail {
     id: number; customer_name: string; customer_email: string; customer_phone: string | null;
     status: string; estimated_price: string | null; quantity: number; notes: string | null;
     mockup_image_url: string | null; mockup_image_url_back: string | null;
+    mockup_image_url_sleeve: string | null; mockup_image_url_sleeve_left: string | null;
     created_at: string; accepted_at: string | null; balance_paid_at: string | null;
     date_needed: string | null;
     order_stages: Record<string, string> | null;
@@ -564,9 +565,13 @@ export default function AdminOrderDetailPage() {
                   })}
                 </div>
               )}
-              {(quote.mockup_image_url || quote.mockup_image_url_back) && (
-                <div className="flex gap-3 mt-4">
-                  {[quote.mockup_image_url, quote.mockup_image_url_back].filter(Boolean).map((url, i) => (
+              {/* Sleeves count as proof sides too — front+back alone showed an
+                  incomplete proof on jobs with a sleeve hit. */}
+              {(quote.mockup_image_url || quote.mockup_image_url_back
+                || quote.mockup_image_url_sleeve || quote.mockup_image_url_sleeve_left) && (
+                <div className="flex flex-wrap gap-3 mt-4">
+                  {[quote.mockup_image_url, quote.mockup_image_url_back,
+                    quote.mockup_image_url_sleeve, quote.mockup_image_url_sleeve_left].filter(Boolean).map((url, i) => (
                     <a key={i} href={url as string} target="_blank" rel="noreferrer">
                       <img src={url as string} alt="mockup" className="h-32 rounded-lg border border-gray-200 object-contain bg-gray-50" />
                     </a>

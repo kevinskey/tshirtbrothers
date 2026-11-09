@@ -3961,7 +3961,33 @@ export default function AdminPage() {
 
             {/* Desktop table view */}
             <div className="hidden lg:block bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full table-fixed text-sm">
+                  {/* Fixed layout so all eleven columns fit the viewport
+                      instead of pushing Cost/Status/Actions into a sideways
+                      scroll. The narrow columns hold their content; the three
+                      text columns split what's left and truncate. Every row
+                      type here — quote, invoice, gang sheet — renders these
+                      same eleven cells in this order. */}
+                  <colgroup>
+                    {/* The eight narrow columns are sized to their widest real
+                        value; Customer, Email and Product are left unsized so
+                        they split whatever is left over and truncate. Giving
+                        those three percentages instead would only fit above
+                        ~1500px — below that the fixed pixels plus the
+                        percentage share exceed the table and the sideways
+                        scroll comes back. */}
+                    <col className="w-[52px]" />{/* Art */}
+                    <col className="w-[88px]" />{/* Date */}
+                    <col className="w-[80px]" />{/* Order # */}
+                    <col className="w-[96px]" />{/* Due */}
+                    <col />{/* Customer */}
+                    <col />{/* Email */}
+                    <col />{/* Product */}
+                    <col className="w-[40px]" />{/* Qty */}
+                    <col className="w-[96px]" />{/* Cost */}
+                    <col className="w-[116px]" />{/* Status */}
+                    <col className="w-[76px]" />{/* Actions */}
+                  </colgroup>
                   <thead>
                     {/* Phone rides under the name and colour under the product
                         rather than each taking a column — nine columns of one
@@ -4024,7 +4050,7 @@ export default function AdminPage() {
                           />
                         </td>
                         <td className="px-3 py-2 text-gray-900">
-                          <div className="max-w-[160px] truncate" title={q.customer_name || q.customerName}>{q.customer_name || q.customerName}</div>
+                          <div className="truncate" title={q.customer_name || q.customerName}>{q.customer_name || q.customerName}</div>
                           {(q.customer_phone || q.customerPhone) && (
                             <a
                               href={`tel:${q.customer_phone || q.customerPhone}`}
@@ -4035,7 +4061,7 @@ export default function AdminPage() {
                             </a>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={q.customer_email || q.customerEmail}>{q.customer_email || q.customerEmail}</div></td>
+                        <td className="px-3 py-2 text-gray-600"><div className="truncate" title={q.customer_email || q.customerEmail}>{q.customer_email || q.customerEmail}</div></td>
                         <td className="px-3 py-2 text-gray-600">
                           {invoiceByQuoteId.has(Number(q.id)) && (
                             <button
@@ -4046,16 +4072,16 @@ export default function AdminPage() {
                                 setActiveSection('invoices');
                                 openInvoiceEditor(inv);
                               }}
-                              className="flex items-center gap-1.5 mb-0.5 group"
+                              className="flex items-center gap-1.5 mb-0.5 group max-w-full min-w-0"
                               title="Open invoice"
                             >
                               <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Invoice</span>
-                              <span className="text-xs font-medium text-gray-900 group-hover:underline whitespace-nowrap">
+                              <span className="text-xs font-medium text-gray-900 group-hover:underline truncate">
                                 {invoiceByQuoteId.get(Number(q.id))!.invoice_number}
                               </span>
                             </button>
                           )}
-                          <div className="max-w-[180px] truncate" title={q.product_name || q.productName}>{q.product_name || q.productName}</div>
+                          <div className="truncate" title={q.product_name || q.productName}>{q.product_name || q.productName}</div>
                           {q.color && <div className="text-[11px] text-gray-500 truncate">{q.color}</div>}
                         </td>
                         <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{q.quantity}</td>
@@ -4063,7 +4089,9 @@ export default function AdminPage() {
                           <div className="text-gray-900">
                             {q.estimated_price != null ? `$${Number(q.estimated_price).toFixed(2)}` : '—'}
                           </div>
-                          <div className={`text-[11px] ${paidState(q).className}`}>{paidState(q).label}</div>
+                          {/* "⚠ No payment on file" is wider than this column;
+                              let it wrap rather than spill into Status. */}
+                          <div className={`text-[11px] leading-tight whitespace-normal ${paidState(q).className}`}>{paidState(q).label}</div>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <StatusBadge status={q.status} archiveReason={(q as any).archive_reason} />
@@ -5885,8 +5913,8 @@ export default function AdminPage() {
                               ) : <span className="text-gray-300">—</span>}
                             </td>
                             <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(inv.created_at).toLocaleDateString()}</td>
-                            <td className="px-3 py-2 text-gray-900"><div className="max-w-[160px] truncate" title={inv.customer_name}>{inv.customer_name}</div></td>
-                            <td className="px-3 py-2 text-gray-500"><div className="max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
+                            <td className="px-3 py-2 text-gray-900"><div className="truncate" title={inv.customer_name}>{inv.customer_name}</div></td>
+                            <td className="px-3 py-2 text-gray-500"><div className="truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
                             <td className="px-3 py-2 text-right font-medium text-gray-900 whitespace-nowrap">${Number(inv.total).toFixed(2)}</td>
                             <td className="px-3 py-2 text-right text-green-600 whitespace-nowrap">${Number(inv.amount_paid).toFixed(2)}</td>
                             <td className="px-3 py-2 text-right font-medium text-red-600 whitespace-nowrap">${Number(inv.amount_due).toFixed(2)}</td>
@@ -8902,20 +8930,29 @@ export default function AdminPage() {
                           </span>
                         )}
                       </p>
-                      {!(q.mockup_image_url || q.design_url) ? null : q.mockup_image_url && q.mockup_image_url_back ? (
+                      {/* Every side the mockup carries, not just front+back —
+                          a sleeve proof lived in the column and never showed
+                          here, so the admin saw a two-view proof of a
+                          three-view job (quote #309). */}
+                      {(() => {
+                        const views = [
+                          { url: q.mockup_image_url, label: 'Front' },
+                          { url: q.mockup_image_url_back, label: 'Back' },
+                          { url: q.mockup_image_url_sleeve, label: 'Right Sleeve' },
+                          { url: q.mockup_image_url_sleeve_left, label: 'Left Sleeve' },
+                        ].filter((v): v is { url: string; label: string } => Boolean(v.url));
+                        return !(q.mockup_image_url || q.design_url) ? null : views.length > 1 ? (
                         <div className="relative">
-                          <div className="grid grid-cols-2 gap-2">
-                            <a href={q.mockup_image_url} target="_blank" rel="noreferrer" className="block">
-                              <img src={q.mockup_image_url} alt="Mockup front" className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
-                              <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Front</p>
-                            </a>
-                            <a href={q.mockup_image_url_back} target="_blank" rel="noreferrer" className="block">
-                              <img src={q.mockup_image_url_back} alt="Mockup back" className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
-                              <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">Back</p>
-                            </a>
+                          <div className={`grid gap-2 ${views.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                            {views.map((v) => (
+                              <a key={v.label} href={v.url} target="_blank" rel="noreferrer" className="block">
+                                <img src={v.url} alt={`Mockup ${v.label.toLowerCase()}`} className={`w-full max-h-64 object-contain rounded-lg ${ART_TILE}`} />
+                                <p className="mt-1 text-center text-[10px] uppercase tracking-wider text-gray-500">{v.label}</p>
+                              </a>
+                            ))}
                           </div>
-                          {/* One ✕ for the pair — front + back are the same
-                              mockup, so they come off together. */}
+                          {/* One ✕ for the set — the sides are one mockup, so
+                              they come off together. */}
                           <button
                             aria-label="Remove mockup"
                             onClick={() => removeQuotePrimaryMockup(q as Quote)}
@@ -8935,7 +8972,8 @@ export default function AdminPage() {
                             className="absolute right-2 top-2 h-6 w-6 rounded-full bg-black/60 text-xs leading-6 text-white hover:bg-red-600"
                           >✕</button>
                         </div>
-                      )}
+                      );
+                      })()}
                       {/* The preview above prefers the mockup, which would
                           otherwise bury the print file the shop actually
                           prints from. Show it alongside whenever it's a
@@ -11664,14 +11702,17 @@ function DueDateCell({
   const meta = dueMeta(value, done);
   const input = toDateInputValue(value);
   return (
-    <div className="w-[104px]">
+    // min-w-0 on both: a native date input's intrinsic width is wider than
+    // this column, and without it the control refuses to shrink and spills
+    // over the customer name next door.
+    <div className="w-full min-w-0">
       <input
         type="date"
         value={input}
         disabled={saving}
         onChange={(e) => onChange(e.target.value || null)}
         aria-label="Due date"
-        className={`w-full bg-transparent border rounded px-1 py-0.5 text-[12px] cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400 ${
+        className={`block w-full min-w-0 bg-transparent border rounded px-1 py-0.5 text-[11px] cursor-pointer focus:outline-none focus:ring-1 focus:ring-red-400 ${
           meta ? `border-gray-200 ${meta.textClass}` : 'border-dashed border-gray-300 text-gray-400'
         } ${saving ? 'opacity-50' : ''}`}
       />
@@ -12334,12 +12375,12 @@ function InvoicePipelineRow({ inv, onOpen, onArchived }: { inv: Invoice; onOpen:
       </td>
       <td className="px-3 py-2 text-gray-600"><div className="max-w-[200px] truncate" title={inv.customer_email}>{inv.customer_email}</div></td>
       <td className="px-3 py-2 text-gray-600">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span className="inline-block px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">Invoice</span>
-          <span className="font-medium text-gray-900 whitespace-nowrap">{inv.invoice_number}</span>
+          <span className="font-medium text-gray-900 truncate">{inv.invoice_number}</span>
           {orderNumber(inv.quote_id) && <span className="text-xs text-gray-500 whitespace-nowrap">· {orderNumber(inv.quote_id)}</span>}
         </div>
-        {firstDesc && <div className="text-[11px] text-gray-500 truncate max-w-[180px]">{firstDesc}</div>}
+        {firstDesc && <div className="text-[11px] text-gray-500 truncate">{firstDesc}</div>}
       </td>
       <td className="px-3 py-2 text-gray-600 text-right whitespace-nowrap">{qty || '—'}</td>
       <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -12483,7 +12524,7 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
         />
       </td>
       <td className="px-3 py-2 text-gray-900">
-        <div className="max-w-[160px] truncate" title={order.customer_name ?? ''}>{order.customer_name || '—'}</div>
+        <div className="truncate" title={order.customer_name ?? ''}>{order.customer_name || '—'}</div>
         {order.customer_phone && (
           <a href={`tel:${order.customer_phone}`} className="text-[11px] text-gray-500 hover:text-red-600">
             {order.customer_phone}
@@ -12491,14 +12532,14 @@ function GangSheetRow({ order }: { order: GangSheetOrder }) {
         )}
       </td>
       <td className="px-3 py-2 text-gray-600">
-        <div className="max-w-[200px] truncate" title={order.customer_email ?? ''}>{order.customer_email || '—'}</div>
+        <div className="truncate" title={order.customer_email ?? ''}>{order.customer_email || '—'}</div>
       </td>
       {/* The length IS the product here — it is what she chose and what she
           was charged for — so it gets its own line and never truncates. The
           badge and tier sit under it rather than competing for the same
           180px, which is what pushed "2 ft" out of view. */}
       <td className="px-3 py-2 text-gray-600">
-        <div className="max-w-[220px]" title={sheetTitle(order)}>
+        <div className="min-w-0" title={sheetTitle(order)}>
           <div className="flex items-center gap-1.5">
             <span className="inline-block px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-semibold uppercase tracking-wide shrink-0">DTF</span>
             <span className="font-medium text-gray-900 whitespace-nowrap">{size} gang sheet</span>
