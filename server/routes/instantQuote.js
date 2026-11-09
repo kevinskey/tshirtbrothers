@@ -8,6 +8,7 @@ import { recordActivity } from './events.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { cardFeeCents } from './invoices.js';
 import { retailPrice } from '../lib/pricing.js';
+import { tierForWholesale, garmentFamilyFor } from '../lib/garmentTier.js';
 
 const router = Router();
 
@@ -716,6 +717,68 @@ router.post('/lock-in', async (req, res, next) => {
     });
 
     res.json({ url: session.url, sessionId: session.id });
+  } catch (err) { next(err); }
+});
+
+/* ---------------------------------------------------------------------------
+ * GET /api/quote/product-tier?ss_id=<catalog ss_id>&garment=<family>
+ *
+ * Quality tier for a specific catalog blank, decided by its WHOLESALE
+ * price against the tier anchors in instant_quote_garments (see
+ * lib/garmentTier.js). The Easy Quote wizard calls this for Design
+ * Studio arrivals so the garment the customer designed on sets the
+ * tier, instead of asking "What quality level?" again.
+ *
+ * `garment` is the pricing family the caller will price with
+ * ('T-shirt', 'Hoodie', ...) so the boundaries come from the same rows
+ * the price does; omitted, it is inferred from the catalog name/category.
+ *
+ * Responds { quality_tier, wholesale, garment, anchors, boundaries } --
+ * quality_tier is null when the blank has no wholesale price on file,
+ * and the caller falls back to asking the customer.
+ * ------------------------------------------------------------------------- */
+router.get('/product-tier', async (req, res, next) => {
+  try {
+    const ssId = String(req.query.ss_id || '').trim();
+    if (!ssId) return res.status(400).json({ error: 'ss_id is required' });
+
+    // Same lookup order as /api/products/by-ssid: catalog_products carries
+    // both S&S and SanMar rows; legacy `products` is the fallback.
+    const cat = await pool.query(
+      'SELECT ss_id, name, brand, category, base_price FROM catalog_products WHERE ss_id = $1 LIMIT 1',
+      [ssId],
+    );
+    let row = cat.rows[0] || null;
+    if (!row) {
+      const legacy = await pool.query(
+        'SELECT ss_id, name, brand, category, base_price FROM products WHERE ss_id = $1 LIMIT 1',
+        [ssId],
+      );
+      row = legacy.rows[0] || null;
+    }
+    if (!row) return res.status(404).json({ error: 'Unknown product' });
+
+    const t = await loadPricingTables();
+    const requested = String(req.query.garment || '').trim();
+    const family = t.garments.some((g) => g.name === requested)
+      ? requested
+      : garmentFamilyFor(row.name, row.category);
+    const anchors = t.garments
+      .filter((g) => g.name === family)
+      .map((g) => ({ quality_tier: g.quality_tier, base_cost: Number(g.base_cost), active: g.active }));
+    const wholesale = row.base_price == null ? null : Number(row.base_price);
+    const result = tierForWholesale(wholesale, anchors);
+
+    res.json({
+      ss_id: row.ss_id,
+      name: row.name,
+      brand: row.brand,
+      garment: family,
+      wholesale: Number.isFinite(wholesale) && wholesale > 0 ? wholesale : null,
+      quality_tier: result?.quality_tier ?? null,
+      boundaries: result?.boundaries ?? [],
+      anchors: anchors.filter((a) => a.active !== false),
+    });
   } catch (err) { next(err); }
 });
 

@@ -152,7 +152,7 @@ const CHANNEL_TO_HEARD_FROM: Partial<Record<DiscoveryChannel, string>> = {
 // silently produced designless quotes from studio customers.
 type StudioHandoff = {
   fromDesignStudio?: boolean;
-  product?: { name?: string; brand?: string } | null;
+  product?: { ss_id?: string; name?: string; brand?: string } | null;
   color?: { name?: string } | null;
   mockupUrl?: string | null;
   graphicUrl?: string | null;
@@ -171,18 +171,19 @@ function studioProductKey(name: string | undefined): ProductKey {
   return 'tshirt';
 }
 
-// The studio customer already chose a garment, which IS the quality
-// answer: the wizard's three tiers are brand lines (see QUALITY_TIERS
-// and the tier -> default blank table in server/routes/quotes.js), so
-// the blank's brand maps straight onto a tier. Anything not in the two
-// upper lines prices as Standard; the exact garment still reaches the
-// shop in the notes.
-function studioQualityTier(product: StudioHandoff['product']): typeof QUALITY_TIERS[number]['tier'] {
-  const n = `${product?.brand ?? ''} ${product?.name ?? ''}`.toLowerCase();
-  if (/comfort\s*colors/.test(n)) return 'Ultra';
-  if (/next\s*level/.test(n)) return 'Premium';
-  return 'Standard';
-}
+// The studio customer already chose a garment, and that garment's
+// WHOLESALE price decides its tier: the server compares it with the
+// tier anchors in the pricing table (GET /api/quote/product-tier, see
+// server/lib/garmentTier.js). Brand is not a factor -- Kevin,
+// 2026-11-09: "tiers must be determined by wholesale price levels".
+//   'pending'  lookup in flight (the quality step stays hidden; it
+//              resolves long before the customer could reach it)
+//   null       no wholesale on file or lookup failed -- the wizard asks
+//   { tier }   decided
+type StudioTier =
+  | 'pending'
+  | null
+  | { tier: typeof QUALITY_TIERS[number]['tier']; wholesale: number | null };
 
 // "Brand Name" for display — unless the catalog name already leads with
 // the brand, which S&S names often do.
@@ -225,15 +226,29 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   // opens on "How many?" — the only thing the studio could not know.
   // Each skip is conditional on the handoff actually carrying the answer,
   // so a failed mockup capture still gets the art step.
+  const [studioTier, setStudioTier] = useState<StudioTier>(
+    () => (studio?.product?.ss_id ? 'pending' : null),
+  );
   const steps = useMemo<readonly Step[]>(() => {
     if (!studio) return STEPS;
     const answered = new Set<Step>();
-    if (studio.product?.name) { answered.add('products'); answered.add('quality'); }
+    if (studio.product?.name) answered.add('products');
+    // Quality is answered by the garment's wholesale price, not by the
+    // fact that a garment was picked: a blank with no price on file
+    // still gets the question.
+    if (studio.product?.name && studioTier !== null) answered.add('quality');
     if (studio.color?.name) answered.add('color');
     if (studioArt.length > 0) answered.add('art');
     return STEPS.filter((s) => !answered.has(s));
-  }, [studio, studioArt]);
+  }, [studio, studioArt, studioTier]);
   const [step, setStep] = useState<Step>(steps[0]!);
+  // The list can change once after mount (lookup resolved); if the
+  // current step fell out of it, land on the next one that remains.
+  useEffect(() => {
+    if (steps.includes(step)) return;
+    const after = STEPS.slice(STEPS.indexOf(step) + 1).find((s) => steps.includes(s));
+    setStep(after ?? steps[0]!);
+  }, [steps, step]);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -296,9 +311,30 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   // qty[productKey][size] = string; custom types use the single '_qty' key
   const [qty, setQty] = useState<Record<string, Record<string, string>>>({});
   const [color, setColor] = useState(() => studio?.color?.name ?? '');
-  const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>(
-    () => (studio?.product?.name ? studioQualityTier(studio.product) : ''),
-  );
+  const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>('');
+
+  // Wholesale-price tier lookup for the studio garment. The family sent
+  // along is the one this page will price with, so the tier boundaries
+  // come from the same pricing rows as the price itself.
+  useEffect(() => {
+    const ssId = studio?.product?.ss_id;
+    if (!ssId) return;
+    let cancelled = false;
+    const family = PRODUCT_TYPES.find((p) => p.key === studioProductKey(studio?.product?.name))?.pricing ?? 'T-shirt';
+    const params = new URLSearchParams({ ss_id: ssId, garment: family });
+    fetch(`/api/quote/product-tier?${params}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { quality_tier?: string | null; wholesale?: number | null } | null) => {
+        if (cancelled) return;
+        const tier = QUALITY_TIERS.find((t) => t.tier === d?.quality_tier)?.tier;
+        if (!tier) { setStudioTier(null); return; }
+        setStudioTier({ tier, wholesale: typeof d?.wholesale === 'number' ? d.wholesale : null });
+        setQuality((q) => q || tier);
+      })
+      .catch(() => { if (!cancelled) setStudioTier(null); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [needBy, setNeedBy] = useState('');
   const [artUrls, setArtUrls] = useState<string[]>(() => studioArt);
   const [artUploading, setArtUploading] = useState(0);
@@ -525,7 +561,10 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         studio && 'Designed in Design Studio',
         studio?.product?.name && `Garment: ${studioGarmentLabel(studio.product)}`,
         color && `Color: ${color}`,
-        quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
+        quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}${
+          typeof studioTier === 'object' && studioTier?.tier === quality
+            ? ` (by wholesale${studioTier.wholesale != null ? ` $${studioTier.wholesale.toFixed(2)}` : ''})`
+            : ''}`,
         `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
         needBy && `Need by: ${needBy}${isRush ? ' (RUSH)' : ''}`,
         // Appended to the existing notes string rather than added as a
@@ -695,7 +734,9 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             <p className="text-xs text-gray-600 truncate">
               {[
                 color,
-                (() => { const t = QUALITY_TIERS.find((x) => x.tier === quality); return t ? qLabel(t) : ''; })(),
+                studioTier === 'pending'
+                  ? tr('checking tier\u2026', 'verificando nivel\u2026')
+                  : (() => { const t = QUALITY_TIERS.find((x) => x.tier === quality); return t ? qLabel(t) : ''; })(),
                 printSides === 2 ? tr('Front & back', 'Frente y espalda') : tr('Front only', 'Solo el frente'),
               ].filter(Boolean).join(' \u00b7 ')}
             </p>
