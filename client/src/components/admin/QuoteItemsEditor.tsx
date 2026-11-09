@@ -71,6 +71,9 @@ const FEE_PRESETS = [
   'Digitizing Fee',
   // Decorating garments the customer brought in — labor only, no blank.
   'Print/Embroider Customer Garments',
+  // Cutting and weeding vinyl — priced per piece or as a flat run, both of
+  // which a fee line already does (amount each × qty, or an override total).
+  'Vinyl Cutting',
   'Screen Setup Fee',
   'Rush Fee',
   'Misc Fee',
