@@ -810,7 +810,11 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       });
     }
 
-    const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount } = priceBreakdown;
+    // lineFees carries the quote's fee line items (digitizing, printing on
+    // customer-supplied garments). They are part of the total, so they have
+    // to survive this round-trip — the breakdown is what the customer email,
+    // the accept page and the invoice all read back.
+    const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount, lineFees, lineFeesTotal } = priceBreakdown;
 
     // Generate an accept token
     const acceptToken = crypto.randomBytes(32).toString('hex');
@@ -833,7 +837,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       [
         total,
         acceptToken,
-        JSON.stringify({ basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount }),
+        JSON.stringify({ basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount, lineFees: lineFees || [], lineFeesTotal: lineFeesTotal || 0 }),
         message || null,
         depositAmount,
         quoteId,
@@ -852,6 +856,8 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       printingCost,
       designFee,
       rushFee,
+      lineFees: lineFees || [],
+      lineFeesTotal: lineFeesTotal || 0,
       discountPct,
       discountReason,
       discountAmount,

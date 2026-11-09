@@ -69,6 +69,8 @@ const FEE_PRESETS = [
   'Gift Wrapping',
   'Art/Design Fee',
   'Digitizing Fee',
+  // Decorating garments the customer brought in — labor only, no blank.
+  'Print/Embroider Customer Garments',
   'Screen Setup Fee',
   'Rush Fee',
   'Misc Fee',
