@@ -2941,11 +2941,32 @@ export default function AdminPage() {
   // Items that carry a quantity but no size breakdown contribute under a
   // synthetic "—" key so the Send Price grid still renders a row to price.
   const NO_SIZE_KEY = '—';
+  // Fee lines are charges, not garments. They carry no sizes and a quantity
+  // that counts units of the charge (6 shirts to print, 1 digitizing setup),
+  // so anything that reasons about the size run has to skip them — otherwise
+  // a $180 "print customer garments" line lands in the size map as 6 phantom
+  // garments priced at the garment markup, and its real $180 never arrives.
+  const isFeeItem = (it: { item_type?: string | null }) => it?.item_type === 'fee';
+
+  // What a fee line actually bills: the admin's override line_total when set,
+  // otherwise amount-each × qty. Mirrors the server's SUM(line_total).
+  function feeLinesForQuote(q: Quote | null): Array<{ name: string; amount: number }> {
+    if (!q?.items) return [];
+    return q.items.filter(isFeeItem).map((it) => {
+      const lineTotal = it.line_total != null && it.line_total !== '' ? Number(it.line_total) : NaN;
+      const amount = Number.isFinite(lineTotal)
+        ? lineTotal
+        : (Number(it.unit_price) || 0) * (Number(it.quantity) || 0);
+      return { name: String(it.product_name || 'Fee'), amount: Number.isFinite(amount) ? amount : 0 };
+    });
+  }
+
   function sizeMapForQuote(q: Quote | null): Record<string, number> {
     const out: Record<string, number> = {};
     if (!q) return out;
-    if (q.items && q.items.length > 0) {
-      for (const it of q.items) {
+    const garments = q.items?.filter((it) => !isFeeItem(it)) ?? [];
+    if (garments.length > 0) {
+      for (const it of garments) {
         const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
         const itemQty = Number(it.quantity) || 0;
         if (sizes.length > 0) {
@@ -2958,6 +2979,11 @@ export default function AdminPage() {
       }
       return out;
     }
+    // Line items exist but every one of them is a fee — a charge-only quote
+    // (printing on garments the customer brought, a digitizing setup). There
+    // is no size run to price, and falling through to the legacy columns
+    // would invent one out of q.quantity.
+    if ((q.items?.length ?? 0) > 0) return out;
     const legacy = typeof q.sizes === 'string' ? JSON.parse(q.sizes as string) : q.sizes;
     if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
       for (const [size, qty] of Object.entries(legacy as Record<string, number>)) {
@@ -2989,6 +3015,7 @@ export default function AdminPage() {
     for (const size of Object.keys(sizeMap)) seeded[size] = '';
     if (q?.items) {
       for (const it of q.items) {
+        if (isFeeItem(it)) continue; // a fee's amount-each is not a garment price
         const unit = it.unit_price != null && it.unit_price !== '' ? String(it.unit_price) : '';
         if (!unit) continue;
         const sizes = Array.isArray(it.sizes) ? (it.sizes as Array<{ size: string; quantity: number }>) : [];
@@ -3073,8 +3100,14 @@ export default function AdminPage() {
       alert('Pick a reason for the discount — it shows on the customer quote.');
       return;
     }
+    // Line-item fees (digitizing, printing on customer-supplied garments,
+    // screen setup) are billed charges and belong in the total. They were
+    // dropped here entirely, so a quote with $205 of fee lines went out at
+    // the garment price alone.
+    const lineFees = feeLinesForQuote(priceModalQuote);
+    const lineFeesTotal = lineFees.reduce((sum, f) => sum + f.amount, 0);
     // Discount applies to merchandise + fees; shipping and tax come after.
-    const discountable = garmentTotal + designFee + rushFee;
+    const discountable = garmentTotal + designFee + rushFee + lineFeesTotal;
     const discountAmount = Math.round(discountable * discountPct) / 100;
     const preTax = discountable - discountAmount + shipping;
     const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
@@ -3083,7 +3116,7 @@ export default function AdminPage() {
       quoteId: String(priceModalQuote.id),
       priceBreakdown: {
         basePrice: garmentTotal, printingCost: 0, designFee, rushFee, total,
-        shipping, sizeMarkups,
+        shipping, sizeMarkups, lineFees, lineFeesTotal,
         discountPct, discountReason: priceDiscountReason || null, discountAmount,
         tax, taxExempt: priceTaxExempt, taxRate: TAX_RATE,
       },
@@ -10206,9 +10239,13 @@ export default function AdminPage() {
                     const designFee = parseFloat(priceDesignFee) || 0;
                     const rushFee = parseFloat(priceRushFee) || 0;
                     const shipping = parseFloat(priceShipping) || 0;
+                    // Must stay in step with handleSendPrice — this preview is
+                    // the only place the admin sees the number before it goes out.
+                    const lineFees = feeLinesForQuote(priceModalQuote);
+                    const lineFeesTotal = lineFees.reduce((sum, f) => sum + f.amount, 0);
                     const discountPct = Math.min(100, Math.max(0, parseFloat(priceDiscountPct) || 0));
-                    const discountAmount = Math.round((garmentTotal + designFee + rushFee) * discountPct) / 100;
-                    const preTax = garmentTotal + designFee + rushFee - discountAmount + shipping;
+                    const discountAmount = Math.round((garmentTotal + designFee + rushFee + lineFeesTotal) * discountPct) / 100;
+                    const preTax = garmentTotal + designFee + rushFee + lineFeesTotal - discountAmount + shipping;
                     const tax = priceTaxExempt ? 0 : Math.round(preTax * TAX_RATE * 100) / 100;
                     const total = preTax + tax;
                     return (
@@ -10216,6 +10253,11 @@ export default function AdminPage() {
                         <div className="flex justify-between text-sm text-gray-400 mb-1">
                           <span>Garments subtotal</span><span className="text-white">${garmentTotal.toFixed(2)}</span>
                         </div>
+                        {lineFees.map((f, i) => (
+                          <div key={i} className="flex justify-between text-sm text-gray-400">
+                            <span className="truncate pr-2">{f.name}</span><span className="text-white shrink-0">${f.amount.toFixed(2)}</span>
+                          </div>
+                        ))}
                         {designFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Artwork fee</span><span className="text-white">${designFee.toFixed(2)}</span></div>}
                         {rushFee > 0 && <div className="flex justify-between text-sm text-gray-400"><span>Rush fee</span><span className="text-white">${rushFee.toFixed(2)}</span></div>}
                         {discountAmount > 0 && <div className="flex justify-between text-sm text-green-400"><span>{priceDiscountReason || 'Discount'} ({discountPct}%)</span><span>−${discountAmount.toFixed(2)}</span></div>}

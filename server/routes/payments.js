@@ -416,6 +416,11 @@ async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, metho
 
   const row = updated.rows[0];
 
+  // An invoice's order row opens unpaid — money is what makes it an order.
+  // Same promotion the admin record-payment handler runs.
+  const { promoteOrderForInvoicePayment } = await import('../lib/orderFromInvoice.js');
+  await promoteOrderForInvoicePayment(row.quote_id, newDue <= 0);
+
   recordActivity({
     event: 'order_paid',
     email: row.customer_email,

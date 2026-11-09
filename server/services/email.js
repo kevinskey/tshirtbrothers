@@ -317,7 +317,13 @@ function sizeBreakdown(sizes) {
 }
 
 export async function buildQuoteEmailHtml(quote, priceDetails) {
-  const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount } = priceDetails;
+  const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, message, discountPct, discountReason, discountAmount, lineFees, lineFeesTotal } = priceDetails;
+  // Fee line items priced in the items editor (digitizing, printing on
+  // customer-supplied garments). basePrice covers garments only, so without
+  // these rows the customer's breakdown does not add up to the total.
+  const feeRowsData = Array.isArray(lineFees)
+    ? lineFees.filter((f) => f && Number(f.amount) > 0)
+    : [];
   const sizesDisplay = (() => {
     const s = typeof quote.sizes === 'string' ? JSON.parse(quote.sizes) : quote.sizes;
     if (!s) return 'N/A';
@@ -340,6 +346,7 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
   const priceRows =
     detailRow('Base Price (apparel)', formatCurrency(basePrice)) +
     detailRow('Printing Cost', formatCurrency(printingCost)) +
+    feeRowsData.map((f) => detailRow(escapeHtml(f.name || 'Fee'), formatCurrency(f.amount))).join('') +
     (Number(designFee) > 0 ? detailRow('Design Fee', formatCurrency(designFee)) : '') +
     (Number(rushFee) > 0 ? detailRow('Rush Fee', formatCurrency(rushFee)) : '') +
     (Number(discountAmount) > 0 ? detailRow(
@@ -364,7 +371,11 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
   // instead of $0.00.
   const itemsSubtotal = lineItems.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
   const quotedMerch = Number(basePrice || 0) + Number(printingCost || 0);
-  const merchTotal = quotedMerch > 0 ? quotedMerch : itemsSubtotal;
+  // The items-sum fallback counts fee lines too, and they get their own rows
+  // below — net them out so a fee is not billed twice on the page.
+  const merchTotal = quotedMerch > 0
+    ? quotedMerch
+    : Math.max(0, itemsSubtotal - Number(lineFeesTotal || 0));
   const grandTotal = Number(total) > 0
     ? Number(total)
     : Number(quote.calculated_price || quote.estimated_price || merchTotal);
@@ -375,6 +386,7 @@ export async function buildQuoteEmailHtml(quote, priceDetails) {
       ? { label: 'Items Subtotal', value: formatCurrency(merchTotal) }
       : { label: 'Base Price (apparel)', value: formatCurrency(basePrice) },
     lineItems.length ? null : { label: 'Printing Cost', value: formatCurrency(printingCost) },
+    ...feeRowsData.map((f) => ({ label: escapeHtml(f.name || 'Fee'), value: formatCurrency(f.amount) })),
     Number(designFee) > 0 ? { label: 'Design / Setup Fee', value: formatCurrency(designFee) } : null,
     Number(rushFee) > 0 ? { label: 'Rush Fee', value: formatCurrency(rushFee) } : null,
     Number(discountAmount) > 0 ? {

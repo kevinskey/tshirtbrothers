@@ -9,7 +9,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { tokenMatches } from '../lib/acceptToken.js';
 import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 import pool from '../db.js';
-import { ensureOrderForInvoice } from '../lib/orderFromInvoice.js';
+import { ensureOrderForInvoice, promoteOrderForInvoicePayment } from '../lib/orderFromInvoice.js';
 import * as theme from '../services/emailTheme.js';
 import { mailRecipients, normalizeCcEmails } from '../services/recipients.js';
 import { ARCHIVE_BCC } from '../services/email.js';
@@ -1195,6 +1195,11 @@ router.post('/:id/record-payment', async (req, res, next) => {
        RETURNING *`,
       [id, newAmountPaid, Math.max(0, newAmountDue), newStatus, JSON.stringify(payments)]
     );
+
+    // An invoice is a quote written by hand, so its order row opens unpaid
+    // and only money turns it into an order. This is one of the two places
+    // money lands on an invoice (the other is the Stripe webhook).
+    await promoteOrderForInvoicePayment(invoice.quote_id, newAmountDue <= 0);
 
     res.json(rows[0]);
   } catch (err) {

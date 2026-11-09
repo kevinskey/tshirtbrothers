@@ -4,10 +4,12 @@
 // row built from the invoice's customer and line items, linked back through
 // quotes.source_invoice_id and forward through invoices.quote_id.
 //
-// The order opens as 'accepted' (or 'paid' when the invoice is already paid)
-// because the invoice is proof the job was taken, so it lands in the Open
-// Orders list and at /admin/order/<id> like any other order. follow_up_sent_at
-// is stamped so the abandoned-quote follow-up never treats it as a lead.
+// An invoice is a quote written by hand, so writing one is not proof the job
+// was taken: the row opens as 'quoted' with accepted_at NULL and only becomes
+// an order ('paid', stamped) once the invoice is paid. Anything else would
+// show uncollected money as "Deposit paid" and push unpaid work into Open
+// Orders. follow_up_sent_at is stamped so the abandoned-quote follow-up never
+// treats it as a lead.
 import pool from '../db.js';
 
 function parseItems(raw) {
@@ -19,7 +21,14 @@ function parseItems(raw) {
 }
 
 export function orderStatusForInvoice(invoice) {
-  return invoice.status === 'paid' ? 'paid' : 'accepted';
+  return invoice.status === 'paid' ? 'paid' : 'quoted';
+}
+
+// accepted_at means money arrived. Only a paid invoice may stamp it; the
+// timestamp is the invoice's own paid_at when it has one.
+function acceptedAtForInvoice(invoice) {
+  if (invoice.status !== 'paid') return null;
+  return invoice.paid_at || invoice.created_at || null;
 }
 
 /**
@@ -57,7 +66,7 @@ export async function ensureOrderForInvoice(invoice) {
            (customer_name, customer_email, customer_phone, product_name, quantity,
             estimated_price, status, notes, accepted_at, follow_up_sent_at,
             source_invoice_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, NOW(), $10, COALESCE($9::timestamptz, NOW()))
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, NOW(), $11, COALESCE($10::timestamptz, NOW()))
          RETURNING id`,
         [
           invoice.customer_name || 'Customer',
@@ -68,6 +77,7 @@ export async function ensureOrderForInvoice(invoice) {
           Number(invoice.total) || null,
           orderStatusForInvoice(invoice),
           `Order opened from invoice ${invoice.invoice_number}`,
+          acceptedAtForInvoice(invoice),
           invoice.created_at || null,
           invoice.id,
         ]
@@ -111,5 +121,36 @@ export async function ensureOrderForInvoice(invoice) {
     throw err;
   } finally {
     client.release();
+  }
+}
+
+/**
+ * Turn an invoice's order row into a real order once money lands on the
+ * invoice. The row opens unpaid, so without this a paid invoice's job would
+ * never reach Open Orders. Mirrors the Stripe webhook's quote stamping: any
+ * payment stamps accepted_at, paying the invoice off also stamps
+ * balance_paid_at. Never demotes a row that is already further along.
+ *
+ * Best-effort: a promotion failure must not fail the payment that already
+ * cleared.
+ *
+ * @param {number|string} quoteId   invoices.quote_id
+ * @param {boolean} paidInFull      the invoice now has nothing due
+ */
+export async function promoteOrderForInvoicePayment(quoteId, paidInFull) {
+  if (quoteId == null) return;
+  try {
+    await pool.query(
+      `UPDATE quotes SET
+         status = CASE
+           WHEN status IN ('accepted','awaiting_approval','approved','paid','in_production','ready','completed')
+           THEN status ELSE 'accepted' END,
+         accepted_at = COALESCE(accepted_at, NOW()),
+         balance_paid_at = CASE WHEN $2 THEN COALESCE(balance_paid_at, NOW()) ELSE balance_paid_at END
+       WHERE id = $1`,
+      [quoteId, !!paidInFull],
+    );
+  } catch (e) {
+    console.error('[orderFromInvoice] order promotion failed:', e.message);
   }
 }

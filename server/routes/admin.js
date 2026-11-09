@@ -882,12 +882,18 @@ router.get('/studio-mockups', async (req, res, next) => {
   }
 });
 
-// GET /orders - Only quotes with deposit paid (accepted/completed)
+// GET /orders - Only quotes with money actually collected.
+// A quote is not an order until a deposit or the full balance is paid, so
+// status alone is never enough: admins hand-advance quotes, and an invoice
+// written by hand opens its row before the customer has paid anything.
+// accepted_at / balance_paid_at are stamped only by the payment paths
+// (Stripe webhook, success-page verify, admin offline payment).
 router.get('/orders', async (req, res, next) => {
   try {
     const { status, search, sort } = req.query;
     const params = [];
-    let whereClause = "WHERE q.status IN ('accepted', 'completed')";
+    let whereClause = "WHERE q.status IN ('accepted', 'completed')"
+      + ' AND (q.accepted_at IS NOT NULL OR q.balance_paid_at IS NOT NULL)';
 
     if (status && status !== 'all') {
       params.push(status);
@@ -930,7 +936,7 @@ router.get('/stats/counts', async (req, res, next) => {
       `SELECT
         COUNT(*) FILTER (WHERE status = 'pending') AS pending_quotes,
         COUNT(*) FILTER (WHERE status IN ('pending','reviewed','quoted')) AS active_quotes,
-        COUNT(*) FILTER (WHERE status = 'accepted') AS active_orders
+        COUNT(*) FILTER (WHERE status = 'accepted' AND (accepted_at IS NOT NULL OR balance_paid_at IS NOT NULL)) AS active_orders
        FROM quotes`
     );
     res.json(rows[0]);
@@ -1481,6 +1487,13 @@ router.get('/dashboard-ops', async (req, res, next) => {
       // status, money collected and work outstanding, and none of them
       // appeared in Open Orders. 'completed' and 'rejected' stay out — those
       // are finished, not open.
+      //
+      // Open status is necessary but not sufficient: a quote is not an order
+      // until money lands. Admins advance quotes by hand, and an invoice is
+      // just a hand-written quote, so both can reach an open status with
+      // nothing collected. accepted_at / balance_paid_at are the only
+      // payment evidence — matching the invoice lane's amount_paid > 0 gate
+      // below, which has always enforced this.
       pool.query(`
         SELECT id, customer_name, customer_email, product_name, quantity, status,
                date_needed, estimated_price, created_at, order_stages, production_steps,
@@ -1490,6 +1503,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
           FROM quotes
          WHERE archived_at IS NULL
            AND status IN ('accepted', 'awaiting_approval', 'approved', 'paid', 'in_production', 'ready')
+           AND (accepted_at IS NOT NULL OR balance_paid_at IS NOT NULL)
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
