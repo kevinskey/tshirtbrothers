@@ -152,7 +152,7 @@ const CHANNEL_TO_HEARD_FROM: Partial<Record<DiscoveryChannel, string>> = {
 // silently produced designless quotes from studio customers.
 type StudioHandoff = {
   fromDesignStudio?: boolean;
-  product?: { name?: string } | null;
+  product?: { name?: string; brand?: string } | null;
   color?: { name?: string } | null;
   mockupUrl?: string | null;
   graphicUrl?: string | null;
@@ -171,6 +171,28 @@ function studioProductKey(name: string | undefined): ProductKey {
   return 'tshirt';
 }
 
+// The studio customer already chose a garment, which IS the quality
+// answer: the wizard's three tiers are brand lines (see QUALITY_TIERS
+// and the tier -> default blank table in server/routes/quotes.js), so
+// the blank's brand maps straight onto a tier. Anything not in the two
+// upper lines prices as Standard; the exact garment still reaches the
+// shop in the notes.
+function studioQualityTier(product: StudioHandoff['product']): typeof QUALITY_TIERS[number]['tier'] {
+  const n = `${product?.brand ?? ''} ${product?.name ?? ''}`.toLowerCase();
+  if (/comfort\s*colors/.test(n)) return 'Ultra';
+  if (/next\s*level/.test(n)) return 'Premium';
+  return 'Standard';
+}
+
+// "Brand Name" for display — unless the catalog name already leads with
+// the brand, which S&S names often do.
+function studioGarmentLabel(product: StudioHandoff['product']): string {
+  const name = (product?.name ?? '').trim();
+  const brand = (product?.brand ?? '').trim();
+  if (!brand || name.toLowerCase().includes(brand.toLowerCase())) return name;
+  return `${brand} ${name}`.trim();
+}
+
 export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   useEffect(() => { logActivityOnce('quote_wizard_open'); }, []);
   const es = lang === 'es';
@@ -178,7 +200,6 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const tr = (en: string, esStr: string) => (es ? esStr : en);
   const pLabel = (p: { label: string; labelEs?: string }) => (es && p.labelEs ? p.labelEs : p.label);
   const qLabel = (t: { label: string; labelEs: string }) => (es ? t.labelEs : t.label);
-  const [step, setStep] = useState<Step>(STEPS[0]);
   const [settings, setSettings] = useState<Settings | null>(null);
 
   const location = useLocation();
@@ -196,6 +217,23 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     ? [studio.graphicUrl || studio.mockupUrl, studio.graphicUrlBack || studio.mockupUrlBack]
       .filter((u): u is string => Boolean(u))
     : []), [studio]);
+
+  // A Design Studio arrival has already answered the product, the color,
+  // the quality (by the garment they picked) and the art (on the canvas).
+  // Asking again reads as the site forgetting the design they just made
+  // (Kevin, 2026-11-09), so those steps drop out of the wizard and it
+  // opens on "How many?" — the only thing the studio could not know.
+  // Each skip is conditional on the handoff actually carrying the answer,
+  // so a failed mockup capture still gets the art step.
+  const steps = useMemo<readonly Step[]>(() => {
+    if (!studio) return STEPS;
+    const answered = new Set<Step>();
+    if (studio.product?.name) { answered.add('products'); answered.add('quality'); }
+    if (studio.color?.name) answered.add('color');
+    if (studioArt.length > 0) answered.add('art');
+    return STEPS.filter((s) => !answered.has(s));
+  }, [studio, studioArt]);
+  const [step, setStep] = useState<Step>(steps[0]!);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -258,7 +296,9 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   // qty[productKey][size] = string; custom types use the single '_qty' key
   const [qty, setQty] = useState<Record<string, Record<string, string>>>({});
   const [color, setColor] = useState(() => studio?.color?.name ?? '');
-  const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>('');
+  const [quality, setQuality] = useState<typeof QUALITY_TIERS[number]['tier'] | ''>(
+    () => (studio?.product?.name ? studioQualityTier(studio.product) : ''),
+  );
   const [needBy, setNeedBy] = useState('');
   const [artUrls, setArtUrls] = useState<string[]>(() => studioArt);
   const [artUploading, setArtUploading] = useState(0);
@@ -299,10 +339,10 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       .catch(() => setSettings({ rush_surcharge_pct: 25, standard_turnaround: 7, rush_turnaround: 3 }));
   }, []);
 
-  const stepIdx = STEPS.indexOf(step);
+  const stepIdx = steps.indexOf(step);
   const go = (dir: 1 | -1) => {
     setError(null);
-    setStep(STEPS[Math.min(STEPS.length - 1, Math.max(0, stepIdx + dir))]!);
+    setStep(steps[Math.min(steps.length - 1, Math.max(0, stepIdx + dir))]!);
     cardRef.current?.scrollTo?.({ top: 0 });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -483,6 +523,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       const notes = [
         `Easy Quote wizard`,
         studio && 'Designed in Design Studio',
+        studio?.product?.name && `Garment: ${studioGarmentLabel(studio.product)}`,
         color && `Color: ${color}`,
         quality && `Quality: ${QUALITY_TIERS.find((t) => t.tier === quality)?.label}`,
         `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
@@ -583,7 +624,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     }
   })();
 
-  const progressPct = Math.round((stepIdx / (STEPS.length - 1)) * 100);
+  const progressPct = Math.round((stepIdx / (steps.length - 1)) * 100);
 
   /* ── Draft-saved terminal screen ─────────────────────────────────────── */
   if (draftDone != null) {
@@ -629,8 +670,38 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPct)}>
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${progressPct}%`, background: ORANGE }} />
         </div>
-        <span className="text-xs font-semibold text-gray-500">{stepIdx + 1}/{STEPS.length}</span>
+        <span className="text-xs font-semibold text-gray-500">{stepIdx + 1}/{steps.length}</span>
       </div>
+
+      {/* The design the customer just made rides along visibly, so the
+          shortened wizard reads as "price THIS" rather than a generic
+          form that happens to have fewer questions. */}
+      {studio && (
+        <div className="mb-5 flex items-center gap-3 rounded-2xl border border-orange-200 bg-orange-50/70 px-3 py-2.5">
+          {studio.mockupUrl ? (
+            <img src={studio.mockupUrl} alt="" className="w-14 h-14 shrink-0 rounded-xl border border-orange-100 bg-white object-contain" />
+          ) : (
+            <div className="w-14 h-14 shrink-0 rounded-xl border border-orange-100 bg-white flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-orange-500" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-orange-700">
+              {tr('Your design is attached', 'Tu dise\u00f1o est\u00e1 adjunto')}
+            </p>
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {studioGarmentLabel(studio.product) || tr('Design Studio design', 'Dise\u00f1o del Design Studio')}
+            </p>
+            <p className="text-xs text-gray-600 truncate">
+              {[
+                color,
+                (() => { const t = QUALITY_TIERS.find((x) => x.tier === quality); return t ? qLabel(t) : ''; })(),
+                printSides === 2 ? tr('Front & back', 'Frente y espalda') : tr('Front only', 'Solo el frente'),
+              ].filter(Boolean).join(' \u00b7 ')}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div ref={cardRef} key={step} className="animate-[eq-in_.35s_ease]" style={{ minHeight: 320 }}>
         {step === 'name' && (
@@ -829,7 +900,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         )}
 
         {step === 'qty' && (
-          <Card title={tr('How many?', '¿Cuántas?')}
+          <Card title={studio ? tr('How many, and what sizes?', '¿Cuántas y de qué tallas?') : tr('How many?', '¿Cuántas?')}
             sub={tr("Quantities per size — skip sizes you don't need.", 'Cantidades por talla — omite las tallas que no necesites.')}>
             <div className="space-y-6">
               {pricedTypes.map((p) => (
