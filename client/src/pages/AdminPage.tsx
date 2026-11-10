@@ -160,7 +160,7 @@ import NewslettersAdmin from '@/components/admin/NewslettersAdmin';
 import ProspectsAdmin from '@/components/admin/ProspectsAdmin';
 import ProductDetailModal from '@/components/admin/ProductDetailModal';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
-import QuoteItemsEditor from '@/components/admin/QuoteItemsEditor';
+import QuoteItemsEditor, { FEE_PRESETS } from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
@@ -1375,7 +1375,9 @@ export default function AdminPage() {
         const res = await fetch('/api/quotes/admin/live-cost/lines', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
-          body: JSON.stringify({ lines: items.map((it) => ({ description: it.description, size: it.size, color: it.color })) }),
+          // Fee lines are sent blank so 'Shipping' or 'Rush Fee' can't match a
+          // catalog style and get a blank's cost and markup.
+          body: JSON.stringify({ lines: items.map((it) => (it.item_type === 'fee' ? { description: '' } : { description: it.description, size: it.size, color: it.color })) }),
         });
         if (res.ok) {
           const lines = (await res.json()).lines as Array<{
@@ -1622,7 +1624,7 @@ export default function AdminPage() {
   // One shared catalog search feeds both the "Add Products from Catalog" box
   // and the per-line Description autocomplete (whichever is active).
   const invoiceProductSearchTerm = invoiceLineSearchIdx != null
-    ? (invoiceForm.items[invoiceLineSearchIdx]?.description || '')
+    ? (invoiceForm.items[invoiceLineSearchIdx]?.item_type === 'fee' ? '' : (invoiceForm.items[invoiceLineSearchIdx]?.description || ''))
     : invoiceProductSearch;
   const invoiceProductsQuery = useQuery({
     queryKey: ['admin', 'invoice-products', invoiceProductSearchTerm],
@@ -2323,6 +2325,18 @@ export default function AdminPage() {
       ...prev,
       items: [...prev.items, { description: desc, quantity: qty, unit_price: price, weight_oz: weightOz, shipping_cost: shipCost }],
     }));
+  }
+
+  // Add a non-apparel charge line — the same presets as a quote's "Add fee".
+  // Qty seeds to 1: most fees are flat, and a zero-qty line prices at $0,
+  // which looks like a bug when it's really an unfilled field.
+  const [invoiceFeeMenuOpen, setInvoiceFeeMenuOpen] = useState(false);
+  function addInvoiceFee(name: string) {
+    setInvoiceForm(prev => ({
+      ...prev,
+      items: [...prev.items, { description: name, quantity: 1, unit_price: 0, item_type: 'fee' }],
+    }));
+    setInvoiceFeeMenuOpen(false);
   }
 
   function removeInvoiceItem(idx: number) {
@@ -6357,10 +6371,11 @@ export default function AdminPage() {
                                     onChange={e => { handleInvoiceItemChange(idx, 'description', e.target.value); setInvoiceLineSearchIdx(idx); }}
                                     onFocus={() => setInvoiceLineSearchIdx(idx)}
                                     onBlur={() => setInvoiceLineSearchIdx(cur => (cur === idx ? null : cur))}
-                                    className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500"
-                                    placeholder="Item description or search catalog…"
+                                    list={item.item_type === 'fee' ? 'inv-fee-presets' : undefined}
+                                    className={`w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500 ${item.item_type === 'fee' ? 'border-amber-300 bg-amber-50' : 'border-gray-200'}`}
+                                    placeholder={item.item_type === 'fee' ? 'Fee / charge (pick one or type your own)' : 'Item description or search catalog…'}
                                   />
-                                  {invoiceLineSearchIdx === idx && (item.description || '').length >= 2 && (invoiceSearchProducts.length > 0 || matchingCustomProducts.length > 0) && (
+                                  {invoiceLineSearchIdx === idx && item.item_type !== 'fee' && (item.description || '').length >= 2 && (invoiceSearchProducts.length > 0 || matchingCustomProducts.length > 0) && (
                                     <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
                                       {matchingCustomProducts.slice(0, 5).map((cp: CustomProduct) => (
                                         <button
@@ -6469,9 +6484,36 @@ export default function AdminPage() {
                         </div>
                       );
                     })()}
-                    <button onClick={() => addInvoiceItem()} className="mt-3 flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
-                      <Plus className="w-4 h-4" /> Add Item
-                    </button>
+                    <div className="mt-3 flex items-center gap-4">
+                      <button onClick={() => addInvoiceItem()} className="flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-medium">
+                        <Plus className="w-4 h-4" /> Add Item
+                      </button>
+                      <div className="relative">
+                        <button onClick={() => setInvoiceFeeMenuOpen(o => !o)} className="flex items-center gap-1.5 text-sm text-amber-700 hover:text-amber-800 font-medium">
+                          <Plus className="w-4 h-4" /> Add fee
+                        </button>
+                        {invoiceFeeMenuOpen && (
+                          <div className="absolute z-20 bottom-full mb-1 left-0 w-60 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+                            {FEE_PRESETS.map((f) => (
+                              <button
+                                key={f}
+                                type="button"
+                                onClick={() => addInvoiceFee(f)}
+                                className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-amber-50 border-b border-gray-100 last:border-b-0"
+                              >{f}</button>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={() => addInvoiceFee('')}
+                              className="w-full text-left px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                            >Other / custom…</button>
+                          </div>
+                        )}
+                      </div>
+                      <datalist id="inv-fee-presets">
+                        {FEE_PRESETS.map((f) => <option key={f} value={f} />)}
+                      </datalist>
+                    </div>
                   </div>
 
                   {/* Totals */}

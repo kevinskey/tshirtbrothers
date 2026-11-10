@@ -1186,6 +1186,10 @@ export interface InvoiceItem {
   description: string;
   quantity: number;
   unit_price: number;
+  // 'fee' = a non-apparel charge (rush, art, delivery…) — same idea as a
+  // quote's fee line. Skipped by the live S&S cost lookup and catalog
+  // autocomplete; absent means product.
+  item_type?: 'product' | 'fee';
   // Wholesale blank cost (live S&S) — display/margin only, never billed.
   cost?: number;
   weight_oz?: number;

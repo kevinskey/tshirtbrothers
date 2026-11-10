@@ -62,7 +62,7 @@ const COMMON_SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL'];
 
 // The charge lines the shop actually bills. Free text is still allowed — this
 // is a starting point, not a closed list.
-const FEE_PRESETS = [
+export const FEE_PRESETS = [
   'Courier/Delivery Fee',
   'Shipping',
   'Bagging/Polybag Fee',
