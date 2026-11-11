@@ -940,6 +940,9 @@ router.post('/', async (req, res, next) => {
       }
     }
 
+    // A new invoice can also be attached to an already-paid order. Its new
+    // balance must reopen the order's final-payment marker.
+    await promoteOrderForInvoicePayment(invoice.quote_id);
     res.status(201).json(invoice);
   } catch (err) {
     next(err);
@@ -972,7 +975,7 @@ router.put('/:id', async (req, res, next) => {
     const inv = existing.rows[0];
     const newTotal = total !== undefined ? Number(total) : Number(inv.total);
     const newAmountPaid = Number(inv.amount_paid);
-    const newAmountDue = newTotal - newAmountPaid;
+    const newAmountDue = +(newTotal - newAmountPaid).toFixed(2);
 
     // A total change can invalidate a payment-derived status: raising the
     // total on a 'paid' invoice reopens a balance, and lowering it on a
@@ -1025,6 +1028,9 @@ router.put('/:id', async (req, res, next) => {
       ]
     );
 
+    // Invoice totals are editable after payment. Keep the linked order's
+    // payment stamps aligned when an edit settles or reopens a balance.
+    await promoteOrderForInvoicePayment(rows[0].quote_id);
     res.json(rows[0]);
   } catch (err) {
     next(err);
@@ -1136,7 +1142,7 @@ router.post('/:id/record-payment', async (req, res, next) => {
     const { id } = req.params;
     const { amount, method, overpay_ok } = req.body;
 
-    if (!amount || Number(amount) <= 0) {
+    if (!amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
       return res.status(400).json({ error: 'A positive amount is required' });
     }
 
@@ -1144,8 +1150,11 @@ router.post('/:id/record-payment', async (req, res, next) => {
     if (existing.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
     const invoice = existing[0];
-    const newAmountPaid = Number(invoice.amount_paid) + Number(amount);
-    const newAmountDue = Number(invoice.total) - newAmountPaid;
+    // Match Stripe's cent rounding before deciding whether the balance is
+    // settled. For example, 25.07 + 25.06 can otherwise leave a tiny positive
+    // floating-point remainder on a 50.13 invoice and keep it 'partial'.
+    const newAmountPaid = +(Number(invoice.amount_paid) + Number(amount)).toFixed(2);
+    const newAmountDue = +(Number(invoice.total) - newAmountPaid).toFixed(2);
 
     // Refuse a payment that would take the invoice past its total unless the
     // caller says it meant to. Two invoices had already drifted this way by
@@ -1199,7 +1208,7 @@ router.post('/:id/record-payment', async (req, res, next) => {
     // An invoice is a quote written by hand, so its order row opens unpaid
     // and only money turns it into an order. This is one of the two places
     // money lands on an invoice (the other is the Stripe webhook).
-    await promoteOrderForInvoicePayment(invoice.quote_id, newAmountDue <= 0);
+    await promoteOrderForInvoicePayment(invoice.quote_id);
 
     res.json(rows[0]);
   } catch (err) {

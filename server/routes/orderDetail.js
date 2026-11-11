@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
+import { promoteOrderForInvoicePayment } from '../lib/orderFromInvoice.js';
 
 // Admin Order Detail: everything about one order (keyed by quote id) in a
 // single payload — quote + items + mockups, invoices with payment history,
@@ -175,8 +176,8 @@ router.post('/:quoteId/offline-payment', async (req, res, next) => {
       ).rows[0];
     }
 
-    const newPaid = Number(invoice.amount_paid || 0) + amount;
-    const newDue = Math.max(0, Number(invoice.total || 0) - newPaid);
+    const newPaid = +(Number(invoice.amount_paid || 0) + amount).toFixed(2);
+    const newDue = Math.max(0, +(Number(invoice.total || 0) - newPaid).toFixed(2));
     const payments = typeof invoice.payments === 'string'
       ? JSON.parse(invoice.payments)
       : (invoice.payments || []);
@@ -185,27 +186,24 @@ router.post('/:quoteId/offline-payment', async (req, res, next) => {
     const updatedInvoice = (
       await pool.query(
         `UPDATE invoices SET amount_paid = $2, amount_due = $3,
-            status = CASE WHEN $3 <= 0 THEN 'paid' ELSE 'partial' END,
+            status = CASE WHEN $3::numeric <= 0 THEN 'paid' ELSE 'partial' END,
             payments = $4, updated_at = NOW()
           WHERE id = $1 RETURNING *`,
         [invoice.id, newPaid, newDue, JSON.stringify(payments)]
       )
     ).rows[0];
 
-    // Same quote bookkeeping as the Stripe deposit webhook: accept the
-    // quote and record the deposit. Never demote a later status, and stamp
-    // balance_paid_at when this payment settles the full total.
-    const updatedQuote = (
+    // Preserve the first recorded deposit, then reconcile all linked
+    // invoices through the same path as invoice payments and Stripe. Paying
+    // this invoice alone must not settle another invoice still outstanding.
+    const depositQuote = (
       await pool.query(
-        `UPDATE quotes SET
-            status = CASE WHEN status IN ('accepted','completed') THEN status ELSE 'accepted' END,
-            accepted_at = COALESCE(accepted_at, NOW()),
-            deposit_amount = COALESCE(deposit_amount, $2),
-            balance_paid_at = CASE WHEN $3 <= 0 THEN COALESCE(balance_paid_at, NOW()) ELSE balance_paid_at END
+        `UPDATE quotes SET deposit_amount = COALESCE(deposit_amount, $2)
           WHERE id = $1 RETURNING *`,
-        [quoteId, amount, newDue]
+        [quoteId, amount]
       )
     ).rows[0];
+    const updatedQuote = await promoteOrderForInvoicePayment(quoteId) || depositQuote;
 
     res.json({ invoice: updatedInvoice, quote: updatedQuote });
   } catch (err) {
