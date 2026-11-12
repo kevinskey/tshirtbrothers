@@ -5,6 +5,7 @@ import pool from '../db.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { priceEmbroidery, DIGITIZATION_FEE_CENTS, RUSH_LEVELS } from '../lib/embroideryPricing.js';
+import { parseEmbroideryWorksheet, reconcileStitchCount } from '../lib/embroideryWorksheet.js';
 
 const router = Router();
 
@@ -689,8 +690,16 @@ router.post('/embroidery/requests/:id/quote', authenticate, adminOnly, async (re
 // POST /embroidery/requests/:id/files — admin. Attach the digitizer's
 // deliverables to one design on the request: the DST stitch file and/or the
 // PDF profile (stitch-out preview + color sequence). The PDF profiles ride
-// the quote email to the customer; a .dst upload also parses the header's
-// ST: stitch count so the quote form can prefill it.
+// the quote email to the customer.
+//
+// BOTH uploads are read for the stitch count, because the stitch count is the
+// price (embroideryPricing.js tiers off it) and retyping it off the screen is
+// the one manual step worth removing:
+//   • a .dst header carries ST:nnnnnn
+//   • a worksheet PDF states it in print, along with the colour count,
+//     finished size, thread yardage and the per-colour stop sequence
+// The parsed worksheet is stored on the design so the shop has the production
+// spec on the record instead of only in a PDF nobody can query.
 // Body: { designIndex, label?, pdfBase64?, pdfName?, dstBase64?, dstName? }
 router.post('/embroidery/requests/:id/files', authenticate, adminOnly, express.json({ limit: '30mb' }), async (req, res, next) => {
   try {
@@ -717,10 +726,15 @@ router.post('/embroidery/requests/:id/files', authenticate, adminOnly, express.j
     const files = Array.isArray(r.design_files) ? [...r.design_files] : [];
     while (files.length <= designIndex) files.push(null);
     const entry = { ...(files[designIndex] || {}) };
+    // Whatever this design already had — a DST parsed on an earlier upload,
+    // or a count an admin corrected by hand. Captured before we touch entry
+    // so a later worksheet upload cannot quietly overwrite it.
+    const priorStitchCount = entry.stitch_count ?? null;
     if (label !== undefined) entry.label = String(label || '').trim() || null;
 
     const rand = crypto.randomBytes(4).toString('hex');
     let parsedStitches = null;
+    let worksheet = null;
 
     if (pdfBase64) {
       const buf = decode(pdfBase64, 'PDF');
@@ -731,6 +745,13 @@ router.post('/embroidery/requests/:id/files', authenticate, adminOnly, express.j
       const key = `embroidery/requests/files/${r.id}/${Date.now()}-${rand}-${name}`;
       entry.pdf_url = await uploadToSpaces(buf, key, 'application/pdf');
       entry.pdf_name = name;
+      // Read the production spec off the sheet. Best effort by contract: an
+      // unreadable PDF just leaves the admin typing the count as before, so a
+      // parse failure must never cost us the upload we already stored.
+      worksheet = parseEmbroideryWorksheet(buf);
+      if (worksheet.stitch_count || worksheet.colors || worksheet.width_in) {
+        entry.worksheet = worksheet;
+      }
     }
     if (dstBase64) {
       const buf = decode(dstBase64, 'stitch');
@@ -747,12 +768,39 @@ router.post('/embroidery/requests/:id/files', authenticate, adminOnly, express.j
       }
     }
 
+    // Which count to bill from — see reconcileStitchCount for the ordering
+    // and why a disagreement is reported rather than averaged away.
+    const { stitchCount, notes: reconcileNotes } = reconcileStitchCount({
+      dstCount: parsedStitches,
+      priorCount: priorStitchCount,
+      sheetCount: worksheet?.stitch_count ?? null,
+    });
+    const notes = [...(worksheet?.warnings || []), ...reconcileNotes];
+    if (stitchCount !== null) entry.stitch_count = stitchCount;
+    parsedStitches = stitchCount;
+
     files[designIndex] = entry;
     const updated = await pool.query(
       'UPDATE embroidery_requests SET design_files = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
       [JSON.stringify(files), r.id]
     );
-    res.json({ request: updated.rows[0], parsedStitchCount: parsedStitches });
+
+    // Mirror the thread-colour count onto the shop's digitizing tracker, which
+    // is the row the customer's job history hangs off (embroidery_jobs carries
+    // customer_id). Only ever fills a blank — a human-entered count stands.
+    if (r.embroidery_job_id && worksheet?.colors) {
+      pool.query(
+        'UPDATE embroidery_jobs SET colors = COALESCE(colors, $1), updated_at = NOW() WHERE id = $2',
+        [worksheet.colors, r.embroidery_job_id]
+      ).catch((e) => console.error('[embroidery] job colour sync failed:', e.message));
+    }
+
+    res.json({
+      request: updated.rows[0],
+      parsedStitchCount: parsedStitches,
+      worksheet: worksheet || null,
+      notes,
+    });
   } catch (err) {
     if (err?.status === 400) return res.status(400).json({ error: err.message });
     next(err);
