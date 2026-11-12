@@ -19,6 +19,7 @@ import {
   type EmbroideryRequest,
   type EmbroideryQuoteInput,
   type EmbroideryPriceLine,
+  type EmbroideryWorksheetSpec,
 } from '@/lib/api';
 
 function fileToBase64(file: File): Promise<string> {
@@ -45,6 +46,41 @@ function AttachButton({ accept, label, busy, onFile }: {
         {label}
       </button>
     </>
+  );
+}
+
+// The production spec read off a worksheet PDF, as a row of small chips.
+// Read-only on purpose: it is a record of what the sheet SAYS, so an admin
+// comparing paper to screen has one place to look. The only editable number
+// is the stitch count above, which this prefilled.
+function WorksheetSpecChips({ spec }: { spec: EmbroideryWorksheetSpec }) {
+  const chips: string[] = [];
+  if (spec.stitch_count) chips.push(`${spec.stitch_count.toLocaleString()} stitches`);
+  if (spec.colors) chips.push(`${spec.colors} colour${spec.colors === 1 ? '' : 's'}`);
+  if (spec.color_changes !== null) chips.push(`${spec.color_changes} changes`);
+  if (spec.trims !== null) chips.push(`${spec.trims} trims`);
+  if (spec.width_in && spec.height_in) chips.push(`${spec.width_in}" × ${spec.height_in}"`);
+  if (spec.machine_format) chips.push(spec.machine_format);
+  if (spec.thread_ft) chips.push(`${spec.thread_ft} ft thread`);
+  if (spec.bobbin_ft) chips.push(`${spec.bobbin_ft} ft bobbin`);
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1 pl-0.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        from worksheet
+      </span>
+      {chips.map((c) => (
+        <span key={c} className="rounded bg-white px-1.5 py-0.5 text-[10px] text-gray-600 ring-1 ring-gray-200">
+          {c}
+        </span>
+      ))}
+      {spec.thread_colors.length > 0 && (
+        <span className="text-[10px] text-gray-500">
+          {spec.thread_colors.join(', ')}
+          {spec.stop_sequence_truncated && ' (partial)'}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -106,6 +142,16 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
   // Digitizer deliverables (DST + PDF profile) attach per design.
   const [uploading, setUploading] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Non-fatal findings from parsing a worksheet (a DST/PDF revision mismatch,
+  // a colour list the sheet itself truncated). Worth eyes, not a failure.
+  const [uploadNotes, setUploadNotes] = useState<string[] | null>(null);
+  // Production spec read off each design's worksheet PDF, by design index.
+  // Seeded from anything already parsed on a previous upload.
+  const [worksheets, setWorksheets] = useState<Record<number, EmbroideryWorksheetSpec | null>>(() => {
+    const seed: Record<number, EmbroideryWorksheetSpec | null> = {};
+    (request.design_files || []).forEach((f, i) => { if (f?.worksheet) seed[i] = f.worksheet; });
+    return seed;
+  });
 
   // Sending is gated server-side until the digitization payment clears (or a
   // customer stitch file made digitizing moot); everything else works now.
@@ -123,9 +169,26 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
       const res = await uploadEmbroideryRequestFile(request.id, kind === 'pdf'
         ? { designIndex: di, pdfBase64: b64, pdfName: file.name }
         : { designIndex: di, dstBase64: b64, dstName: file.name });
-      if (kind === 'dst' && res.parsedStitchCount) {
-        setDesignRows((prev) => prev.map((r, j) => j === di ? { ...r, stitches: String(res.parsedStitchCount) } : r));
+      // Either upload can yield the stitch count — a DST header or a parsed
+      // worksheet PDF. The server already reconciled the two; prefill from
+      // whatever it settled on so the price never gets retyped by hand.
+      if (res.parsedStitchCount) {
+        setDesignRows((prev) => prev.map((r, j) => j === di
+          ? {
+            ...r,
+            stitches: String(res.parsedStitchCount),
+            // A worksheet names the design; use it as the row label when the
+            // admin has not written one.
+            label: r.label || (res.worksheet?.design_name ?? ''),
+          }
+          : r));
       }
+      if (res.worksheet?.stitch_count || res.worksheet?.colors) {
+        setWorksheets((prev) => ({ ...prev, [di]: res.worksheet }));
+      }
+      // Discrepancies and partial colour lists are the admin's call, not ours
+      // — shown as a caution, not an error, because the upload did succeed.
+      setUploadNotes(res.notes?.length ? res.notes : null);
       // Prefix match covers both the Embroidery tab list and the per-quote
       // lookup in the quote drawer.
       qc.invalidateQueries({ queryKey: ['embroidery-requests'] });
@@ -275,10 +338,17 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
                 </a>
               )}
             </div>
+            {/* What the worksheet PDF said. Shown so the admin can check the
+                sheet against the form without reopening the PDF — the stitch
+                count above was prefilled from exactly these numbers. */}
+            {worksheets[di] && <WorksheetSpecChips spec={worksheets[di]!} />}
             </div>
             );
           })}
           {uploadError && <p className="text-[11px] text-red-600">{uploadError}</p>}
+          {uploadNotes?.map((n) => (
+            <p key={n} className="text-[11px] text-amber-700">⚠ {n}</p>
+          ))}
           <button type="button"
             onClick={() => setDesignRows((prev) => prev.length >= 6 ? prev : [...prev, { label: `Design ${prev.length + 1}`, stitches: '', qty: qty }])}
             className="text-xs font-medium text-orange-600 hover:underline">+ add design</button>
