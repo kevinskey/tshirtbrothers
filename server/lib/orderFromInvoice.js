@@ -125,31 +125,41 @@ export async function ensureOrderForInvoice(invoice) {
 }
 
 /**
- * Turn an invoice's order row into a real order once money lands on the
- * invoice. The row opens unpaid, so without this a paid invoice's job would
- * never reach Open Orders. Mirrors the Stripe webhook's quote stamping: any
- * payment stamps accepted_at, paying the invoice off also stamps
- * balance_paid_at. Never demotes a row that is already further along.
+ * Sync an order's payment stamps from its linked invoices. Any collected
+ * money accepts the order; final payment requires no balance on ANY linked
+ * invoice, matching the order page's totals. Reopening a balance clears the
+ * final-payment stamp without moving production backwards.
  *
  * Best-effort: a promotion failure must not fail the payment that already
  * cleared.
  *
  * @param {number|string} quoteId   invoices.quote_id
- * @param {boolean} paidInFull      the invoice now has nothing due
  */
-export async function promoteOrderForInvoicePayment(quoteId, paidInFull) {
+export async function promoteOrderForInvoicePayment(quoteId) {
   if (quoteId == null) return;
   try {
-    await pool.query(
-      `UPDATE quotes SET
+    const { rows } = await pool.query(
+      `WITH invoice_money AS (
+         SELECT COALESCE(SUM(amount_paid), 0) AS paid,
+                COALESCE(SUM(GREATEST(amount_due, 0)), 0) AS due
+           FROM invoices
+          WHERE quote_id = $1
+       )
+       UPDATE quotes q SET
          status = CASE
-           WHEN status IN ('accepted','awaiting_approval','approved','paid','in_production','ready','completed')
-           THEN status ELSE 'accepted' END,
-         accepted_at = COALESCE(accepted_at, NOW()),
-         balance_paid_at = CASE WHEN $2 THEN COALESCE(balance_paid_at, NOW()) ELSE balance_paid_at END
-       WHERE id = $1`,
-      [quoteId, !!paidInFull],
+           WHEN m.due > 0 AND q.status = 'paid' THEN 'accepted'
+           WHEN m.paid > 0 AND q.status NOT IN ('accepted','awaiting_approval','approved','paid','in_production','ready','completed')
+           THEN 'accepted' ELSE q.status END,
+         accepted_at = CASE WHEN m.paid > 0 THEN COALESCE(q.accepted_at, NOW()) ELSE q.accepted_at END,
+         balance_paid_at = CASE
+           WHEN m.paid > 0 AND m.due <= 0 THEN COALESCE(q.balance_paid_at, NOW())
+           ELSE NULL END
+        FROM invoice_money m
+       WHERE q.id = $1
+       RETURNING q.*`,
+      [quoteId],
     );
+    return rows[0] || null;
   } catch (e) {
     console.error('[orderFromInvoice] order promotion failed:', e.message);
   }

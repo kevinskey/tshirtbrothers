@@ -284,7 +284,7 @@ export default function AdminOrderDetailPage() {
   const quoteDeposit = quote.accepted_at ? Number((quote as { deposit_amount?: string | null }).deposit_amount || 0) : 0;
   const totalPaid = invoicePaid > 0 ? invoicePaid : quoteDeposit;
   const totalDue = invoices.length > 0
-    ? invoices.reduce((s, i) => s + Number(i.amount_due || 0), 0)
+    ? invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0)
     : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};
 
@@ -302,7 +302,7 @@ export default function AdminOrderDetailPage() {
     { label: 'Gang sheet picked up', done: !!stages.gang_pickup, when: dt(stages.gang_pickup), stageKey: 'gang_pickup' },
     { label: 'Pressed', done: !!stages.pressed, when: dt(stages.pressed), stageKey: 'pressed' },
     { label: 'Customer contacted', done: !!stages.pickup_contacted, when: dt(stages.pickup_contacted), stageKey: 'pickup_contacted' },
-    { label: 'Final payment', done: !!quote.balance_paid_at || (totalDue === 0 && totalPaid > 0), when: dt(quote.balance_paid_at) },
+    { label: 'Final payment', done: totalDue <= 0 && totalPaid > 0, when: totalDue <= 0 && totalPaid > 0 ? dt(quote.balance_paid_at) : null },
     { label: 'Completed', done: quote.status === 'completed', when: dt(quote.picked_up_at || quote.shipped_at) },
   ];
 
