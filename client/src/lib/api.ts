@@ -876,6 +876,8 @@ export interface EmbroideryRequest {
     dst_url?: string;
     dst_name?: string;
     stitch_count?: number;
+    /** Production spec read off the digitizer's worksheet PDF on upload. */
+    worksheet?: EmbroideryWorksheetSpec;
   } | null> | null;
   needs_digitizing: boolean;
   digitization_paid_at: string | null;
@@ -931,7 +933,49 @@ export async function sendEmbroideryQuote(id: number, input: EmbroideryQuoteInpu
   });
 }
 
-/** Attach digitizer deliverables (PDF profile and/or DST) to one design. */
+/** Production spec parsed from a digitizer's worksheet PDF. Every field is
+ *  optional — an unreadable or unfamiliar worksheet leaves them null and the
+ *  admin types the stitch count as before. */
+export interface EmbroideryWorksheetSpec {
+  source: string | null;
+  design_name: string | null;
+  title: string | null;
+  stitch_count: number | null;
+  colors: number | null;
+  color_changes: number | null;
+  stops: number | null;
+  trims: number | null;
+  appliques: number | null;
+  machine_format: string | null;
+  height_in: number | null;
+  width_in: number | null;
+  area_sq_in: number | null;
+  extents_mm: { left: number | null; right: number | null; up: number | null; down: number | null } | null;
+  max_stitch_mm: number | null;
+  min_stitch_mm: number | null;
+  max_jump_mm: number | null;
+  thread_ft: number | null;
+  bobbin_ft: number | null;
+  colorway: string | null;
+  stop_sequence: Array<{
+    index: number;
+    needle?: number;
+    code: string | null;
+    name: string | null;
+    chart: string | null;
+    stitches: number | null;
+    thread_ft: number | null;
+  }>;
+  /** True when the worksheet itself printed only the first N stops ("More..."). */
+  stop_sequence_truncated: boolean;
+  thread_colors: string[];
+  confidence: 'high' | 'low' | 'none';
+  warnings: string[];
+}
+
+/** Attach digitizer deliverables (PDF profile and/or DST) to one design.
+ *  Both are read for the stitch count; the response carries whatever was
+ *  parsed plus any discrepancies worth a human's eyes. */
 export async function uploadEmbroideryRequestFile(
   id: number,
   input: {
@@ -943,7 +987,12 @@ export async function uploadEmbroideryRequestFile(
     dstName?: string;
   },
 ) {
-  return authRequest<{ request: EmbroideryRequest; parsedStitchCount: number | null }>(
+  return authRequest<{
+    request: EmbroideryRequest;
+    parsedStitchCount: number | null;
+    worksheet: EmbroideryWorksheetSpec | null;
+    notes: string[];
+  }>(
     `/embroidery/requests/${id}/files`,
     { method: 'POST', body: JSON.stringify(input) },
   );
