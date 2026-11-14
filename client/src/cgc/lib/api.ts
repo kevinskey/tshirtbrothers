@@ -1,5 +1,12 @@
 // Custom Gift Club API client — thin typed wrappers over /api/cgc.
 
+export interface CgcPriceTier {
+  min_qty: number;
+  /** Null on the top tier, which is open-ended. */
+  max_qty: number | null;
+  unit_price_cents: number;
+}
+
 export interface CgcProduct {
   id: number;
   sku: string;
@@ -7,6 +14,9 @@ export interface CgcProduct {
   description: string | null;
   image_url: string | null;
   retail_price_cents: number;
+  /** Quantity-break BLANK prices, pre-ranged for display. Empty = flat price. */
+  tiers?: CgcPriceTier[] | null;
+  price_tiers?: { min_qty: number; unit_price_cents: number }[] | null;
   cgc_category: string | null;
   cgc_sport: string[] | null;
   weight_oz: string | null;
@@ -34,6 +44,36 @@ export interface CgcConfig {
 
 // Personalization fee: max(floor, pct × item price) — mirrors the server
 // rule in server/routes/cgc.js so the PDP shows what checkout charges.
+/**
+ * The blank unit price at this quantity.
+ *
+ * Mirrors server/lib/tierPricing.js deliberately — the page has to quote a
+ * number before the server sees the cart. The SERVER remains the authority:
+ * it recomputes this at checkout from the product row, so a tampered or
+ * stale client cannot buy at a price the shop did not set. If these two ever
+ * disagree the customer sees one number and is charged another, so they are
+ * written to the same rule: the LAST tier whose min_qty <= qty wins, and a
+ * missing or malformed ladder falls back to the flat price.
+ */
+export function tierUnitPriceCents(
+  product: Pick<CgcProduct, 'retail_price_cents' | 'price_tiers'>,
+  qty: number,
+): number {
+  const flat = product.retail_price_cents || 0;
+  const n = Number.isFinite(qty) ? Math.max(1, Math.floor(qty)) : 1;
+  const tiers = (Array.isArray(product.price_tiers) ? product.price_tiers : [])
+    .filter((t) => Number.isInteger(t?.min_qty) && t.min_qty >= 1
+      && Number.isFinite(t?.unit_price_cents) && t.unit_price_cents > 0)
+    .sort((a, b) => a.min_qty - b.min_qty);
+  if (!tiers.length) return flat;
+  let price = flat;
+  for (const t of tiers) {
+    if (n >= t.min_qty) price = t.unit_price_cents;
+    else break;
+  }
+  return Math.min(price, flat || price);
+}
+
 export function personalizationFeeCents(retailCents: number, config?: CgcConfig) {
   const min = config?.personalization_fee_min_cents ?? 500;
   const pct = config?.personalization_fee_pct ?? 0.25;

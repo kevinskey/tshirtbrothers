@@ -21,6 +21,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { fetchJdsProducts } from '../services/jds.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 import { categorizeCgcProduct } from '../lib/cgcCategories.js';
+import { normalizeTiers } from '../lib/tierPricing.js';
 
 const router = Router();
 
@@ -141,10 +142,15 @@ admin.use(authenticate, adminOnly);
 
 // Publish (or republish) a SKU. Snapshots name/image/cost from the live
 // JDS catalog so the storefront never needs a JDS call.
-// Body: { sku, retail_price_cents, weight_oz?, description? }
+// Body: { sku, retail_price_cents, weight_oz?, description?, price_tiers? }
+//
+// price_tiers is the quantity ladder, [{min_qty, unit_price_cents}]. Passing
+// it replaces the whole set; passing null clears it back to flat pricing.
+// Omitting it leaves whatever is already there alone, so a republish to
+// refresh the JDS snapshot does not silently wipe a shop's ladder.
 admin.post('/publish', async (req, res, next) => {
   try {
-    const { sku, retail_price_cents, weight_oz, description } = req.body ?? {};
+    const { sku, retail_price_cents, weight_oz, description, price_tiers } = req.body ?? {};
     if (!sku) return res.status(400).json({ error: 'sku required' });
     const retail = parseInt(String(retail_price_cents), 10);
     if (!Number.isInteger(retail) || retail <= 0) {
@@ -159,10 +165,13 @@ admin.post('/publish', async (req, res, next) => {
     const oneCost = [jds.onePiece, jds.lessThanCase, jds.oneCase]
       .find((v) => typeof v === 'number' && Number.isFinite(v));
 
+    const tiers = price_tiers === undefined ? undefined : normalizeTiers(price_tiers);
+
     const { rows } = await pool.query(
-      `INSERT INTO jds_products (sku, name, description, image_url, cost_cents, retail_price_cents, weight_oz, cgc_category, active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE)
+      `INSERT INTO jds_products (sku, name, description, image_url, cost_cents, retail_price_cents, weight_oz, cgc_category, active, price_tiers)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9::jsonb)
        ON CONFLICT (sku) DO UPDATE SET
+         price_tiers = COALESCE(EXCLUDED.price_tiers, jds_products.price_tiers),
          name = EXCLUDED.name, description = COALESCE(EXCLUDED.description, jds_products.description),
          image_url = EXCLUDED.image_url, cost_cents = EXCLUDED.cost_cents,
          retail_price_cents = EXCLUDED.retail_price_cents,
@@ -177,6 +186,7 @@ admin.post('/publish', async (req, res, next) => {
         retail,
         weight_oz != null ? Number(weight_oz) : null,
         categorizeCgcProduct(name),
+        tiers === undefined ? null : JSON.stringify(tiers),
       ],
     );
     res.status(201).json(rows[0]);
