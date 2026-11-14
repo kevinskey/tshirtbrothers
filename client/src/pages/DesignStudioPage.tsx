@@ -2126,12 +2126,16 @@ export default function DesignStudioPage() {
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
     // Sequential — each capture temporarily flips currentView, so running
     // them in parallel would race for the renderer state.
-    const front = (hasFront || (!hasFront && !hasBack))
+    const front = (hasFront || designElements.length === 0)
       ? await captureSideMockupAndGraphic('front')
       : { mockupUrl: null, graphicUrl: null };
     const back = hasBack
       ? await captureSideMockupAndGraphic('back')
       : { mockupUrl: null, graphicUrl: null };
+    const sleeve = designElements.some(e => e.side === 'sleeve')
+      ? await captureSideMockupAndGraphic('sleeve') : { mockupUrl: null, graphicUrl: null };
+    const sleeveLeft = designElements.some(e => e.side === 'sleeve_left')
+      ? await captureSideMockupAndGraphic('sleeve_left') : { mockupUrl: null, graphicUrl: null };
     navigate('/quote', {
       state: {
         fromDesignStudio: true,
@@ -2143,6 +2147,10 @@ export default function DesignStudioPage() {
         graphicUrl: front.graphicUrl,
         mockupUrlBack: back.mockupUrl,
         graphicUrlBack: back.graphicUrl,
+        mockupUrlSleeve: sleeve.mockupUrl,
+        graphicUrlSleeve: sleeve.graphicUrl,
+        mockupUrlSleeveLeft: sleeveLeft.mockupUrl,
+        graphicUrlSleeveLeft: sleeveLeft.graphicUrl,
       },
     });
   };

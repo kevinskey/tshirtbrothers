@@ -158,6 +158,10 @@ type StudioHandoff = {
   graphicUrl?: string | null;
   mockupUrlBack?: string | null;
   graphicUrlBack?: string | null;
+  mockupUrlSleeve?: string | null;
+  graphicUrlSleeve?: string | null;
+  mockupUrlSleeveLeft?: string | null;
+  graphicUrlSleeveLeft?: string | null;
 };
 
 // Map a catalog product name onto the wizard's product-type keys.
@@ -215,7 +219,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   // Exactly one URL per side keeps the artUrls>=2 ⇒ front&back auto-flip
   // honest (the mockups still reach the shop via the notes line).
   const studioArt = useMemo(() => (studio
-    ? [studio.graphicUrl || studio.mockupUrl, studio.graphicUrlBack || studio.mockupUrlBack]
+    ? [studio.graphicUrl || studio.mockupUrl, studio.graphicUrlBack || studio.mockupUrlBack, studio.graphicUrlSleeve || studio.mockupUrlSleeve, studio.graphicUrlSleeveLeft || studio.mockupUrlSleeveLeft]
       .filter((u): u is string => Boolean(u))
     : []), [studio]);
 
@@ -344,14 +348,33 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
     () => Object.fromEntries([
       ...(studio?.graphicUrl || studio?.mockupUrl ? [[studio.graphicUrl || studio.mockupUrl, 'front']] : []),
       ...(studio?.graphicUrlBack || studio?.mockupUrlBack ? [[studio.graphicUrlBack || studio.mockupUrlBack, 'back']] : []),
+      ...(studio?.graphicUrlSleeve || studio?.mockupUrlSleeve ? [[studio.graphicUrlSleeve || studio.mockupUrlSleeve, 'right_sleeve']] : []),
+      ...(studio?.graphicUrlSleeveLeft || studio?.mockupUrlSleeveLeft ? [[studio.graphicUrlSleeveLeft || studio.mockupUrlSleeveLeft, 'left_sleeve']] : []),
     ].filter((entry): entry is [string, string] => Boolean(entry[0]))) as Record<string, 'front' | 'back' | 'left_sleeve' | 'right_sleeve'>,
   );
   // Multiple uploaded files are NOT evidence of multiple print locations:
   // they may be alternate designs for the same side. Preserve a Design
   // Studio back placement when present; otherwise ask the customer.
   const [printSides, setPrintSides] = useState<1 | 2>(
-    () => studio?.graphicUrlBack || studio?.mockupUrlBack ? 2 : 1,
+    () => 1,
   );
+  const [artProducts, setArtProducts] = useState<Record<string, ProductKey[]>>({});
+  const productsForArt = (url: string): ProductKey[] => artProducts[url]
+    ?? (studio && studioArt.includes(url) ? [studioProductKey(studio.product?.name)] : picked);
+  const locationsForProduct = (key: ProductKey) => {
+    const locations = new Set(artUrls.filter(url => productsForArt(url).includes(key))
+      .map(url => artPlacements[url] || 'front'));
+    if (locations.size === 0) locations.add('front');
+    if (printSides === 2) { locations.add('front'); locations.add('back'); }
+    return [...locations];
+  };
+  const printLocations = [...new Set(picked.flatMap(locationsForProduct))];
+  const studioMockups = [
+    { url: studio?.mockupUrl, placement: 'front' },
+    { url: studio?.mockupUrlBack, placement: 'back' },
+    { url: studio?.mockupUrlSleeve, placement: 'right_sleeve' },
+    { url: studio?.mockupUrlSleeveLeft, placement: 'left_sleeve' },
+  ].filter(m => m.url);
   const artInputRef = useRef<HTMLInputElement | null>(null);
 
   const [calcLines, setCalcLines] = useState<CalcLine[] | null>(null);
@@ -452,7 +475,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               ...(studio?.product?.ss_id && p.key === studioProductKey(studio.product.name) ? { productSsId: studio.product.ss_id } : {}),
               qualityTier: quality || 'Standard',
               methodName: 'DTF',
-              numLocations: printSides,
+              numLocations: locationsForProduct(p.key).length,
               colorsPerLocation: 1,
               rush: isRush,
               rushDays,
@@ -522,13 +545,14 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         .filter((s) => s.quantity > 0);
       if (sizes.length === 0) continue;
       items.push({
+        product_key: p.key,
         inputs: {
           garmentName: p.pricing,
           ...(studio?.product?.ss_id && p.key === studioProductKey(studio.product.name) ? { productSsId: studio.product.ss_id } : {}),
           qualityTier: quality || 'Standard',
           methodName: 'DTF',
-          numLocations: printSides,
-          locations: { front: true, back: printSides === 2 },
+          numLocations: locationsForProduct(p.key).length,
+          locations: Object.fromEntries(locationsForProduct(p.key).map(location => [location, true])),
           color,
           colorsPerLocation: 1,
           rush: isRush,
@@ -544,33 +568,26 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         : p.key === 'dtf'
           ? 'DTF transfer prints (priced by sheet — shop will size and quote)'
           : `${p.label} (no instant pricing — shop to quote)`;
-      items.push({ kind: 'custom', custom: { description, quantity: q, notes: null } });
+      items.push({ product_key: p.key, kind: 'custom', custom: { description, quantity: q, notes: null } });
     }
-    // Preserve the explicit artwork-to-placement mapping for admin review.
-    // It is kept in the structured quote payload (rather than notes) so
-    // future per-product assignments can reuse it without parsing text.
-    const placementDetails = artUrls.map((url) => ({
-      url, placement: artPlacements[url] || 'front',
-    }));
     for (const item of items) {
       const line = item as Record<string, unknown>;
-      line.artwork_placements = placementDetails;
-    }
-    // Until the per-product artwork picker exists, the uploaded artwork is
-    // shared across all selected garments. Keep it attached to EVERY item,
-    // not only the first one, so admin line items retain the source files.
-    // Do not infer front/back file placement from upload order.
-    if (artUrls.length > 0) {
-      for (const item of items) {
-        const line = item as Record<string, unknown>;
-        line.design_url = artUrls[0];
-        line.extra_design_urls = artUrls.slice(1);
-      }
+      const productKey = line.product_key as ProductKey;
+      const files = artUrls.filter(url => productsForArt(url).includes(productKey));
+      line.artwork_placements = files.map(url => ({ url, placement: artPlacements[url] || 'front' }));
+      line.mockups = studio && productKey === studioProductKey(studio.product?.name) ? studioMockups : [];
+      line.design_url = files[0] || null;
+      line.extra_design_urls = files.slice(1);
     }
     return items;
   };
 
   const submit = async (mode: 'draft' | 'deposit') => {
+    if (!needBy || needBy < minNeedBy) {
+      setError(tr('Choose a valid need-by date.', 'Elige una fecha válida.'));
+      setStep('date');
+      return;
+    }
     setSubmitBusy(mode);
     setError(null);
     try {
@@ -589,7 +606,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           typeof studioTier === 'object' && studioTier?.tier === quality
             ? ` (by wholesale${studioTier.wholesale != null ? ` $${studioTier.wholesale.toFixed(2)}` : ''})`
             : ''}`,
-        `Print: ${printSides === 2 ? 'front & back (2 locations)' : 'front only (1 location)'}`,
+        `Print: ${printLocations.join(', ')} (${printLocations.length} locations)`,
         needBy && `Need by: ${needBy}${isRush ? ' (RUSH)' : ''}`,
         // Appended to the existing notes string rather than added as a
         // new quotes column: it reaches the shop immediately with no
@@ -614,6 +631,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           // quote, and it vanished against the admin's white card (#300).
           mockup_image_url: studio?.mockupUrl || null,
           mockup_image_url_back: studio?.mockupUrlBack || null,
+          mockup_image_url_sleeve: studio?.mockupUrlSleeve || null,
+          mockup_image_url_sleeve_left: studio?.mockupUrlSleeveLeft || null,
           // Consent for MARKETING texts only; order updates are unaffected.
           sms_consent: smsConsent,
           notes,
@@ -763,7 +782,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                 studioTier === 'pending'
                   ? tr('checking tier\u2026', 'verificando nivel\u2026')
                   : (() => { const t = QUALITY_TIERS.find((x) => x.tier === quality); return t ? qLabel(t) : ''; })(),
-                printSides === 2 ? tr('Front & back', 'Frente y espalda') : tr('Front only', 'Solo el frente'),
+                printLocations.join(' · '),
               ].filter(Boolean).join(' \u00b7 ')}
             </p>
           </div>
@@ -887,8 +906,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         {step === 'products' && (
           <Card title={tr('What do you want printed?', '¿Qué quieres estampar?')}
             sub={tr('Pick everything that applies.', 'Elige todo lo que aplique.')}>
+            <Link to="/quote/classic" state={{ requestedNeedBy: needBy }} className="mb-4 block rounded-xl border-2 border-orange-500 p-4 font-bold text-orange-700">
+              {tr('I Know What I Want →', 'Sé lo que quiero →')}
+              <span className="block mt-1 text-sm font-normal">{tr('Choose specific brands, styles, colors and sizes for each product.', 'Elige marcas, estilos, colores y tallas para cada producto.')}</span>
+            </Link>
             <div className="grid grid-cols-2 gap-3">
-              {PRODUCT_TYPES.map((p) => {
+              {PRODUCT_TYPES.filter(p => p.key !== 'dtf').map((p) => {
                 const on = picked.includes(p.key);
                 return (
                   <button key={p.key} type="button"
@@ -911,6 +934,16 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                   </button>
                 );
               })}
+              <Link to="/dtf" className="rounded-2xl border-2 px-3 py-4 text-left bg-white border-gray-200 hover:border-gray-400">
+                <span className="text-2xl">🎞️</span>
+                <span className="block mt-1 font-bold">{tr('DTF Prints', 'Impresiones DTF')}</span>
+                <span className="block mt-0.5 text-[11px] text-gray-500">{tr('Upload graphics or a gang sheet · pay in full →', 'Sube diseños o gang sheets · pago completo →')}</span>
+              </Link>
+              <Link to="/bling" className="rounded-2xl border-2 px-3 py-4 text-left bg-white border-gray-200 hover:border-gray-400">
+                <span className="text-2xl">💎</span>
+                <span className="block mt-1 font-bold">{tr('Rhinestones', 'Pedrería')}</span>
+                <span className="block mt-0.5 text-[11px] text-gray-500">{tr('Choose your sparkle →', 'Elige tu brillo →')}</span>
+              </Link>
               {/* Gifts hand-off (Doc, 2026-09-28): engraved / personalized
                   gift items are Custom Gift Club's lane — that request
                   becomes a CGC gift quote (customgiftclub.com/quote, feeds
@@ -1029,7 +1062,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         )}
 
         {step === 'quality' && (
-          <Card title={tr('What quality level?', '¿Qué nivel de calidad?')}>
+          <Card title={tr('Help Me Choose', 'Ayúdame a elegir')}
+            sub={tr('Pick a quality level for an estimated price.', 'Elige un nivel para un precio estimado.')}>
             <div className="space-y-3">
               {QUALITY_TIERS.map((t) => {
                 const on = quality === t.tier;
@@ -1130,19 +1164,33 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
               </div>
             </div>
             {(artUrls.length > 0 || artUploading > 0) && (
-              <div className="mt-4 grid grid-cols-4 gap-2">
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {artUrls.map((u) => (
-                  <div key={u} className="relative rounded-xl border border-gray-200 bg-white overflow-hidden aspect-square">
-                    <img src={u} alt="" className="w-full h-full object-contain" />
+                  <div key={u} className="relative rounded-xl border border-gray-200 bg-white overflow-hidden">
+                    <img src={u} alt="Uploaded artwork" className="w-full h-28 object-contain bg-gray-100" />
                     <select aria-label={tr('Print location', 'Ubicación de impresión')}
                       value={artPlacements[u] || 'front'}
                       onChange={(e) => setArtPlacements((prev) => ({ ...prev, [u]: e.target.value as 'front' | 'back' | 'left_sleeve' | 'right_sleeve' }))}
-                      className="absolute bottom-0 inset-x-0 w-full bg-white/95 text-[10px] text-gray-900 border-t border-gray-200">
+                      className="w-full bg-white text-xs p-2 text-gray-900 border-t border-gray-200">
                       <option value="front">{tr('Front', 'Frente')}</option>
                       <option value="back">{tr('Back', 'Espalda')}</option>
                       <option value="left_sleeve">{tr('Left sleeve', 'Manga izquierda')}</option>
                       <option value="right_sleeve">{tr('Right sleeve', 'Manga derecha')}</option>
                     </select>
+                    {picked.length > 1 && (
+                      <fieldset className="p-2 border-t space-y-1">
+                        <legend className="text-xs font-bold">{tr('Use on', 'Usar en')}</legend>
+                        {picked.map(key => (
+                          <label key={key} className="flex items-center gap-2 text-xs">
+                            <input type="checkbox" checked={productsForArt(u).includes(key)}
+                              onChange={e => setArtProducts(prev => ({ ...prev, [u]: e.target.checked
+                                ? [...new Set([...productsForArt(u), key])]
+                                : productsForArt(u).filter(k => k !== key) }))} />
+                            {pLabel(PRODUCT_TYPES.find(p => p.key === key)!)}
+                          </label>
+                        ))}
+                      </fieldset>
+                    )}
                     <button type="button" aria-label="Remove"
                       onClick={() => setArtUrls((prev) => prev.filter((x) => x !== u))}
                       className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] leading-5">✕</button>
