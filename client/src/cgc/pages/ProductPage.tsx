@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
@@ -45,11 +45,29 @@ export default function ProductPage() {
   // ?personalize=1 (occasion pages' "Personalize" links) lands with the
   // Personalized option already selected.
   const wantsPersonalize = searchParams.get('personalize') === '1';
+  // Where the personalization choice lives, so a link that asked for it can
+  // put the buyer ON it rather than at the top of a page they then have to
+  // hunt down. Campaign links do exactly that: "Personalize & Buy" promises
+  // a form, and landing above the fold of a product page is not that form.
+  const decorateRef = useRef<HTMLFieldSetElement>(null);
+
   useEffect(() => {
     if (!studioDesign && !studioMockup && !wantsPersonalize) return;
     setPersonalize(true);
     if (studioDesign) setArtUrl(studioDesign);
   }, [studioDesign, studioMockup, wantsPersonalize]);
+
+  // Scroll only once the product has actually rendered — before that the
+  // node is not in the document and scrollIntoView silently does nothing.
+  // `block: 'center'` keeps the price and the tier table visible just above,
+  // so the buyer can still see what they are agreeing to.
+  const scrolledRef = useRef(false);
+  useEffect(() => {
+    if (!wantsPersonalize || scrolledRef.current) return;
+    if (!decorateRef.current) return;
+    scrolledRef.current = true;
+    decorateRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [wantsPersonalize, data]);
 
   const product = data?.product;
   // Both the base price and the personalization fee follow the QUANTITY, so
@@ -243,7 +261,7 @@ export default function ProductPage() {
           )}
 
           {/* Blank vs personalized — explicit, honest states */}
-          <fieldset className="mt-6">
+          <fieldset className="mt-6" ref={decorateRef}>
             <legend className="text-sm font-bold uppercase tracking-wide text-cgc-ink mb-2">How would you like it?</legend>
             <div className="grid grid-cols-2 gap-3">
               <button
