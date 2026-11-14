@@ -334,7 +334,7 @@ router.post('/save', async (req, res, next) => {
   try {
     const {
       items, customer_name, customer_email, customer_phone, notes,
-      requested_need_by,
+      requested_need_by, artwork_placements,
       mockup_image_url, mockup_image_url_back,
     } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
@@ -503,6 +503,10 @@ router.post('/save', async (req, res, next) => {
       grand_total: grandTotal,
       grand_quantity: grandQuantity,
       requested_need_by: requested_need_by || null,
+      artwork_placements: Array.isArray(artwork_placements)
+        ? artwork_placements.filter((a) => a && typeof a.url === 'string' &&
+            ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
+        : [],
       // 'es' when saved from /es/cotizacion — downstream customer emails
       // (deposit receipt, status updates, follow-ups) read this via
       // quoteLang() and switch to Spanish.
