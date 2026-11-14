@@ -389,7 +389,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // not flattened shirt previews.
   const [extraArt, setExtraArt] = useState<{
     customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
-    dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
+    dtf_orders: { id: number; sheet_index?: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
   }>({ customer_assets: [], dtf_orders: [] });
   // Production focus: default to art from quotes whose deposit was paid.
   const [paidQuotesOnly, setPaidQuotesOnly] = useState(true);
@@ -2327,7 +2327,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       .then(r => r.ok ? r.json() : null)
       .then((d: {
         customer_assets: { id: number; name: string; image_url: string; customer_name: string | null }[];
-        dtf_orders: { id: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
+        dtf_orders: { id: number; sheet_index?: number; customer_name: string; length_ft: number; file_url: string; thumb_url: string }[];
         archived_quotes: { id: number; customer_name: string; design_url: string | null; extra_design_urls?: string[] | null; source_upload_urls?: string[] | null; item_design_urls?: string[] | null; product_name: string; status: string; accepted_at?: string | null }[];
       } | null) => {
         if (!d) return;
@@ -3098,13 +3098,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <p className="text-xs font-semibold text-gray-500 uppercase mb-2">DTF Orders ({filteredDtf.length})</p>
                       <div className="space-y-2">
                         {filteredDtf.map((o) => (
-                          <button key={o.id} onClick={async () => { await addDesignToCanvas(o.file_url, `${o.customer_name} - DTF order #${o.id}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
+                          <button key={`${o.id}-${o.sheet_index || 0}`} onClick={async () => { await addDesignToCanvas(o.file_url, `${o.customer_name} - DTF order #${o.id}`); setActivePanel('upload'); setMobilePanelOpen(false); }}
                             className="w-full flex items-center gap-2 p-2 rounded-lg border border-gray-200 hover:border-orange-400 transition text-left">
                             <img src={o.thumb_url} alt="" className="w-10 h-10 object-contain rounded bg-gray-50 flex-shrink-0"
                               onError={(e) => { (e.target as HTMLImageElement).style.visibility = 'hidden'; }} />
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-semibold text-gray-900 truncate">{o.customer_name}</p>
-                              <p className="text-[10px] text-gray-400 truncate">DTF order #{o.id} · {o.length_ft}ft sheet</p>
+                              <p className="text-[10px] text-gray-400 truncate">DTF order #{o.id} · sheet {(o.sheet_index || 0) + 1} · {o.length_ft}ft</p>
                             </div>
                           </button>
                         ))}

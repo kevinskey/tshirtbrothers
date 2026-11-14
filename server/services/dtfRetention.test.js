@@ -25,3 +25,15 @@ test('unreferenced abandoned uploads are deleted once even with multiple expired
   assert.equal(await purgeAbandonedDtfOrders({ db, removeFile: async key => removed.push(key) }), 2);
   assert.deepEqual(removed, ['orphan.png']);
 });
+
+test('a paid cart can retain a file that is not its legacy first-sheet key', async () => {
+  const removed = [];
+  const manifest = [{ file_key: 'first.png' }, { file_key: 'paid-second.png' }];
+  const db = { async query(sql, params) {
+    if (sql.startsWith('DELETE')) return { rows: [{ id: 3, sheets_json: manifest }] };
+    assert.match(sql, /sheets_json @>/);
+    return { rows: params[0] === 'paid-second.png' ? [{ retained: true }] : [] };
+  } };
+  await purgeAbandonedDtfOrders({ db, removeFile: async key => removed.push(key) });
+  assert.deepEqual(removed, ['first.png']);
+});

@@ -88,6 +88,28 @@ without Kevin's approval.
 - Corrected abandoned-checkout cleanup so an abandoned reorder cannot delete
   the file belonging to a paid purchase; regression tests cover shared files.
 
+### Stage 4 — finished gang-sheet carts
+
+- Added a multi-file finished-sheet cart with previews, per-file length and copy
+  quantity, replacement/removal and current per-roll prices. Carts allow up to
+  50 distinct sheets and 1–1000 copies per sheet, subject to the online total
+  limit. Raw print files are retained unchanged; nothing is resized to fit.
+- A single order stores every purchased sheet in `sheets_json`, including its
+  private file key, server-derived dimensions/roll, quantity, price and layout.
+  Legacy first-sheet fields and old single-sheet checkout requests still work.
+- Server computes every line from the uploaded key's actual dimensions and
+  shop rates. Mixed 22/34-inch sheets get the correct individual prices. All
+  files must exist before order/payment creation; shipping is charged once.
+  One full-payment Stripe session represents the entire cart.
+- Customer history/downloads/reorders and admin viewers/downloads, production
+  library, emails, packing slips and vendor sends carry every sheet and copy
+  count. Vendor page splitting remains available for each purchased sheet.
+- Reorders restore the whole cart at current pricing with a new required date.
+  Stripe cancellation/back navigation retains the tab-local cart draft.
+- Retention checks both legacy file keys and every key inside paid cart
+  manifests. An abandoned cart cannot delete a later sheet in a paid cart.
+- Unpaid/canceled DTF orders cannot be sent to a production vendor.
+
 ## Remaining stages — not implemented or certified complete
 
 1. Finish separate method-driven fields for sublimation/vinyl and mixed-method
@@ -96,11 +118,10 @@ without Kevin's approval.
    quote/embroidery/DTF intake and customer account dates are covered above.
 2. Complete same-family multiple-style Easy Quote selection and per-product
    colors/quantities. Classic currently supports multiple exact products.
-3. DTF multi-file cart, per-file copies/placements/dimensions, composed layout,
-   opt-in resize/fit approval, oversized pricing, account originals/finals and
-   reorder for individual source graphics. Existing single-sheet paid purchases
-   now have account download/reorder; multi-file cart is still outstanding.
-   Preserve existing 22/34-inch paid checkout and private uploads.
+3. Finish the individual-graphics DTF builder path: placement sizing, composed
+   layouts, opt-in resize/fit approval, oversized pricing and retained source
+   graphics/reorder. Finished-sheet multi-file carts, copy counts, paid checkout,
+   private downloads and whole-cart reorders are implemented above.
 4. Implement official quote review/revision state, payment/art/proof ordering
    guards and shared milestones consistently across all admin entry points.
    A paid provisional deposit must not bypass official quote review.
@@ -135,3 +156,16 @@ without Kevin's approval.
   Older embroidery migrations document that the application role may not own
   `embroidery_requests`; do not rely on the boot runner to resolve permissions.
   No live database/migration or Stripe test-mode integration has been exercised.
+
+## Stage 4 verification and migration dependency
+
+- Server suite: 310 passed, 2 skipped, 0 failed (312 total).
+- Tests cover mixed-width pricing with client-price tampering, copy validation,
+  whole-foot lengths, total limits, legacy compatibility, multi-file checkout
+  and one shipping charge, missing/invalid sheets before payment, all private
+  downloads, nested-file retention, vendor copy instructions and split pages,
+  and blocking unpaid/canceled production sends.
+- `server/migrations/zz_quote_workflow_dtf_cart.sql` is prepared, NOT applied.
+  Apply it and the date migration before an approved release. No production
+  database, real Stripe session, upload, vendor email or customer message was
+  created during validation. Browser/staging end-to-end checks remain pending.

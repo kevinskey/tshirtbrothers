@@ -1507,7 +1507,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
-        SELECT id, customer_name, length_ft, tier, status, paid_at, date_needed
+        SELECT id, customer_name, length_ft, tier, status, paid_at, date_needed, sheets_json
           FROM gang_sheet_orders
          WHERE status IN ('paid', 'in_production', 'ready')
          ORDER BY paid_at ASC LIMIT 50`),
@@ -1681,7 +1681,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
         store: isStore ? row.store_name : undefined,
         job: isStore
           ? (row.job || `${row.store_name} order`)
-          : isGang ? `DTF Gang Sheet ${row.length_ft} ft`
+          : isGang ? (Array.isArray(row.sheets_json) ? `DTF cart · ${row.sheets_json.length} sheets` : `DTF Gang Sheet ${row.length_ft} ft`)
           : isInvoice ? (row.job || `Invoice ${row.invoice_number || row.id}`)
           : (row.product_name || 'Custom order'),
         qty: isStore ? (Number(row.qty) || 0) : isGang ? 1 : isInvoice ? (Number(row.qty) || 0) : (row.quantity || 0),

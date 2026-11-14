@@ -28,7 +28,10 @@ test('listing uses current account identity, excludes unpaid orders and omits pr
   }, sign() { throw Error('Listing should not need storage'); } });
   const response = await call(router, '/', { user: { id: 7 }, query: { email: 'someone-else@example.com' } });
   assert.equal(response.code, 200);
-  assert.deepEqual(response.data, [{ id: 22, date_needed: '2026-12-15' }]);
+  assert.equal(response.data[0].id, 22);
+  assert.equal(response.data[0].date_needed, '2026-12-15');
+  assert.equal('file_key' in response.data[0], false);
+  assert.equal('file_key' in response.data[0].sheets[0], false);
 });
 
 test('missing or another customer order never receives a signed download', async () => {
@@ -49,7 +52,10 @@ test('missing or another customer order never receives a signed download', async
 test('owner gets original print file and dimensions for a fresh reorder', async () => {
   const order = { id: 22, file_key: 'production-file', width_in: 34, file_width_px: 10200, file_height_px: 3600, length_ft: 1 };
   const router = createCustomerDtfOrdersRouter({ db: { async query() { return { rows: [order] }; } }, sign: async value => {
-    assert.deepEqual(value, order); return 'https://storage.example/signed';
+    assert.equal(value.file_key, order.file_key);
+    assert.equal(value.id, order.id);
+    assert.equal(value.sheet_index, 0);
+    return 'https://storage.example/signed';
   } });
   const response = await call(router, '/:id', { user: { id: 7 }, params: { id: '22' } });
   assert.equal(response.data.download_url, 'https://storage.example/signed');
@@ -62,4 +68,15 @@ test('invalid order identifiers are rejected without database or storage', async
   for (const id of ['abc', '-1', '1.2', '9007199254740992']) {
     assert.equal((await call(router, '/:id', { user: { id: 7 }, params: { id } })).code, 404);
   }
+});
+
+test('every sheet in a purchased cart gets an owner-only download and its original copy count', async () => {
+  const manifest = [{ file_key: 'sheet-a', width_in: 22, copies: 2 }, { file_key: 'sheet-b', width_in: 34, copies: 4 }];
+  const signed = [];
+  const router = createCustomerDtfOrdersRouter({ db: { async query() { return { rows: [{ id: 88, sheets_json: manifest }] }; } },
+    sign: async order => { signed.push(order.file_key); return `https://example.com/${order.file_key}`; } });
+  const result = await call(router, '/:id', { user: { id: 7 }, params: { id: '88' } });
+  assert.deepEqual(signed, ['sheet-a', 'sheet-b']);
+  assert.deepEqual(result.data.sheets.map(sheet => sheet.copies), [2, 4]);
+  assert.equal(result.data.sheets[1].download_url, 'https://example.com/sheet-b');
 });
