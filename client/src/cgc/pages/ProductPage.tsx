@@ -4,7 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ArrowRight, Check, Heart, Loader2, Minus, Palette, Plus, ShoppingBag, Upload } from 'lucide-react';
-import { fetchConfig, fetchProduct, money, personalizationFeeCents } from '../lib/api';
+import { fetchConfig, fetchProduct, money, personalizationFeeCents, tierUnitPriceCents } from '../lib/api';
 import type { CgcPersonalization } from '../lib/api';
 import ProductCard from '../components/ProductCard';
 import { useCgcPath } from '../lib/base';
@@ -52,7 +52,11 @@ export default function ProductPage() {
   }, [studioDesign, studioMockup, wantsPersonalize]);
 
   const product = data?.product;
-  const feeCents = personalizationFeeCents(product?.retail_price_cents ?? 0, config);
+  // Both the base price and the personalization fee follow the QUANTITY, so
+  // a bulk buyer is not charged a fee worked out against a price they are
+  // not paying. The server recomputes both at checkout.
+  const baseCents = product ? tierUnitPriceCents(product, qty) : 0;
+  const feeCents = personalizationFeeCents(baseCents, config);
 
   const personalization: CgcPersonalization | null = useMemo(() => {
     if (!personalize) return null;
@@ -63,9 +67,7 @@ export default function ProductPage() {
 
   // The fee follows the Personalized toggle itself, so the shown price
   // changes the moment the buyer picks it — not only once they've typed.
-  const unitCents = product
-    ? product.retail_price_cents + (personalize ? feeCents : 0)
-    : 0;
+  const unitCents = product ? baseCents + (personalize ? feeCents : 0) : 0;
 
   const uploadArt = async (file: File) => {
     setUploading(true);
@@ -191,6 +193,51 @@ export default function ProductPage() {
               </span>
             )}
           </p>
+          {/* The quantity ladder, shown BEFORE the buyer commits.
+              Priced the same way the cart and Stripe price it — one rule in
+              server/lib/tierPricing.js, mirrored in tierUnitPriceCents. The
+              row matching the current quantity is highlighted so the number
+              above is traceable to a tier rather than appearing to change on
+              its own. Prices shown are what this buyer will actually pay,
+              personalization included or not, following the toggle. */}
+          {!!product.tiers?.length && (
+            <div className="mt-5 rounded-xl border border-cgc-cream-deep bg-cgc-cream/60 p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-cgc-orange">
+                Buy more, pay less
+              </p>
+              <table className="mt-2 w-full text-sm">
+                <tbody>
+                  {product.tiers.map((t) => {
+                    const here = qty >= t.min_qty && (t.max_qty === null || qty <= t.max_qty);
+                    const each = t.unit_price_cents
+                      + (personalize ? personalizationFeeCents(t.unit_price_cents, config) : 0);
+                    return (
+                      <tr
+                        key={t.min_qty}
+                        className={here ? 'font-bold text-cgc-ink' : 'text-cgc-stone'}
+                      >
+                        <td className="py-0.5">
+                          {t.max_qty === null
+                            ? `${t.min_qty}+`
+                            : t.min_qty === t.max_qty
+                              ? `${t.min_qty}`
+                              : `${t.min_qty}–${t.max_qty}`}
+                          {here && <span className="ml-2 text-xs font-medium text-cgc-orange">your price</span>}
+                        </td>
+                        <td className="py-0.5 text-right tabular-nums">{money(each)} ea</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-cgc-stone">
+                {personalize
+                  ? 'Engraving included at every quantity.'
+                  : 'Blank prices. Turn on Personalized to see engraved pricing.'}
+              </p>
+            </div>
+          )}
+
           {product.description && (
             <p className="mt-4 text-cgc-charcoal">{product.description}</p>
           )}

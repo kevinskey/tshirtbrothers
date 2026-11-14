@@ -22,6 +22,7 @@ import { CGC_CATEGORIES } from '../lib/cgcCategories.js';
 import { CGC_SPORTS } from '../lib/cgcSports.js';
 import { CGC_RECIPIENTS, CGC_OCCASIONS, CGC_BUDGETS, findOption } from '../lib/cgcMerchandising.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
+import { tierTable, unitPriceCents } from '../lib/tierPricing.js';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ const personalizationFeeCents = (retailCents) =>
   Math.max(PERSONALIZATION_FEE_MIN_CENTS, Math.round((retailCents || 0) * PERSONALIZATION_FEE_PCT));
 
 const PRODUCT_COLS =
-  `id, sku, name, description, image_url, retail_price_cents, cgc_category, cgc_sport, weight_oz, available_quantity`;
+  `id, sku, name, description, image_url, retail_price_cents, price_tiers, cgc_category, cgc_sport, weight_oz, available_quantity`;
 
 // ── Config ───────────────────────────────────────────────────────────────
 router.get('/config', (_req, res) => {
@@ -164,7 +165,11 @@ router.get('/products/:sku', async (req, res, next) => {
         ORDER BY abs(retail_price_cents - $3) ASC LIMIT 8`,
       [rows[0].cgc_category, rows[0].sku, rows[0].retail_price_cents],
     );
-    res.json({ product: rows[0], related });
+    // The ladder, pre-ranged for display. The raw price_tiers column goes
+    // out too so a client can price a quantity itself, but `tiers` is what
+    // the page renders — working the ranges out in two places is how a
+    // table ends up disagreeing with the cart.
+    res.json({ product: { ...rows[0], tiers: tierTable(rows[0]) }, related });
   } catch (err) { next(err); }
 });
 
@@ -636,18 +641,25 @@ router.post('/checkout', async (req, res, next) => {
         }
       }
 
+      // The unit price is resolved HERE, from the quantity on this line and
+      // the ladder on the product row — never from anything the client sent.
+      // The personalization fee follows the tier price rather than the flat
+      // one, so a bulk buyer is not charged a fee calculated against a price
+      // they are not paying.
+      const unitCents = unitPriceCents(product, qty);
       lines.push({
         product,
         qty,
+        unitCents,
         personalization,
         personalizationCents: personalization && !noFeeSkus.has(sku)
-          ? personalizationFeeCents(product.retail_price_cents)
+          ? personalizationFeeCents(unitCents)
           : 0,
       });
     }
 
     const subtotal = lines.reduce(
-      (sum, l) => sum + (l.product.retail_price_cents + l.personalizationCents) * l.qty, 0,
+      (sum, l) => sum + (l.unitCents + l.personalizationCents) * l.qty, 0,
     );
 
     const totalOz = parcelOunces(lines.map((l) => ({
@@ -689,7 +701,7 @@ router.post('/checkout', async (req, res, next) => {
              (order_id, sku, product_name, qty, unit_price_cents, personalization_cents, personalization)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [orderId, l.product.sku, l.product.name, l.qty,
-           l.product.retail_price_cents, l.personalizationCents,
+           l.unitCents, l.personalizationCents,
            l.personalization ? JSON.stringify(l.personalization) : null],
         );
       }
@@ -726,7 +738,7 @@ router.post('/checkout', async (req, res, next) => {
                 : {}),
             ...(l.product.image_url ? { images: [l.product.image_url] } : {}),
           },
-          unit_amount: l.product.retail_price_cents + l.personalizationCents,
+          unit_amount: l.unitCents + l.personalizationCents,
         },
         quantity: l.qty,
       })),
