@@ -94,7 +94,7 @@ function formatPhone(v: string): string {
 // The numbers are now shown as soon as they exist, and only ACCEPTING is
 // gated on contact info — which is the same trade /bling already makes with
 // its live slider, and the pattern that page converts on.
-const STEPS = ['products', 'qty', 'color', 'quality', 'date', 'art', 'quote', 'name', 'phone', 'email'] as const;
+const STEPS = ['products', 'date', 'qty', 'color', 'quality', 'art', 'quote', 'name', 'phone', 'email'] as const;
 type Step = typeof STEPS[number];
 
 /**
@@ -1150,6 +1150,14 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                       <p className="font-bold text-gray-600 shrink-0">TBD</p>
                     </div>
                   ))}
+                  <div className="px-4 py-3 border-t border-gray-100 bg-orange-50/60">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {tr('Requested need-by date:', 'Fecha solicitada:')} <span className="font-bold">{needBy}</span>
+                    </p>
+                    <p className="text-xs text-gray-600 mt-1">
+                      {tr('We will confirm whether we can meet this date when we review your quote.', 'Confirmaremos si podemos cumplir esta fecha al revisar tu cotización.')}
+                    </p>
+                  </div>
                   <div className="px-4 py-3 bg-gray-50">
                     {isRush && rushTotal > 0 && (
                       <p className="text-xs text-amber-700 font-semibold mb-1">
