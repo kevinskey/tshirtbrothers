@@ -48,7 +48,22 @@ export default function ShopPage() {
 function ShopPageInner() {
   const p = useCgcPath();
   const [params, setParams] = useSearchParams();
-  const search = params.get('search') ?? '';
+  /**
+   * A campaign that points at /shop lands here with 3,700+ products sorted
+   * by name — i.e. on a page of keychains, nowhere near what the email was
+   * selling. Email is unrecallable, so the campaign gives the LANDING a
+   * hint instead and the shop honours it: utm_campaign picks a default
+   * search, which an explicit ?search= always overrides and which anyone
+   * arriving any other way never sees.
+   *
+   * Keyed on the campaign rather than hardcoded into the shop, so the next
+   * one adds a line here instead of needing its own landing page.
+   */
+  const CAMPAIGN_SEARCH: Record<string, string> = {
+    'tumblers-christmas-2026': 'stackable ceramic liner',
+  };
+  const campaignDefault = CAMPAIGN_SEARCH[params.get('utm_campaign') ?? ''] ?? '';
+  const search = params.get('search') ?? campaignDefault;
   const category = params.get('category') ?? '';
   const sort = params.get('sort') ?? 'name';
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
