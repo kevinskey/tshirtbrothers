@@ -16,6 +16,7 @@ interface QuoteItem {
   id: number; product_name: string | null; catalog_name: string | null;
   brand: string | null; color: string | null; sizes: SizeCount[] | string;
   quantity: number; unit_price: string | null; line_total: string | null;
+  position: number; print_areas?: string[]; design_url?: string | null;
 }
 interface Payment { amount?: number; method?: string; date?: string; recorded_at?: string }
 interface InvoiceRow {
@@ -42,6 +43,13 @@ interface Detail {
     mockup_image_url_sleeve: string | null; mockup_image_url_sleeve_left: string | null;
     created_at: string; accepted_at: string | null; balance_paid_at: string | null;
     date_needed: string | null;
+    inputs_json?: {
+      requested_need_by?: string | null;
+      items?: Array<{
+        artwork_placements?: Array<{ url: string; placement: string }>;
+        extra_design_urls?: string[];
+      }>;
+    } | null;
     order_stages: Record<string, string> | null;
     shipping_method: string | null; fulfillment_method: string | null;
     picked_up_at: string | null; shipped_at: string | null;
@@ -555,6 +563,29 @@ export default function AdminOrderDetailPage() {
                           {[it.brand, it.color].filter(Boolean).join(' · ')}
                           {' · '}{it.quantity} pcs{it.unit_price ? ` @ ${money(it.unit_price)}` : ''}
                         </div>
+                        {Array.isArray(it.print_areas) && it.print_areas.length > 0 && (
+                          <div className="text-xs text-gray-600 mt-1">
+                            Print locations: {it.print_areas.join(', ')}
+                          </div>
+                        )}
+                        {(() => {
+                          const files = quote.inputs_json?.items?.[it.position]?.artwork_placements || [];
+                          return files.length > 0 ? (
+                            <div className="mt-3">
+                              <div className="text-xs font-semibold text-gray-700 mb-2">Artwork by print location</div>
+                              <div className="flex flex-wrap gap-2">
+                                {files.filter((file) => /^https:\/\//.test(file.url)).map((file, idx) => (
+                                  <a key={`${file.url}-${idx}`} href={file.url} target="_blank" rel="noreferrer"
+                                    className="block w-24 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                    <img src={file.url} alt={`Artwork for ${file.placement}`}
+                                      className="w-full h-20 object-contain" />
+                                    <div className="px-1 py-1 text-[10px] text-center capitalize">{file.placement.replaceAll('_', ' ')}</div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
                         {sizes.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
                             {sizes.map((s) => `${s.size}×${s.quantity}`).join('  ')}
