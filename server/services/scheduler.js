@@ -1,3 +1,4 @@
+import { purgeAbandonedDtfOrders } from './dtfRetention.js';
 // Background jobs that fire on a cron schedule. Node-cron runs inside
 // the same Express process — that's fine for a single-droplet deployment
 // because pm2 keeps it alive. If we ever scale to multiple instances
@@ -115,27 +116,18 @@ async function runAbandonedQuoteFollowUps() {
 // pending_payment order row AND a private 100 MB-capable upload sitting in
 // Spaces. After 24h the Stripe Checkout Session has long expired (Stripe
 // sessions default-expire at 24h), so there's no path back to paying for
-// that specific order — clear both the row and the file so abandoned carts
-// don't grow storage forever.
+// that specific order — clear its row and any unreferenced file. Shared
+// files from paid purchases must remain available for downloads/reorders.
 async function purgeAbandonedGangSheetCheckouts() {
   try {
-    const { rows } = await pool.query(`
-      SELECT id, file_key FROM gang_sheet_orders
-       WHERE status = 'pending_payment'
-         AND created_at < NOW() - INTERVAL '24 hours'
-    `);
-    if (rows.length === 0) return;
-    for (const row of rows) {
-      try {
-        await getSpacesClient().send(new DeleteObjectCommand({ Bucket: SPACES_BUCKET, Key: row.file_key }));
-      } catch (err) {
-        // A missing/already-deleted object shouldn't block cleaning up the
-        // row — log and move on.
-        console.error(`[scheduler] failed to delete gang sheet file ${row.file_key} (order ${row.id}):`, err.message);
-      }
-    }
-    await pool.query('DELETE FROM gang_sheet_orders WHERE id = ANY($1)', [rows.map((r) => r.id)]);
-    console.log(`[scheduler] purged ${rows.length} abandoned gang-sheet checkout(s)`);
+    const count = await purgeAbandonedDtfOrders({
+      db: pool,
+      removeFile: async key => {
+        try { await getSpacesClient().send(new DeleteObjectCommand({ Bucket: SPACES_BUCKET, Key: key })); }
+        catch (err) { console.error(`[scheduler] failed to delete abandoned DTF file ${key}:`, err.message); }
+      },
+    });
+    if (count) console.log(`[scheduler] purged ${count} abandoned gang-sheet checkout(s)`);
   } catch (err) {
     console.error('[scheduler] purgeAbandonedGangSheetCheckouts failed:', err.message);
   }

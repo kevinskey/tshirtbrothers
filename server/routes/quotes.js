@@ -1,3 +1,4 @@
+import { isValidNeedByDate } from '../lib/quoteIntake.js';
 import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
@@ -159,6 +160,8 @@ router.post('/', async (req, res, next) => {
       date_needed,
       shipping_method,
     } = req.body;
+
+    if (!isValidNeedByDate(date_needed)) return res.status(400).json({ error: 'Choose a valid need-by date (YYYY-MM-DD)' });
 
     if (!customer_name || !customer_email || !quantity) {
       return res.status(400).json({

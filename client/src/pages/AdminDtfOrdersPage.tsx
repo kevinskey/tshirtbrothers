@@ -25,6 +25,7 @@ type OrderRow = {
   // Which roll to load on the press. Older orders predate widths and come
   // back 22 via the column default, never null.
   width_in: number;
+  date_needed: string | null;
   tier: TierKey;
   price_cents: number;
   shipping_cents: number;
@@ -878,6 +879,7 @@ function DtfOrdersQueue() {
                             </span>
                           )}
                         </div>
+                        {order.date_needed && <p className="mt-1 text-xs font-semibold text-orange-700">Needed by {String(order.date_needed).slice(0, 10)}</p>}
                         {order.white_bg_flag && (
                           <span
                             className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700"

@@ -70,16 +70,37 @@ without Kevin's approval.
   actual approval (preparation must not be represented as approval).
 - Public proof fallback supports back-only/sleeve-only submissions.
 
+### Stage 3 — dedicated intake dates and retained DTF purchases
+
+- Public `/quotes`, embroidery intake and DTF paid checkout validate a required
+  calendar date before DB, upload or payment work; CGC/embroidery/DTF forms
+  collect it. DTF also enforces its artwork agreement on the server.
+- Prepared nullable `date_needed` columns for embroidery and DTF orders;
+  existing records with no known date remain blank.
+- DTF requested dates appear in the production queue, dashboard schedule,
+  confirmation email, and account. Embroidery dates appear in admin forms,
+  the token-gated request status and account; garment orders now show dates
+  in the account's Orders tab as well as Quotes.
+- Added signed-in customer DTF purchase history, short-lived private print-file
+  downloads, and reorder entry into the existing full-payment checkout.
+  Ownership is resolved against the current account, not caller-supplied email;
+  unpaid orders are excluded. Reorders require a new date and use current rates.
+- Corrected abandoned-checkout cleanup so an abandoned reorder cannot delete
+  the file belonging to a paid purchase; regression tests cover shared files.
+
 ## Remaining stages — not implemented or certified complete
 
 1. Finish separate method-driven fields for sublimation/vinyl and mixed-method
-   jobs. Extend required date to every legacy/embroidery/DTF intake and relevant
-   customer account displays. Do not break older integrations silently.
+   jobs. Extend requested dates to admin-created/manual invoice and mockup
+   conversion paths, and synchronize linked quote/embroidery changes. Public
+   quote/embroidery/DTF intake and customer account dates are covered above.
 2. Complete same-family multiple-style Easy Quote selection and per-product
    colors/quantities. Classic currently supports multiple exact products.
 3. DTF multi-file cart, per-file copies/placements/dimensions, composed layout,
    opt-in resize/fit approval, oversized pricing, account originals/finals and
-   reorder. Preserve existing 22/34-inch paid checkout and private uploads.
+   reorder for individual source graphics. Existing single-sheet paid purchases
+   now have account download/reorder; multi-file cart is still outstanding.
+   Preserve existing 22/34-inch paid checkout and private uploads.
 4. Implement official quote review/revision state, payment/art/proof ordering
    guards and shared milestones consistently across all admin entry points.
    A paid provisional deposit must not bypass official quote review.
@@ -101,3 +122,16 @@ without Kevin's approval.
   Responsive rendering and real browser end-to-end behavior remain unverified.
 - No production migration or deployment has been run. Do not merge this draft
   as a claim that the complete redesign is finished.
+
+## Stage 3 verification and migration dependency
+
+- Server suite: 297 passed, 2 skipped, 0 failed (299 total).
+- New tests cover missing/impossible dates across three intake routes, the DTF
+  artwork agreement, authentication, ownership-scoped queries, private download
+  access, reorder dimensions and retention when a reorder is abandoned.
+- Client TypeScript/Vite build and `git diff --check` must pass before upload.
+- `server/migrations/zz_quote_workflow_dates.sql` is prepared, NOT applied.
+  It must be applied by a role owning both tables before releasing this code.
+  Older embroidery migrations document that the application role may not own
+  `embroidery_requests`; do not rely on the boot runner to resolve permissions.
+  No live database/migration or Stripe test-mode integration has been exercised.

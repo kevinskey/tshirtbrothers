@@ -14,8 +14,12 @@ import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces
 import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles, sendGangSheetQuoteToCustomer } from '../services/email.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ensureCustomer, isValidPhone } from '../lib/customers.js';
+import { isValidNeedByDate } from '../lib/quoteIntake.js';
+
+import customerDtfOrders from './customerDtfOrders.js';
 
 const router = Router();
+router.use('/customer/orders', customerDtfOrders);
 
 // Mirrors routes/payments.js's getStripe(): lazy per-request instantiation
 // so a missing key surfaces as a clean 500 on first use rather than a
@@ -502,7 +506,9 @@ const EMAIL_RE = /.+@.+\..+/;
 router.post('/checkout', checkoutLimiter, async (req, res, next) => {
   try {
     const { length_ft, tier, delivery = 'pickup', file_key,
-            name, email, phone, note, ship_address, attested } = req.body || {};
+            name, email, phone, note, ship_address, attested, date_needed } = req.body || {};
+    if (!isValidNeedByDate(date_needed)) return res.status(400).json({ error: 'Choose a valid need-by date (YYYY-MM-DD)' });
+    if (attested !== true) return res.status(400).json({ error: 'Confirm the artwork agreement before checkout' });
     // Same contact info a quote requires — every DTF buyer becomes a
     // customer the shop can reach.
     if (typeof name !== 'string' || !name.trim()) {
@@ -613,11 +619,11 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     const ins = await pool.query(
       `INSERT INTO gang_sheet_orders
         (customer_name, customer_email, customer_phone, user_id, length_ft, width_in, tier, price_cents, shipping_cents,
-         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag, date_needed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
       [customerName, customerEmail, customerPhone, userId, Math.ceil(Number(length_ft)), widthIn, tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag],
+       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag, date_needed],
     );
     const orderId = ins.rows[0].id;
 

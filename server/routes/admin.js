@@ -1507,7 +1507,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
          ORDER BY date_needed ASC NULLS LAST, accepted_at ASC
          LIMIT 100`),
       pool.query(`
-        SELECT id, customer_name, length_ft, tier, status, paid_at
+        SELECT id, customer_name, length_ft, tier, status, paid_at, date_needed
           FROM gang_sheet_orders
          WHERE status IN ('paid', 'in_production', 'ready')
          ORDER BY paid_at ASC LIMIT 50`),

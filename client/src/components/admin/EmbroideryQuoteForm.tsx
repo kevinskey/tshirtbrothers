@@ -283,6 +283,7 @@ export function EmbroideryQuoteForm({ request }: { request: EmbroideryRequest })
 
   return (
     <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+      {request.date_needed && <p className="mb-3 text-xs font-semibold text-orange-700">Requested need-by date: {String(request.date_needed).slice(0, 10)}</p>}
       {estimatorIndex !== null && <div role="dialog" aria-modal="true" aria-label="Estimate embroidery stitches" className="fixed inset-0 z-[100] overflow-y-auto bg-black/50 p-3 sm:p-8"><div className="mx-auto max-w-5xl"><button type="button" autoFocus onClick={() => setEstimatorIndex(null)} className="mb-3 rounded-lg bg-white px-4 py-2 font-semibold">Close estimator</button><StitchEstimator quoteId={request.quote_id} initialArtworkUrl={request.artwork_urls?.[estimatorIndex] || (estimatorIndex === 0 ? request.artwork_url : null)} onApply={count => { setDesignRows(prev => prev.map((row, index) => index === estimatorIndex ? { ...row, stitches: String(count) } : row)); setEstimatorIndex(null); }} /></div></div>}
 
       <div className="flex flex-wrap items-end gap-3">
@@ -515,6 +516,7 @@ export function QuoteEmbroiderySection({ quoteId }: { quoteId: number }) {
               {r.quote_cents != null && <span className="text-xs text-gray-600">quoted {embroideryMoney(r.quote_cents)}</span>}
             </div>
             <p className="mt-1 text-xs text-gray-700">
+              {r.date_needed && `Needed by ${String(r.date_needed).slice(0, 10)} · `}
               qty {r.quantity} · {r.desired_size} · {r.placement.replace(/_/g, ' ')}
               {' · '}{r.garment_mode === 'own' ? 'own garment' : r.garment_choice}
             </p>

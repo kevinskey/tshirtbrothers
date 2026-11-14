@@ -2226,6 +2226,7 @@ export async function sendGangSheetPaidToCustomer({ order }) {
       detailRow('Order', `#${order.id}`) +
       detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
       detailRow('Turnaround', turnaround) +
+      (order.date_needed ? detailRow('Requested need-by date', escapeHtml(theme.fmtDate(order.date_needed))) : '') +
       detailRow('Total', `<strong>${total}</strong>`) +
       detailRow('Delivery', deliveryValue)
     )}

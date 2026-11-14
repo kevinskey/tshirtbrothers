@@ -6,6 +6,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { priceEmbroidery, DIGITIZATION_FEE_CENTS, RUSH_LEVELS } from '../lib/embroideryPricing.js';
 import { parseEmbroideryWorksheet, reconcileStitchCount } from '../lib/embroideryWorksheet.js';
+import { isValidNeedByDate } from '../lib/quoteIntake.js';
 
 const router = Router();
 
@@ -240,7 +241,7 @@ const STITCH_FILE_EXTS = /\.(dst|pes|emb|exp|jef|vp3|xxx|hus)$/i;
 router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req, res, next) => {
   try {
     const {
-      name, email, phone,
+      name, email, phone, date_needed,
       imageBase64, filename,
       desiredSize, placement, placementNote,
       garmentMode, garmentChoice, notes, quantity,
@@ -249,6 +250,7 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
       designs: rawDesigns,
     } = req.body;
 
+    if (!isValidNeedByDate(date_needed)) return res.status(400).json({ error: 'Choose a valid need-by date (YYYY-MM-DD)' });
     if (!name || !String(name).trim()) return res.status(400).json({ error: 'name is required' });
     const emailNorm = String(email || '').trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailNorm)) return res.status(400).json({ error: 'a valid email is required' });
@@ -388,8 +390,8 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
           garment_mode, garment_choice, notes, quantity, items,
           stitch_file_url, stitch_file_name, needs_digitizing, stitch_count,
           artwork_urls, design_count,
-          status, access_token)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+          status, access_token, date_needed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [String(name).trim(), emailNorm, phone || null, artworkUrl,
        effSize, effPlacement, effPlacementNote,
@@ -397,7 +399,7 @@ router.post('/embroidery/requests', express.json({ limit: '25mb' }), async (req,
        items ? JSON.stringify(items) : null,
        stitchFileUrl, safeStitchName, !hasStitchFile, parsedStitches,
        artworkUrls.length > 0 ? JSON.stringify(artworkUrls) : null, designCount,
-       'ready_to_quote', accessToken]
+       'ready_to_quote', accessToken, date_needed]
     );
     const request = rows[0];
 
@@ -451,6 +453,7 @@ router.get('/embroidery/requests/:id/status', async (req, res, next) => {
       stitch_count: r.stitch_count,
       quote_cents: r.quote_cents,
       quoted_at: r.quoted_at,
+      date_needed: r.date_needed,
     });
   } catch (err) { next(err); }
 });

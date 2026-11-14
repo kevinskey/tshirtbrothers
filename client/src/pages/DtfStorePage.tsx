@@ -46,6 +46,7 @@ type ShipAddress = { line1: string; city: string; state: string; zip: string };
 // from the /upload-issued file_key itself (embedded in the key as
 // <uuid>-<width>x<height>.png) rather than trusting client-sent values.
 type CheckoutBody = {
+  date_needed: string;
   length_ft: number;
   tier: TierKey;
   delivery: 'pickup' | 'ship';
@@ -167,6 +168,7 @@ function readUploadStash(): UploadedFile | null {
       return null;
     }
     return {
+      width_in: typeof (stash as { width_in?: number }).width_in === 'number' ? (stash as { width_in?: number }).width_in : undefined,
       file_key: stash.file_key,
       width_px: stash.width_px,
       height_px: stash.height_px,
@@ -255,6 +257,7 @@ export default function DtfStorePage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
+  const [needBy, setNeedBy] = useState('');
   const [agree, setAgree] = useState(false);
 
   const [uploading, setUploading] = useState(false);
@@ -291,6 +294,31 @@ export default function DtfStorePage() {
     prevLengthRef.current = lengthFt;
     return () => clearTimeout(t);
   }, [lengthFt]);
+
+  const reorderId = searchParams.get('reorder');
+  useEffect(() => {
+    if (!reorderId) return;
+    let active = true;
+    setUploadedFile(null);
+    setCheckoutError(null);
+    const token = localStorage.getItem('tsb_token');
+    if (!token) { setCheckoutError('Sign in to your account to reorder a saved sheet.'); return; }
+    fetch(`/api/gangsheet-store/customer/orders/${encodeURIComponent(reorderId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(async response => {
+      const order = await response.json();
+      if (!response.ok) throw new Error(order.error || 'Could not load that order');
+      if (!active) return;
+      const file: UploadedFile = { file_key: order.file_key, width_px: order.file_width_px,
+        height_px: order.file_height_px, width_in: order.width_in, fileName: `DTF order #${order.id}` };
+      setUploadedFile(file);
+      setLengthFt(Number(order.length_ft));
+      // A reorder is a new order: ask for a fresh date and current turnaround.
+      setNeedBy('');
+      try { sessionStorage.setItem(UPLOAD_STASH_KEY, JSON.stringify({ ...file, at: Date.now() })); } catch { /* optional */ }
+    }).catch(error => { if (active) setCheckoutError(error.message); });
+    return () => { active = false; };
+  }, [reorderId]);
 
   async function handleFileSelected(file: File) {
     setUploadError(null);
@@ -374,6 +402,7 @@ export default function DtfStorePage() {
 
   async function handleCheckout() {
     if (!config || lengthFt === null || tier === null || !uploadedFile) return;
+    if (!needBy) { setCheckoutError('Choose a need-by date'); return; }
     setCheckingOut(true);
     setCheckoutError(null);
     trackEvent('dtf-checkout-start', { ft: lengthFt, tier });
@@ -385,6 +414,7 @@ export default function DtfStorePage() {
     } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 
     const body: CheckoutBody = {
+      date_needed: needBy,
       length_ft: lengthFt,
       tier,
       delivery,
@@ -441,6 +471,7 @@ export default function DtfStorePage() {
   const phoneDigits = phone.replace(/\D/g, '').length;
   const phoneValid = phoneDigits >= 10 && phoneDigits <= 15;
   const canCheckout = !!uploadedFile
+    && !!needBy
     && agree
     && !!name.trim()
     && emailValid
@@ -451,6 +482,7 @@ export default function DtfStorePage() {
   // Spelled out under the button so a greyed-out Checkout is never a mystery.
   const missing = [
     !uploadedFile && 'your sheet',
+    !needBy && 'need-by date',
     !name.trim() && 'name',
     !emailValid && 'email',
     !phoneValid && 'phone',
@@ -608,6 +640,12 @@ export default function DtfStorePage() {
 
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
+            <section className="rounded-2xl border-2 border-orange-200 bg-white p-4 sm:p-5">
+              <label htmlFor="dtf-need-by" className="block font-bold text-gray-900">When do you need your transfers?</label>
+              <input id="dtf-need-by" required type="date" value={needBy} onChange={e => setNeedBy(e.target.value)}
+                className="mt-3 w-full rounded-xl border border-gray-300 p-3 text-base" />
+              <p className="mt-2 text-xs text-gray-600">Your requested in-hands date stays with your order. Choose a turnaround below that meets it; shipping time is additional.</p>
+            </section>
             {fromBuilder && uploadedFile && (() => {
               // The preview must track the LENGTH the customer is buying,
               // not the length the sheet was built at — otherwise the
