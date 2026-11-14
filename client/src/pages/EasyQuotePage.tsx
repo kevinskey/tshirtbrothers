@@ -338,14 +338,12 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [needBy, setNeedBy] = useState('');
   const [artUrls, setArtUrls] = useState<string[]>(() => studioArt);
   const [artUploading, setArtUploading] = useState(0);
-  // Print locations (front only vs front & back) — drives numLocations in
-  // pricing. Quote #164 shipped a front+back design priced as one side, so
-  // this is now an explicit question. Auto-flips to 2 when a second art
-  // file is uploaded; the customer can still tap it back to front-only.
-  const [printSides, setPrintSides] = useState<1 | 2>(1);
-  useEffect(() => {
-    if (artUrls.length >= 2) setPrintSides(2);
-  }, [artUrls.length]);
+  // Multiple uploaded files are NOT evidence of multiple print locations:
+  // they may be alternate designs for the same side. Preserve a Design
+  // Studio back placement when present; otherwise ask the customer.
+  const [printSides, setPrintSides] = useState<1 | 2>(
+    () => studio?.graphicUrlBack || studio?.mockupUrlBack ? 2 : 1,
+  );
   const artInputRef = useRef<HTMLInputElement | null>(null);
 
   const [calcLines, setCalcLines] = useState<CalcLine[] | null>(null);
