@@ -426,10 +426,6 @@ router.post('/save', async (req, res, next) => {
           },
           design_url: item.design_url || null,
           extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
-        artwork_placements: Array.isArray(item.artwork_placements)
-          ? item.artwork_placements.filter((a) => a && typeof a.url === 'string' &&
-              ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
-          : [],
           artwork_placements: Array.isArray(item.artwork_placements)
             ? item.artwork_placements.filter((a) => a && typeof a.url === 'string' &&
                 ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
