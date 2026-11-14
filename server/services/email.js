@@ -2136,6 +2136,7 @@ export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, gra
   const body = `
     <p>${es ? 'Hola' : 'Hi'} ${quote.customer_name || (es ? '' : 'there')},</p>
     ${intro}
+    ${quote.date_needed ? `<p><strong>${es ? 'Fecha solicitada' : 'Requested need-by date'}:</strong> ${String(quote.date_needed).slice(0, 10)}. ${es ? 'Confirmaremos la disponibilidad al revisar tu pedido.' : 'We will confirm availability when reviewing your order.'}</p>` : ''}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${footerNote}
@@ -2162,6 +2163,7 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
   const subject = `New instant quote: ${quote.customer_name || quote.customer_email} — ${formatCurrency(grandTotal)}`;
   const body = `
     <p><strong>${quote.customer_name || '(no name)'} &lt;${quote.customer_email}&gt;</strong> just saved an instant quote.</p>
+    ${quote.date_needed ? `<p><strong>Requested need-by date:</strong> ${String(quote.date_needed).slice(0, 10)} (requires confirmation).</p>` : ''}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${primaryButton('Open in Admin', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}

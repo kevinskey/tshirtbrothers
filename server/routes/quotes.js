@@ -453,7 +453,7 @@ router.get('/:id/public', async (req, res, next) => {
     } catch (err) {
       console.error(`[quotes] public mockup lookup failed for ${req.params.id}:`, err.message);
     }
-    if (mockups.length === 0 && q.mockup_image_url) {
+    if (mockups.length === 0 && (q.mockup_image_url || q.mockup_image_url_back || q.mockup_image_url_sleeve || q.mockup_image_url_sleeve_left)) {
       mockups = [{
         id: null,
         name: null,
