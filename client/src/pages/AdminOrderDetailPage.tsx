@@ -406,7 +406,7 @@ export default function AdminOrderDetailPage() {
           {/* Centre of the header, between the name block and the money —
               the first thing you should see when the page opens. */}
           <div className="flex flex-1 justify-center">
-            <DueDateBadge dateNeeded={quote.date_needed} />
+            <DueDateBadge dateNeeded={quote.date_needed || quote.inputs_json?.requested_need_by || null} />
           </div>
           <div className="text-right text-sm">
             <button
