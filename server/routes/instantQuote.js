@@ -426,6 +426,14 @@ router.post('/save', async (req, res, next) => {
           },
           design_url: item.design_url || null,
           extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+        artwork_placements: Array.isArray(item.artwork_placements)
+          ? item.artwork_placements.filter((a) => a && typeof a.url === 'string' &&
+              ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
+          : [],
+          artwork_placements: Array.isArray(item.artwork_placements)
+            ? item.artwork_placements.filter((a) => a && typeof a.url === 'string' &&
+                ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
+            : [],
         });
         continue;
       }
@@ -455,6 +463,10 @@ router.post('/save', async (req, res, next) => {
         calc,
         design_url: item.design_url || null,
         extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+        artwork_placements: Array.isArray(item.artwork_placements)
+          ? item.artwork_placements.filter((a) => a && typeof a.url === 'string' &&
+              ['front', 'back', 'left_sleeve', 'right_sleeve'].includes(a.placement))
+          : [],
       });
     }
 
@@ -499,6 +511,7 @@ router.post('/save', async (req, res, next) => {
         picked_product: r.pickedProductMeta || null,
         design_url: r.design_url,
         extra_design_urls: r.extra_design_urls,
+        artwork_placements: r.artwork_placements || [],
       })),
       grand_total: grandTotal,
       grand_quantity: grandQuantity,
