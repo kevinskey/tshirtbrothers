@@ -522,6 +522,8 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           qualityTier: quality || 'Standard',
           methodName: 'DTF',
           numLocations: printSides,
+          locations: { front: true, back: printSides === 2 },
+          color,
           colorsPerLocation: 1,
           rush: isRush,
           rushDays,
@@ -538,12 +540,16 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           : `${p.label} (no instant pricing — shop to quote)`;
       items.push({ kind: 'custom', custom: { description, quantity: q, notes: null } });
     }
-    // Uploaded art rides on the first item: first file as the design,
-    // the rest as extras (matches /save's design_url contract).
-    if (items.length > 0 && artUrls.length > 0) {
-      const first = items[0] as Record<string, unknown>;
-      first.design_url = artUrls[0];
-      if (artUrls.length > 1) first.extra_design_urls = artUrls.slice(1);
+    // Until the per-product artwork picker exists, the uploaded artwork is
+    // shared across all selected garments. Keep it attached to EVERY item,
+    // not only the first one, so admin line items retain the source files.
+    // Do not infer front/back file placement from upload order.
+    if (artUrls.length > 0) {
+      for (const item of items) {
+        const line = item as Record<string, unknown>;
+        line.design_url = artUrls[0];
+        line.extra_design_urls = artUrls.slice(1);
+      }
     }
     return items;
   };
