@@ -578,6 +578,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: buildItems(),
+          requested_need_by: needBy,
           customer_name: name.trim(),
           customer_email: email.trim(),
           customer_phone: phone.trim(),
