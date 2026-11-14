@@ -285,6 +285,17 @@ async function resolvePickedProductPrice(ss_id) {
  * ------------------------------------------------------------------------- */
 router.post('/calculate', async (req, res, next) => {
   try {
+    // The Easy Quote wizard requires a date; legacy clients may not send one.
+    // Validate any supplied date and preserve it as structured quote data.
+    if (requested_need_by != null && (
+      typeof requested_need_by !== 'string' ||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(requested_need_by) ||
+      Number.isNaN(Date.parse(requested_need_by)) ||
+      new Date(requested_need_by).toISOString().slice(0, 10) !== requested_need_by
+    )) {
+      return res.status(400).json({ error: 'requested_need_by must be a valid YYYY-MM-DD date' });
+    }
+
     const tables = await loadPricingTables();
     const inputs = { ...req.body };
     if (inputs.productSsId) {
@@ -323,6 +334,7 @@ router.post('/save', async (req, res, next) => {
   try {
     const {
       items, customer_name, customer_email, customer_phone, notes,
+      requested_need_by,
       mockup_image_url, mockup_image_url_back,
     } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
@@ -490,6 +502,7 @@ router.post('/save', async (req, res, next) => {
       })),
       grand_total: grandTotal,
       grand_quantity: grandQuantity,
+      requested_need_by: requested_need_by || null,
       // 'es' when saved from /es/cotizacion — downstream customer emails
       // (deposit receipt, status updates, follow-ups) read this via
       // quoteLang() and switch to Spanish.
