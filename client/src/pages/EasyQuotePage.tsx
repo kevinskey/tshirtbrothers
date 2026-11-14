@@ -443,6 +443,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               garmentName: p.pricing,
+              ...(studio?.product?.ss_id && p.key === studioProductKey(studio.product.name) ? { productSsId: studio.product.ss_id } : {}),
               qualityTier: quality || 'Standard',
               methodName: 'DTF',
               numLocations: printSides,
@@ -517,6 +518,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
       items.push({
         inputs: {
           garmentName: p.pricing,
+          ...(studio?.product?.ss_id && p.key === studioProductKey(studio.product.name) ? { productSsId: studio.product.ss_id } : {}),
           qualityTier: quality || 'Standard',
           methodName: 'DTF',
           numLocations: printSides,
