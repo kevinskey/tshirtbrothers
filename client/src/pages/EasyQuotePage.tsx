@@ -338,6 +338,14 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
   const [needBy, setNeedBy] = useState('');
   const [artUrls, setArtUrls] = useState<string[]>(() => studioArt);
   const [artUploading, setArtUploading] = useState(0);
+  // Artwork is assigned explicitly rather than guessing that the second
+  // upload belongs on the back. All uploads remain in the quote record.
+  const [artPlacements, setArtPlacements] = useState<Record<string, 'front' | 'back' | 'left_sleeve' | 'right_sleeve'>>(
+    () => Object.fromEntries([
+      ...(studio?.graphicUrl || studio?.mockupUrl ? [[studio.graphicUrl || studio.mockupUrl, 'front']] : []),
+      ...(studio?.graphicUrlBack || studio?.mockupUrlBack ? [[studio.graphicUrlBack || studio.mockupUrlBack, 'back']] : []),
+    ].filter((entry): entry is [string, string] => Boolean(entry[0]))) as Record<string, 'front' | 'back' | 'left_sleeve' | 'right_sleeve'>,
+  );
   // Multiple uploaded files are NOT evidence of multiple print locations:
   // they may be alternate designs for the same side. Preserve a Design
   // Studio back placement when present; otherwise ask the customer.
@@ -538,6 +546,16 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
           : `${p.label} (no instant pricing — shop to quote)`;
       items.push({ kind: 'custom', custom: { description, quantity: q, notes: null } });
     }
+    // Preserve the explicit artwork-to-placement mapping for admin review.
+    // It is kept in the structured quote payload (rather than notes) so
+    // future per-product assignments can reuse it without parsing text.
+    const placementDetails = artUrls.map((url) => ({
+      url, placement: artPlacements[url] || 'front',
+    }));
+    for (const item of items) {
+      const line = item as Record<string, unknown>;
+      line.artwork_placements = placementDetails;
+    }
     // Until the per-product artwork picker exists, the uploaded artwork is
     // shared across all selected garments. Keep it attached to EVERY item,
     // not only the first one, so admin line items retain the source files.
@@ -584,6 +602,7 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: buildItems(),
+          artwork_placements: artUrls.map((url) => ({ url, placement: artPlacements[url] || 'front' })),
           requested_need_by: needBy,
           customer_name: name.trim(),
           customer_email: email.trim(),
@@ -1115,6 +1134,15 @@ export default function EasyQuotePage({ lang = 'en' }: { lang?: 'en' | 'es' }) {
                 {artUrls.map((u) => (
                   <div key={u} className="relative rounded-xl border border-gray-200 bg-white overflow-hidden aspect-square">
                     <img src={u} alt="" className="w-full h-full object-contain" />
+                    <select aria-label={tr('Print location', 'Ubicación de impresión')}
+                      value={artPlacements[u] || 'front'}
+                      onChange={(e) => setArtPlacements((prev) => ({ ...prev, [u]: e.target.value as 'front' | 'back' | 'left_sleeve' | 'right_sleeve' }))}
+                      className="absolute bottom-0 inset-x-0 w-full bg-white/95 text-[10px] text-gray-900 border-t border-gray-200">
+                      <option value="front">{tr('Front', 'Frente')}</option>
+                      <option value="back">{tr('Back', 'Espalda')}</option>
+                      <option value="left_sleeve">{tr('Left sleeve', 'Manga izquierda')}</option>
+                      <option value="right_sleeve">{tr('Right sleeve', 'Manga derecha')}</option>
+                    </select>
                     <button type="button" aria-label="Remove"
                       onClick={() => setArtUrls((prev) => prev.filter((x) => x !== u))}
                       className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-black/60 text-white text-[10px] leading-5">✕</button>
