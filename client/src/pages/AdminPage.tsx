@@ -9639,7 +9639,26 @@ export default function AdminPage() {
                                 body: JSON.stringify({ method: 'ship', tracking_number: tracking || undefined, carrier: carrier || undefined }),
                               });
                               if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed');
-                              alert('Shipped — tracking email sent to ' + customerEmail);
+                              // The server now reports whether the shipped
+                              // email actually went out. It declines to send
+                              // when there is no tracking number — this alert
+                              // used to claim it had, so nobody knew the
+                              // customer still needed telling.
+                              const data = await res.json().catch(() => ({}));
+                              const info = data?.shipped_email;
+                              const WHY: Record<string, string> = {
+                                no_tracking: 'there is no tracking number on this order',
+                                already_sent: 'the customer was already notified',
+                                no_email: 'there is no email address on file',
+                                pickup: 'this order is marked for pickup',
+                                not_found: 'the order could not be found',
+                              };
+                              if (info?.sent) {
+                                alert('Shipped — tracking email sent to ' + customerEmail);
+                              } else {
+                                const why = WHY[info?.reason] || info?.reason || 'an unknown reason';
+                                alert(`Marked shipped, but NO email was sent — ${why}.\n\nThe customer has not been told. Let them know by hand, or add a tracking number and use Mark Shipped again.`);
+                              }
                               queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
                               setDetailQuote(null);
                             } catch (err) {

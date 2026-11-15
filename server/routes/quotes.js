@@ -1821,13 +1821,21 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
     const quote = rows[0];
     const lang = quoteLang(quote);
 
+    // Did the customer actually hear from us? notifyShipped declines to send
+    // for several good reasons (no tracking, already notified, pickup), and
+    // the admin UI claimed "tracking email sent" either way — so an order
+    // marked shipped with no tracking left the customer silently uninformed.
+    // Await it and report the real outcome. Shape: { sent, reason }; null
+    // for pickup/delivery, which notify through their own path below.
+    let shippedEmail = null;
     if (method === 'ship') {
       // Reads tracking off the quote row, not the request body. An admin who
       // bought the label first (the normal order of operations) then clicked
       // Fulfill with no tracking in the body used to send a shipped email
       // with no tracking number in it at all. Also deduped, so the label
       // purchase and this click don't both email.
-      notifyShipped('quote', quote.id).catch(() => {});
+      shippedEmail = await notifyShipped('quote', quote.id)
+        .catch((err) => ({ sent: false, reason: `error: ${err.message}` }));
     } else {
       sendQuoteStatusUpdate(quote, 'completed').catch(() => {});
       smsStatusUpdateToCustomer(quote, 'completed').catch(() => {});
@@ -1847,7 +1855,7 @@ router.post('/admin/:id/fulfill', authenticate, adminOnly, async (req, res, next
       })();
     }
 
-    res.json(quote);
+    res.json({ ...quote, shipped_email: shippedEmail });
   } catch (err) {
     next(err);
   }
