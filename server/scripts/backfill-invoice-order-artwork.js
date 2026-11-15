@@ -9,23 +9,12 @@
 //   node server/scripts/backfill-invoice-order-artwork.js --dry-run
 //   node server/scripts/backfill-invoice-order-artwork.js
 //
-// Runs from anywhere: the repo root is the obvious place to run that command
-// from, and `import 'dotenv/config'` resolves .env against the CURRENT
-// DIRECTORY — so from the root it quietly loaded nothing and the run died
-// with SASL "client password must be a string", a confusing way to say "no
-// credentials". The path is resolved from this file instead.
+// Runs from any directory. load-env.js must stay FIRST: db.js builds its
+// connection Pool out of process.env the moment it is evaluated.
 
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import dotenv from 'dotenv';
-
-dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../.env') });
-
-// Imported dynamically, and only now: db.js builds its connection Pool out of
-// process.env the moment it is evaluated, and a static import would evaluate
-// it before the line above had put anything there.
-const { default: pool } = await import('../db.js');
-const { syncInvoiceArtworkToOrder } = await import('../lib/orderFromInvoice.js');
+import './load-env.js';
+import pool from '../db.js';
+import { syncInvoiceArtworkToOrder } from '../lib/orderFromInvoice.js';
 
 const dryRun = process.argv.includes('--dry-run');
 

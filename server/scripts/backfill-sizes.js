@@ -2,7 +2,7 @@
 // products whose sizes column is already populated and applies a small
 // throttle + 429 retry to stay under the S&S rate limit.
 
-import 'dotenv/config';
+import './load-env.js';
 import pkg from 'pg';
 import { fetchStyleSizes } from '../services/ssActivewear.js';
 

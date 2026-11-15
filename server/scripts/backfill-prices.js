@@ -3,7 +3,7 @@
 // + retry pattern as backfill-sizes.js. The S&S /styles/ endpoint
 // doesn't return pricing, so each row needs a /products/?styleid=X call.
 
-import 'dotenv/config';
+import './load-env.js';
 import pkg from 'pg';
 import { fetchStyleSkuData } from '../services/ssActivewear.js';
 

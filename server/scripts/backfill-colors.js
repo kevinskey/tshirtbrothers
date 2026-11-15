@@ -2,7 +2,7 @@
 // products whose `colors` is null/empty. Mirrors the sizes/prices
 // backfill scripts in pacing + retry behavior.
 
-import 'dotenv/config';
+import './load-env.js';
 import pkg from 'pg';
 import { fetchStyleColors } from '../services/ssActivewear.js';
 
