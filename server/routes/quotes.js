@@ -2,6 +2,7 @@ import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { resolveOrderMoney } from '../lib/orderMoney.js';
 import { recordOptIn } from '../services/smsConsent.js';
 import { notifyShipped } from '../services/shipNotify.js';
 import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
@@ -342,6 +343,39 @@ const QUOTE_ITEMS_SUBQUERY = `
   ), '[]'::json) AS items
 `;
 
+// Every invoice linked to the quote, so resolveOrderMoney can decide what
+// the job really costs without a second round trip per row. Selected as one
+// aggregated column rather than a join so quotes.* stays one row per quote.
+const QUOTE_INVOICES_SUBQUERY = `
+  COALESCE((
+    SELECT json_agg(json_build_object(
+      'id',             i.id,
+      'invoice_number', i.invoice_number,
+      'status',         i.status,
+      'total',          i.total,
+      'amount_paid',    i.amount_paid
+    ) ORDER BY i.id)
+    FROM invoices i
+    WHERE i.quote_id = quotes.id
+  ), '[]'::json) AS invoice_rows
+`;
+
+/**
+ * Attach the resolved `money` block to a quote row (or rows) on its way out
+ * of the API. Stage 1 of making the invoice authoritative: every consumer
+ * can read one trustworthy number instead of doing its own arithmetic on
+ * estimated_price / deposit_amount. The legacy columns still ship unchanged
+ * so nothing breaks while readers migrate.
+ *
+ * `invoice_rows` is dropped from the payload — it exists only to feed the
+ * resolver, and shipping it would invite a second source of truth.
+ */
+function withOrderMoney(row) {
+  if (!row) return row;
+  const { invoice_rows: invoiceRows, ...rest } = row;
+  return { ...rest, money: resolveOrderMoney(row, invoiceRows || []) };
+}
+
 router.get('/', authenticate, adminOnly, async (req, res, next) => {
   try {
     const { status, search, sort } = req.query;
@@ -390,7 +424,7 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
     // Latest real blanks PO per quote, so the list can show whether blanks
     // were ordered (and shipped/received) without opening Purchasing.
     const query = `
-      SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY},
+      SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY}, ${QUOTE_INVOICES_SUBQUERY},
              bp.status AS blanks_status, bp.po_number AS blanks_po_number
         FROM quotes
         LEFT JOIN LATERAL (
@@ -401,7 +435,7 @@ router.get('/', authenticate, adminOnly, async (req, res, next) => {
         ${whereClause} ${orderClause}`;
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    res.json(result.rows.map(withOrderMoney));
   } catch (err) {
     next(err);
   }
@@ -479,11 +513,11 @@ router.get('/:id/public', async (req, res, next) => {
 router.get('/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
     const result = await pool.query(
-      `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY} FROM quotes WHERE id = $1`,
+      `SELECT quotes.*, ${QUOTE_ITEMS_SUBQUERY}, ${QUOTE_INVOICES_SUBQUERY} FROM quotes WHERE id = $1`,
       [req.params.id],
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
-    res.json(result.rows[0]);
+    res.json(withOrderMoney(result.rows[0]));
   } catch (err) {
     next(err);
   }
