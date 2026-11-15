@@ -12,7 +12,9 @@
 // treats it as a lead.
 import pool from '../db.js';
 
-function parseItems(raw) {
+// jsonb columns come back parsed, but the same values arrive as strings from
+// callers that built the invoice by hand, so both shapes have to work.
+function parseJsonArray(raw) {
   let items = raw;
   if (typeof items === 'string') {
     try { items = JSON.parse(items); } catch { items = []; }
@@ -42,7 +44,7 @@ export async function ensureOrderForInvoice(invoice) {
   if (!invoice) return null;
   if (invoice.quote_id != null) return Number(invoice.quote_id);
 
-  const items = parseItems(invoice.items);
+  const items = parseJsonArray(invoice.items);
   const quantity = Math.max(1, items.reduce((n, it) => n + (Number(it.quantity) || 0), 0));
   const first = items.find((it) => String(it.description || '').trim());
   const productName = first
@@ -114,6 +116,7 @@ export async function ensureOrderForInvoice(invoice) {
       'UPDATE invoices SET quote_id = $1 WHERE id = $2 AND quote_id IS NULL',
       [orderId, invoice.id]
     );
+    await syncInvoiceArtworkToOrder(invoice, orderId, client);
     await client.query('COMMIT');
     return Number(orderId);
   } catch (err) {
@@ -121,6 +124,100 @@ export async function ensureOrderForInvoice(invoice) {
     throw err;
   } finally {
     client.release();
+  }
+}
+
+// One extra_mockups entry's identity. mockup_id is the real key, but entries
+// written before the jsonb carried it have urls and nothing else, and keying
+// those on nothing re-appended them on every sync.
+function extraMockupKey(m) {
+  if (Number.isInteger(m?.mockup_id)) return `id:${m.mockup_id}`;
+  return `url:${m?.front || m?.back || m?.sleeve || m?.sleeve_left || ''}`;
+}
+
+/**
+ * Mirror an invoice's artwork onto the order opened from it.
+ *
+ * An invoice written by hand carries its proof art in invoices.mockup_id +
+ * invoices.extra_mockups, and nothing used to copy that to the quotes row the
+ * order lives on. So the Quotes list drew an empty grey Art square for every
+ * invoice-born order (TSB-313, TSB-314), "Send to Art Library" found nothing,
+ * and the files modal opened empty — while the mockups sat right there on the
+ * invoice. The images were never lost, just unreachable from the order.
+ *
+ * The load-bearing write is mockups.quote_id: approval and the proof emails
+ * read the set through that column and deliberately never through
+ * extra_mockups, which loses sleeves and misses orphans. The quote's own
+ * mockup_image_url* columns are written too because that is what the Art
+ * thumbnail, checkout image and invoice renderers read.
+ *
+ * Non-destructive and idempotent on purpose — it runs again on every invoice
+ * edit, and must never overwrite art an admin attached to the order by hand.
+ *
+ * @param {object} invoice  the invoice row (mockup_id + extra_mockups)
+ * @param {number} orderId  quotes.id of the order opened from it
+ * @param {object} db       pool, or a client when inside a transaction
+ */
+export async function syncInvoiceArtworkToOrder(invoice, orderId, db = pool) {
+  if (!invoice || orderId == null) return;
+
+  const extras = parseJsonArray(invoice.extra_mockups);
+  const primaryId = Number(invoice.mockup_id) || null;
+  if (!primaryId && extras.length === 0) return;
+
+  let front = null, back = null, sleeve = null, sleeveLeft = null;
+  if (primaryId) {
+    const m = await db.query(
+      `SELECT preview_image_url, preview_image_url_back, back_preview_image_url,
+              preview_image_url_sleeve, preview_image_url_sleeve_left
+         FROM mockups WHERE id = $1`,
+      [primaryId],
+    );
+    const row = m.rows[0];
+    if (row) {
+      front = row.preview_image_url;
+      // back_preview_image_url is the older duplicate column no renderer
+      // reads; fall back to it so those backs are not lost here either.
+      back = row.preview_image_url_back || row.back_preview_image_url;
+      sleeve = row.preview_image_url_sleeve;
+      sleeveLeft = row.preview_image_url_sleeve_left;
+    }
+  }
+
+  if (front || back || sleeve || sleeveLeft) {
+    await db.query(
+      `UPDATE quotes SET
+         mockup_image_url             = COALESCE(mockup_image_url, $2),
+         mockup_image_url_back        = COALESCE(mockup_image_url_back, $3),
+         mockup_image_url_sleeve      = COALESCE(mockup_image_url_sleeve, $4),
+         mockup_image_url_sleeve_left = COALESCE(mockup_image_url_sleeve_left, $5)
+       WHERE id = $1`,
+      [orderId, front, back, sleeve, sleeveLeft],
+    );
+  }
+
+  if (extras.length) {
+    const cur = await db.query('SELECT extra_mockups FROM quotes WHERE id = $1', [orderId]);
+    const have = new Set(parseJsonArray(cur.rows[0]?.extra_mockups).map(extraMockupKey));
+    const add = extras.filter((m) => !have.has(extraMockupKey(m)));
+    if (add.length) {
+      await db.query(
+        `UPDATE quotes SET extra_mockups = COALESCE(extra_mockups, '[]'::jsonb) || $2::jsonb
+          WHERE id = $1`,
+        [orderId, JSON.stringify(add)],
+      );
+    }
+  }
+
+  // Only claims mockups nobody else owns: a mockup already pointed at another
+  // order stays where it is rather than being stolen by an invoice edit.
+  const ids = [primaryId, ...extras.map((m) => m?.mockup_id)]
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length) {
+    await db.query(
+      'UPDATE mockups SET quote_id = $1 WHERE id = ANY($2::int[]) AND quote_id IS NULL',
+      [orderId, [...new Set(ids)]],
+    );
   }
 }
 

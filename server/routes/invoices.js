@@ -10,7 +10,7 @@ import { tokenMatches } from '../lib/acceptToken.js';
 import { invoiceMayOweMoney } from '../lib/orderMoney.js';
 import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 import pool from '../db.js';
-import { ensureOrderForInvoice, promoteOrderForInvoicePayment } from '../lib/orderFromInvoice.js';
+import { ensureOrderForInvoice, promoteOrderForInvoicePayment, syncInvoiceArtworkToOrder } from '../lib/orderFromInvoice.js';
 import * as theme from '../services/emailTheme.js';
 import { mailRecipients, normalizeCcEmails } from '../services/recipients.js';
 import { ARCHIVE_BCC } from '../services/email.js';
@@ -939,11 +939,19 @@ router.post('/', async (req, res, next) => {
     const invoice = rows[0];
     if (invoice.quote_id == null) {
       try {
+        // Opening the order also copies the invoice's artwork onto it.
         invoice.quote_id = await ensureOrderForInvoice(invoice);
       } catch (err) {
         // The invoice is saved either way; the admin can link an order by hand.
         console.error(`[invoices] could not open an order for ${invoice.invoice_number}:`, err.message);
       }
+    } else {
+      // Written against an order that already exists, so nothing opened it —
+      // mirror the artwork across anyway, or the order keeps an empty Art
+      // column while the proof sits on the invoice.
+      await syncInvoiceArtworkToOrder(invoice, invoice.quote_id).catch((err) => {
+        console.error(`[invoices] artwork sync failed for ${invoice.invoice_number}:`, err.message);
+      });
     }
 
     // A new invoice can also be attached to an already-paid order. Its new
@@ -1037,7 +1045,18 @@ router.put('/:id', async (req, res, next) => {
     // Invoice totals are editable after payment. Keep the linked order's
     // payment stamps aligned when an edit settles or reopens a balance.
     await promoteOrderForInvoicePayment(rows[0].quote_id);
-    res.json(rows[0]);
+
+    // Art is usually attached to an invoice well after the order was opened,
+    // so copying at creation alone would still leave the order's Art column
+    // empty. Best-effort: the invoice is saved either way.
+    const saved = rows[0];
+    if (saved.quote_id != null && (mockup_id !== undefined || extra_mockups !== undefined)) {
+      await syncInvoiceArtworkToOrder(saved, saved.quote_id).catch((err) => {
+        console.error(`[invoices] artwork sync failed for ${saved.invoice_number}:`, err.message);
+      });
+    }
+
+    res.json(saved);
   } catch (err) {
     next(err);
   }
