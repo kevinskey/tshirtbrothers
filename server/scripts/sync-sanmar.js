@@ -3,7 +3,7 @@
 // per-style hammering). Usage:
 //   node scripts/sync-sanmar.js                 # sync the default brand list
 //   node scripts/sync-sanmar.js "Port & Company" "Gildan"   # specific brands
-import 'dotenv/config';
+import './load-env.js';
 import pool from '../db.js';
 import {
   getProductInfoByBrand,

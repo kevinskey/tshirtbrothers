@@ -18,7 +18,7 @@
 //     host key type, which OpenSSH 8.8+ disables by default. Without the
 //     explicit HostKeyAlgorithms/PubkeyAcceptedAlgorithms below the
 //     connection dies at key exchange with "no matching host key type".
-import 'dotenv/config';
+import './load-env.js';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';

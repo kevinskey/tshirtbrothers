@@ -23,7 +23,7 @@
  * policy is the right one.
  */
 
-import 'dotenv/config';
+import './load-env.js';
 import pool from '../db.js';
 
 const RETENTION_DAYS = 90;

@@ -1,5 +1,5 @@
 // Deployment smoke check. Disposable estimate/mockup/assets are removed in finally; customer quotes are unchanged.
-import 'dotenv/config';
+import './load-env.js';
 import jwt from 'jsonwebtoken';
 import sharp from 'sharp';
 import assert from 'node:assert/strict';

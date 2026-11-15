@@ -2,12 +2,12 @@
 // S&S garment photos. Run on the droplet from /var/www/tshirtbrothers/server:
 //   node mkdemo.mjs          -> builds everything
 //   node mkdemo.mjs test     -> renders one org's designs + 2 composites only
-import 'dotenv/config';
+import './load-env.js';
 import pkg from 'pg';
 import sharp from 'sharp';
-import { renderMockupComposite } from './services/composite.js';
-import { uploadObject } from './services/spaces.js';
-import { fetchStyleColors } from './services/ssActivewear.js';
+import { renderMockupComposite } from '../services/composite.js';
+import { uploadObject } from '../services/spaces.js';
+import { fetchStyleColors } from '../services/ssActivewear.js';
 
 const { Pool } = pkg;
 const pool = new Pool({
