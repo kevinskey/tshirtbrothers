@@ -102,8 +102,28 @@ export async function syncProducts() {
 }
 
 // Admin API
+/**
+ * What a job costs and what has been collected, resolved server-side by
+ * lib/orderMoney.js. The invoice wins whenever one exists; an unbilled
+ * quote falls back to its own price. Read this instead of doing arithmetic
+ * on estimated_price / deposit_amount, which are a copy that drifts.
+ *
+ * Optional because older cached payloads predate it — treat its absence as
+ * "fall back to the legacy columns", never as "nothing is owed".
+ */
+export interface OrderMoney {
+  total: number;
+  collected: number;
+  due: number;
+  source: 'invoice' | 'quote' | 'none';
+  paidInFull: boolean;
+  invoiceCount: number;
+}
+
 export interface Quote {
   id: string;
+  /** Resolved money for this job — see OrderMoney. */
+  money?: OrderMoney;
   createdAt: string;
   created_at?: string;
   customerName: string;

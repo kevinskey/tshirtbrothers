@@ -18,6 +18,52 @@ test('an invoice outranks the quote, even when the quote claims otherwise', () =
   assert.equal(m.paidInFull, true);
 });
 
+test('a settled invoice with a stale amount_paid does NOT re-bill the customer', () => {
+  // Invoice 33 (quote 89), a real row: marked paid with amount_due 0.00, but
+  // amount_paid only 242.45 of a 701.00 total and payments[] empty. Summing
+  // amount_paid would have emailed this customer a $458.55 balance on a job
+  // settled in June.
+  const m = resolveOrderMoney(
+    { estimated_price: 701, deposit_amount: 701, accepted_at: '2026-06-02', balance_paid_at: '2026-06-19' },
+    [{ status: 'paid', total: 701.00, amount_paid: 242.45, amount_due: 0.00 }],
+  );
+  assert.equal(m.due, 0);
+  assert.equal(m.collected, 701);
+  assert.equal(m.paidInFull, true);
+});
+
+test('any one settled signal is enough — status, zero due, or paid >= total', () => {
+  const byStatus = resolveOrderMoney({}, [{ status: 'paid', total: 100, amount_paid: 0, amount_due: 40 }]);
+  assert.equal(byStatus.due, 0, "status 'paid' settles even when amount_due disagrees");
+
+  const byDue = resolveOrderMoney({}, [{ status: 'sent', total: 100, amount_paid: 10, amount_due: 0 }]);
+  assert.equal(byDue.due, 0, 'amount_due 0 settles even when amount_paid is short');
+
+  const byPaid = resolveOrderMoney({}, [{ status: 'sent', total: 100, amount_paid: 100, amount_due: 25 }]);
+  assert.equal(byPaid.due, 0, 'amount_paid >= total settles even when amount_due disagrees');
+});
+
+test('the quote can prove money the invoice never recorded', () => {
+  // Quote 70: deposit stamped on the quote, invoice showing nothing paid.
+  // The customer handed over 171; only the remainder of the bill is owed.
+  const m = resolveOrderMoney(
+    { estimated_price: 342, deposit_amount: 171, accepted_at: '2026-07-01', balance_paid_at: null },
+    [{ status: 'sent', total: 439.56, amount_paid: 0, amount_due: 439.56 }],
+  );
+  assert.equal(m.total, 439.56, 'the bill is the invoice total, not the quote estimate');
+  assert.equal(m.collected, 171, 'credit the deposit the quote recorded');
+  assert.equal(m.due, 268.56);
+});
+
+test('what the quote claims collected can never exceed the bill', () => {
+  const m = resolveOrderMoney(
+    { estimated_price: 9999, deposit_amount: 9999, accepted_at: 'x', balance_paid_at: 'x' },
+    [{ status: 'sent', total: 100, amount_paid: 0, amount_due: 100 }],
+  );
+  assert.equal(m.collected, 100);
+  assert.equal(m.due, 0);
+});
+
 test('multiple invoices are summed, not picked — one job can carry several', () => {
   // Quote 126: 129.60 paid + 151.20 outstanding. Reading only the first
   // invoice would report the job settled when 151.20 is still owed.

@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import pool from '../db.js';
 import { tokenMatches } from '../lib/acceptToken.js';
 import { resolveOrderMoney } from '../lib/orderMoney.js';
+import { loadOrderMoney } from '../lib/orderMoneyDb.js';
 import { recordOptIn } from '../services/smsConsent.js';
 import { notifyShipped } from '../services/shipNotify.js';
 import { sendPushToAdmins, sendPushToUser } from '../services/push.js';
@@ -1490,11 +1491,15 @@ router.patch('/:id', authenticate, adminOnly, async (req, res, next) => {
     if (status === 'ready') {
       (async () => {
         try {
-          const total = Number(quote.estimated_price ?? 0);
-          const depositPaid = Number(quote.deposit_amount ?? 0);
-          const balanceDue = Math.max(0, total - depositPaid);
-          if (balanceDue > 0 && !quote.balance_paid_at) {
-            await sendBalanceDueToCustomer(quote, { total, depositPaid, balanceDue }).catch(() => {});
+          // Read the money off the invoice when one exists. Reading the
+          // quote alone billed a customer $335 on an order he had paid in
+          // full three weeks earlier — the payment was recorded on the
+          // invoice and the quote's stamps were never written back.
+          const money = await loadOrderMoney(quote);
+          if (money.due > 0) {
+            await sendBalanceDueToCustomer(quote, {
+              total: money.total, depositPaid: money.collected, balanceDue: money.due,
+            }).catch(() => {});
           }
         } catch (err) {
           console.error('[quotes] balance-due on ready failed', err);
@@ -1799,9 +1804,10 @@ router.post('/admin/send-balance', authenticate, adminOnly, async (req, res, nex
       return res.status(400).json({ error: 'Quote must be accepted (deposit paid) first' });
     }
 
-    const total = parseFloat(quote.estimated_price || 0);
-    const depositPaid = parseFloat(quote.deposit_amount || 0);
-    const balanceDue = total - depositPaid;
+    // The invoice is the money record wherever one exists; the quote's own
+    // columns are a copy that nothing reliably keeps in sync.
+    const money = await loadOrderMoney(quote);
+    const { total, collected: depositPaid, due: balanceDue } = money;
 
     if (balanceDue <= 0) {
       return res.status(400).json({ error: 'No balance due — already paid in full' });
@@ -1931,9 +1937,7 @@ router.post('/admin/notify-update', authenticate, adminOnly, async (req, res, ne
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     const quote = result.rows[0];
 
-    const total = parseFloat(quote.estimated_price || 0);
-    const depositPaid = parseFloat(quote.deposit_amount || 0);
-    const balanceDue = Math.max(0, total - depositPaid);
+    const { total, collected: depositPaid, due: balanceDue } = await loadOrderMoney(quote);
 
     await sendQuoteUpdatedToCustomer(quote, {
       total,

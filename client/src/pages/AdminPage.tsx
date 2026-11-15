@@ -11639,6 +11639,22 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
 }
 
 function paidState(q: Quote): { label: string; className: string } {
+  // The resolved money block is authoritative: it reads the invoice wherever
+  // one exists, which is where the money for an invoice-billed job actually
+  // lands. Judging by the quote alone labelled fully-paid orders "Deposit
+  // paid" for every job billed before the write-back existed.
+  const money = q.money;
+  if (money && money.total > 0) {
+    if (money.paidInFull) return { label: 'Paid in full', className: 'text-green-700' };
+    if (money.collected > 0) return { label: 'Deposit paid', className: 'text-amber-700' };
+    // Money has moved nowhere, but the job has. Shout about it.
+    if (['accepted', 'awaiting_approval', 'approved', 'in_production', 'ready', 'completed'].includes(q.status || '')) {
+      return { label: '⚠ No payment on file', className: 'text-red-600 font-semibold' };
+    }
+    return { label: 'Unpaid', className: 'text-gray-400' };
+  }
+
+  // ── Fallback for payloads without `money` (older cached responses).
   if (q.balance_paid_at) return { label: 'Paid in full', className: 'text-green-700' };
   // deposit_amount alone is NOT payment evidence — send-price stamps it with
   // the 50% ask on every quoted quote. Status isn't evidence either: admins

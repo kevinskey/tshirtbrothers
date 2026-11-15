@@ -35,6 +35,53 @@ export function billableInvoices(invoices = []) {
   return invoices.filter((i) => i && !IGNORED_INVOICE_STATUSES.has(String(i.status || '').toLowerCase()));
 }
 
+// Is this invoice settled? Asked three ways because no single column is
+// trustworthy across the table's history: 16 invoices have an amount_due
+// that disagrees with total - amount_paid, 16 carry a non-zero amount_paid
+// with an empty payments[], and 11 are marked 'paid' while still showing a
+// balance. Invoice 33 is the cautionary one — status 'paid', amount_due
+// 0.00, amount_paid 242.45 against a 701.00 total, with the quote stamped
+// paid in full. Summing amount_paid there would re-bill a customer 458.55
+// on a job they settled in June.
+//
+// ANY of the three saying "settled" settles it. The asymmetry is deliberate:
+// these numbers go out in emails that ask people for money, and billing
+// someone who has paid is far worse than failing to chase someone who has
+// not. Contradictory rows are a human's problem, not an email's.
+function invoiceSettled(invoice) {
+  const status = String(invoice.status || '').toLowerCase();
+  if (status === 'paid') return true;
+  if (invoice.amount_due != null && round2(invoice.amount_due) <= 0) return true;
+  const total = round2(invoice.total);
+  return total > 0 && round2(invoice.amount_paid) >= total;
+}
+
+// What the QUOTE row claims has been collected.
+//
+// deposit_amount means three different things depending on where the quote
+// is, and only two of them are money:
+//   before acceptance → the deposit we ASKED for (send-price stamps every
+//                       quoted quote with the 50% ask; nothing was paid)
+//   after acceptance  → the deposit actually collected
+//   after the balance → cumulative collected, clamped to estimated_price
+// So it counts only once something proves money arrived. Treating the
+// pre-acceptance ask as revenue is how a quote nobody paid showed up under
+// "Deposit Paid".
+function quoteCollected(quote) {
+  if (!quote) return 0;
+  if (quote.balance_paid_at) return round2(quote.estimated_price);
+  if (quote.accepted_at) return round2(quote.deposit_amount);
+  return 0;
+}
+
+/** What is still owed on one invoice, preferring amount_due over arithmetic. */
+function invoiceDue(invoice) {
+  if (invoiceSettled(invoice)) return 0;
+  const total = round2(invoice.total);
+  if (invoice.amount_due != null) return round2(Math.max(0, invoice.amount_due));
+  return round2(Math.max(0, total - round2(invoice.amount_paid)));
+}
+
 /**
  * Resolve the money for one job.
  *
@@ -53,8 +100,16 @@ export function resolveOrderMoney(quote, invoices = []) {
   // carry more than one invoice (quotes 122 and 126 each have two), and
   // reading only the first understates both what is owed and what was paid.
   if (billable.length > 0) {
-    const total = round2(billable.reduce((n, i) => n + Number(i.total || 0), 0));
-    const collected = round2(billable.reduce((n, i) => n + Number(i.amount_paid || 0), 0));
+    const total = round2(billable.reduce((n, i) => n + round2(i.total), 0));
+    const due = round2(billable.reduce((n, i) => n + invoiceDue(i), 0));
+    const fromInvoices = round2(Math.max(0, total - due));
+
+    // The quote sometimes knows about money the invoice never recorded —
+    // quote 70 has a deposit stamped on the quote and an invoice showing
+    // nothing paid. Take the most generous reading of what the customer has
+    // handed over, for the same reason as invoiceSettled: under-billing is
+    // recoverable by a phone call, over-billing is not.
+    const collected = round2(Math.min(total, Math.max(fromInvoices, quoteCollected(quote))));
     return {
       total,
       collected,
@@ -71,22 +126,7 @@ export function resolveOrderMoney(quote, invoices = []) {
   }
 
   const total = round2(quote.estimated_price);
-
-  // deposit_amount means three different things depending on where the quote
-  // is, and only two of them are money:
-  //   before acceptance → the deposit we ASKED for (send-price stamps every
-  //                       quoted quote with the 50% ask; nothing was paid)
-  //   after acceptance  → the deposit actually collected
-  //   after the balance → cumulative collected, clamped to estimated_price
-  // So it counts as collected only once something proves money arrived.
-  // Treating the pre-acceptance ask as revenue is how a quote nobody paid
-  // showed up under "Deposit Paid".
-  let collected = 0;
-  if (quote.balance_paid_at) {
-    collected = total;
-  } else if (quote.accepted_at) {
-    collected = Math.min(round2(quote.deposit_amount), total || Infinity);
-  }
+  const collected = Math.min(quoteCollected(quote), total || Infinity);
 
   return {
     total,
