@@ -1,6 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveOrderMoney, billableInvoices } from './orderMoney.js';
+import { resolveOrderMoney, billableInvoices, invoiceMayOweMoney } from './orderMoney.js';
+
+test('the manual-action gate is NOT the negation of the billing gate', () => {
+  // Invoice 46 (Jorge Duran): marked paid, 0.00 recorded, 151.20 still due.
+  // Automated billing must treat it as settled — it must never email him.
+  // The admin list must still offer Send / Text / Record payment, so a
+  // person can look at it and decide.
+  const contradictory = { status: 'paid', total: 151.20, amount_paid: 0, amount_due: 151.20 };
+  assert.equal(resolveOrderMoney({}, [contradictory]).due, 0, 'never auto-bill on contradictory data');
+  assert.equal(invoiceMayOweMoney(contradictory), true, 'but always let a human chase it');
+});
+
+test('a genuinely settled invoice offers no collection actions', () => {
+  assert.equal(invoiceMayOweMoney({ status: 'paid', total: 100, amount_paid: 100, amount_due: 0 }), false);
+  // Invoice 33's shape: stale amount_paid, but amount_due 0 means settled.
+  assert.equal(invoiceMayOweMoney({ status: 'paid', total: 701, amount_paid: 242.45, amount_due: 0 }), false);
+});
+
+test('cancelled and draft invoices are never chased', () => {
+  assert.equal(invoiceMayOweMoney({ status: 'cancelled', total: 500, amount_paid: 0, amount_due: 500 }), false);
+  assert.equal(invoiceMayOweMoney({ status: 'draft', total: 500, amount_paid: 0, amount_due: 500 }), false);
+  assert.equal(invoiceMayOweMoney(null), false);
+});
+
+test('amount_due decides when present; amount_paid only votes without it', () => {
+  // amount_due 0 settles the row even against a short amount_paid — it is
+  // the column the payment paths maintain, and amount_paid goes stale.
+  assert.equal(invoiceMayOweMoney({ status: 'sent', total: 100, amount_paid: 60, amount_due: 0 }), false);
+  // With no amount_due at all, fall back to the arithmetic.
+  assert.equal(invoiceMayOweMoney({ status: 'sent', total: 100, amount_paid: 60 }), true);
+  assert.equal(invoiceMayOweMoney({ status: 'sent', total: 100, amount_paid: 100 }), false);
+});
 
 const inv = (total, amount_paid, status = 'sent') => ({ total, amount_paid, status });
 

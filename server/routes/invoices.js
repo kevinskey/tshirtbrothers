@@ -7,6 +7,7 @@ import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { tokenMatches } from '../lib/acceptToken.js';
+import { invoiceMayOweMoney } from '../lib/orderMoney.js';
 import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 import pool from '../db.js';
 import { ensureOrderForInvoice, promoteOrderForInvoicePayment } from '../lib/orderFromInvoice.js';
@@ -845,7 +846,12 @@ router.get('/', async (req, res, next) => {
       params
     );
 
-    res.json(rows);
+    // Whether a balance might still be owed is decided here, not in the UI.
+    // The admin list used to gate its Send / Text / Record-payment buttons on
+    // `status !== 'paid' && amount_due > 0`, which hid every control on the
+    // 11 invoices marked paid while still showing a balance — the rows most
+    // in need of chasing had no way to chase them.
+    res.json(rows.map((r) => ({ ...r, may_owe_money: invoiceMayOweMoney(r) })));
   } catch (err) {
     next(err);
   }

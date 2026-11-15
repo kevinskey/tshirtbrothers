@@ -74,6 +74,32 @@ function quoteCollected(quote) {
   return 0;
 }
 
+/**
+ * Might this invoice still be owed? The mirror of invoiceSettled, and
+ * deliberately NOT its negation.
+ *
+ * Automated billing asks "is it settled?" and needs ANY signal saying yes,
+ * so a contradictory row never emails someone who has paid. A human deciding
+ * whether to chase a balance needs the opposite bias: ANY signal saying
+ * money is owed should put the Send / Text / Record-payment buttons on the
+ * row, so the decision can be made by a person looking at the invoice.
+ *
+ * Without this, the 11 invoices marked 'paid' while still showing a balance
+ * — $2,352.79 of them — rendered with no way to collect anything at all.
+ */
+export function invoiceMayOweMoney(invoice) {
+  if (!invoice) return false;
+  if (IGNORED_INVOICE_STATUSES.has(String(invoice.status || '').toLowerCase())) return false;
+  // amount_due is the column the payment paths maintain to answer exactly
+  // this question, so when it is present it decides — including when it
+  // says 0 against a stale amount_paid (invoice 33: 242.45 recorded of a
+  // 701.00 total, settled in June). amount_paid is the unreliable one; it
+  // only gets a vote when there is no amount_due at all.
+  if (invoice.amount_due != null) return round2(invoice.amount_due) > 0;
+  const total = round2(invoice.total);
+  return total > 0 && round2(invoice.amount_paid) < total;
+}
+
 /** What is still owed on one invoice, preferring amount_due over arithmetic. */
 function invoiceDue(invoice) {
   if (invoiceSettled(invoice)) return 0;

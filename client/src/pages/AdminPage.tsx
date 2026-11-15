@@ -5942,7 +5942,7 @@ export default function AdminPage() {
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
-                                {((inv.status === 'draft') || (inv.status !== 'paid' && Number(inv.amount_due) > 0)) && (
+                                {((inv.status === 'draft') || mayOweMoney(inv)) && (
                                   <button
                                     title={inv.status === 'draft' ? 'Send' : Number(inv.amount_paid) > 0 ? 'Send balance' : 'Resend'}
                                     onClick={() => sendInvoiceMutation.mutate(inv.id)}
@@ -5952,7 +5952,7 @@ export default function AdminPage() {
                                     <Send className="w-4 h-4" />
                                   </button>
                                 )}
-                                {inv.customer_phone && inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
+                                {inv.customer_phone && mayOweMoney(inv) && (
                                   <button
                                     title={`Text the invoice link to ${inv.customer_phone}`}
                                     onClick={() => textInvoiceMutation.mutate(inv.id)}
@@ -5962,7 +5962,7 @@ export default function AdminPage() {
                                     <MessageSquare className="w-4 h-4" />
                                   </button>
                                 )}
-                                {inv.status !== 'paid' && Number(inv.amount_due) > 0 && (
+                                {mayOweMoney(inv) && (
                                   <button
                                     title="Record payment"
                                     onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }}
@@ -11636,6 +11636,24 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
       )}
     </div>
   );
+}
+
+/**
+ * Should this invoice offer Send / Text / Record-payment?
+ *
+ * The server decides (lib/orderMoney.js) and ships `may_owe_money`; this
+ * only mirrors the rule for payloads that predate the field. Note the bias
+ * is the opposite of the one used for automated billing: there, ANY signal
+ * saying "settled" suppresses an email, so nobody who has paid is chased.
+ * Here, ANY signal saying money is owed shows the buttons, so a person can
+ * look at the invoice and decide. Trusting `status` alone hid every control
+ * on the 11 invoices marked paid that still show a balance.
+ */
+function mayOweMoney(inv: Invoice & { may_owe_money?: boolean }): boolean {
+  if (typeof inv.may_owe_money === 'boolean') return inv.may_owe_money;
+  if (inv.status === 'cancelled' || inv.status === 'draft') return false;
+  if (inv.amount_due != null) return Number(inv.amount_due) > 0;
+  return Number(inv.total) > 0 && Number(inv.amount_paid) < Number(inv.total);
 }
 
 function paidState(q: Quote): { label: string; className: string } {
