@@ -15,6 +15,7 @@ import {
   sendReviewRequestEmail,
   sendArtworkRequestToCustomer,
   sendArtworkReceivedToAdmin,
+  sendArtworkHelpToAdmin,
   sendQuoteDeclinedToAdmin,
   quoteLang,
   normalizeCcEmails,
@@ -969,7 +970,7 @@ router.post('/admin/:id/request-artwork', authenticate, adminOnly, async (req, r
 router.get('/artwork/:id', async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, accept_token, customer_name, product_name, quantity, design_url, extra_design_urls, archived_at, customer_email FROM quotes WHERE id = $1',
+      'SELECT id, accept_token, customer_name, product_name, quantity, design_url, extra_design_urls, archived_at, customer_email, artwork_help_requested_at FROM quotes WHERE id = $1',
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
@@ -983,6 +984,7 @@ router.get('/artwork/:id', async (req, res, next) => {
       quantity: q.quantity,
       design_url: q.design_url,
       extra_design_urls: q.extra_design_urls || [],
+      artwork_help_requested_at: q.artwork_help_requested_at,
     });
   } catch (err) {
     next(err);
@@ -1021,6 +1023,51 @@ router.post('/artwork/:id', async (req, res, next) => {
     sendArtworkReceivedToAdmin(quote, urls).catch(() => {});
     scheduleRetriage(id);
     res.json({ success: true, attached: urls.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /artwork/:id/help — "I need help with my graphic" on the upload page.
+//
+// Same token gate as the upload itself: anyone holding the link can already
+// put files on the order, so asking for a callback is no greater trust. The
+// ask has to leave a trace in three places or it is just another email to
+// miss — the quote (so the admin UI can flag it), order_notes (so it shows
+// in the job's history), and your phone (so a stalled job interrupts you
+// instead of waiting to be discovered).
+router.post('/artwork/:id/help', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const token = req.query.token || req.body?.token;
+    const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 2000) : '';
+
+    const lookup = await pool.query('SELECT * FROM quotes WHERE id = $1', [id]);
+    if (lookup.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
+    const quote = lookup.rows[0];
+    if (!tokenMatches(quote.accept_token, token)) return res.status(403).json({ error: 'Invalid token' });
+
+    // Re-taps re-stamp rather than stack: the dashboard ages off this
+    // timestamp, and a customer tapping twice means they are still waiting,
+    // not that two people need calling.
+    await pool.query(
+      'UPDATE quotes SET artwork_help_requested_at = NOW(), artwork_help_note = $1 WHERE id = $2',
+      [note || null, id],
+    );
+    await pool.query(
+      'INSERT INTO order_notes (quote_id, author, body) VALUES ($1, $2, $3)',
+      [id, 'Customer', note ? `Asked for design help: ${note}` : 'Asked for design help with their graphic.'],
+    );
+
+    // Fire-and-forget both alerts: a Twilio or Resend outage must not make
+    // the customer's tap look like it failed, or they will tap again (or
+    // give up) over a problem on our side.
+    sendArtworkHelpToAdmin(quote, note).catch(() => {});
+    import('../services/sms.js')
+      .then(({ smsArtworkHelpToAdmin }) => smsArtworkHelpToAdmin(quote, note))
+      .catch(() => {});
+
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

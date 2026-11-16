@@ -83,6 +83,27 @@ export async function smsQuoteAcceptedToAdmin(quote) {
   await sendSMS(ADMIN_PHONE, msg);
 }
 
+/**
+ * The customer tapped "I need help with my graphic" on the upload page.
+ *
+ * This is a phone-call trigger, not an FYI: the job is stalled until someone
+ * talks to them about what they want, and the deadline keeps moving. Leads
+ * with their number so the text itself is dialable — the whole point is to
+ * call back without opening the laptop. Mirrors smsMockupDecisionToAdmin's
+ * ADMIN_SMS_TO-then-ADMIN_PHONE fallback.
+ */
+export async function smsArtworkHelpToAdmin(quote, note) {
+  const to = process.env.ADMIN_SMS_TO || ADMIN_PHONE;
+  if (!to) return;
+  const who = quote.customer_name || quote.customer_email || 'A customer';
+  const phone = quote.customer_phone ? ` ${toE164(quote.customer_phone)}` : '';
+  const tail = note ? ` — "${note.slice(0, 90)}${note.length > 90 ? '…' : ''}"` : '';
+  await sendSMS(
+    to,
+    `\u{1F3A8} ${who} needs design help on Quote #${quote.id}${tail}. Call them:${phone || ' no phone on file'}`,
+  );
+}
+
 // Notify customer of status update
 export async function smsStatusUpdateToCustomer(quote, newStatus) {
   const phone = quote.customer_phone;

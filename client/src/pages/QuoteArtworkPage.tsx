@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
-import { UploadCloud, CheckCircle2, XCircle, Loader2, ImageIcon } from 'lucide-react';
+import { UploadCloud, CheckCircle2, XCircle, Loader2, ImageIcon, Palette, PhoneCall } from 'lucide-react';
 
 interface ArtworkQuoteInfo {
   id: number;
@@ -10,6 +10,7 @@ interface ArtworkQuoteInfo {
   quantity: number | null;
   design_url: string | null;
   extra_design_urls: string[];
+  artwork_help_requested_at: string | null;
 }
 
 // Customer-facing artwork drop for the "we need your artwork" email. Files
@@ -26,6 +27,13 @@ export default function QuoteArtworkPage() {
   const [progress, setProgress] = useState('');
   const [done, setDone] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  // "I need help with my graphic" — opens a short note box, then switches the
+  // page to a confirmation. Kept separate from `done` so the success copy can
+  // promise a phone call instead of a mockup.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpNote, setHelpNote] = useState('');
+  const [helpSending, setHelpSending] = useState(false);
+  const [helpSent, setHelpSent] = useState(false);
 
   useEffect(() => {
     if (!id || !token) { setError('This upload link is missing its token. Please use the link from your email.'); return; }
@@ -81,6 +89,25 @@ export default function QuoteArtworkPage() {
     }
   }
 
+  async function requestHelp() {
+    if (helpSending) return;
+    setHelpSending(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/quotes/artwork/${id}/help?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: helpNote.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Could not send your request');
+      setHelpSent(true);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setHelpSending(false);
+    }
+  }
+
   if (error && !info) {
     return (
       <Layout>
@@ -98,6 +125,22 @@ export default function QuoteArtworkPage() {
       <Layout>
         <div className="min-h-[60vh] flex items-center justify-center">
           <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (helpSent) {
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+          <PhoneCall className="w-16 h-16 text-orange-500 mb-4" />
+          <h1 className="text-2xl font-display font-bold text-gray-900 mb-2">We'll Call You</h1>
+          <p className="text-gray-500 max-w-md">
+            Thanks{info.customer_name ? `, ${info.customer_name}` : ''}! Our design team has been
+            notified about order #{info.id} and will reach out to walk you through your graphic —
+            there's no charge for the help. Need us sooner? Call (470) 622-1392.
+          </p>
         </div>
       </Layout>
     );
@@ -170,8 +213,55 @@ export default function QuoteArtworkPage() {
           >
             {uploading ? (progress || 'Uploading…') : 'Send My Artwork'}
           </button>
+
+          {/* The no-file path. This used to be the gray footnote below, which
+              asked the customer to reply or call — so a stalled order left no
+              trace on the quote and looked exactly like one nobody had gotten
+              to yet. Tapping this emails and texts the shop to call them. */}
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            {!helpOpen ? (
+              <button
+                onClick={() => setHelpOpen(true)}
+                className="w-full py-3 border-2 border-orange-600 text-orange-700 hover:bg-orange-50 font-semibold rounded-lg flex items-center justify-center gap-2"
+              >
+                <Palette className="w-5 h-5" />
+                I need help with my graphic
+              </button>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tell us what you're going for <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <textarea
+                  value={helpNote}
+                  onChange={(e) => setHelpNote(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  placeholder="e.g. Our team name in script with a crown above it — I don't have a file yet."
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => { setHelpOpen(false); setHelpNote(''); }}
+                    disabled={helpSending}
+                    className="flex-1 py-3 border border-gray-300 text-gray-600 hover:bg-gray-50 font-semibold rounded-lg disabled:opacity-50"
+                  >
+                    Never mind
+                  </button>
+                  <button
+                    onClick={requestHelp}
+                    disabled={helpSending}
+                    className="flex-[2] py-3 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-semibold rounded-lg"
+                  >
+                    {helpSending ? 'Sending…' : 'Have the design team call me'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <p className="text-xs text-gray-400 text-center mt-3">
-            No file? Reply to our email or call (470) 622-1392 — our design team helps for free.
+            Our design team helps for free. Prefer to talk now? Call (470) 622-1392.
           </p>
         </div>
       </div>
