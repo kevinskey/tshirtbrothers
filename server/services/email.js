@@ -1520,6 +1520,41 @@ export async function sendArtworkReceivedToAdmin(quote, urls) {
   }
 }
 
+/**
+ * Tell the shop a customer tapped "I need help with my graphic".
+ *
+ * Paired with smsArtworkHelpToAdmin — the text gets you dialing, this carries
+ * the detail (what they asked for, what they ordered, the deadline) so the
+ * call starts informed. Their phone number is a tel: link for the same reason.
+ */
+export async function sendArtworkHelpToAdmin(quote, note) {
+  const who = escapeHtml(quote.customer_name || quote.customer_email || 'A customer');
+  const phone = quote.customer_phone ? String(quote.customer_phone).replace(/\D/g, '') : '';
+  const body = `
+    <h2 style="margin:0 0 8px;font-size:20px;color:${BRAND_ORANGE};">🎨 Customer needs design help</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#6b7280;"><strong>${who}</strong> asked for help with the graphic on Quote #${quote.id}${quote.product_name ? ` — ${escapeHtml(quote.product_name)}` : ''}${quote.quantity ? ` × ${quote.quantity}` : ''}. No file was uploaded.</p>
+    ${note ? `<div style="margin:0 0 16px;padding:12px;background:#fff7ed;border-left:3px solid ${BRAND_ORANGE};">
+        <p style="margin:0 0 4px;font-size:12px;color:#9a3412;font-weight:600;">What they want</p>
+        <p style="margin:0;font-size:15px;color:#374151;">${escapeHtml(note)}</p>
+      </div>` : ''}
+    <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+      ${phone ? `Call them: <a href="tel:+1${phone}" style="color:${BRAND_ORANGE};font-weight:600;">${escapeHtml(quote.customer_phone)}</a>` : 'No phone number on this quote — reply by email.'}
+      ${quote.customer_email ? ` · <a href="mailto:${escapeHtml(quote.customer_email)}" style="color:${BRAND_ORANGE};">${escapeHtml(quote.customer_email)}</a>` : ''}
+    </p>
+    ${primaryButton('Open the Quote', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
+  `;
+  try {
+    await sendMail({
+      from: FROM_EMAIL,
+      to: [ADMIN_EMAIL],
+      subject: `Needs design help · Quote #${quote.id} · ${quote.customer_name || quote.customer_email || ''}`,
+      html: baseLayout('Customer needs design help', body),
+    });
+  } catch (err) {
+    console.error('[Email] Failed to send artwork-help notice:', err);
+  }
+}
+
 /** Tell the shop a customer declined their quote (and why, if they said). */
 export async function sendQuoteDeclinedToAdmin(quote, reason) {
   const body = `
