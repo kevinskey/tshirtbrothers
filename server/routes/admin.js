@@ -1424,7 +1424,7 @@ router.post('/designs-library/:id/move-to-customer', async (req, res, next) => {
 // the only row-level fetch is the bounded open-jobs list for the schedule.
 router.get('/dashboard-ops', async (req, res, next) => {
   try {
-    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, depositInvoicesR, storeOrdersR, methodsR, blanksR, overdueR] = await Promise.all([
+    const [moneyR, quoteAggR, invoiceAggR, custR, paidAggR, jobsR, gangR, depositInvoicesR, storeOrdersR, methodsR, blanksR, overdueR, digitizedR] = await Promise.all([
       // Money movement by period: invoice payment entries + gang sheet paid.
       pool.query(`
         WITH pays AS (
@@ -1506,7 +1506,7 @@ router.get('/dashboard-ops', async (req, res, next) => {
       pool.query(`
         SELECT id, customer_name, customer_email, product_name, quantity, status,
                date_needed, estimated_price, created_at, order_stages, production_steps,
-               mockup_sent_at, mockup_approved_at, mockup_rejected_at,
+               mockup_image_url, mockup_sent_at, mockup_approved_at, mockup_rejected_at,
                in_production_at, ready_at, deposit_amount, balance_paid_at,
                inputs_json->'items'->0->'inputs'->>'methodName' AS method
           FROM quotes
@@ -1588,6 +1588,14 @@ router.get('/dashboard-ops', async (req, res, next) => {
            AND due_date IS NOT NULL AND due_date < CURRENT_DATE
          ORDER BY due_date ASC
          LIMIT 10`),
+      // Which quotes already have a stitch file. An embroidery job cannot be
+      // pressed — or even scheduled — until the art is digitized, and that
+      // fact lives nowhere on the quote row, so the work board has to join
+      // it in or it would tell the shop to order blanks for a job it can't
+      // sew yet.
+      pool.query(`
+        SELECT quote_id, bool_or(dst_file_url IS NOT NULL AND dst_file_url <> '') AS digitized
+          FROM embroidery_jobs WHERE quote_id IS NOT NULL GROUP BY quote_id`),
     ]);
 
     const money = moneyR.rows[0];
@@ -1614,6 +1622,45 @@ router.get('/dashboard-ops', async (req, res, next) => {
       if (j.mockup_approved_at) return 'ready_to_produce';
       return 'artwork';
     };
+    // ── Next action per job — the work board (Doc, 2026-11-17).
+    //
+    // The pipeline above answers "where is this job"; this answers "what do I
+    // pick up and do right now", which is a different question: a job sitting
+    // in 'ready_to_produce' might be waiting on blanks that were never
+    // ordered, on a gang sheet that hasn't been sent, or on nothing at all
+    // but a press. One key per job, first unmet step in the order the shop
+    // actually works it, so every open job lands in exactly one lane.
+    const digitized = new Set(
+      digitizedR.rows.filter((r) => r.digitized).map((r) => r.quote_id),
+    );
+    const actionOf = (j) => {
+      if (j.ready_at || j.status === 'ready') return 'handoff';
+      const ps = j.production_steps || {};
+      const os = j.order_stages || {};
+      // methodName is free text off the quote wizard ('Embroidery', '3D
+      // Puff Embroidery'), so match loosely rather than on equality.
+      const isEmb = /embroid/i.test(j.method || '');
+      if (isEmb && !digitized.has(j.id)) return 'digitize';
+      // The proof is settled once the customer approved it OR the job went on
+      // the press anyway — the shop regularly skips the formal send, and
+      // without this every in-production job would be parked under "make a
+      // mockup" for a mockup it is already printing (18 of 21 live jobs,
+      // which is what made the first cut of this board useless).
+      const proofSettled = j.mockup_approved_at || j.in_production_at || j.status === 'in_production';
+      if (!proofSettled) {
+        // A rejected proof goes back to the art table, same as never having one.
+        if (j.mockup_rejected_at || !j.mockup_image_url) return 'mockup';
+        if (!j.mockup_sent_at) return 'send_proof';
+        return 'awaiting_approval';
+      }
+      if (!ps.blanks_ordered) return 'order_blanks';
+      // Embroidery sews straight off the DST — there is no gang sheet to buy.
+      if (!isEmb && !ps.print_ordered) return 'order_prints';
+      if (!ps.blanks_received || (!isEmb && !ps.prints_received)) return 'waiting_goods';
+      if (!(ps.pressed || os.pressed)) return 'press';
+      return 'ready';
+    };
+
     const pipeline = { quotes: qa.pending, artwork: 0, awaiting_approval: 0, ready_to_produce: 0, printing: 0, finishing: 0, pickup: 0 };
     for (const j of jobs) pipeline[stageOf(j)] += 1;
     for (const g of gang) {
@@ -1712,6 +1759,28 @@ router.get('/dashboard-ops', async (req, res, next) => {
           : stageOf(row),
         due: due ? due.toISOString().slice(0, 10) : null,
         overdue: !!(due && !done && due < today),
+        // What to do next. Only quotes carry a production checklist; a gang
+        // sheet, a storefront sale and a deposit-paid invoice are all
+        // bought-and-unmade work with no steps of their own, so they sit in
+        // the press lane (or the hand-off lane once they're made) and their
+        // row offers 'open' rather than a tick.
+        action: isStore
+          ? (row.status === 'paid' || row.status === 'printing' ? 'press' : 'handoff')
+          : isGang
+          ? (row.status === 'ready' ? 'handoff' : 'press')
+          : isInvoice
+          ? 'press'
+          : actionOf(row),
+        // Drives the row's tick buttons — the work board needs to know which
+        // half of 'waiting on goods' is still outstanding.
+        steps: isStore || isGang || isInvoice ? null : {
+          blanks_ordered: !!(row.production_steps || {}).blanks_ordered,
+          blanks_received: !!(row.production_steps || {}).blanks_received,
+          print_ordered: !!(row.production_steps || {}).print_ordered,
+          prints_received: !!(row.production_steps || {}).prints_received,
+          pressed: !!((row.production_steps || {}).pressed || (row.order_stages || {}).pressed),
+          in_production: !!row.in_production_at,
+        },
       });
     }
     schedule.sort((a, b) => {
