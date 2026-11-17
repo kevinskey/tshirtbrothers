@@ -830,6 +830,67 @@ router.post('/upscale', aiDesignLimiter, async (req, res, next) => {
   }
 });
 
+// ── POST /upscale-local — Lanczos resample, no AI, no cost, no network ─────
+//
+// The fallback for when Replicate is down (2026-11-17) or when the shop just
+// wants the pixels enlarged. Be clear about what this is: Lanczos INVENTS NO
+// DETAIL. It raises the pixel count — and therefore the DPI number — without
+// making the art any sharper than it was. Real-ESRGAN hallucinates plausible
+// detail; this interpolates between the pixels that exist.
+//
+// That matters for print QC, so the response says `method: 'lanczos'` and
+// `resampled: true` and the builder badges the result as resampled rather
+// than letting it read "300 DPI · Print Ready". A soft 146 DPI graphic
+// resampled to 300 is still a soft graphic.
+
+router.post('/upscale-local', aiDesignLimiter, express.json({ limit: '25mb' }), async (req, res, next) => {
+  try {
+    const { imageBase64, imageUrl, scale = 4 } = req.body || {};
+    if (rejectUnsafeImageUrl(req, res, imageUrl)) return;
+    if (!imageBase64 && !imageUrl) {
+      return res.status(400).json({ error: 'imageBase64 or imageUrl is required' });
+    }
+
+    const input = await toInputBuffer(imageUrl || imageBase64);
+    const meta = await sharp(input).metadata();
+    if (!meta.width || !meta.height) {
+      return res.status(400).json({ error: "That file doesn't decode as an image" });
+    }
+
+    // Clamp the output. 4x on an already-large file makes a PNG big enough to
+    // hurt both this process and the browser that has to draw it; 80MP is far
+    // past 300 DPI for any sheet-sized graphic (a 22" x 12" area is 23MP).
+    const MAX_OUTPUT_PX = 80_000_000;
+    let factor = Math.min(4, Math.max(1.5, Number(scale) || 4));
+    const outPx = meta.width * meta.height * factor * factor;
+    if (outPx > MAX_OUTPUT_PX) {
+      factor = Math.sqrt(MAX_OUTPUT_PX / (meta.width * meta.height));
+    }
+    const width = Math.round(meta.width * factor);
+    const height = Math.round(meta.height * factor);
+
+    const out = await sharp(input)
+      .resize({ width, height, kernel: 'lanczos3', fit: 'fill' })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+
+    const key = `designs/resampled/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+    const url = await uploadObject({ key, body: out, contentType: 'image/png' });
+    console.log(`[upscale-local] ${meta.width}x${meta.height} -> ${width}x${height} (lanczos3, ${factor.toFixed(2)}x)`);
+    res.json({
+      imageUrl: url,
+      method: 'lanczos',
+      resampled: true,
+      width,
+      height,
+      scale: Number(factor.toFixed(2)),
+    });
+  } catch (err) {
+    console.error('[upscale-local] error:', err);
+    res.status(500).json({ error: err.message || 'Resize failed' });
+  }
+});
+
 // ── POST /vectorize — Convert PNG to cut-ready SVG (free, local potrace) ────
 
 router.post('/vectorize', aiDesignLimiter, async (req, res, next) => {
