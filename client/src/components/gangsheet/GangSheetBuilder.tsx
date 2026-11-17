@@ -4,7 +4,7 @@ import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fab
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus, Check,
-  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send, Crop
+  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send, Crop, Maximize2
 } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
 import { logActivityOnce } from '@/lib/activity';
@@ -40,6 +40,10 @@ interface DesignItem {
   quantity: number;
   dpi: number;
   rotation?: number; // degrees, 0/90/180/270
+  // Enlarged by the local Lanczos path, not the AI upscaler. The pixel count
+  // went up; the detail did not. The DPI badge says so, because a resampled
+  // 300 reading must not be mistaken for a genuinely 300 DPI file.
+  resampled?: boolean;
   history?: DesignSnapshot[]; // stack of previous states for undo
   // Visible-art bounds as fractions of the natural image (alpha trim).
   // Many customer PNGs carry fat transparent margins; packing the visible
@@ -134,6 +138,15 @@ async function measureAlphaTrim(imageUrl: string): Promise<{ x: number; y: numbe
   } catch {
     return undefined;
   }
+}
+
+// Is this failure "the AI service is down" rather than "this image is
+// wrong"? The upscale route answers 502 and a sentence naming the status
+// for anything transient upstream; that's the case worth offering a local
+// enlarge for. A bad file or an OOM on a huge graphic is not.
+function isUpstreamUnavailable(err: unknown): boolean {
+  const msg = String((err as any)?.message || err || '');
+  return /temporarily unavailable|50[234]|53\d|Replicate returned/i.test(msg);
 }
 
 // Packing dimensions for a design: the visible art size in px plus the
@@ -1179,6 +1192,34 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
     }
   }
 
+  // Local Lanczos enlarge. No AI, no cost, no Replicate — and no new detail
+  // either, which is why the design is flagged `resampled` afterwards.
+  async function resampleLocally(designId: string) {
+    const design = designs.find((d) => d.id === designId);
+    if (!design) return;
+    setAiBusyId(designId);
+    try {
+      const body = design.imageUrl.startsWith('data:')
+        ? { imageBase64: design.imageUrl, scale: 4 }
+        : { imageUrl: design.imageUrl, scale: 4 };
+      const res = await fetch('/api/design/upscale-local', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `resize failed (${res.status})`);
+      if (!data.imageUrl) throw new Error('no image returned');
+      await applyProcessedImage(designId, data.imageUrl);
+      setDesigns((prev) => prev.map((d) => (d.id === designId ? { ...d, resampled: true } : d)));
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || 'Resize failed — try again.');
+    } finally {
+      setAiBusyId(null);
+    }
+  }
+
   async function handleFixDpi(designId: string) {
     const design = designs.find((d) => d.id === designId);
     if (!design || aiBusyId) return;
@@ -1199,6 +1240,22 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       await applyProcessedImage(designId, result);
     } catch (err: any) {
       console.error(err);
+      // Replicate goes down (502/503/530 — 2026-11-17). Rather than leaving
+      // the shop stuck, offer the local enlarge — but say plainly that it
+      // adds pixels, not detail, so nobody reads the new DPI as real sharpness.
+      const unavailable = isUpstreamUnavailable(err);
+      if (unavailable) {
+        setAiBusyId(null);
+        const go = window.confirm(
+          `${err.message}\n\nEnlarge it here instead, without AI?\n\n`
+          + 'This resamples the image (Lanczos): the pixel count and the DPI '
+          + 'number go up, but no new detail is invented — the art will be '
+          + 'exactly as sharp as it is now, just bigger. It gets badged '
+          + '"resampled" so the sheet tells the truth about it.',
+        );
+        if (go) await resampleLocally(designId);
+        return;
+      }
       // The server already says what failed and why, in a sentence. Prefixing
       // it produced "Upscaling failed: Upscaling failed: ..." followed by a
       // page of Cloudflare HTML.
@@ -2837,7 +2894,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   <div className="space-y-2">
                     <p className="text-xs font-semibold text-gray-500 uppercase">Designs on Sheet ({designs.length})</p>
                     {designs.map(d => {
-                      const status = getDPIStatus(d.dpi);
+                      // A Lanczos enlarge raises the DPI number without
+                      // adding a single real pixel of detail, so it never
+                      // gets to wear the green "Print Ready" badge — it
+                      // reads "resampled" at best, in amber.
+                      const status = d.resampled
+                        ? (getDPIStatus(d.dpi) === 'danger' ? 'danger' : 'warning')
+                        : getDPIStatus(d.dpi);
                       const colors = DPI_COLORS[status];
                       return (
                         <div key={d.id} className={`p-2 rounded-lg border ${selectedDesign === d.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
@@ -2846,7 +2909,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                             <div className="flex-1 min-w-0">
                               <p className="text-xs font-semibold text-gray-900 truncate">{d.name}</p>
                               <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5 ${colors.bg} ${colors.text}`}>
-                                {d.dpi} DPI · {colors.label}
+                                {d.dpi} DPI · {d.resampled ? 'Resampled, not sharper' : colors.label}
                               </span>
                             </div>
                             <button onClick={() => removeDesign(d.id)} className="text-red-400 hover:text-red-600 flex-shrink-0">
@@ -2951,6 +3014,19 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                                 >
                                   {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
                                   Fix DPI
+                                </button>
+                                {/* The non-AI path, always available — and
+                                    the only one that works when Replicate is
+                                    down. Labelled "Enlarge", never "fix":
+                                    it makes the file bigger, not better. */}
+                                <button
+                                  onClick={() => void resampleLocally(d.id)}
+                                  disabled={aiBusyId === d.id}
+                                  className="flex items-center justify-center gap-1 text-[11px] px-2 py-1.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                                  title="Enlarge 4× locally (Lanczos, no AI, free) — adds pixels, not detail"
+                                >
+                                  {aiBusyId === d.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Maximize2 className="w-3 h-3" />}
+                                  Enlarge
                                 </button>
                               </>
                             )}
