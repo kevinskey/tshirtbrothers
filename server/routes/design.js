@@ -16,7 +16,76 @@ import { uploadObject, objectExists, publicUrl } from '../services/spaces.js';
 
 const execFileAsync = promisify(execFile);
 const router = Router();
-const replicate = new Replicate({ auth: process.env.REPLICATE_API_KEY });
+
+// ── Replicate transport: ride out their edge's bad minutes ─────────────────
+//
+// api.replicate.com sits behind Cloudflare and intermittently answers 502 or
+// 503 — sometimes an HTML error page, sometimes {"detail":"Internal server
+// error"} — both when CREATING a prediction and when POLLING one that is
+// already running (2026-11-17: 48 upscale attempts, every failure one of
+// those two, with Replicate otherwise healthy). A single blip killed the
+// whole job, and the Cloudflare page came back as the customer's alert box.
+//
+// Retrying at the fetch layer fixes every call through this client at once —
+// upscale, background removal, Kontext edits — including the SDK's internal
+// polling GETs, which is the half a per-call retry can't reach.
+// 5xx plus Cloudflare's origin-side codes. 530 ("Cloudflare Tunnel error",
+// seen live on 2026-11-17 while /v1/account was still answering 200) means
+// their origin is unreachable, not that our request was wrong — every one of
+// these is worth another try.
+const TRANSIENT_STATUS = new Set([
+  408, 425, 429, 500, 502, 503, 504,
+  520, 521, 522, 523, 524, 525, 526, 527, 529, 530,
+]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function replicateFetch(input, init = {}) {
+  const method = (init.method || 'GET').toUpperCase();
+  // Deliberately short. The SDK wraps this in its own retry loop (5 tries,
+  // GET-only, 5xx and 429), so these multiply — and the whole thing sits
+  // inside one HTTP request the browser and nginx are waiting on. Three
+  // quick tries with a 2s ceiling keeps the worst case in the tens of
+  // seconds instead of the minutes a 5×8s ladder would reach.
+  //
+  // POSTs retry too. The duplicate-prediction worry only applies when the
+  // create actually reached Replicate and the response was lost on the way
+  // back; the codes above are overwhelmingly edge-side (530 = the edge never
+  // reached their origin), so the run never started and nothing was billed.
+  // During the 2026-11-17 flap one in three POSTs failed — two retries take
+  // that from 33% to under 4%.
+  const maxAttempts = 3;
+  let last;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (attempt > 1) await sleep(Math.min(2000, 400 * 2 ** (attempt - 2)) + Math.random() * 250);
+    try {
+      const res = await fetch(input, init);
+      if (!TRANSIENT_STATUS.has(res.status) || attempt === maxAttempts) return res;
+      console.warn(`[replicate] ${method} ${res.status} — retry ${attempt}/${maxAttempts - 1}`);
+      last = res;
+    } catch (err) {
+      // Network-level failure (socket reset, DNS blip). Nothing to hand back
+      // to the SDK, so the last one has to throw.
+      if (attempt === maxAttempts) throw err;
+      console.warn(`[replicate] ${method} ${err.message} — retry ${attempt}/${maxAttempts - 1}`);
+    }
+  }
+  return last;
+}
+
+const replicate = new Replicate({ auth: process.env.REPLICATE_API_KEY, fetch: replicateFetch });
+
+// Replicate's transient failures arrive as a full Cloudflare HTML page. It
+// used to be concatenated into the message an admin sees in an alert box.
+// Keep the signal (which call, which status), drop the markup.
+function replicateErrorMessage(err, what) {
+  const raw = String(err?.message || err || '');
+  const status = raw.match(/status (\d{3})/)?.[1];
+  if (status && TRANSIENT_STATUS.has(Number(status))) {
+    return `${what} is temporarily unavailable — Replicate returned ${status} after several retries. Try again in a minute.`;
+  }
+  const clean = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return clean.length > 200 ? `${clean.slice(0, 200)}…` : (clean || `${what} failed`);
+}
 
 // Where an `imageUrl` in a request body is allowed to point.
 //
@@ -754,7 +823,7 @@ router.post('/upscale', aiDesignLimiter, async (req, res, next) => {
       res.json({ imageUrl: result });
     } catch (replicateErr) {
       console.error('[upscale] route error:', replicateErr);
-      return res.status(500).json({ error: `Upscaling failed: ${replicateErr.message || replicateErr}` });
+      return res.status(502).json({ error: replicateErrorMessage(replicateErr, 'The AI upscaler') });
     }
   } catch (err) {
     next(err);

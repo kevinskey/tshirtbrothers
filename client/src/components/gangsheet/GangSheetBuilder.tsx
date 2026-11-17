@@ -1199,7 +1199,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       await applyProcessedImage(designId, result);
     } catch (err: any) {
       console.error(err);
-      alert(`Upscaling failed: ${err?.message || err}`);
+      // The server already says what failed and why, in a sentence. Prefixing
+      // it produced "Upscaling failed: Upscaling failed: ..." followed by a
+      // page of Cloudflare HTML.
+      alert(err?.message || 'Upscaling failed — try again.');
     } finally {
       setAiBusyId(null);
     }
