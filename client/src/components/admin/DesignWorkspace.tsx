@@ -386,7 +386,8 @@ export default function DesignWorkspace({ initialImage = null, saveBackTarget = 
         setImageHistory(prev => [...prev, up]);
       }
     } catch (err: any) {
-      alert(`Upscaling failed: ${err?.message || err}`);
+      // The server's message is already a sentence — see GangSheetBuilder.
+      alert(err?.message || 'Upscaling failed — try again.');
     } finally { setUpscaling(false); }
   }
 
