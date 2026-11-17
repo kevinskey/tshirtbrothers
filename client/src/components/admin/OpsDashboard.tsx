@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar, CalendarDays, DollarSign, ShoppingBag, FileText, CreditCard, AlertTriangle,
   Settings as Gear, ArrowRight, Palette, Hourglass, CheckCircle2, Printer, Scissors, Package,
   BarChart3, Users, AlertCircle, Clock, Truck, ChevronRight, Zap, Plus, Loader2, Target,
-  Mail as MailIcon,
+  Mail as MailIcon, Shirt, PenTool, ListChecks,
 } from 'lucide-react';
 
 // Operations command-center dashboard — implements Kevin's approved
@@ -14,12 +14,39 @@ import {
 // GET /api/admin/dashboard-ops; nothing here is fabricated — sections whose
 // data source doesn't exist yet (inventory/purchasing) say so honestly.
 
+// One open job. `action` is the single next thing the shop has to do to
+// move it — computed server-side so the board and the production checklist
+// can't drift apart. `steps` is null for anything that isn't a quote:
+// gang sheets, storefront sales and deposit-paid invoices have no checklist.
+type ScheduleRow = {
+  kind: 'quote' | 'gangsheet' | 'storeorder' | 'invoice';
+  invoice_number?: string;
+  id: number;
+  store?: string;
+  customer: string;
+  email: string | null;
+  job: string;
+  qty: number;
+  price: number | null;
+  days_open: number | null;
+  method: string;
+  stage: string;
+  due: string | null;
+  overdue: boolean;
+  action: string;
+  steps: {
+    blanks_ordered: boolean; blanks_received: boolean;
+    print_ordered: boolean; prints_received: boolean;
+    pressed: boolean; in_production: boolean;
+  } | null;
+};
+
 type OpsData = {
   revenue: { today: number; yesterday: number; this_week: number; this_month: number; last_month: number };
   kpis: { orders_due_today: number; orders_due_week: number; new_quotes_today: number; new_quotes_yesterday: number; unpaid_balance: number; jobs_at_risk: number };
   pipeline: Record<string, number>;
   methods: Record<string, number>;
-  schedule: Array<{ kind: 'quote' | 'gangsheet' | 'storeorder' | 'invoice'; invoice_number?: string; id: number; store?: string; customer: string; email: string | null; job: string; qty: number; price: number | null; days_open: number | null; method: string; stage: string; due: string | null; overdue: boolean }>;
+  schedule: ScheduleRow[];
   blanks: Array<{ id: number; po_number: string; status: string; will_call: boolean; total: number | null; expected: string | null; for_customer: string | null; quote_id: number | null }>;
   overdue_invoices: Array<{ id: string; invoice_number: string; customer_name: string; customer_email: string; amount_due: number; due_date: string }>;
   attention: { proofs_waiting: number; quotes_unanswered_24h: number; orders_overdue: number; awaiting_payment: number; ready_for_pickup: number };
@@ -139,7 +166,246 @@ function StatRow({ label, value, valueCls = 'text-gray-900' }: { label: string; 
   );
 }
 
-export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob }: {
+// ── Today's Work ────────────────────────────────────────────────────────
+// The pipeline card answers "where is each job"; this one answers "what do
+// I pick up and do right now" (Doc, 2026-11-17). Every open job sits in
+// exactly one lane — its next unmet step — and each row carries the buttons
+// that finish that step, so the board is worked from here instead of being
+// a jumping-off point to nine other screens.
+const LANES = [
+  { key: 'digitize', label: 'Digitize', icon: PenTool, cls: 'bg-indigo-50 text-indigo-700 border-indigo-200', dot: 'bg-indigo-500' },
+  { key: 'mockup', label: 'Make Mockup', icon: Palette, cls: 'bg-blue-50 text-blue-700 border-blue-200', dot: 'bg-blue-500' },
+  { key: 'send_proof', label: 'Send Proof', icon: MailIcon, cls: 'bg-sky-50 text-sky-700 border-sky-200', dot: 'bg-sky-500' },
+  { key: 'awaiting_approval', label: 'Awaiting Approval', icon: Hourglass, cls: 'bg-amber-50 text-amber-700 border-amber-200', dot: 'bg-amber-500' },
+  { key: 'order_blanks', label: 'Order Blanks', icon: Shirt, cls: 'bg-orange-50 text-orange-700 border-orange-200', dot: 'bg-orange-500' },
+  { key: 'order_prints', label: 'Order Gang Sheet', icon: Printer, cls: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+  { key: 'waiting_goods', label: 'Waiting on Goods', icon: Truck, cls: 'bg-gray-100 text-gray-700 border-gray-200', dot: 'bg-gray-400' },
+  { key: 'press', label: 'Press It', icon: Zap, cls: 'bg-purple-50 text-purple-700 border-purple-200', dot: 'bg-purple-500' },
+  { key: 'ready', label: 'Mark Ready', icon: Package, cls: 'bg-teal-50 text-teal-700 border-teal-200', dot: 'bg-teal-500' },
+  { key: 'handoff', label: 'Hand Off', icon: CheckCircle2, cls: 'bg-green-50 text-green-700 border-green-200', dot: 'bg-green-500' },
+] as const;
+
+const BTN = 'rounded-lg px-2.5 py-1 text-xs font-semibold transition disabled:opacity-40';
+const BTN_GO = `${BTN} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`;
+const BTN_DO = `${BTN} bg-gray-900 text-white hover:bg-gray-700`;
+const BTN_SEND = `${BTN} bg-blue-600 text-white hover:bg-blue-500`;
+
+function WorkBoard({ rows, onChanged, toast }: {
+  rows: ScheduleRow[];
+  onChanged: () => void;
+  toast?: (msg: string, type?: 'error' | 'success') => void;
+}) {
+  const navigate = useNavigate();
+  const [lane, setLane] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const counts: Record<string, number> = {};
+  for (const r of rows) counts[r.action] = (counts[r.action] || 0) + 1;
+  // Land on the first lane that actually has work rather than an empty one.
+  const active = lane && counts[lane] ? lane : (LANES.find((l) => counts[l.key])?.key ?? null);
+  const laneRows = rows
+    .filter((r) => r.action === active)
+    .sort((a, b) => (a.overdue === b.overdue ? 0 : a.overdue ? -1 : 1));
+
+  async function call(key: string, url: string, body: unknown, done: string) {
+    setBusy(key);
+    try {
+      const r = await fetch(url, {
+        // Only the status hop is a PATCH on the quote itself; every other
+        // endpoint behind these buttons is a POST action.
+        method: /^\/api\/quotes\/\d+$/.test(url) ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Request failed');
+      toast?.(done, 'success');
+      onChanged();
+    } catch (err) {
+      toast?.(err instanceof Error ? err.message : 'Request failed', 'error');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const step = (r: ScheduleRow, s: string, label: string) => (
+    <button key={s} disabled={busy === `${r.id}-${s}`} className={BTN_DO}
+      onClick={() => call(`${r.id}-${s}`, `/api/quotes/${r.id}/production-step`, { step: s, done: true }, `${label} — #${r.id}`)}>
+      {label}
+    </button>
+  );
+
+  // Status hops and fulfilment email/text the customer, so they ask first.
+  // Ticks on the production checklist are internal and don't.
+  const notify = (r: ScheduleRow, key: string, url: string, body: unknown, ask: string, done: string) => (
+    <button key={key} disabled={busy === `${r.id}-${key}`} className={BTN_SEND}
+      onClick={() => { if (window.confirm(ask)) call(`${r.id}-${key}`, url, body, done); }}>
+      {key}
+    </button>
+  );
+
+  const open = (r: ScheduleRow) => (
+    <button className={BTN_GO} onClick={() => navigate(
+      r.kind === 'quote' ? `/admin/order/${r.id}`
+        : r.kind === 'storeorder' ? `/admin/store-order/${r.id}`
+        : r.kind === 'invoice' ? `/invoice/view/${r.id}`
+        : '/admin/dtf-orders',
+    )}>Open</button>
+  );
+
+  function actions(r: ScheduleRow) {
+    if (r.kind !== 'quote') {
+      // No checklist behind these — gang sheets have their own board, a
+      // storefront sale has its order page, an invoice has the invoice.
+      return [open(r)];
+    }
+    const s = r.steps!;
+    switch (r.action) {
+      case 'digitize':
+        return [
+          <button className={BTN_GO} onClick={() => { window.location.href = '/admin?section=embroidery'; }}>Digitizing queue</button>,
+          open(r),
+        ];
+      case 'mockup':
+        return [
+          <button className={BTN_DO} onClick={() => navigate(`/admin/order/${r.id}`)}>Build mockup</button>,
+          <button className={BTN_GO} onClick={() => { window.location.href = '/admin?section=mockups'; }}>Mockups</button>,
+        ];
+      case 'send_proof':
+        return [
+          // Sends the Studio approval email. It needs a mockups row linked to
+          // the quote; if the art was only attached to the quote the server
+          // says so and the toast passes that straight through.
+          notify(r, 'Send proof', `/api/quotes/admin/${r.id}/send-mockup`, {},
+            `Email the proof for #${r.id} to ${r.customer} for approval?`,
+            `Proof sent for #${r.id}`),
+          notify(r, 'Approved', `/api/quotes/${r.id}`, { status: 'approved' },
+            `Mark #${r.id} approved without sending a proof? This emails ${r.customer}.`,
+            `#${r.id} marked approved`),
+          open(r),
+        ];
+      case 'awaiting_approval':
+        return [
+          r.email ? (
+            <button className={BTN_GO} onClick={() => {
+              window.location.href = `/admin?section=mail&composeTo=${encodeURIComponent(r.email!)}&composeSubject=${encodeURIComponent(`Your mockup for order #${r.id}`)}`;
+            }}>Nudge</button>
+          ) : null,
+          notify(r, 'Approved', `/api/quotes/${r.id}`, { status: 'approved' },
+            `Mark #${r.id} approved? This emails ${r.customer} that their proof is approved.`,
+            `#${r.id} marked approved`),
+          open(r),
+        ].filter(Boolean) as ReactNode[];
+      case 'order_blanks':
+        return [
+          <button className={BTN_GO} onClick={() => { window.location.href = `/admin?section=purchasing&quote=${r.id}`; }}>Order blanks</button>,
+          step(r, 'blanks_ordered', 'Ordered ✓'),
+        ];
+      case 'order_prints':
+        return [
+          <button className={BTN_GO} onClick={() => { window.location.href = '/admin?section=gangsheet'; }}>Build gang sheet</button>,
+          step(r, 'print_ordered', 'Ordered ✓'),
+        ];
+      case 'waiting_goods':
+        return [
+          !s.blanks_received ? step(r, 'blanks_received', 'Blanks in ✓') : null,
+          s.print_ordered && !s.prints_received ? step(r, 'prints_received', 'Prints in ✓') : null,
+          open(r),
+        ].filter(Boolean) as ReactNode[];
+      case 'press':
+        return [
+          !s.in_production
+            ? notify(r, 'Start press', `/api/quotes/${r.id}`, { status: 'in_production' },
+                `Put #${r.id} on the press? This emails and texts ${r.customer} that it's in production.`,
+                `#${r.id} in production`)
+            : null,
+          step(r, 'pressed', 'Pressed ✓'),
+        ].filter(Boolean) as ReactNode[];
+      case 'ready':
+        return [
+          notify(r, 'Mark ready', `/api/quotes/${r.id}`, { status: 'ready' },
+            `Mark #${r.id} ready? This emails and texts ${r.customer} that it's ready and the balance is due.`,
+            `#${r.id} is ready`),
+          open(r),
+        ];
+      case 'handoff':
+        return [
+          notify(r, 'Picked up', `/api/quotes/admin/${r.id}/fulfill`, { method: 'pickup' },
+            `Close out #${r.id} as picked up? This completes the order and emails ${r.customer}.`,
+            `#${r.id} completed`),
+          notify(r, 'Delivered', `/api/quotes/admin/${r.id}/fulfill`, { method: 'delivery' },
+            `Close out #${r.id} as delivered? This completes the order and emails ${r.customer}.`,
+            `#${r.id} completed`),
+          notify(r, 'Mailed', `/api/quotes/admin/${r.id}/fulfill`, { method: 'ship' },
+            `Close out #${r.id} as mailed? This completes the order and emails ${r.customer} their tracking, if a label was bought.`,
+            `#${r.id} completed`),
+        ];
+      default:
+        return [open(r)];
+    }
+  }
+
+  const activeLane = LANES.find((l) => l.key === active);
+
+  return (
+    <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <ListChecks className="h-4.5 w-4.5 text-gray-800" style={{ width: 18, height: 18 }} />
+        <h3 className="text-[15px] font-bold text-gray-900">Today's Work</h3>
+        <span className="text-xs text-gray-500">{rows.length} open job{rows.length === 1 ? '' : 's'} — pick a lane</span>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {LANES.map((l) => {
+          const n = counts[l.key] || 0;
+          const Icon = l.icon;
+          const on = l.key === active;
+          return (
+            <button key={l.key} onClick={() => setLane(l.key)} disabled={n === 0}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition
+                ${n === 0 ? 'border-gray-100 bg-gray-50 text-gray-300' : l.cls}
+                ${on ? 'ring-2 ring-gray-900 ring-offset-1' : n > 0 ? 'hover:brightness-95' : ''}`}>
+              <Icon className="h-3.5 w-3.5" />
+              {l.label}
+              <span className="font-bold">{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {activeLane && laneRows.length > 0 ? (
+        <ul className="mt-3 divide-y divide-gray-100 border-t border-gray-100">
+          {laneRows.map((r) => {
+            const due = dueLabel(r.due, r.overdue);
+            return (
+              <li key={`${r.kind}-${r.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5">
+                <span className={`h-2 w-2 flex-shrink-0 rounded-full ${activeLane.dot}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-gray-900">
+                    {r.customer}
+                    <span className="ml-2 font-normal text-gray-500">#{r.id}</span>
+                  </span>
+                  <span className="block truncate text-xs text-gray-500">
+                    {r.job}{r.qty ? ` · ${r.qty} pc` : ''}{r.method ? ` · ${r.method}` : ''}
+                  </span>
+                </span>
+                <span className={`whitespace-nowrap text-xs ${due.cls}`}>{due.text}</span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  {actions(r).map((b, i) => <span key={i}>{b}</span>)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-4 text-center text-sm text-gray-400">
+          Nothing waiting in this lane — nice.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob, toast }: {
   onOpenQuotes: (filter?: string) => void;
   onOpenQuoteId?: (id: number) => void;
   onOpenInvoices: () => void;
@@ -236,6 +502,16 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
         <KpiCard icon={CreditCard} iconCls="bg-gray-100 text-gray-600" label="Unpaid Balance" value={money(d.kpis.unpaid_balance)} />
         <KpiCard icon={AlertTriangle} iconCls="bg-red-100 text-red-600" label="Jobs At Risk" value={String(d.kpis.jobs_at_risk)} urgent />
       </div>
+
+      {/* Today's Work — the do-it board */}
+      <WorkBoard
+        rows={d.schedule}
+        toast={toast}
+        onChanged={() => {
+          queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard-ops'] });
+          queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+        }}
+      />
 
       {/* Production Pipeline */}
       <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
