@@ -7,10 +7,16 @@
 // prices, notes and margins, and none of that belongs in a parcel.
 //
 // The coupon code is registered in the promotions table by
-// server/migrations/packing_slip_coupon_20261008.sql.
+// server/migrations/packing_slip_coupon_20261008.sql, and the move from 20%
+// to 10% by server/migrations/packing_slip_coupon_10pct_20261118.sql.
+//
+// Changing these two constants changes the panel everywhere it prints, but
+// the code must also exist in `promotions` or the slip advertises something
+// the quote form rejects. THANKYOU20 stays active there on purpose: slips
+// carrying it are already in customers' hands and we honour what we printed.
 
-export const SLIP_COUPON_CODE = 'THANKYOU20';
-export const SLIP_COUPON_PERCENT = 20;
+export const SLIP_COUPON_CODE = 'THANKYOU10';
+export const SLIP_COUPON_PERCENT = 10;
 
 const LOGO_URL = 'https://tshirtbrothers.atl1.cdn.digitaloceanspaces.com/assets/v1/tsb-logo.png';
 const ORANGE = '#f97316';
@@ -65,7 +71,8 @@ function fmtDate(d: string | Date | null | undefined): string {
 const label = (text: string) =>
   `<div style="font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:${GRAY};margin-bottom:6px;">${esc(text)}</div>`;
 
-/** The 20%-off coupon panel. Inline-styled so it can also be dropped into
+/** The thank-you coupon panel (SLIP_COUPON_PERCENT off). Inline-styled so it
+ *  can also be dropped into
  *  the React-rendered group-store slip, which keeps its own store-branded
  *  thank-you. */
 export function slipCouponHtml(): string {
