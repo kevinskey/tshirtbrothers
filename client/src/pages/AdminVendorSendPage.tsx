@@ -31,6 +31,55 @@ function mb(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * The server accepts the three print formats by MIME, but browsers leave
+ * File.type empty for some .tif/.tiff picks — fall back to the extension so
+ * a valid file isn't rejected as "not PNG, PDF, or TIFF".
+ */
+function mimeFor(f: File): string {
+  if (f.type) return f.type;
+  const ext = f.name.toLowerCase().split('.').pop() || '';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'pdf') return 'application/pdf';
+  if (ext === 'tif' || ext === 'tiff') return 'image/tiff';
+  return '';
+}
+
+/**
+ * Send a body with upload progress.
+ *
+ * fetch() reports nothing until the whole body is on the wire, so a 200 MB
+ * send showed a frozen "Sending…" for minutes with no way to tell a slow
+ * upload from a stalled one. XHR gives per-byte progress, a real timeout,
+ * and a distinguishable network error.
+ */
+function sendWithProgress(opts: {
+  method: string;
+  url: string;
+  body: XMLHttpRequestBodyInit;
+  headers?: Record<string, string>;
+  onProgress?: (frac: number) => void;
+}): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(opts.method, opts.url);
+    for (const [k, v] of Object.entries(opts.headers || {})) xhr.setRequestHeader(k, v);
+    // Big print files on a slow upstream are legitimately slow; only give up
+    // after half an hour, and say so rather than hanging forever.
+    xhr.timeout = 30 * 60 * 1000;
+    if (opts.onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) opts.onProgress!(e.loaded / e.total);
+      };
+    }
+    xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText || '' });
+    xhr.onerror = () => reject(new Error('The connection dropped during the upload — check your internet and try again'));
+    xhr.ontimeout = () => reject(new Error('The upload timed out after 30 minutes'));
+    xhr.onabort = () => reject(new Error('Upload cancelled'));
+    xhr.send(opts.body);
+  });
+}
+
 /* ────────────────────────────────────────────────────────────────────── */
 /*  Admin gate — cloned from AdminDtfOrdersPage.tsx                        */
 /* ────────────────────────────────────────────────────────────────────── */
@@ -91,6 +140,9 @@ function VendorFileSender() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [log, setLog] = useState<VendorSendRow[] | null>(null);
+  // Live upload status shown in the dialog — large sends take minutes.
+  const [progress, setProgress] = useState<{ label: string; pct: number | null } | null>(null);
+  const say = (label: string, pct: number | null = null) => setProgress({ label, pct });
 
   async function refreshLog() {
     try {
@@ -149,22 +201,33 @@ function VendorFileSender() {
 
     if (needsDirect) {
       const uploaded = [];
-      for (const f of files) {
+      for (const [i, f] of files.entries()) {
+        const which = files.length > 1 ? ` (${i + 1} of ${files.length})` : '';
+        const ctype = mimeFor(f);
+        say(`Preparing ${f.name}${which}…`);
         const signRes = await fetch('/api/gangsheet-store/admin/vendor-upload-url', {
           method: 'POST',
           headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: f.name, content_type: f.type }),
+          body: JSON.stringify({ filename: f.name, content_type: ctype }),
         });
         const signed = await signRes.json().catch(() => ({}));
         if (!signRes.ok) throw new Error(signed.error || 'Could not start the upload');
-        const put = await fetch(signed.url, {
+        say(`Uploading ${f.name}${which} — 0% of ${mb(f.size)}`, 0);
+        const put = await sendWithProgress({
           method: 'PUT',
-          headers: { 'Content-Type': f.type, 'x-amz-acl': 'private' },
+          url: signed.url,
           body: f,
+          // Must match what the server signed, or Spaces rejects the PUT.
+          headers: { 'Content-Type': ctype, 'x-amz-acl': 'private' },
+          onProgress: (frac) =>
+            say(`Uploading ${f.name}${which} — ${Math.round(frac * 100)}% of ${mb(f.size)}`, frac),
         });
-        if (!put.ok) throw new Error(`Upload failed for ${f.name} (${put.status})`);
-        uploaded.push({ key: signed.key, name: signed.name, bytes: f.size, content_type: f.type });
+        if (put.status < 200 || put.status >= 300) {
+          throw new Error(`Upload failed for ${f.name} (${put.status})`);
+        }
+        uploaded.push({ key: signed.key, name: signed.name, bytes: f.size, content_type: ctype });
       }
+      say('Emailing the vendor…');
       const r = await fetch('/api/gangsheet-store/admin/vendor-send-uploaded', {
         method: 'POST',
         headers: { ...authHeaders(), 'Content-Type': 'application/json' },
@@ -192,16 +255,23 @@ function VendorFileSender() {
     fd.append('vendor_name', payload.vendor_name);
     fd.append('vendor_email', payload.vendor_email);
     fd.append('note', payload.note);
-    const r = await fetch('/api/gangsheet-store/admin/vendor-send-file', {
+    say(`Uploading ${mb(totalBytes)} — 0%`, 0);
+    const r = await sendWithProgress({
       method: 'POST',
-      headers: authHeaders(), // Authorization only — browser sets multipart Content-Type
+      url: '/api/gangsheet-store/admin/vendor-send-file',
       body: fd,
+      headers: authHeaders(), // Authorization only — browser sets multipart Content-Type
+      onProgress: (frac) =>
+        (frac >= 1
+          ? say('Emailing the vendor…')
+          : say(`Uploading ${mb(totalBytes)} — ${Math.round(frac * 100)}%`, frac)),
     });
     // A 413 here comes from Cloudflare as HTML, so there is no JSON error to
     // read — saying "Send failed" left the real limit invisible.
-    const body = await r.json().catch(() => ({}));
+    let body: any = {};
+    try { body = JSON.parse(r.text); } catch { /* HTML error page */ }
     if (r.status === 413) throw new Error('That file is too big to send through the site — it will upload directly instead; try again.');
-    if (!r.ok) throw new Error(body.error || `Send failed (${r.status})`);
+    if (r.status < 200 || r.status >= 300) throw new Error(body.error || `Send failed (${r.status})`);
     toast.success(
       files.length === 1
         ? `Sent to ${payload.vendor_email}`
@@ -352,7 +422,11 @@ function VendorFileSender() {
       <SendToVendorDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
-        onSend={handleSend}
+        onSend={async (p) => {
+          try { await handleSend(p); } finally { setProgress(null); }
+        }}
+        progressLabel={progress?.label ?? null}
+        progressPct={progress?.pct ?? null}
         subject={
           files.length === 1
             ? `${files.map((f) => f.name).join('')} (${mb(totalBytes)})`

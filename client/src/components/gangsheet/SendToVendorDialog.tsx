@@ -30,9 +30,15 @@ interface SendToVendorDialogProps {
   // e.g. 'Order #12' or the sheet name — shown so the admin can confirm
   // they're sending the right thing.
   subject: string;
+  // Live status from the caller while onSend runs ("Uploading … 42% of
+  // 226.4 MB"). A big print file takes minutes, and a button that only says
+  // "Sending…" is indistinguishable from a hung upload.
+  progressLabel?: string | null;
+  // 0–1 for the bar; omit for steps with no measurable progress.
+  progressPct?: number | null;
 }
 
-export default function SendToVendorDialog({ open, onClose, onSend, subject }: SendToVendorDialogProps) {
+export default function SendToVendorDialog({ open, onClose, onSend, subject, progressLabel, progressPct }: SendToVendorDialogProps) {
   const [presetKey, setPresetKey] = useState<string>('kolormatrix');
   const [email, setEmail] = useState('');
   const [note, setNote] = useState('');
@@ -142,6 +148,19 @@ export default function SendToVendorDialog({ open, onClose, onSend, subject }: S
             </p>
 
             {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+
+            {busy && progressLabel && (
+              <div className="mb-3">
+                <p className="mb-1 text-xs font-medium text-gray-600">{progressLabel}</p>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className={`h-full bg-orange-500 ${typeof progressPct === 'number' ? 'transition-all' : 'w-1/3 animate-pulse'}`}
+                    style={typeof progressPct === 'number' ? { width: `${Math.round(progressPct * 100)}%` } : undefined}
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">Keep this tab open until it finishes.</p>
+              </div>
+            )}
 
             <button
               type="button"
