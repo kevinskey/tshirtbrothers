@@ -1,6 +1,7 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import { fitTitle } from '@/lib/seoLength';
 import GoogleRatingChip from '@/components/GoogleRatingChip';
 import { CITY_LANDINGS, findCityLanding } from '@/data/cityLandings';
 import {
@@ -28,7 +29,7 @@ export default function CityLandingPage() {
   return (
     <Layout>
       <Seo
-        title={`Custom T-Shirt Printing in ${city.name}, GA · Screen Print, DTF, Embroidery`}
+        title={fitTitle(`Custom T-Shirt Printing in ${city.name}, GA`)}
         description={`Custom t-shirts, hoodies, and apparel for ${city.name}. Screen printing, DTF transfers, embroidery — no minimums, ${city.driveMinutes === 0 ? 'free local pickup in Fairburn' : `${city.driveMinutes} minutes from ${city.name}`}.`}
         path={`/custom-shirts/${city.slug}`}
       />

@@ -42,15 +42,12 @@ export default function Seo({ title, description, path, image, noindex, alternat
       <meta name="description" content={description} />
       <link rel="canonical" href={url} />
       {noindex && <meta name="robots" content="noindex, nofollow" />}
+      {/* Callers include 'x-default' in alternates (pointing at the
+          canonical, usually English, version), so this one map emits it —
+          a separate x-default block here would duplicate the tag. */}
       {alternates && Object.entries(alternates).map(([lang, p]) => (
         <link key={lang} rel="alternate" hrefLang={lang} href={`${SITE}${p.startsWith('/') ? p : `/${p}`}`} />
       ))}
-      {/* x-default points to the canonical (usually English) version
-          so unmatched locales fall back gracefully. */}
-      {alternates?.['x-default'] && (
-        <link rel="alternate" hrefLang="x-default" href={`${SITE}${alternates['x-default']}`} />
-      )}
-
       {/* Open Graph */}
       <meta property="og:type" content="website" />
       <meta property="og:title" content={title} />

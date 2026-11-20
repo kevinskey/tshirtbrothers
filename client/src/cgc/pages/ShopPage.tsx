@@ -171,7 +171,12 @@ function ShopPageInner() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
-      <Helmet><title>{`${heading} — Custom Gift Club`}</title></Helmet>
+      <Helmet>
+        <title>{`${heading} — Custom Gift Club`}</title>
+        {/* Static on purpose: built from `heading`, the unfiltered route
+            would get a description that says nothing ("Shop All"). */}
+        <meta name="description" content="Shop personalized gifts — engraved drinkware, awards, keepsakes and more, custom made for birthdays, weddings, graduations, retirements and every occasion." />
+      </Helmet>
 
       <nav className="text-sm text-cgc-stone mb-3" aria-label="Breadcrumb">
         <Link to={p('/')} className="hover:text-cgc-orange">Home</Link>
