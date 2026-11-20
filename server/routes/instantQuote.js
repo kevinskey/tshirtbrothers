@@ -9,6 +9,7 @@ import { authenticate, adminOnly } from '../middleware/auth.js';
 import { cardFeeCents } from './invoices.js';
 import { retailPrice } from '../lib/pricing.js';
 import { tierForWholesale, garmentFamilyFor } from '../lib/garmentTier.js';
+import { isValidNeedByDate, normalizeArtworkPlacements, normalizeMockups, printAreasFor } from '../lib/quoteIntake.js';
 
 const router = Router();
 
@@ -285,11 +286,18 @@ async function resolvePickedProductPrice(ss_id) {
  * ------------------------------------------------------------------------- */
 router.post('/calculate', async (req, res, next) => {
   try {
+    const { requested_need_by } = req.body;
+    if (requested_need_by != null && !isValidNeedByDate(requested_need_by)) {
+      return res.status(400).json({ error: 'requested_need_by must be a valid YYYY-MM-DD date' });
+    }
+
     const tables = await loadPricingTables();
     const inputs = { ...req.body };
+    delete inputs.pickedProduct;
     if (inputs.productSsId) {
       const picked = await resolvePickedProductPrice(inputs.productSsId);
-      if (picked) inputs.pickedProduct = picked;
+      if (!picked) return res.status(400).json({ error: 'Selected catalog product is unavailable for pricing. Please choose another product.' });
+      inputs.pickedProduct = picked;
     }
     const result = computeQuote(inputs, tables);
     if (inputs.pickedProduct) result.picked_product = inputs.pickedProduct;
@@ -319,12 +327,17 @@ function ownBucketUrl(u) {
  * editor sees them all.
  * ------------------------------------------------------------------------- */
 router.post('/save', async (req, res, next) => {
-  const client = await pool.connect();
+  let client;
   try {
     const {
       items, customer_name, customer_email, customer_phone, notes,
+      requested_need_by, artwork_placements,
       mockup_image_url, mockup_image_url_back,
+      mockup_image_url_sleeve, mockup_image_url_sleeve_left,
     } = req.body;
+    if (!isValidNeedByDate(requested_need_by)) {
+      return res.status(400).json({ error: 'A valid requested_need_by date (YYYY-MM-DD) is required' });
+    }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'items array is required' });
     }
@@ -414,20 +427,25 @@ router.post('/save', async (req, res, next) => {
           },
           design_url: item.design_url || null,
           extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+          mockups: normalizeMockups(item.mockups),
+          artwork_placements: normalizeArtworkPlacements(item.artwork_placements),
         });
         continue;
       }
       if (!item.inputs || typeof item.inputs !== 'object') {
         return res.status(400).json({ error: `items[${i}].inputs is required` });
       }
-      const effectiveInputs = { ...item.inputs, discountQuantity: pooledQty };
+      const areas = printAreasFor(item.inputs, item.artwork_placements);
+      const effectiveInputs = { ...item.inputs, discountQuantity: pooledQty,
+        numLocations: Math.max(Number(item.inputs.numLocations) || 1, areas.length) };
+      // Catalog prices must always come from the database, never client input.
+      delete effectiveInputs.pickedProduct;
       let pickedProductMeta = null;
       if (effectiveInputs.productSsId) {
         const picked = await resolvePickedProductPrice(effectiveInputs.productSsId);
-        if (picked) {
-          effectiveInputs.pickedProduct = picked;
-          pickedProductMeta = picked;
-        }
+        if (!picked) return res.status(400).json({ error: `items[${i}]: selected catalog product is unavailable for pricing` });
+        effectiveInputs.pickedProduct = picked;
+        pickedProductMeta = picked;
       }
       let calc;
       try {
@@ -438,11 +456,13 @@ router.post('/save', async (req, res, next) => {
       itemRows.push({
         index: i,
         kind: 'catalog',
-        inputs: item.inputs,
+        inputs: { ...item.inputs, numLocations: effectiveInputs.numLocations },
+        mockups: normalizeMockups(item.mockups),
         pickedProductMeta,
         calc,
         design_url: item.design_url || null,
         extra_design_urls: Array.isArray(item.extra_design_urls) ? item.extra_design_urls : [],
+        artwork_placements: normalizeArtworkPlacements(item.artwork_placements),
       });
     }
 
@@ -487,15 +507,20 @@ router.post('/save', async (req, res, next) => {
         picked_product: r.pickedProductMeta || null,
         design_url: r.design_url,
         extra_design_urls: r.extra_design_urls,
+        artwork_placements: r.artwork_placements || [],
+        mockups: r.mockups || [],
       })),
       grand_total: grandTotal,
       grand_quantity: grandQuantity,
+      requested_need_by: requested_need_by || null,
+      artwork_placements: normalizeArtworkPlacements(artwork_placements),
       // 'es' when saved from /es/cotizacion — downstream customer emails
       // (deposit receipt, status updates, follow-ups) read this via
       // quoteLang() and switch to Spanish.
       lang: req.body.lang === 'es' ? 'es' : 'en',
     };
 
+    client = await pool.connect();
     await client.query('BEGIN');
 
     const headerRes = await client.query(
@@ -504,9 +529,9 @@ router.post('/save', async (req, res, next) => {
          design_type, inputs_json, calculated_price,
          design_url, extra_design_urls,
          mockup_image_url, mockup_image_url_back,
-         estimated_price, notes, status)
-       VALUES ($1, $2, $3, $4, $5, 'instant-quote', $6::jsonb, $7, $8, $9::jsonb, $10, $11, $12, $13, 'pending')
-       RETURNING id, customer_name, customer_email, created_at`,
+         estimated_price, notes, date_needed, mockup_image_url_sleeve, mockup_image_url_sleeve_left, status)
+       VALUES ($1, $2, $3, $4, $5, 'instant-quote', $6::jsonb, $7, $8, $9::jsonb, $10, $11, $12, $13, $14, $15, $16, 'pending')
+       RETURNING id, customer_name, customer_email, date_needed, created_at`,
       [
         cleanName,
         customer_email,
@@ -517,13 +542,16 @@ router.post('/save', async (req, res, next) => {
         grandTotal,
         firstItem.design_url || null,
         JSON.stringify(firstItem.extra_design_urls),
-        ownBucketUrl(mockup_image_url),
-        ownBucketUrl(mockup_image_url_back),
+        ownBucketUrl(mockup_image_url || firstItem.mockups?.find(m => m.placement === 'front')?.url),
+        ownBucketUrl(mockup_image_url_back || firstItem.mockups?.find(m => m.placement === 'back')?.url),
         grandTotal,
         notes || null,
+        requested_need_by,
+        ownBucketUrl(mockup_image_url_sleeve || firstItem.mockups?.find(m => m.placement === 'right_sleeve')?.url),
+        ownBucketUrl(mockup_image_url_sleeve_left || firstItem.mockups?.find(m => m.placement === 'left_sleeve')?.url),
       ],
     );
-    const quote = headerRes.rows[0];
+    const quote = { ...headerRes.rows[0], date_needed: requested_need_by };
     recordActivity({
       event: 'quote_submitted',
       email: quote.customer_email,
@@ -572,10 +600,7 @@ router.post('/save', async (req, res, next) => {
       const itemProductName = r.pickedProductMeta
         ? r.pickedProductMeta.name
         : `${inp.qualityTier} ${inp.garmentName}`;
-      const printAreas = [];
-      if (inp.locations?.front) printAreas.push('front');
-      if (inp.locations?.back) printAreas.push('back');
-      if (inp.locations?.sleeve) printAreas.push('sleeve');
+      const printAreas = printAreasFor(inp, r.artwork_placements);
 
       await client.query(
         `INSERT INTO quote_items
@@ -618,10 +643,10 @@ router.post('/save', async (req, res, next) => {
 
     res.json({ id: quote.id, total: grandTotal, per_shirt: perShirtAvg, items: itemRows.length });
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (client) await client.query('ROLLBACK').catch(() => {});
     next(err);
   } finally {
-    client.release();
+    client?.release();
   }
 });
 

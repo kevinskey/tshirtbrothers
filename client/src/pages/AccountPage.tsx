@@ -8,6 +8,17 @@ interface Profile { id: number; email: string; name: string; phone: string; role
 interface Quote { id: number; product_name: string; quantity: number; status: string; estimated_price: number | null; deposit_amount: number | null; created_at: string; date_needed: string | null; accepted_at: string | null; accept_token: string | null; }
 interface Design { id: number; name: string; product_name: string; thumbnail: string | null; mockup_url: string | null; created_at: string; }
 
+interface EmbroideryIntake { id: number; status: string; quantity: number; desired_size: string; date_needed: string | null; access_token: string; }
+interface DtfSheet { width_in: number; length_ft: number; copies: number; name?: string; }
+interface DtfOrder { sheets?: DtfSheet[]; id: number; width_in: number; length_ft: number; date_needed: string | null; status: string; price_cents: number; shipping_cents: number; }
+function dateOnly(value: string) { return new Date(`${value.slice(0, 10)}T12:00:00`).toLocaleDateString(); }
+async function dtfApi<T>(path = ''): Promise<T> {
+  const response = await fetch(`/api/gangsheet-store/customer/orders${path}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Unable to load your DTF orders');
+  return data;
+}
+
 function getToken() { return localStorage.getItem('tsb_token') || ''; }
 async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`/api/auth${path}`, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}`, ...opts?.headers } });
@@ -29,6 +40,11 @@ export default function AccountPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [designs, setDesigns] = useState<Design[]>([]);
+  const [dtfOrders, setDtfOrders] = useState<DtfOrder[]>([]);
+  const [dtfError, setDtfError] = useState('');
+  const [embroidery, setEmbroidery] = useState<EmbroideryIntake[]>([]);
+  const [embroideryError, setEmbroideryError] = useState('');
+  const [downloading, setDownloading] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Profile form
@@ -67,6 +83,25 @@ export default function AccountPage() {
       navigate('/auth');
     }).finally(() => setLoading(false));
   }, [navigate]);
+
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    dtfApi<DtfOrder[]>().then(rows => { if (active) setDtfOrders(rows); })
+      .catch(error => { if (active) setDtfError(error.message); });
+    api<EmbroideryIntake[]>('/me/embroidery-requests').then(rows => { if (active) setEmbroidery(rows); })
+      .catch(error => { if (active) setEmbroideryError(error.message); });
+    return () => { active = false; };
+  }, [profile]);
+
+  async function downloadDtf(id: number, sheet = 0) {
+    setDownloading(id); setDtfError('');
+    try {
+      const order = await dtfApi<{ download_url: string; sheets?: Array<{ download_url: string }> }>(`/${id}`);
+      window.location.assign(order.sheets?.[sheet]?.download_url || order.download_url);
+    } catch (error) { setDtfError(error instanceof Error ? error.message : 'Download failed'); }
+    finally { setDownloading(null); }
+  }
 
   async function handleSaveProfile(e: FormEvent) {
     e.preventDefault();
@@ -282,7 +317,15 @@ export default function AccountPage() {
         {/* Quotes */}
         {tab === 'quotes' && (
           <div className="space-y-3">
-            {activeQuotes.length === 0 ? (
+            {embroideryError && <p role="alert" className="text-sm text-red-700">Could not load embroidery requests: {embroideryError}</p>}
+            {embroidery.map(request => <div key={`embroidery-${request.id}`} className="rounded-xl border border-orange-200 bg-white p-4">
+              <h3 className="font-bold">Embroidery request #{request.id}</h3>
+              <p className="mt-1 text-sm text-gray-600">{request.quantity} pieces · {request.desired_size} · {request.status.replace(/_/g, ' ')}</p>
+              {request.date_needed && <p className="mt-1 text-xs font-semibold text-orange-700">Needed by {dateOnly(request.date_needed)}</p>}
+              <Link className="mt-2 inline-block text-sm font-semibold text-orange-700" to={`/embroidery/thanks/${request.id}?t=${encodeURIComponent(request.access_token)}`}>View request →</Link>
+            </div>)}
+
+            {activeQuotes.length === 0 && embroidery.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
                 <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500">No quotes yet</p>
@@ -300,7 +343,7 @@ export default function AccountPage() {
                 {q.estimated_price != null && (
                   <p className="mt-2 text-sm font-semibold text-gray-900">Quoted: ${Number(q.estimated_price).toFixed(2)}</p>
                 )}
-                {q.date_needed && <p className="text-xs text-orange-600 mt-1">Needed by {new Date(q.date_needed).toLocaleDateString()}</p>}
+                {q.date_needed && <p className="text-xs text-orange-600 mt-1">Needed by {dateOnly(q.date_needed)}</p>}
               </div>
             ))}
           </div>
@@ -309,7 +352,23 @@ export default function AccountPage() {
         {/* Orders */}
         {tab === 'orders' && (
           <div className="space-y-3">
-            {orders.length === 0 ? (
+            {dtfError && <p role="alert" className="text-sm text-red-700">{dtfError}</p>}
+            {dtfOrders.map(order => <div key={`dtf-${order.id}`} className="rounded-xl border border-orange-200 bg-white p-4">
+              <div className="flex justify-between gap-3"><h3 className="font-bold">DTF Order #{order.id}</h3><span className="text-xs capitalize">{order.status.replace(/_/g, ' ')}</span></div>
+              <p className="mt-1 text-sm text-gray-600">{order.sheets?.length ? `${order.sheets.length} sheets · ${order.sheets.reduce((sum, sheet) => sum + sheet.copies, 0)} copies` : `${order.width_in}″ × ${order.length_ft} ft`} · ${((order.price_cents + order.shipping_cents) / 100).toFixed(2)}</p>
+              {order.date_needed && <p className="mt-1 text-xs font-semibold text-orange-700">Needed by {dateOnly(order.date_needed)}</p>}
+              {(order.sheets || []).length > 1 && <div className="mt-2 space-y-1">
+                {order.sheets?.map((sheet, index) => <button key={index} type="button" disabled={downloading === order.id} onClick={() => downloadDtf(order.id, index)} className="block text-xs font-semibold text-orange-700">
+                  Download sheet {index + 1} · {sheet.width_in}″ × {sheet.length_ft}ft · {sheet.copies} copies
+                </button>)}
+              </div>}
+              <div className="mt-3 flex gap-4 text-sm font-semibold text-orange-700">
+                <button type="button" disabled={downloading === order.id} onClick={() => downloadDtf(order.id)}>{downloading === order.id ? 'Preparing download…' : 'Download print file'}</button>
+                <Link to={`/dtf?reorder=${order.id}`}>Reorder this sheet →</Link>
+              </div>
+            </div>)}
+
+            {orders.length === 0 && dtfOrders.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
                 <Package className="w-10 h-10 text-gray-300 mx-auto mb-3" />
                 <p className="text-gray-500">No orders yet</p>
@@ -327,7 +386,8 @@ export default function AccountPage() {
                     </div>
                     <span className={`text-xs font-bold px-2 py-1 rounded-full capitalize ${STATUS_COLORS[q.status] || ''}`}>{q.status}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+                  {q.date_needed && <p className="mt-2 text-xs font-semibold text-orange-700">Needed by {dateOnly(q.date_needed)}</p>}
+                <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
                     <div className="bg-gray-50 rounded-lg p-2 text-center">
                       <p className="text-gray-400">Total</p>
                       <p className="font-bold text-gray-900">${total.toFixed(2)}</p>

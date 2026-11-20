@@ -245,6 +245,7 @@ export default function EmbroideryQuotePage() {
   };
 
   const [submitting, setSubmitting] = useState(false);
+  const [needBy, setNeedBy] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const onFiles = (list: FileList | null) => {
@@ -270,7 +271,7 @@ export default function EmbroideryQuotePage() {
 
   const artReady = artMode === 'stitch' ? !!stitchFileBase64 : designs.length > 0;
   const canSubmit =
-    name.trim() && /\S+@\S+\.\S+/.test(email) && artReady && garmentMode && itemsValid;
+    needBy && name.trim() && /\S+@\S+\.\S+/.test(email) && artReady && garmentMode && itemsValid;
 
   const submit = async () => {
     if (!canSubmit || submitting) return;
@@ -281,6 +282,7 @@ export default function EmbroideryQuotePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          date_needed: needBy,
           name: name.trim(), email: email.trim(), phone: phone.trim() || undefined,
           designs: designs.length > 0
             ? designs.map((d) => ({ imageBase64: d.base64, filename: d.fileName }))
@@ -356,6 +358,11 @@ export default function EmbroideryQuotePage() {
         </div>
 
         <div className="space-y-6 sm:rounded-3xl sm:border sm:border-orange-100 sm:bg-white sm:p-8 sm:shadow-2xl">
+          <section>
+            <label htmlFor="embroidery-need-by" className={labelCls}>When do you need these?</label>
+            <input id="embroidery-need-by" type="date" required value={needBy} onChange={e => setNeedBy(e.target.value)} className={inputCls} />
+            <p className="mt-2 text-xs text-gray-500">We will confirm your requested date when reviewing the quote.</p>
+          </section>
           {/* Artwork — image to digitize, or an already-digitized stitch file */}
           <section>
             <label className={labelCls}>1. Your artwork</label>

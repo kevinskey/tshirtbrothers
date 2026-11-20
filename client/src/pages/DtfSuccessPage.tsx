@@ -34,6 +34,7 @@ export default function DtfSuccessPage() {
   const [promise] = useState<string | null>(() => readStashedPromise());
 
   useEffect(() => {
+    try { sessionStorage.removeItem('dtf_cart_stash'); sessionStorage.removeItem('dtf_upload_stash'); } catch { /* optional browser draft */ }
     try { sessionStorage.removeItem(STASH_KEY); } catch { /* private mode etc. — non-fatal */ }
   }, []);
 

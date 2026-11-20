@@ -1,3 +1,4 @@
+import { QuoteEmbroiderySection } from '@/components/admin/EmbroideryQuoteForm';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -16,6 +17,7 @@ interface QuoteItem {
   id: number; product_name: string | null; catalog_name: string | null;
   brand: string | null; color: string | null; sizes: SizeCount[] | string;
   quantity: number; unit_price: string | null; line_total: string | null;
+  position: number; print_areas?: string[]; design_url?: string | null;
 }
 interface Payment { amount?: number; method?: string; date?: string; recorded_at?: string }
 interface InvoiceRow {
@@ -42,6 +44,14 @@ interface Detail {
     mockup_image_url_sleeve: string | null; mockup_image_url_sleeve_left: string | null;
     created_at: string; accepted_at: string | null; balance_paid_at: string | null;
     date_needed: string | null;
+    inputs_json?: {
+      requested_need_by?: string | null;
+      items?: Array<{
+        artwork_placements?: Array<{ url: string; placement: string }>;
+        extra_design_urls?: string[];
+        mockups?: Array<{ url: string; placement: string }>;
+      }>;
+    } | null;
     order_stages: Record<string, string> | null;
     shipping_method: string | null; fulfillment_method: string | null;
     picked_up_at: string | null; shipped_at: string | null;
@@ -50,6 +60,11 @@ interface Detail {
       name?: string; address?: string; address2?: string; city?: string; state?: string; zip?: string;
     } | null;
   };
+  mockups?: Array<{
+    id: number; name: string | null; preview_image_url: string | null;
+    preview_image_url_back: string | null; back_preview_image_url: string | null;
+    preview_image_url_sleeve: string | null; preview_image_url_sleeve_left: string | null;
+  }>;
   items: QuoteItem[];
   invoices: InvoiceRow[];
   purchaseOrders: PoRow[];
@@ -288,15 +303,15 @@ export default function AdminOrderDetailPage() {
     : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};
 
-  // Doc's production flow: quote → accepted → mockup → deposit → blanks →
+  // Production flow: quote → accepted → deposit → mockup → blanks →
   // gang sheet sent → gang sheet picked up → pressed → customer contacted →
   // final payment → completed. Stages with a data signal check themselves;
   // shop-floor ones (stageKey set) are click-to-toggle.
   const steps: Array<{ label: string; done: boolean; when: string | null; stageKey?: string }> = [
     { label: 'Quote', done: true, when: dt(quote.created_at) },
     { label: 'Accepted', done: !!quote.accepted_at || ['accepted', 'completed'].includes(quote.status), when: dt(quote.accepted_at) },
-    { label: 'Mockup', done: !!quote.mockup_image_url, when: null },
     { label: 'Deposit', done: totalPaid > 0, when: null },
+    { label: 'Mockup prepared', done: !!(quote.mockup_image_url || quote.mockup_image_url_back || quote.mockup_image_url_sleeve || quote.mockup_image_url_sleeve_left), when: null },
     { label: 'Blanks ordered', done: purchaseOrders.some((p) => !p.is_test && p.status !== 'cancelled'), when: null },
     { label: 'Gang sheet sent', done: vendorSends.length > 0 || !!stages.gang_sent, when: dt(stages.gang_sent), stageKey: 'gang_sent' },
     { label: 'Gang sheet picked up', done: !!stages.gang_pickup, when: dt(stages.gang_pickup), stageKey: 'gang_pickup' },
@@ -398,7 +413,7 @@ export default function AdminOrderDetailPage() {
           {/* Centre of the header, between the name block and the money —
               the first thing you should see when the page opens. */}
           <div className="flex flex-1 justify-center">
-            <DueDateBadge dateNeeded={quote.date_needed} />
+            <DueDateBadge dateNeeded={quote.date_needed || quote.inputs_json?.requested_need_by || null} />
           </div>
           <div className="text-right text-sm">
             <button
@@ -555,6 +570,39 @@ export default function AdminOrderDetailPage() {
                           {[it.brand, it.color].filter(Boolean).join(' · ')}
                           {' · '}{it.quantity} pcs{it.unit_price ? ` @ ${money(it.unit_price)}` : ''}
                         </div>
+                        {Array.isArray(it.print_areas) && it.print_areas.length > 0 && (
+                          <div className="text-xs text-gray-600 mt-1">
+                            Print locations: {it.print_areas.join(', ')}
+                          </div>
+                        )}
+                        {(() => {
+                          const files = quote.inputs_json?.items?.[it.position]?.artwork_placements || [];
+                          return files.length > 0 ? (
+                            <div className="mt-3">
+                              <div className="text-xs font-semibold text-gray-700 mb-2">Artwork by print location</div>
+                              <div className="flex flex-wrap gap-2">
+                                {files.filter((file) => /^https:\/\//.test(file.url)).map((file, idx) => (
+                                  <a key={`${file.url}-${idx}`} href={file.url} target="_blank" rel="noreferrer"
+                                    className="block w-24 rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                                    <img src={file.url} alt={`Artwork for ${file.placement}`}
+                                      className="w-full h-20 object-contain" />
+                                    <div className="px-1 py-1 text-[10px] text-center capitalize">{file.placement.replace(/_/g, ' ')}</div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null;
+                        })()}
+                        {(quote.inputs_json?.items?.[it.position]?.mockups || []).length > 0 && (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {quote.inputs_json?.items?.[it.position]?.mockups?.filter(m => /^https:\/\//.test(m.url)).map((m, i) => (
+                              <a key={i} href={m.url} target="_blank" rel="noreferrer" className="w-28 text-xs text-center">
+                                <img src={m.url} alt={`${m.placement} mockup`} className="h-28 w-full object-contain rounded border bg-gray-100" />
+                                {m.placement.replace(/_/g, ' ')}
+                              </a>
+                            ))}
+                          </div>
+                        )}
                         {sizes.length > 0 && (
                           <div className="text-xs text-gray-600 mt-1">
                             {sizes.map((s) => `${s.size}×${s.quantity}`).join('  ')}
@@ -578,12 +626,32 @@ export default function AdminOrderDetailPage() {
                   ))}
                 </div>
               )}
+              {(detail.mockups || []).map(m => (
+                <div key={m.id} className="mt-4">
+                  <p className="text-sm font-medium">{m.name || `Mockup #${m.id}`}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[
+                      { url: m.preview_image_url, label: 'Front' },
+                      { url: m.preview_image_url_back || m.back_preview_image_url, label: 'Back' },
+                      { url: m.preview_image_url_sleeve, label: 'Right sleeve' },
+                      { url: m.preview_image_url_sleeve_left, label: 'Left sleeve' },
+                    ].filter(v => v.url).map(v => (
+                      <a key={v.label} href={v.url!} target="_blank" rel="noreferrer" className="text-xs text-center">
+                        <img src={v.url!} alt={v.label} className="h-32 rounded border object-contain bg-gray-100" />
+                        {v.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              ))}
               {quote.notes && (
                 <div className="mt-3 text-sm bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
                   <span className="font-medium">Quote notes:</span> {quote.notes}
                 </div>
               )}
             </Section>
+
+            <QuoteEmbroiderySection quoteId={Number(quoteId)} />
 
             {/* Money */}
             <Section title="Invoices & payments" icon={DollarSign}>

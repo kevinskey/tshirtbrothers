@@ -1,3 +1,4 @@
+import { isValidNeedByDate } from '../lib/quoteIntake.js';
 import express, { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db.js';
@@ -162,6 +163,8 @@ router.post('/', async (req, res, next) => {
       date_needed,
       shipping_method,
     } = req.body;
+
+    if (!isValidNeedByDate(date_needed)) return res.status(400).json({ error: 'Choose a valid need-by date (YYYY-MM-DD)' });
 
     if (!customer_name || !customer_email || !quantity) {
       return res.status(400).json({
@@ -489,7 +492,7 @@ router.get('/:id/public', async (req, res, next) => {
     } catch (err) {
       console.error(`[quotes] public mockup lookup failed for ${req.params.id}:`, err.message);
     }
-    if (mockups.length === 0 && q.mockup_image_url) {
+    if (mockups.length === 0 && (q.mockup_image_url || q.mockup_image_url_back || q.mockup_image_url_sleeve || q.mockup_image_url_sleeve_left)) {
       mockups = [{
         id: null,
         name: null,

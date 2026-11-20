@@ -1,3 +1,4 @@
+import QuoteSubmissionGallery from '@/components/admin/QuoteSubmissionGallery';
 import { useState, useEffect, useRef, useMemo, type FormEvent } from 'react';
 import EmbroideryRequestsPanel from '@/components/admin/EmbroideryRequestsPanel';
 import { QuoteEmbroiderySection } from '@/components/admin/EmbroideryQuoteForm';
@@ -3822,16 +3823,7 @@ export default function AdminPage() {
                           {daysUntil !== null && daysUntil < 0 ? 'OVERDUE' : daysUntil === 0 ? 'TODAY' : `${daysUntil}d`}
                         </span>
                       )}
-                      {(q as Quote & { triage?: { urgency?: string; complexity?: string; summary?: string } }).triage?.urgency && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'rush' ? 'bg-red-600 text-white' :
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'high' ? 'bg-red-100 text-red-700' :
-                          (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency?.toUpperCase()}
-                        </span>
-                      )}
+
                     </div>
                   </div>
                   <div className="flex items-center gap-2.5">
@@ -7507,8 +7499,8 @@ export default function AdminPage() {
           </div>
         )}
 
-        
-        
+
+
         {/* Instagram Post Preview Modal */}
         {igPost && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIgPost(null)}>
@@ -8920,36 +8912,12 @@ export default function AdminPage() {
                         }}
                       />
                     </span>
-                    {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency && (
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'rush' ? 'bg-red-600 text-white' :
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'high' ? 'bg-red-100 text-red-700' :
-                        (q as Quote & { triage?: { urgency?: string } }).triage?.urgency === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-green-100 text-green-700'
-                      }`}>
-                        {(q as Quote & { triage?: { urgency?: string } }).triage?.urgency?.toUpperCase()}
-                      </span>
-                    )}
+
                   </div>
 
                   {/* Can this come off the shelf instead of an S&S order? */}
                   <ShelfMatch productName={productName} />
-
-                  {/* AI Triage summary */}
-                  {(q as Quote & { triage?: { summary?: string; complexity?: string; estimated_hours?: number } }).triage?.summary && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                      <p className="text-xs font-semibold text-blue-600 uppercase mb-1">AI Triage</p>
-                      <p className="text-sm text-blue-800">{(q as Quote & { triage?: { summary?: string } }).triage?.summary}</p>
-                      <div className="flex gap-3 mt-1 text-[10px] text-blue-600">
-                        {(q as Quote & { triage?: { complexity?: string } }).triage?.complexity && (
-                          <span>Complexity: <strong>{(q as Quote & { triage?: { complexity?: string } }).triage?.complexity}</strong></span>
-                        )}
-                        {(q as Quote & { triage?: { estimated_hours?: number } }).triage?.estimated_hours && (
-                          <span>Est: <strong>{(q as Quote & { triage?: { estimated_hours?: number } }).triage?.estimated_hours}h</strong></span>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  <QuoteSubmissionGallery value={q.inputs_json} />
 
                   {/* Embroidery workflow, inline. When this quote was
                       converted to an embroidery request, the whole job —

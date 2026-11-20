@@ -858,6 +858,7 @@ export interface EmbroideryJob {
 // ── Embroidery quote requests (customer path) ──────────────────────────────
 
 export interface EmbroideryRequest {
+  date_needed?: string | null;
   id: number;
   customer_name: string;
   customer_email: string;

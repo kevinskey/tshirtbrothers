@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,6 +15,8 @@ type ShipAddress = { line1?: string; city?: string; state?: string; zip?: string
 
 type LayoutPlacement = { image_url: string; left: number; top: number; width: number; height: number; rotation: number };
 
+type OrderSheet = { file_key?: string; name?: string; width_in: number; width_px?: number;
+  height_px?: number; length_ft: number; copies: number; layout?: LayoutPlacement[] | null };
 type OrderRow = {
   id: number;
   layout: LayoutPlacement[] | null;
@@ -25,6 +27,8 @@ type OrderRow = {
   // Which roll to load on the press. Older orders predate widths and come
   // back 22 via the column default, never null.
   width_in: number;
+  sheets_json?: OrderSheet[] | null;
+  date_needed: string | null;
   tier: TierKey;
   price_cents: number;
   shipping_cents: number;
@@ -42,6 +46,11 @@ type OrderRow = {
   vendor_email: string | null;
   vendor_sent_at: string | null;
 };
+
+function purchasedSheets(order: OrderRow): OrderSheet[] {
+  return order.sheets_json?.length ? order.sheets_json : [{ width_in: order.width_in || 22,
+    length_ft: order.length_ft, copies: 1, layout: order.layout }];
+}
 
 // Server-side height check (1 ft = 3,600 px) as a display value, so a
 // mismatch between the file's actual height and the ordered length is
@@ -132,7 +141,6 @@ function countdownLabel(order: OrderRow): { text: string; overdue: boolean } {
 function printDtfPackingSlip(order: OrderRow) {
   const a = order.ship_address;
   const groups = order.layout ? layoutSummary(order.layout) : [];
-  const designs = groups.reduce((n, g) => n + g.count, 0);
   printPackingSlip({
     orderNumber: order.id,
     orderType: 'DTF Gang Sheet',
@@ -144,15 +152,10 @@ function printDtfPackingSlip(order: OrderRow) {
           .filter((l) => l.trim() !== '')
       : undefined,
     shippingMethod: order.delivery === 'ship' ? 'Shipped' : null,
-    items: [{
-      title: `DTF gang sheet — ${order.width_in ?? 22}in × ${order.length_ft} ft`,
-      detail: [
-        `${TIER_LABEL[order.tier]} turnaround`,
-        designs > 0 ? `${designs} print${designs === 1 ? '' : 's'} on sheet` : null,
-      ].filter(Boolean).join(' · '),
-      qty: 1,
-      image: groups[0]?.image_url ?? null,
-    }],
+    items: purchasedSheets(order).map((sheet, index) => ({
+      title: `Sheet ${index + 1} — ${sheet.width_in}in × ${sheet.length_ft} ft`,
+      detail: `${TIER_LABEL[order.tier]} turnaround`, qty: sheet.copies, image: null,
+    })),
     gallery: groups.length > 0 ? {
       title: "What's on your sheet",
       images: groups.map((g) => ({ src: g.image_url, caption: `${g.count} × ${g.wIn}″ × ${g.hIn}″` })),
@@ -165,15 +168,15 @@ function authHeaders(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function downloadOrderFile(id: number) {
+async function downloadOrderFile(id: number, sheet = 0) {
   try {
-    const r = await fetch(`/api/gangsheet-store/admin/orders/${id}/file`, { headers: authHeaders() });
+    const r = await fetch(`/api/gangsheet-store/admin/orders/${id}/file?sheet=${sheet}`, { headers: authHeaders() });
     if (!r.ok) throw new Error('Download failed');
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `order-${id}.png`;
+    a.download = `order-${id}-sheet-${sheet + 1}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -624,24 +627,32 @@ function DtfOrdersQueue() {
   const [viewOrder, setViewOrder] = useState<OrderRow | null>(null);
   const [viewUrl, setViewUrl] = useState<string | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
+  const [viewSheetIndex, setViewSheetIndex] = useState(0);
+  const viewRequest = useRef(0);
 
-  async function openSheetView(order: OrderRow) {
-    setViewOrder(order);
+  async function openSheetView(order: OrderRow, index = 0) {
+    const request = ++viewRequest.current;
+    const sheet = purchasedSheets(order)[index];
+    if (!sheet) return;
+    setViewSheetIndex(index);
+    if (viewUrl) URL.revokeObjectURL(viewUrl);
+    setViewOrder({ ...order, width_in: sheet.width_in, length_ft: sheet.length_ft, layout: sheet.layout || null });
     setViewUrl(null);
     setViewLoading(true);
     try {
-      const r = await fetch(`/api/gangsheet-store/admin/orders/${order.id}/file`, { headers: authHeaders() });
+      const r = await fetch(`/api/gangsheet-store/admin/orders/${order.id}/file?sheet=${index}`, { headers: authHeaders() });
       if (!r.ok) throw new Error('Could not load the sheet file');
       const blob = await r.blob();
-      setViewUrl(URL.createObjectURL(blob));
+      if (request === viewRequest.current) setViewUrl(URL.createObjectURL(blob));
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not load the sheet');
     } finally {
-      setViewLoading(false);
+      if (request === viewRequest.current) setViewLoading(false);
     }
   }
 
   function closeSheetView() {
+    viewRequest.current += 1;
     if (viewUrl) URL.revokeObjectURL(viewUrl);
     setViewUrl(null);
     setViewOrder(null);
@@ -858,7 +869,7 @@ function DtfOrdersQueue() {
                   const action = NEXT_ACTION[order.status];
                   const addr = order.ship_address;
                   const fileFt = fileHeightFt(order.file_height_px);
-                  const fileMismatch = fileFt !== null && fileFt !== order.length_ft;
+                  const fileMismatch = !order.sheets_json?.length && fileFt !== null && fileFt !== order.length_ft;
                   return (
                     <tr
                       key={order.id}
@@ -871,13 +882,14 @@ function DtfOrdersQueue() {
                           {TIER_LABEL[order.tier]}
                         </span>
                         <div className="mt-0.5 text-xs text-gray-500">
-                          {order.width_in ?? 22}&Prime; × {order.length_ft} ft ordered
+                          {order.sheets_json?.length ? `${order.sheets_json.length} sheets · ${order.sheets_json.reduce((sum, sheet) => sum + sheet.copies, 0)} copies` : `${order.width_in ?? 22}″ × ${order.length_ft} ft ordered`}
                           {fileFt !== null && (
                             <span className={fileMismatch ? 'ml-1 font-semibold text-red-600' : 'ml-1 text-gray-400'}>
                               · file {fileFt} ft{fileMismatch ? ' ⚠' : ''}
                             </span>
                           )}
                         </div>
+                        {order.date_needed && <p className="mt-1 text-xs font-semibold text-orange-700">Needed by {String(order.date_needed).slice(0, 10)}</p>}
                         {order.white_bg_flag && (
                           <span
                             className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-700"
@@ -950,6 +962,13 @@ function DtfOrdersQueue() {
                           >
                             <Download className="h-3.5 w-3.5" /> Download
                           </button>
+                          {purchasedSheets(order).length > 1 && purchasedSheets(order).map((sheet, index) => (
+                            <div key={index} className="flex gap-2 text-[11px]">
+                              <button type="button" className="text-blue-700 underline" onClick={() => void openSheetView(order, index)}>View {index + 1}</button>
+                              <button type="button" className="text-gray-700 underline" onClick={() => void downloadOrderFile(order.id, index)}>Download {index + 1}</button>
+                              <span>{sheet.width_in}″ × {sheet.length_ft}ft · {sheet.copies} copies</span>
+                            </div>
+                          ))}
                           <button
                             type="button"
                             onClick={() => printDtfPackingSlip(order)}
@@ -1107,6 +1126,11 @@ function DtfOrdersQueue() {
                 <X className="h-5 w-5" />
               </button>
             </div>
+            {purchasedSheets(viewOrder).length > 1 && <div className="flex flex-wrap gap-2 border-b p-3">
+              {purchasedSheets(viewOrder).map((sheet, index) => <button key={index} type="button" onClick={() => void openSheetView(viewOrder, index)} className={`rounded border px-3 py-2 text-xs ${viewSheetIndex === index ? 'border-orange-500 bg-orange-50' : ''}`}>
+                Sheet {index + 1} · {sheet.copies} copies
+              </button>)}
+            </div>}
             <div className="grid flex-1 gap-4 overflow-y-auto p-4 md:grid-cols-[280px_1fr]">
               <div>
                 <h4 className="mb-2 text-sm font-bold text-gray-900">Graphics on this sheet</h4>

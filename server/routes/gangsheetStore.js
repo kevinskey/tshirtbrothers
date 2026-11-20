@@ -14,8 +14,14 @@ import { uploadObject, getSpacesClient, SPACES_BUCKET } from '../services/spaces
 import { sendGangSheetReadyToCustomer, sendGangSheetToVendor, sendGangSheetVendorFiles, sendGangSheetQuoteToCustomer } from '../services/email.js';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { ensureCustomer, isValidPhone } from '../lib/customers.js';
+import { isValidNeedByDate } from '../lib/quoteIntake.js';
+import { DTF_FILE_KEY_RE, priceDtfCart, orderSheets, selectOrderSheet } from '../lib/dtfCart.js';
+
+import customerDtfOrders from './customerDtfOrders.js';
+import { sendPurchasedDtfSheets } from '../services/dtfVendor.js';
 
 const router = Router();
+router.use('/customer/orders', customerDtfOrders);
 
 // Mirrors routes/payments.js's getStripe(): lazy per-request instantiation
 // so a missing key surfaces as a clean 500 on first use rather than a
@@ -271,12 +277,11 @@ const upload = multer({
 // uploads and creates real Stripe Checkout sessions, so it's a target for
 // both storage-filling and checkout-spam abuse. Pattern copied from
 // server/routes/deepseek.js's publicLimiter/adminLimiter.
-// 20, not 10: the presigned lane spends TWO calls per sheet
-// (/upload-url then /upload-complete), so the old budget let an honest
-// customer re-pick a file only four times before being locked out.
+// A 50-sheet cart needs two calls per file (upload-url/upload-complete).
+// Allow that cart plus replacements while retaining a bounded per-IP budget.
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many uploads. Please try again in a few minutes.' },
@@ -493,16 +498,21 @@ router.post('/upload-complete', uploadLimiter, async (req, res, next) => {
 // shape here — and reading width/height back out of it — means /checkout
 // can never be handed a client-supplied height that doesn't match the
 // actual uploaded file (C1).
-const FILE_KEY_RE = /^gangsheet-orders\/[\w-]+\/[0-9a-f-]+-(\d{1,5})x(\d{1,6})\.png$/;
+const FILE_KEY_RE = DTF_FILE_KEY_RE;
 // Same loose shape the client checks before enabling the Checkout button —
 // kept intentionally permissive (this is a "did you fat-finger it" check,
 // not full RFC 5322 validation).
 const EMAIL_RE = /.+@.+\..+/;
 
-router.post('/checkout', checkoutLimiter, async (req, res, next) => {
+export function createDtfCheckoutHandler({ db = pool, settings = loadSettings, ensureBuyer = ensureCustomer,
+  headFile = async key => getSpacesClient().send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: key })),
+  stripeClient = getStripe } = {}) {
+  return async (req, res, next) => {
   try {
-    const { length_ft, tier, delivery = 'pickup', file_key,
-            name, email, phone, note, ship_address, attested } = req.body || {};
+    const { tier, delivery = 'pickup',
+            name, email, phone, note, ship_address, attested, date_needed } = req.body || {};
+    if (!isValidNeedByDate(date_needed)) return res.status(400).json({ error: 'Choose a valid need-by date (YYYY-MM-DD)' });
+    if (attested !== true) return res.status(400).json({ error: 'Confirm the artwork agreement before checkout' });
     // Same contact info a quote requires — every DTF buyer becomes a
     // customer the shop can reach.
     if (typeof name !== 'string' || !name.trim()) {
@@ -533,7 +543,7 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
         }
       }
     }
-    const s = await loadSettings();
+    const s = await settings();
     if (!['standard', 'rush', 'hot_rush'].includes(tier)) {
       return res.status(400).json({ error: 'Pick a turnaround option' });
     }
@@ -548,60 +558,36 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
         return res.status(400).json({ error: 'Enter your full shipping address' });
       }
     }
-    const keyMatch = typeof file_key === 'string' ? file_key.match(FILE_KEY_RE) : null;
-    if (!keyMatch) {
-      return res.status(400).json({ error: 'Upload your sheet first' });
-    }
-    // Regex capture groups are string|undefined in general, but both groups
-    // here are non-optional (\d{1,5} / \d{1,6}, no `?`), so a successful
-    // match guarantees both are present — Number() is safe without a
-    // fallback branch.
-    const fileWidthPx = Number(keyMatch[1]);
-    const fileHeightPx = Number(keyMatch[2]);
-    // Price the roll the FILE is, not the roll the request claims to be.
-    const widthIn = widthInFromPx(fileWidthPx);
-    if (!widthIn) {
-      return res.status(400).json({ error: 'That file isn\'t a width we print — re-upload a 22" or 34" sheet' });
-    }
-    if (!activeWidths(s).includes(widthIn)) {
-      return res.status(400).json({ error: `${widthIn}" sheets aren't available right now.` });
-    }
-    let cents;
-    try { cents = priceCents(s, length_ft, tier, widthIn); }
-    catch { return res.status(400).json({ error: `Length must be ${s.min_ft}–${s.max_ft} ft` }); }
-    // Height must fit the purchased length (1 ft = 3,600 px, +2% tolerance).
-    // Uses the server-parsed height from the file key, never a client-sent
-    // value — this is the price-integrity fix from the final review (C1).
-    if (fileHeightPx > Math.ceil(length_ft) * 3600 * 1.02) {
-      return res.status(400).json({ error: 'Your file is taller than the sheet length you picked — bump the length up' });
-    }
-    // Confirm the uploaded object actually exists in Spaces before creating
-    // an order + Stripe session against it — otherwise a customer could
-    // check out on a file_key from a prior session that was never uploaded
-    // (or was cleaned up), and the admin queue would 404 on download.
-    try {
-      await getSpacesClient().send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: file_key }));
-    } catch (headErr) {
-      if (headErr.name === 'NotFound' || headErr.$metadata?.httpStatusCode === 404) {
-        return res.status(400).json({ error: 'Upload your sheet first' });
+    let cart;
+    try { cart = priceDtfCart(req.body, { widthFromPixels: widthInFromPx, enabledWidths: activeWidths(s),
+      priceSheet: (length, width) => priceCents(s, length, tier, width) }); }
+    catch (err) { return res.status(400).json({ error: err.message }); }
+    // Validate all files before creating the order or a payment session.
+    for (const sheet of cart.sheets) {
+      try { await headFile(sheet.file_key); }
+      catch (err) {
+        if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404)
+          return res.status(400).json({ error: `${sheet.name}: upload your sheet again` });
+        throw err;
       }
-      throw headErr;
+      try {
+        const layout = await db.query('SELECT layout, white_bg_flag FROM gang_sheet_layouts WHERE file_key = $1', [sheet.file_key]);
+        sheet.layout = layout.rows[0]?.layout || null;
+        sheet.white_bg_flag = layout.rows[0]?.white_bg_flag === true;
+      } catch (err) { if (err.code !== '42P01') throw err; }
     }
+    const first = cart.sheets[0];
+    const { file_key, width_px: fileWidthPx, height_px: fileHeightPx, width_in: widthIn, length_ft } = first;
+    const cents = cart.total_cents;
     const shippingCents = delivery === 'ship' ? s.shipping_flat_cents : 0;
-
-    // Layout stashed at compose time (builder sheets); null for uploads.
-    let layoutJson = null;
-    let whiteBgFlag = false;
-    try {
-      const lay = await pool.query('SELECT layout, white_bg_flag FROM gang_sheet_layouts WHERE file_key = $1', [file_key]);
-      layoutJson = lay.rows[0]?.layout ? JSON.stringify(lay.rows[0].layout) : null;
-      whiteBgFlag = lay.rows[0]?.white_bg_flag === true;
-    } catch { /* table may not exist yet on first boot — non-fatal */ }
+    if (cents + shippingCents > 99999999) return res.status(400).json({ error: 'Order exceeds the online checkout limit; contact the shop' });
+    const layoutJson = first.layout ? JSON.stringify(first.layout) : null;
+    const whiteBgFlag = cart.sheets.some(sheet => sheet.white_bg_flag);
 
     const customerName = name.trim();
     const customerEmail = email.trim();
     const customerPhone = phone.trim();
-    const userId = await ensureCustomer({
+    const userId = await ensureBuyer({
       name: customerName,
       email: customerEmail,
       phone: customerPhone,
@@ -610,14 +596,14 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
         : undefined,
     });
 
-    const ins = await pool.query(
+    const ins = await db.query(
       `INSERT INTO gang_sheet_orders
         (customer_name, customer_email, customer_phone, user_id, length_ft, width_in, tier, price_cents, shipping_cents,
-         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+         delivery, ship_address, file_key, file_width_px, file_height_px, note, attested, layout, white_bg_flag, date_needed, sheets_json)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb) RETURNING id`,
       [customerName, customerEmail, customerPhone, userId, Math.ceil(Number(length_ft)), widthIn, tier, cents, shippingCents,
        delivery, ship_address ? JSON.stringify(ship_address) : null,
-       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag],
+       file_key, fileWidthPx, fileHeightPx, note || null, attested === true, layoutJson, whiteBgFlag, date_needed, JSON.stringify(cart.sheets)],
     );
     const orderId = ins.rows[0].id;
 
@@ -626,26 +612,22 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     // checkout flow in this app resolves against the same base URL.
     const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
     const tierLabel = { standard: 'Standard', rush: 'Rush', hot_rush: 'Hot Rush' }[tier];
-    const lineItems = [{
+    const lineItems = cart.sheets.map(sheet => ({
       price_data: {
         currency: 'usd',
-        product_data: {
-          name: `DTF Gang Sheet ${widthIn}in × ${Math.ceil(Number(length_ft))} ft — ${tierLabel}`,
-          // Live copy — `s` (settings) is already loaded above for pricing,
-          // so this reflects the same cutoffs /config and the emails show.
-          description: tierPromises(s)[tier],
-        },
-        unit_amount: cents,
+        product_data: { name: `DTF ${sheet.width_in}in × ${sheet.length_ft} ft — ${tierLabel}`,
+          description: tierPromises(s)[tier] },
+        unit_amount: sheet.unit_cents,
       },
-      quantity: 1,
-    }];
+      quantity: sheet.copies,
+    }));
     if (shippingCents > 0) {
       lineItems.push({
         price_data: { currency: 'usd', product_data: { name: 'Shipping (flat)' }, unit_amount: shippingCents },
         quantity: 1,
       });
     }
-    const stripe = getStripe();
+    const stripe = stripeClient();
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
       payment_method_types: ['card'],
@@ -655,10 +637,12 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
       cancel_url: `${domain}/dtf`,
       metadata: { gang_sheet_order_id: String(orderId) },
     }, { idempotencyKey: `gso-${orderId}` });
-    await pool.query('UPDATE gang_sheet_orders SET stripe_session_id = $1 WHERE id = $2', [session.id, orderId]);
+    await db.query('UPDATE gang_sheet_orders SET stripe_session_id = $1 WHERE id = $2', [session.id, orderId]);
     res.json({ url: session.url });
   } catch (err) { next(err); }
-});
+  };
+}
+router.post('/checkout', checkoutLimiter, createDtfCheckoutHandler());
 
 // ── Customer: gang sheet builder (own sheets only) ─────────────────────────
 // Requires login (any role) but NOT adminOnly — every query below is scoped
@@ -1135,7 +1119,7 @@ router.get('/admin/library-art', ...adminGuard, async (req, res, next) => {
           ORDER BY ca.created_at DESC LIMIT 200`,
       ),
       pool.query(
-        `SELECT id, customer_name, customer_email, file_key, length_ft, width_in, created_at
+        `SELECT id, customer_name, customer_email, file_key, length_ft, width_in, created_at, sheets_json, file_width_px, file_height_px
            FROM gang_sheet_orders
           WHERE status NOT IN ('pending_payment', 'canceled')
           ORDER BY id DESC LIMIT 30`,
@@ -1162,15 +1146,12 @@ router.get('/admin/library-art', ...adminGuard, async (req, res, next) => {
       new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: key }),
       { expiresIn: 7 * 24 * 3600 },
     );
-    const dtf_orders = await Promise.all(orders.rows.map(async (o) => ({
-      id: o.id,
+    const dtf_orders = await Promise.all(orders.rows.flatMap(o => orderSheets(o).map(async (sheet, index) => ({
+      id: o.id, sheet_index: index,
       customer_name: o.customer_name || o.customer_email || `Order ${o.id}`,
-      length_ft: o.length_ft,
-      width_in: o.width_in,
-      created_at: o.created_at,
-      file_url: await presign(o.file_key),
-      thumb_url: await presign(thumbKeyFor(o.file_key)),
-    })));
+      length_ft: sheet.length_ft, width_in: sheet.width_in, created_at: o.created_at,
+      file_url: await presign(sheet.file_key), thumb_url: await presign(thumbKeyFor(sheet.file_key)),
+    }))));
 
     res.json({
       customer_assets: assets.rows,
@@ -1293,10 +1274,12 @@ router.post('/admin/orders/:id/send-quote', ...adminGuard, async (req, res, next
 // full file once, store the thumb, serve it.
 router.get('/admin/orders/:id/thumb', ...adminGuard, async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT file_key FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
+    const sheet = selectOrderSheet(rows[0], req.query.sheet);
+    if (!sheet) return res.status(404).json({ error: 'Sheet not found' });
     const client = getSpacesClient();
-    const tKey = thumbKeyFor(rows[0].file_key);
+    const tKey = thumbKeyFor(sheet.file_key);
     let buf;
     try {
       const obj = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: tKey }));
@@ -1304,7 +1287,7 @@ router.get('/admin/orders/:id/thumb', ...adminGuard, async (req, res, next) => {
     } catch (err) {
       const missing = err.name === 'NoSuchKey' || err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404;
       if (!missing) throw err;
-      const full = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
+      const full = await client.send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: sheet.file_key }));
       const fullBuf = Buffer.from(await full.Body.transformToByteArray());
       const settings = await loadSettings();
       buf = await makeSheetThumb(fullBuf, maxSheetPixels(settings));
@@ -1319,11 +1302,13 @@ router.get('/admin/orders/:id/thumb', ...adminGuard, async (req, res, next) => {
 
 router.get('/admin/orders/:id/file', ...adminGuard, async (req, res, next) => {
   try {
-    const { rows } = await pool.query('SELECT file_key FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+    const { rows } = await pool.query('SELECT * FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Order not found' });
-    const obj = await getSpacesClient().send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: rows[0].file_key }));
+    const sheet = selectOrderSheet(rows[0], req.query.sheet);
+    if (!sheet) return res.status(404).json({ error: 'Sheet not found' });
+    const obj = await getSpacesClient().send(new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: sheet.file_key }));
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Content-Disposition', `attachment; filename="order-${req.params.id}.png"`);
+    res.setHeader('Content-Disposition', `attachment; filename="order-${req.params.id}-sheet-${Number(req.query.sheet || 0) + 1}.png"`);
     // A mid-stream error from the Spaces read (network blip, connection
     // reset) must not crash the process — destroy the response instead of
     // letting the unhandled stream error propagate. Also stop reading from
@@ -1475,30 +1460,12 @@ router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, 
     const { rows } = await pool.query('SELECT * FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
     const order = rows[0];
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!order.file_key) return res.status(400).json({ error: 'Order has no production file' });
-    const dims = order.file_key.match(FILE_KEY_RE);
-    // Page-limited vendors (TSTG: 60" pages) get the sheet split into parts.
-    const splitFiles = await maybeSendSplitToVendor({
-      vendorName: parsed.vendorName,
-      vendorEmail: parsed.vendorEmail,
-      reference: `TSB Order #${order.id}`,
-      fileKey: order.file_key,
-      layout: order.layout,
-      note: parsed.note,
-    });
-    if (!splitFiles) {
-      const downloadUrl = await presignFileKey(order.file_key);
-      await sendGangSheetToVendor({
-        vendorName: parsed.vendorName,
-        vendorEmail: parsed.vendorEmail,
-        reference: `TSB Order #${order.id}`,
-        widthPx: dims ? Number(dims[1]) : null,
-        heightPx: dims ? Number(dims[2]) : null,
-        downloadUrl,
-        linkExpiresDays: VENDOR_LINK_DAYS,
-        note: parsed.note,
-      });
+    if (!['paid', 'in_production', 'ready', 'completed'].includes(order.status)) {
+      return res.status(409).json({ error: 'Payment must clear before sending DTF files to production' });
     }
+    const sentFiles = await sendPurchasedDtfSheets(order, parsed, {
+      split: maybeSendSplitToVendor, send: sendGangSheetToVendor, sign: presignFileKey,
+    });
     const { rows: updated } = await pool.query(
       `UPDATE gang_sheet_orders SET vendor_name = $1, vendor_email = $2, vendor_sent_at = now()
        WHERE id = $3 RETURNING *`,
@@ -1510,7 +1477,7 @@ router.post('/admin/orders/:id/send-to-vendor', ...adminGuard, async (req, res, 
       source: 'order',
       reference: `Order #${order.id}`,
       note: parsed.note,
-      files: splitFiles || [{ name: `order-${order.id}.png`, key: order.file_key, widthPx: dims ? Number(dims[1]) : null, heightPx: dims ? Number(dims[2]) : null }],
+      files: sentFiles,
     });
     res.json(updated[0]);
   } catch (err) { next(err); }
