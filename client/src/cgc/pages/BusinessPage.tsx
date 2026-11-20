@@ -88,7 +88,10 @@ export default function BusinessPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
-      <Helmet><title>Business Gifting — Custom Gift Club</title></Helmet>
+      <Helmet>
+        <title>Business Gifting — Custom Gift Club</title>
+        <meta name="description" content="Custom gifts and recognition for your team, clients and community — engraved drinkware, awards and leatherette, branded and delivered in bulk." />
+      </Helmet>
 
       <div className="rounded-2xl bg-cgc-ink text-white px-6 sm:px-10 py-10 mb-8">
         <Building2 className="h-8 w-8 text-cgc-orange" aria-hidden />

@@ -147,7 +147,10 @@ export default function QuotePage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
-      <Helmet><title>Get a Gift Quote — Custom Gift Club</title></Helmet>
+      <Helmet>
+        <title>Get a Gift Quote — Custom Gift Club</title>
+        <meta name="description" content="Request a custom gift quote — one engraved keepsake or five hundred client gifts. Pick from our catalog or describe your idea; pricing within one business day." />
+      </Helmet>
 
       <p className="text-xs font-bold uppercase tracking-[0.15em] text-cgc-orange">Custom quotes</p>
       <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-cgc-ink">Tell us what you&rsquo;re dreaming up.</h1>

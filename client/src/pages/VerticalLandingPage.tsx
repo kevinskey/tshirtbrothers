@@ -1,6 +1,7 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import Layout from '@/components/layout/Layout';
 import Seo from '@/components/Seo';
+import { fitTitle, fitDescription } from '@/lib/seoLength';
 import GoogleRatingChip from '@/components/GoogleRatingChip';
 import { VERTICAL_LANDINGS, findVerticalLanding } from '@/data/verticalLandings';
 import {
@@ -88,8 +89,11 @@ export default function VerticalLandingPage() {
   return (
     <Layout>
       <Seo
-        title={`${vertical.name} · Custom Printing in Atlanta · TShirt Brothers`}
-        description={`${vertical.heroLine} Screen printing, DTF, and embroidery. No minimums, ${vertical.pricingHint.toLowerCase()}. Atlanta metro pickup in Fairburn, GA.`}
+        title={fitTitle(`${vertical.name} in Atlanta`)}
+        description={fitDescription(
+          `${vertical.heroLine} ${vertical.pricingHint}. Pickup in Fairburn, GA.`,
+          ' Screen print, DTF & embroidery, no minimums.',
+        )}
         path={`/shirts-for/${vertical.slug}`}
       />
       <script

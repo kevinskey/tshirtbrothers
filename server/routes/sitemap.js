@@ -1,5 +1,5 @@
 // Dynamic sitemap.xml. Single source of truth for every public URL the
-// site exposes — static marketing pages, shop category filters, city +
+// site exposes — static marketing pages, city +
 // vertical landing pages, and the blog posts table. Replaces the
 // previous hand-maintained client/public/sitemap.xml, which drifted
 // (was missing /local-businesses and had no <lastmod> dates).
@@ -56,15 +56,22 @@ const STATIC_PAGES = [
   // whole Custom Gift Club storefront.
   { path: '/embroidery',          priority: '0.8', changefreq: 'monthly'},
   { path: '/sale',                priority: '0.7', changefreq: 'weekly' },
-  { path: '/instant-quote',       priority: '0.7', changefreq: 'monthly'},
-  { path: '/gangsheets',          priority: '0.7', changefreq: 'monthly'},
-  { path: '/stitch-estimator',    priority: '0.5', changefreq: 'monthly'},
+  // sitemap: false — still listed so prerender.mjs (which scrapes paths from
+  // this array) keeps building them; removing an entry outright would stop
+  // the build and nginx would serve that URL the homepage. Excluded from the
+  // XML because /instant-quote canonicalises to /quote, and the other two sit
+  // behind the Design Studio auth gate, so their prerender captures AuthPage
+  // (noindex, canonical → /auth, which robots.txt disallows).
+  { path: '/instant-quote',       priority: '0.7', changefreq: 'monthly', sitemap: false },
+  { path: '/gangsheets',          priority: '0.7', changefreq: 'monthly', sitemap: false },
+  { path: '/stitch-estimator',    priority: '0.5', changefreq: 'monthly', sitemap: false },
 
   // Custom Gift Club. On this host the sub-app mounts at /gift-club/*, so its
   // pages live under that prefix — NOT at /occasions/:slug, which is where
   // they sit only on a dedicated CGC host.
   { path: '/gift-club',                           priority: '0.8', changefreq: 'weekly' },
   { path: '/gift-club/shop',                      priority: '0.8', changefreq: 'daily' },
+  { path: '/gift-club/quote',                     priority: '0.6', changefreq: 'monthly'},
   { path: '/gift-club/business',                  priority: '0.7', changefreq: 'monthly'},
   { path: '/gift-club/holiday',                   priority: '0.7', changefreq: 'weekly' },
   { path: '/gift-club/occasions/birthday',              priority: '0.7', changefreq: 'monthly'},
@@ -76,8 +83,6 @@ const STATIC_PAGES = [
   { path: '/gift-club/occasions/housewarming',          priority: '0.7', changefreq: 'monthly'},
   { path: '/gift-club/occasions/sports-fan-gifts',      priority: '0.7', changefreq: 'monthly'},
 ];
-
-const SHOP_CATEGORIES = ['T-Shirts', 'Fleece', 'Headwear', 'Polos', 'Outerwear'];
 
 // Mirror of client/src/data/cityLandings.ts and verticalLandings.ts.
 // Duplicated here on purpose: pulling those TS files into Node would
@@ -137,6 +142,7 @@ async function buildSitemap() {
   const entries = [];
 
   for (const page of STATIC_PAGES) {
+    if (page.sitemap === false) continue;
     const loc = `${DOMAIN}${page.path}`;
     entries.push(urlEntry({
       loc,
@@ -151,14 +157,9 @@ async function buildSitemap() {
     }));
   }
 
-  for (const category of SHOP_CATEGORIES) {
-    entries.push(urlEntry({
-      loc: `${DOMAIN}/shop?category=${encodeURIComponent(category)}`,
-      lastmod: today,
-      changefreq: 'weekly',
-      priority: '0.7',
-    }));
-  }
+  // Shop category filters are NOT listed: each canonicalises to /shop (same
+  // catalog, re-sorted), and advertising them produced "sitemap contains
+  // non-canonical URLs". They stay reachable via the on-page filter links.
 
   for (const slug of VERTICAL_SLUGS) {
     entries.push(urlEntry({

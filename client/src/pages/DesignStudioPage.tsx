@@ -6299,6 +6299,26 @@ export default function DesignStudioPage() {
         description="Free online t-shirt designer. Upload art, add text, generate AI designs, drop shapes — see your mockup live and get an instant quote."
         path="/design"
       />
+      {/* Crawlable page intro. The studio is a full-viewport app with no
+          headings of its own, so the prerendered HTML had zero H1–H3 and
+          ~150 words — a priority-0.8 sitemap page with nothing on it
+          (SEO audit 2026-11-20). Visually hidden because there's no room in
+          the 100dvh layout, but it's real, accurate copy that screen-reader
+          users also get as the page's heading. */}
+      <section className="sr-only" aria-labelledby="design-studio-h1">
+        <h1 id="design-studio-h1">Free Online T-Shirt Designer — TShirt Brothers Design Studio</h1>
+        <p>
+          Design custom t-shirts, hoodies, hats and more right in your browser. Upload your own
+          artwork, add text, generate AI designs, or drop in shapes, then see
+          a live mockup on the garment and color you pick.
+        </p>
+        <h2>From mockup to printed order</h2>
+        <p>
+          When the design looks right, get an instant quote. We print it at our shop in Fairburn,
+          GA with screen printing, DTF transfers or embroidery, with pickup for the Atlanta metro
+          or shipping to your door.
+        </p>
+      </section>
       <ImageFilterDefs />
       {headerBar}
       {leftToolbar}
