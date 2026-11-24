@@ -1214,6 +1214,42 @@ router.get('/admin/art-library', authenticate, adminOnly, async (req, res, next)
   }
 });
 
+// GET /admin/art-library/:id/download — stream one design back as a file.
+//
+// The art lives on the Spaces CDN, so a plain <a download> would navigate
+// cross-origin instead of saving, and a client-side fetch would need CORS
+// the CDN doesn't grant. Proxying keeps it same-origin, puts the design's
+// real name on the file, and keeps the URL behind the admin guard.
+router.get('/admin/art-library/:id/download', authenticate, adminOnly, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT name, image_url FROM admin_designs WHERE id = $1',
+      [req.params.id],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Design not found' });
+    const { name, image_url: url } = rows[0];
+    assertSafeUrl(url, { allowHosts: CUSTOMER_IMAGE_HOSTS });
+
+    const upstream = await safeFetch(url, { allowHosts: CUSTOMER_IMAGE_HOSTS, timeoutMs: 30000 });
+    if (!upstream.ok) return res.status(502).json({ error: `Source returned ${upstream.status}` });
+
+    const type = upstream.headers.get('content-type') || 'application/octet-stream';
+    // Extension from the stored URL, since names rarely carry one.
+    const ext = (url.split('?')[0].match(/\.([a-zA-Z0-9]{1,5})$/)?.[1] || 'png').toLowerCase();
+    const base = String(name || `design-${req.params.id}`)
+      .replace(/\.[a-zA-Z0-9]{1,5}$/, '')
+      .replace(/[^\w\-. ]+/g, '_')
+      .slice(0, 80)
+      .trim() || `design-${req.params.id}`;
+
+    res.setHeader('Content-Type', type);
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.${ext}"`);
+    const len = upstream.headers.get('content-length');
+    if (len) res.setHeader('Content-Length', len);
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (err) { next(err); }
+});
+
 // PATCH /admin/admin-designs/:id — single design edit (category for now).
 router.patch('/admin/admin-designs/:id', authenticate, adminOnly, async (req, res, next) => {
   try {
