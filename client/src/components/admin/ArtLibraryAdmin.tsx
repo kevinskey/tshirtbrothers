@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check, Upload } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check, Upload, X, ArrowUpDown } from 'lucide-react';
 import {
   fetchArtCategories,
   fetchAdminArtLibrary,
@@ -10,6 +10,7 @@ import {
   bulkSetArtCategory,
   type ArtCategory,
   type ArtDesign,
+  type ArtSort,
 } from '@/lib/api';
 
 // Admin catalog manager for the public-facing Art Library. Left column lists
@@ -18,10 +19,23 @@ import {
 
 const ALL = '__all__';
 
+const SORT_OPTIONS: { value: ArtSort; label: string }[] = [
+  { value: 'newest',   label: 'Newest first' },
+  { value: 'oldest',   label: 'Oldest first' },
+  { value: 'name',     label: 'Name A–Z' },
+  { value: 'name_desc',label: 'Name Z–A' },
+  { value: 'category', label: 'Category' },
+  { value: 'largest',  label: 'Largest file' },
+  { value: 'smallest', label: 'Smallest file' },
+];
+
 export default function ArtLibraryAdmin() {
   const qc = useQueryClient();
   const [active, setActive] = useState<string>(ALL);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<ArtSort>('newest');
+  const [catFilter, setCatFilter] = useState('');
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editingCat, setEditingCat] = useState<string | null>(null);
@@ -39,23 +53,41 @@ export default function ArtLibraryAdmin() {
 
   // Designs grid.
   const designsQ = useQuery({
-    queryKey: ['admin', 'art-library', active, search, page],
+    queryKey: ['admin', 'art-library', active, search, sort, page],
     queryFn: () => fetchAdminArtLibrary({
       category: active === ALL ? undefined : active,
       q: search || undefined,
+      sort,
       page,
       limit: 60,
     }),
   });
 
-  useEffect(() => { setPage(1); }, [active, search]);
-  useEffect(() => { setSelected(new Set()); }, [active, page]);
+  // Debounce the design search so typing doesn't fire a query per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => { setPage(1); }, [active, search, sort]);
+  useEffect(() => { setSelected(new Set()); }, [active, page, search, sort]);
 
   const categories = categoriesQ.data ?? [];
   const totalCount = useMemo(
     () => categories.reduce((n, c) => n + c.count, 0),
     [categories],
   );
+  // Sidebar filter — 30+ categories is a lot to scan by eye.
+  const visibleCategories = useMemo(() => {
+    const needle = catFilter.trim().toLowerCase();
+    if (!needle) return categories;
+    return categories.filter((c) =>
+      c.name.toLowerCase().includes(needle) ||
+      (c.display_name || '').toLowerCase().includes(needle));
+  }, [categories, catFilter]);
+
+  const pageDesigns = designsQ.data?.designs ?? [];
+  const allOnPageSelected = pageDesigns.length > 0 && pageDesigns.every((d) => selected.has(d.id));
 
   // ── Mutations ────────────────────────────────────────────────────
   const createMut = useMutation({
@@ -204,6 +236,19 @@ export default function ArtLibraryAdmin() {
               </div>
             </div>
           )}
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+              <input
+                type="search"
+                value={catFilter}
+                onChange={(e) => setCatFilter(e.target.value)}
+                placeholder="Filter categories…"
+                className="w-full pl-7 pr-2 py-1 border border-gray-200 rounded text-sm"
+                style={{ fontSize: '16px' }}
+              />
+            </div>
+          </div>
           <ul className="divide-y divide-gray-100 max-h-[70vh] overflow-auto">
             <li>
               <button
@@ -217,7 +262,10 @@ export default function ArtLibraryAdmin() {
             {categoriesQ.isLoading && (
               <li className="px-3 py-2 text-xs text-gray-400"><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Loading…</li>
             )}
-            {categories.map((c) => {
+            {!categoriesQ.isLoading && visibleCategories.length === 0 && (
+              <li className="px-3 py-2 text-xs text-gray-400">No categories match “{catFilter}”.</li>
+            )}
+            {visibleCategories.map((c) => {
               const isActive = c.name === active;
               const isEditing = editingCat === c.name;
               return (
@@ -289,12 +337,34 @@ export default function ArtLibraryAdmin() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="search"
-                placeholder="Search designs by name…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm"
+                placeholder="Search designs by name, description or tag…"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setSearchInput(''); }}
+                className="w-full pl-9 pr-8 py-1.5 border border-gray-200 rounded-lg text-sm"
                 style={{ fontSize: '16px' }}
               />
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                  title="Clear search"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="relative">
+              <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as ArtSort)}
+                className="pl-8 pr-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white"
+                style={{ fontSize: '16px' }}
+                title="Sort designs"
+              >
+                {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
             </div>
             <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer whitespace-nowrap ${
               uploading ? 'bg-gray-100 text-gray-400 pointer-events-none' : 'bg-red-600 hover:bg-red-700 text-white'
@@ -323,12 +393,34 @@ export default function ArtLibraryAdmin() {
           <div className="p-3">
             {designsQ.isLoading ? (
               <div className="py-12 text-center text-gray-400"><Loader2 className="w-6 h-6 animate-spin mx-auto" /></div>
-            ) : (designsQ.data?.designs.length ?? 0) === 0 ? (
-              <div className="py-12 text-center text-gray-400">No designs in this category.</div>
+            ) : pageDesigns.length === 0 ? (
+              <div className="py-12 text-center text-gray-400">
+                {search ? `No designs match “${search}”.` : 'No designs in this category.'}
+              </div>
             ) : (
               <>
+                <div className="flex items-center justify-between mb-2 text-xs text-gray-500">
+                  <span>
+                    {designsQ.data!.total} design{designsQ.data!.total === 1 ? '' : 's'}
+                    {search && <> matching “{search}”</>}
+                    {active !== ALL && <> in {active}</>}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (allOnPageSelected) pageDesigns.forEach((d) => next.delete(d.id));
+                        else pageDesigns.forEach((d) => next.add(d.id));
+                        return next;
+                      });
+                    }}
+                    className="font-semibold text-red-700 hover:text-red-800"
+                  >
+                    {allOnPageSelected ? 'Deselect page' : 'Select all on page'}
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {designsQ.data!.designs.map((d) => (
+                  {pageDesigns.map((d) => (
                     <DesignTile
                       key={d.id}
                       design={d}

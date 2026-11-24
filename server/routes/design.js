@@ -1159,7 +1159,7 @@ router.delete('/admin/art-categories/:name', authenticate, adminOnly, async (req
 // GET /admin/art-library — admin listing (paged + filterable, returns more fields).
 router.get('/admin/art-library', authenticate, adminOnly, async (req, res, next) => {
   try {
-    const { category, q, page = '1', limit = '60' } = req.query;
+    const { category, q, page = '1', limit = '60', sort = 'newest' } = req.query;
     const pg = Math.max(1, parseInt(String(page), 10) || 1);
     const lim = Math.min(200, Math.max(1, parseInt(String(limit), 10) || 60));
     const where = [];
@@ -1169,9 +1169,29 @@ router.get('/admin/art-library', authenticate, adminOnly, async (req, res, next)
       where.push(`category = $${params.length}`);
     }
     if (q && String(q).trim()) {
+      // Search name, description AND tags so "rhinestone" finds tagged art
+      // whose filename never mentions it.
       params.push(`%${String(q).trim().toLowerCase()}%`);
-      where.push(`(LOWER(name) ILIKE $${params.length} OR LOWER(COALESCE(description, '')) ILIKE $${params.length})`);
+      where.push(`(
+        LOWER(name) ILIKE $${params.length}
+        OR LOWER(COALESCE(description, '')) ILIKE $${params.length}
+        OR EXISTS (
+          SELECT 1 FROM unnest(COALESCE(tags, ARRAY[]::text[])) t
+           WHERE LOWER(t) ILIKE $${params.length}
+        )
+      )`);
     }
+    // Whitelist — never interpolate user input into ORDER BY.
+    const SORTS = {
+      newest: 'created_at DESC NULLS LAST',
+      oldest: 'created_at ASC NULLS LAST',
+      name: 'LOWER(name) ASC',
+      name_desc: 'LOWER(name) DESC',
+      category: 'category ASC, LOWER(name) ASC',
+      largest: 'file_size DESC NULLS LAST',
+      smallest: 'file_size ASC NULLS LAST',
+    };
+    const orderBy = SORTS[String(sort)] || SORTS.newest;
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     const countRes = await pool.query(`SELECT COUNT(*)::int AS total FROM admin_designs ${whereClause}`, params);
     params.push(lim, (pg - 1) * lim);
@@ -1179,7 +1199,7 @@ router.get('/admin/art-library', authenticate, adminOnly, async (req, res, next)
       `SELECT id, name, description, image_url, thumbnail_url, category, tags, width, height, file_size, created_at
          FROM admin_designs
          ${whereClause}
-        ORDER BY created_at DESC
+        ORDER BY ${orderBy}
         LIMIT $${params.length - 1} OFFSET $${params.length}`,
       params,
     );
