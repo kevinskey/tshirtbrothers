@@ -464,6 +464,28 @@ export async function fetchAdminArtLibrary(
   return authRequest<{ designs: ArtDesign[]; total: number; page: number; totalPages: number }>(`/design/admin/art-library${qs}`);
 }
 
+// Pull one design's bytes through the admin proxy and hand them to the
+// browser as a save. Same-origin so the Authorization header applies, and
+// the server sets the filename.
+export async function downloadArtDesign(id: number, fallbackName = 'design') {
+  const res = await fetch(`/api/design/admin/art-library/${id}/download`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('tsb_token') || ''}` },
+  });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  const blob = await res.blob();
+  const disp = res.headers.get('content-disposition') || '';
+  const name = /filename="([^"]+)"/.exec(disp)?.[1] || fallbackName;
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke late — Safari aborts the save if the object URL dies too soon.
+  setTimeout(() => URL.revokeObjectURL(href), 10_000);
+}
+
 export async function createArtCategory(data: { name: string; display_name?: string | null; position?: number }) {
   return authRequest<ArtCategory>(`/design/admin/art-categories`, {
     method: 'POST', body: JSON.stringify(data),

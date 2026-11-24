@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check, Upload, X, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, Pencil, Trash2, FolderOpen, Loader2, Check, Upload, X, ArrowUpDown, Download } from 'lucide-react';
 import {
   fetchArtCategories,
   fetchAdminArtLibrary,
@@ -8,6 +8,7 @@ import {
   updateArtCategory,
   deleteArtCategory,
   bulkSetArtCategory,
+  downloadArtDesign,
   type ArtCategory,
   type ArtDesign,
   type ArtSort,
@@ -44,6 +45,7 @@ export default function ArtLibraryAdmin() {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState('');
+  const [downloading, setDownloading] = useState('');
 
   // Categories list (with counts).
   const categoriesQ = useQuery({
@@ -183,6 +185,29 @@ export default function ArtLibraryAdmin() {
     alert(ok === files.length
       ? `Uploaded ${ok} design${ok === 1 ? '' : 's'} to "${category}".`
       : `Uploaded ${ok} of ${files.length} — retry the rest.`);
+  }
+
+  // Save the selected designs to disk. Sequential on purpose: browsers
+  // throttle (and Safari drops) a burst of simultaneous downloads, and the
+  // proxy pulls each file from Spaces as it goes.
+  async function downloadSelected() {
+    const ids = Array.from(selected);
+    if (ids.length === 0 || downloading) return;
+    if (ids.length > 20 && !confirm(`Download ${ids.length} files one by one? Your browser may ask to allow multiple downloads.`)) return;
+    const byId = new Map(pageDesigns.map((d) => [d.id, d.name]));
+    let ok = 0;
+    const failed: string[] = [];
+    for (const [i, id] of ids.entries()) {
+      setDownloading(`${i + 1}/${ids.length}`);
+      try {
+        await downloadArtDesign(id, byId.get(id) || `design-${id}`);
+        ok += 1;
+      } catch {
+        failed.push(byId.get(id) || `#${id}`);
+      }
+    }
+    setDownloading('');
+    if (failed.length) alert(`Downloaded ${ok} of ${ids.length}. Failed: ${failed.join(', ')}`);
   }
 
   // ── Render ───────────────────────────────────────────────────────
@@ -385,6 +410,8 @@ export default function ArtLibraryAdmin() {
                 categories={categories}
                 onMove={(target) => bulkMut.mutate({ ids: Array.from(selected), category: target })}
                 onClear={() => setSelected(new Set())}
+                onDownload={downloadSelected}
+                downloading={downloading}
                 pending={bulkMut.isPending}
               />
             )}
@@ -425,6 +452,10 @@ export default function ArtLibraryAdmin() {
                       key={d.id}
                       design={d}
                       selected={selected.has(d.id)}
+                      onDownload={() => {
+                        downloadArtDesign(d.id, d.name).catch((err: Error) =>
+                          alert('Download failed: ' + err.message));
+                      }}
                       onToggle={() => {
                         setSelected((prev) => {
                           const next = new Set(prev);
@@ -462,17 +493,21 @@ export default function ArtLibraryAdmin() {
 }
 
 function DesignTile({
-  design, selected, onToggle,
+  design, selected, onToggle, onDownload,
 }: {
   design: ArtDesign;
   selected: boolean;
   onToggle: () => void;
+  onDownload: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onToggle}
-      className={`group relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      className={`group relative aspect-square rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
         selected ? 'border-red-500 ring-2 ring-red-200' : 'border-gray-200 hover:border-red-400'
       }`}
     >
@@ -482,6 +517,20 @@ function DesignTile({
         loading="lazy"
         className="w-full h-full object-contain bg-gray-50"
       />
+      {/* Download sits on the tile but must not toggle selection. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setBusy(true);
+          Promise.resolve(onDownload()).finally(() => setBusy(false));
+        }}
+        disabled={busy}
+        title={`Download ${design.name}`}
+        className="absolute top-1 left-1 bg-white/90 hover:bg-white text-gray-700 hover:text-red-700 rounded-full w-7 h-7 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+      >
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+      </button>
       {selected && (
         <div className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center shadow-md">
           <Check className="w-4 h-4" />
@@ -490,23 +539,35 @@ function DesignTile({
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent text-white text-[10px] px-2 py-1 truncate">
         {design.name}
       </div>
-    </button>
+    </div>
   );
 }
 
 function BulkMoveBar({
-  count, categories, onMove, onClear, pending,
+  count, categories, onMove, onClear, onDownload, downloading, pending,
 }: {
   count: number;
   categories: ArtCategory[];
   onMove: (category: string) => void;
   onClear: () => void;
+  onDownload: () => void;
+  downloading: string;
   pending: boolean;
 }) {
   const [pick, setPick] = useState('');
   return (
     <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
       <span className="text-sm font-semibold text-red-700">{count} selected</span>
+      <button
+        onClick={onDownload}
+        disabled={!!downloading}
+        className="inline-flex items-center gap-1 text-xs font-semibold border border-red-300 bg-white text-red-700 px-2.5 py-1.5 rounded hover:bg-red-100 disabled:opacity-50"
+        title="Download the selected designs"
+      >
+        {downloading
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{downloading}</>
+          : <><Download className="w-3.5 h-3.5" />Download</>}
+      </button>
       <select
         value={pick}
         onChange={(e) => setPick(e.target.value)}
