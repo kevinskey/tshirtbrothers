@@ -132,6 +132,10 @@ export interface Quote {
   extra_design_urls?: string[] | null;
   mockup_image_url?: string | null;
   mockup_image_url_back?: string | null;
+  /** Sleeve proofs. A quote can carry one without a back, so anything that
+   *  reads only front+back shows an incomplete proof. */
+  mockup_image_url_sleeve?: string | null;
+  mockup_image_url_sleeve_left?: string | null;
   /** Set when the customer rules on a proof; cleared when a revision goes
    *  out, which is what distinguishes a first send from a re-approval. */
   /** Additional addresses copied on every customer-facing send for this
@@ -425,12 +429,17 @@ export async function fetchArtCategories() {
   return request<ArtCategory[]>(`/design/art-categories`);
 }
 
-export async function fetchAdminArtLibrary(opts: { category?: string; q?: string; page?: number; limit?: number } = {}) {
+export type ArtSort = 'newest' | 'oldest' | 'name' | 'name_desc' | 'category' | 'largest' | 'smallest';
+
+export async function fetchAdminArtLibrary(
+  opts: { category?: string; q?: string; page?: number; limit?: number; sort?: ArtSort } = {},
+) {
   const params = new URLSearchParams();
   if (opts.category) params.set('category', opts.category);
   if (opts.q)        params.set('q', opts.q);
   if (opts.page)     params.set('page', String(opts.page));
   if (opts.limit)    params.set('limit', String(opts.limit));
+  if (opts.sort)     params.set('sort', opts.sort);
   const qs = params.toString() ? `?${params.toString()}` : '';
   return authRequest<{ designs: ArtDesign[]; total: number; page: number; totalPages: number }>(`/design/admin/art-library${qs}`);
 }
@@ -1345,6 +1354,33 @@ export async function sendInvoiceSms(id: string): Promise<{ sent: boolean; sid: 
   return authRequest<{ sent: boolean; sid: string }>(`/invoices/${id}/send-sms`, {
     method: 'POST',
   });
+}
+
+// Hand back the order (quote) id behind an invoice, opening one if the
+// invoice has none. Idempotent server-side.
+export async function ensureInvoiceOrder(id: string): Promise<{ quote_id: number }> {
+  return authRequest<{ quote_id: number }>(`/invoices/${id}/ensure-order`, {
+    method: 'POST',
+  });
+}
+
+// Mark the job behind an invoice ready for pickup.
+//
+// "Ready" is a property of the ORDER, not the invoice — the invoice only
+// tracks money (sent / partial / paid). So this resolves the invoice to its
+// order and marks that, which is what fires the customer email, SMS, push,
+// and the balance-due link. Routing through updateQuoteStatus keeps exactly
+// one copy of that behaviour on the server.
+//
+// Returns the order id so callers can name it in the confirmation.
+export async function markInvoiceReadyForPickup(
+  invoice: { id: string | number; quote_id?: number | string | null },
+): Promise<number> {
+  const quoteId = invoice.quote_id != null
+    ? Number(invoice.quote_id)
+    : (await ensureInvoiceOrder(String(invoice.id))).quote_id;
+  await updateQuoteStatus(String(quoteId), 'ready');
+  return Number(quoteId);
 }
 
 export async function recordPayment(id: string, data: { amount: number; method: string; overpay_ok?: boolean }): Promise<Invoice> {
