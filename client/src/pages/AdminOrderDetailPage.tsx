@@ -284,8 +284,13 @@ export default function AdminOrderDetailPage() {
   const invoicePaid = invoices.reduce((s, i) => s + Number(i.amount_paid || 0), 0);
   const quoteDeposit = quote.accepted_at ? Number((quote as { deposit_amount?: string | null }).deposit_amount || 0) : 0;
   const totalPaid = invoicePaid > 0 ? invoicePaid : quoteDeposit;
+  // When the invoices never booked the deposit the quote collected (older
+  // orders: deposit via quote, invoice written later at full price), the
+  // invoice due still includes it. Net it out, as lib/orderMoney.js does,
+  // so the header stops reading "Paid $336 / Due $690".
+  const invoiceDue = invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0);
   const totalDue = invoices.length > 0
-    ? invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0)
+    ? Math.max(0, invoiceDue - (invoicePaid > 0 ? 0 : quoteDeposit))
     : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};
 

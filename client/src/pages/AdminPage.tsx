@@ -95,6 +95,7 @@ import {
   type InvoiceItem,
   type CreateInvoiceData,
   type PriceBreakdown,
+  type OrderMoney,
   orderNumber,
   fetchInvoices,
   fetchInvoice,
@@ -1012,7 +1013,7 @@ export default function AdminPage() {
             shipping: String(inv.shipping || 0),
             discount: String(inv.discount || 0),
             notes: inv.notes || '',
-            due_date: inv.due_date || '',
+            due_date: dateInputValue(inv.due_date),
             mockup_id: inv.mockup_id ?? null,
             mockup_preview_url: inv.mockup_preview_url ?? null,
             mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
@@ -1058,15 +1059,21 @@ export default function AdminPage() {
         ? { top: r.bottom + 4, right, maxHeight: Math.max(160, below) }
         : { bottom: window.innerHeight - r.top + 4, right, maxHeight: Math.max(160, above) }
     );
+    actionMenuOpenedAt.current = Date.now();
     setOpenActionMenu(id);
   };
+  const actionMenuOpenedAt = useRef(0);
   useEffect(() => {
     if (!openActionMenu) return;
     // Scrolling the menu's own overflow must not count as the page moving
-    // out from under it.
+    // out from under it. Nor does the scroll the opening click itself
+    // causes: focusing the button nudges the table's overflow-x wrapper,
+    // which fired this listener and closed the menu before it was seen —
+    // every row menu took two clicks.
     const close = (e: Event) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('[data-row-action-menu]')) return;
+      if (Date.now() - actionMenuOpenedAt.current < 350) return;
       setOpenActionMenu(null);
     };
     window.addEventListener('scroll', close, true);
@@ -2626,7 +2633,7 @@ export default function AdminPage() {
       shipping: String(inv.shipping || 0),
       discount: String(inv.discount || 0),
       notes: inv.notes || '',
-      due_date: inv.due_date || '',
+      due_date: dateInputValue(inv.due_date),
       mockup_id: inv.mockup_id ?? null,
       mockup_preview_url: inv.mockup_preview_url ?? null,
       mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
@@ -5808,13 +5815,23 @@ export default function AdminPage() {
                             ? `$${Number(o.estimated_price).toFixed(2)}`
                             : '--'}
                         </td>
+                        {/* Collected / due come from the resolved money block
+                            (invoice wins when one exists) — the quote's
+                            deposit_amount alone showed "$336 due" on orders
+                            the invoice list said were paid in full. */}
                         <td className="px-4 py-3 text-green-600 font-medium text-right whitespace-nowrap">
-                          {o.accepted_at && o.deposit_amount != null && Number(o.deposit_amount) > 0
-                            ? `$${Number(o.deposit_amount).toFixed(2)}`
-                            : '--'}
+                          {(() => {
+                            const m = (o as { money?: OrderMoney }).money;
+                            if (m) return m.collected > 0 ? `$${m.collected.toFixed(2)}` : '--';
+                            return o.accepted_at && o.deposit_amount != null && Number(o.deposit_amount) > 0
+                              ? `$${Number(o.deposit_amount).toFixed(2)}`
+                              : '--';
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-red-600 font-medium text-right whitespace-nowrap">
                           {(() => {
+                            const m = (o as { money?: OrderMoney }).money;
+                            if (m) return m.total <= 0 ? '--' : `$${m.due.toFixed(2)}`;
                             const total = o.estimated_price != null ? Number(o.estimated_price) : 0;
                             if (total <= 0) return '--';
                             if (o.balance_paid_at) return '$0.00';
@@ -5938,7 +5955,8 @@ export default function AdminPage() {
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 overflow-x-auto">
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                   <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 pb-0.5">
                     {(['all', 'draft', 'sent', 'partial', 'paid', 'overdue', 'archived'] as InvoiceFilter[]).map(f => (
                       <button
                         key={f}
@@ -5950,6 +5968,7 @@ export default function AdminPage() {
                         {f}
                       </button>
                     ))}
+                   </div>
                     <button
                       onClick={() => setQuickBillOpen(true)}
                       title="Bill a customer right now — name, amount, send or mark paid"
@@ -11848,6 +11867,14 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
  * look at the invoice and decide. Trusting `status` alone hid every control
  * on the 11 invoices marked paid that still show a balance.
  */
+// <input type="date"> only accepts yyyy-MM-dd; the API hands back a full
+// timestamp, which the field rejected and rendered blank.
+function dateInputValue(v: string | null | undefined): string {
+  if (!v) return '';
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
+  return m?.[1] ?? '';
+}
+
 function mayOweMoney(inv: Invoice & { may_owe_money?: boolean }): boolean {
   if (typeof inv.may_owe_money === 'boolean') return inv.may_owe_money;
   if (inv.status === 'cancelled' || inv.status === 'draft') return false;

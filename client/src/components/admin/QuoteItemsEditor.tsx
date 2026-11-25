@@ -1187,12 +1187,16 @@ function ProductPicker({
           title="Browse the catalog with photos"
           className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium border border-gray-200 rounded px-2.5 py-2 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
         >
-          <LayoutGrid className="w-3.5 h-3.5" /> Browse
+          <LayoutGrid className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Browse</span>
         </button>
       </div>
       {browsing && (
         <ProductBrowser
-          initialQuery={query}
+          // A line that already holds a catalog product carries its full
+          // name, and the search treats the whole name as the query ("Gildan
+          // Heavy Cotton T-Shirt" → 0 results). Browse starts clean for those;
+          // free text the admin typed is still worth searching.
+          initialQuery={productId ? '' : query}
           onPick={pick}
           onClose={() => setBrowsing(false)}
         />
