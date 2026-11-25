@@ -5,6 +5,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { fetchProducts, fetchStyleSizes, fetchStyleSkuData, fetchAllStylePrices } from '../services/ssActivewear.js';
 import pool from '../db.js';
+import { resolveOrderMoney } from '../lib/orderMoney.js';
 
 const router = Router();
 
@@ -912,18 +913,34 @@ router.get('/orders', async (req, res, next) => {
       orderClause = 'ORDER BY q.created_at DESC';
     }
 
+    // Every invoice on the order rides along so the Collected / Balance
+    // Due columns can be resolved the same way the quotes list and the
+    // order page resolve them (lib/orderMoney.js: the invoice wins). Read
+    // from deposit_amount alone, the list said "$336 due" on orders whose
+    // invoice was paid in full.
     const { rows } = await pool.query(
       `SELECT
          q.id, q.product_name, q.quantity, q.status, q.estimated_price, q.deposit_amount, q.accepted_at,
+         q.balance_paid_at,
          q.created_at, q.date_needed, q.notes, q.admin_notes, q.shipping_method,
-         q.customer_name, q.customer_email, q.customer_phone
+         q.customer_name, q.customer_email, q.customer_phone,
+         COALESCE((
+           SELECT json_agg(json_build_object(
+             'id', i.id, 'status', i.status, 'total', i.total,
+             'amount_paid', i.amount_paid, 'amount_due', i.amount_due
+           ) ORDER BY i.id)
+           FROM invoices i WHERE i.quote_id = q.id AND i.archived_at IS NULL
+         ), '[]'::json) AS invoice_rows
        FROM quotes q
        ${whereClause}
        ${orderClause}`,
       params
     );
 
-    res.json(rows);
+    res.json(rows.map(({ invoice_rows: invoiceRows, ...row }) => ({
+      ...row,
+      money: resolveOrderMoney(row, invoiceRows || []),
+    })));
   } catch (err) {
     next(err);
   }
@@ -1439,8 +1456,14 @@ router.get('/dashboard-ops', async (req, res, next) => {
           COUNT(*) FILTER (WHERE status IN ('accepted', 'completed', 'rejected')
             OR (archived_at IS NOT NULL AND status NOT IN ('accepted', 'completed')))::int AS decided,
           COALESCE(SUM(estimated_price) FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND deposit_amount IS NULL), 0)::numeric(12,2) AS approved_unpaid,
+          -- Only jobs with no bill yet: once an invoice exists it is the
+          -- record (lib/orderMoney.js), and the invoices query below already
+          -- counts its balance. Summing both showed "Unpaid $666" for orders
+          -- whose invoice was paid in full.
           COALESCE(SUM(GREATEST(estimated_price - COALESCE(deposit_amount, 0), 0))
-            FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL), 0)::numeric(12,2) AS balances_outstanding,
+            FILTER (WHERE archived_at IS NULL AND status = 'accepted' AND balance_paid_at IS NULL AND deposit_amount IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.quote_id = quotes.id AND i.archived_at IS NULL
+                                AND i.status NOT IN ('draft', 'cancelled'))), 0)::numeric(12,2) AS balances_outstanding,
           -- status must be 'awaiting_approval', not 'accepted': mockups.js
           -- sets BOTH in the same UPDATE that stamps mockup_sent_at, so the
           -- old filter was mutually exclusive and this tile read 0 forever

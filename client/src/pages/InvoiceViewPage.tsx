@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Printer, Loader2, XCircle, CheckCircle2, CreditCard, Mail } from 'lucide-react';
+import { Printer, Loader2, XCircle, CheckCircle2, CreditCard, Mail, Download } from 'lucide-react';
 import { getToken } from '@/lib/session';
 
 interface PublicInvoice {
@@ -23,6 +23,7 @@ interface PublicInvoice {
   // button and the Stripe session can never disagree.
   amount_due_now?: number;
   card_fee_now?: number;
+  payments?: Array<{ amount: number; method?: string | null; date?: string | null }>;
   payment_type?: 'deposit' | 'balance' | 'full';
   deposit_percent?: number | string | null;
   status: string;
@@ -494,9 +495,18 @@ export default function InvoiceViewPage() {
               </div>
             )}
             <div className="flex justify-between pt-2 border-t-2 border-gray-900 text-lg font-bold">
-              <span>{Number(inv.amount_due) <= 0 ? 'Balance' : 'Due'}</span>
-              <span className={Number(inv.amount_due) <= 0 ? 'text-green-700' : 'text-orange-600'}>${fmt(inv.amount_due)}</span>
+              <span>Balance</span>
+              <span className={Number(inv.amount_due) <= 0 ? 'text-green-700' : 'text-gray-900'}>${fmt(inv.amount_due)}</span>
             </div>
+            {/* What the Pay button will charge, when that is less than the
+                balance (a deposit). Read next to "Balance" it answers the
+                question the customer actually has: how much right now? */}
+            {!isPaid && inv.amount_due_now != null && Number(inv.amount_due_now) > 0 && Number(inv.amount_due_now) < Number(inv.amount_due) - 0.005 && (
+              <div className="flex justify-between text-base font-bold text-orange-600">
+                <span>Due now ({Number(inv.deposit_percent)}% deposit)</span>
+                <span>${fmt(inv.amount_due_now)}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -542,6 +552,31 @@ export default function InvoiceViewPage() {
             </p>
           </div>
         )}
+
+        {Array.isArray(inv.payments) && inv.payments.length > 0 && (
+          <div className="mt-6 text-sm border-t border-gray-100 pt-4">
+            <p className="text-xs uppercase font-semibold text-gray-400 mb-2">Payments received</p>
+            <ul className="space-y-1">
+              {inv.payments.map((p, i) => (
+                <li key={i} className="flex justify-between text-gray-700">
+                  <span>{p.date ? new Date(p.date).toLocaleDateString() : ''}{p.method ? ` · ${String(p.method).replace(/^stripe$/i, 'card')}` : ''}</span>
+                  <span className="font-medium text-green-700">${fmt(p.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-center gap-3 print:hidden">
+          <a
+            href={`/api/invoices/${inv.id}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`}
+            target="_blank"
+            rel="noopener"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <Download className="w-4 h-4" /> {isPaid ? 'Download receipt (PDF)' : 'Download PDF'}
+          </a>
+        </div>
 
         {inv.notes && (
           <div className="text-xs text-gray-500 border-t border-gray-100 pt-4">

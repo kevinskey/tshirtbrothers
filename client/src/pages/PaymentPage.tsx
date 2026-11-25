@@ -45,6 +45,12 @@ export function PaymentCheckout() {
   const token = searchParams.get('token');
   const type = searchParams.get('type'); // 'balance' | 'full' | 'deposit' | null
   const [error, setError] = useState<string | null>(null);
+  // Set when the server says this quote cannot take this payment any more
+  // (deposit already in, declined, expired) — a settled state, not an error.
+  const [blocked, setBlocked] = useState<{ code: string; message: string; redirectUrl?: string } | null>(null);
+  // The last checkout attempt failed at the provider; keep the chooser on
+  // screen with a retry rather than sending the customer back home.
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [quote, setQuote] = useState<QuoteSummary | null>(null);
   const [redirecting, setRedirecting] = useState(false);
 
@@ -69,6 +75,7 @@ export function PaymentCheckout() {
     if (!quoteId) return;
     setRedirecting(true);
     setError(null);
+    setCheckoutError(null);
     const endpoint =
       paymentType === 'balance' ? '/api/payments/create-balance-checkout'
       : paymentType === 'full'  ? '/api/payments/create-full-checkout'
@@ -78,18 +85,29 @@ export function PaymentCheckout() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quoteId, token, fulfillment }),
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then((res) => res.json().then((data) => ({ status: res.status, data })))
+      .then(({ status, data }) => {
         if (data.checkoutUrl) {
           window.location.href = data.checkoutUrl;
-        } else {
-          setError(data.error || 'Failed to create checkout session');
-          setRedirecting(false);
+          return;
         }
+        setRedirecting(false);
+        if ((status === 409 || status === 410) && data.code) {
+          setBlocked({ code: String(data.code), message: String(data.error || ''), redirectUrl: data.redirectUrl });
+          return;
+        }
+        // Provider hiccups read as raw SDK text ("An error occurred with
+        // our connection to Stripe…"). Say what to do instead.
+        const raw = String(data.error || '');
+        const friendly = /stripe|connection|retried|network|timeout|ECONN|ENOTFOUND/i.test(raw)
+          ? 'Our card processor didn\u2019t answer just now. Nothing was charged — please try again in a moment, or call us and we\u2019ll take payment over the phone.'
+          : (raw || 'We couldn\u2019t start checkout. Nothing was charged — please try again.');
+        if (skipChoice) setError(friendly); else setCheckoutError(friendly);
       })
       .catch(() => {
-        setError('Failed to connect to payment server');
         setRedirecting(false);
+        const friendly = 'We couldn\u2019t reach the payment server. Nothing was charged — check your connection and try again.';
+        if (skipChoice) setError(friendly); else setCheckoutError(friendly);
       });
   };
 
@@ -123,6 +141,19 @@ export function PaymentCheckout() {
       .then((res) => res.json())
       .then((data) => {
         if (data?.id) {
+          // Settle the page before showing Pay buttons: an accepted, paid
+          // or declined quote must not offer the deposit again (the server
+          // refuses it anyway, but the customer should not see the choice).
+          const st = String(data.status || '');
+          if (data.balance_paid_at) {
+            setBlocked({ code: 'paid', message: 'This order is already paid in full. Nothing more is due.' });
+          } else if (st === 'rejected' || st === 'declined') {
+            setBlocked({ code: 'declined', message: 'This quote was declined, so it can no longer be paid. Call us if you changed your mind \u2014 we\u2019ll be glad to re-quote it.' });
+          } else if (data.archived_at) {
+            setBlocked({ code: 'expired', message: 'This quote has expired (quotes are valid for 14 days). Please request a new quote \u2014 we\u2019d love to work with you.' });
+          } else if (data.accepted_at || ['accepted', 'paid', 'awaiting_approval', 'in_production', 'ready', 'completed'].includes(st)) {
+            setBlocked({ code: 'accepted', message: 'Your deposit is already in and this order is underway. Any remaining balance is collected when it\u2019s ready.', redirectUrl: `/quote/accepted/${data.id}` });
+          }
           setQuote({
             id: data.id,
             customer_name: data.customer_name ?? null,
@@ -148,12 +179,30 @@ export function PaymentCheckout() {
   return (
     <Layout>
       <div className="min-h-[60vh] flex items-center justify-center px-4 py-12">
-        {error ? (
-          <div className="text-center">
+        {blocked ? (
+          <div className="text-center max-w-md">
+            {blocked.code === 'declined' ? <XCircle className="h-16 w-16 text-gray-400 mx-auto mb-4" /> : <CheckCircle2 className="h-16 w-16 text-emerald-500 mx-auto mb-4" />}
+            <h1 className="text-2xl font-display font-bold text-gray-900 mb-2">
+              {blocked.code === 'accepted' ? 'This order is already underway' : blocked.code === 'paid' ? 'Already paid in full' : blocked.code === 'declined' ? 'This quote was declined' : 'This quote has expired'}
+            </h1>
+            <p className="text-gray-500 mb-6">{blocked.message}</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {blocked.redirectUrl && <a href={blocked.redirectUrl} className="px-5 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-medium">See order status</a>}
+              {blocked.code === 'declined' || blocked.code === 'expired' ? <Link to="/quote" className="px-5 py-2.5 rounded-lg bg-orange-500 text-white text-sm font-medium">Get a new quote</Link> : null}
+              <Link to="/" className="px-5 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium">Home</Link>
+            </div>
+          </div>
+        ) : error ? (
+          <div className="text-center max-w-md">
             <XCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-display font-bold text-gray-900 mb-2">Payment Error</h1>
+            <h1 className="text-2xl font-display font-bold text-gray-900 mb-2">Payment didn\u2019t start</h1>
             <p className="text-gray-500 mb-6">{error}</p>
-            <Link to="/" className="text-blue-600 font-medium hover:underline">Return Home</Link>
+            <div className="flex flex-wrap justify-center gap-3">
+              {skipChoice && quoteId && (
+                <button type="button" onClick={() => beginCheckout(type as 'deposit' | 'full')} className="px-5 py-2.5 rounded-lg bg-orange-500 text-white text-sm font-medium">Try again</button>
+              )}
+              <Link to="/" className="px-5 py-2.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium">Return Home</Link>
+            </div>
           </div>
         ) : skipChoice || redirecting || checkingDelivered ? (
           <div className="text-center">
@@ -285,6 +334,12 @@ export function PaymentCheckout() {
               </div>
             ) : null}
 
+            {checkoutError && (
+              <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {checkoutError}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Pay deposit (50%) */}
               <button
@@ -315,6 +370,7 @@ export function PaymentCheckout() {
 
             <p className="text-center text-xs text-gray-400 mt-6">
               Secure payment by Stripe. Cards, Apple Pay, and Google Pay accepted.
+              A 3% card processing fee is added at checkout; paying by cash or check in the shop has no fee.
             </p>
           </div>
         )}

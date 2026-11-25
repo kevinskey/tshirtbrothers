@@ -455,6 +455,38 @@ async function applyPaymentToInvoice({ invoiceId, amount, paymentIntentId, metho
 
 export { applyPaymentToInvoice };
 
+
+// A quote accepts money exactly once per stage. The emailed accept link kept
+// working after the deposit was paid (and after a decline), so a parent
+// re-tapping the email could pay the deposit twice. Checked here — the
+// client calls these routes directly, never the guarded /quotes/accept.
+// Returns a { status, body } to send, or null when checkout may proceed.
+export function quoteCheckoutBlock(quote, { kind } = { kind: 'deposit' }) {
+  const domain = process.env.DOMAIN || 'https://tshirtbrothers.com';
+  if (!quote) return { status: 404, body: { error: 'Quote not found' } };
+  if (quote.archived_at || quote.status === 'rejected' || quote.status === 'declined') {
+    return { status: 410, body: {
+      code: 'declined',
+      error: quote.status === 'rejected' || quote.status === 'declined'
+        ? 'This quote was declined, so it can no longer be paid. Call us if you changed your mind — we\u2019ll be glad to re-quote it.'
+        : 'This quote has expired (quotes are valid for 14 days). Please request a new quote — we\u2019d love to work with you.',
+    } };
+  }
+  if (quote.balance_paid_at) {
+    return { status: 409, body: { code: 'paid', error: 'This order is already paid in full. Nothing more is due.' } };
+  }
+  const underway = Boolean(quote.accepted_at)
+    || ['accepted', 'paid', 'awaiting_approval', 'in_production', 'ready', 'completed'].includes(String(quote.status));
+  if (underway && kind !== 'balance') {
+    return { status: 409, body: {
+      code: 'accepted',
+      error: 'Your deposit is already in and this order is underway. Any remaining balance is collected when it\u2019s ready.',
+      redirectUrl: `${domain}/quote/accepted/${quote.id}`,
+    } };
+  }
+  return null;
+}
+
 // POST /create-checkout - Create Stripe Checkout session for deposit payment
 router.post('/create-checkout', async (req, res, next) => {
   try {
@@ -483,6 +515,9 @@ router.post('/create-checkout', async (req, res, next) => {
     if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
+
+    const blocked = quoteCheckoutBlock(quote, { kind: 'deposit' });
+    if (blocked) return res.status(blocked.status).json(blocked.body);
 
     // Calculate deposit amount
     const total = parseFloat(quote.estimated_price || 0);
@@ -572,6 +607,9 @@ router.post('/create-full-checkout', async (req, res, next) => {
     if (!tokenMatches(quote.accept_token, token)) {
       return res.status(403).json({ error: 'Invalid token' });
     }
+
+    const blocked = quoteCheckoutBlock(quote, { kind: 'full' });
+    if (blocked) return res.status(blocked.status).json(blocked.body);
 
     const total = parseFloat(quote.estimated_price || 0);
     if (total <= 0) {

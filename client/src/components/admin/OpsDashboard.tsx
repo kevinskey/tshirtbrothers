@@ -405,12 +405,14 @@ function WorkBoard({ rows, onChanged, toast }: {
   );
 }
 
-export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob, toast }: {
+export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onQuickBill, onNewCustomer, onNewJob, toast }: {
   onOpenQuotes: (filter?: string) => void;
   onOpenQuoteId?: (id: number) => void;
   onOpenInvoices: () => void;
   onOpenCustomers: () => void;
   onNewInvoice: () => void;
+  /** One-screen bill: who, how much, send / text / already paid. */
+  onQuickBill?: () => void;
   onNewCustomer: () => void;
   onNewJob: () => void;
   toast?: (msg: string, type?: 'error' | 'success') => void;
@@ -553,8 +555,8 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
       </div>
 
       {/* Schedule + Attention */}
-      <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr] min-w-0">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm min-w-0">
           <CardHeader icon={CalendarDays} title={`Open Orders${d.schedule.length ? ` (${d.schedule.length})` : ''}`} linkText="View All" onLink={() => onOpenQuotes('accepted')} />
           {d.schedule.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-400">No open orders — this fills in as quotes are accepted.</p>
@@ -767,6 +769,13 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600">
             <Plus className="h-4 w-4" /> New Quote
           </button>
+          {onQuickBill && (
+            <button onClick={onQuickBill}
+              title="Bill a customer right now — name, amount, send it or mark it paid"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-green-700">
+              <DollarSign className="h-4 w-4" /> Quick Bill
+            </button>
+          )}
           <button onClick={onNewInvoice}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-orange-300 bg-white px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50">
             <Plus className="h-4 w-4" /> New Order

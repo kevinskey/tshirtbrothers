@@ -18,7 +18,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { reconcileInvoicePayments } from './payments.js';
+import { reconcileInvoicePayments, quoteCheckoutBlock } from './payments.js';
 
 const DATE = '2026-10-13T18:00:21.093Z';
 
@@ -213,4 +213,33 @@ test('zero-total invoice does not divide by zero', () => {
   assert.equal(book.depositPercent, 0);
   assert.equal(book.amountDue, 0);
   assert.equal(book.settled, true);
+});
+
+// The emailed accept link must stop taking deposits once one is in — a
+// parent re-tapping the email paid twice before this guard existed.
+test('quoteCheckoutBlock lets a priced, open quote through', () => {
+  assert.equal(quoteCheckoutBlock({ id: 1, status: 'quoted', accepted_at: null }), null);
+  assert.equal(quoteCheckoutBlock({ id: 1, status: 'pending', accepted_at: null }, { kind: 'full' }), null);
+});
+
+test('quoteCheckoutBlock refuses a second deposit on an accepted order and points at the status page', () => {
+  const r = quoteCheckoutBlock({ id: 7, status: 'accepted', accepted_at: '2026-11-01' });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, 'accepted');
+  assert.match(r.body.redirectUrl, /\/quote\/accepted\/7$/);
+  // status alone is enough — accepted_at can be missing on older rows
+  assert.equal(quoteCheckoutBlock({ id: 7, status: 'in_production', accepted_at: null }).status, 409);
+});
+
+test('quoteCheckoutBlock still allows the balance on an accepted order, but not once paid in full', () => {
+  assert.equal(quoteCheckoutBlock({ id: 7, status: 'ready', accepted_at: 'x' }, { kind: 'balance' }), null);
+  const r = quoteCheckoutBlock({ id: 7, status: 'ready', accepted_at: 'x', balance_paid_at: 'y' }, { kind: 'balance' });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.code, 'paid');
+});
+
+test('quoteCheckoutBlock refuses declined and expired quotes', () => {
+  assert.equal(quoteCheckoutBlock({ id: 7, status: 'rejected' }).status, 410);
+  assert.equal(quoteCheckoutBlock({ id: 7, status: 'rejected' }).body.code, 'declined');
+  assert.equal(quoteCheckoutBlock({ id: 7, status: 'quoted', archived_at: '2026-10-01' }).status, 410);
 });

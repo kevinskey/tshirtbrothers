@@ -67,7 +67,7 @@ function invoiceSettled(invoice) {
 // So it counts only once something proves money arrived. Treating the
 // pre-acceptance ask as revenue is how a quote nobody paid showed up under
 // "Deposit Paid".
-function quoteCollected(quote) {
+export function quoteCollected(quote) {
   if (!quote) return 0;
   if (quote.balance_paid_at) return round2(quote.estimated_price);
   if (quote.accepted_at) return round2(quote.deposit_amount);

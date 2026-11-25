@@ -55,6 +55,7 @@ import {
   Boxes,
 } from 'lucide-react';
 import { QUOTE_MARKUP } from '@/lib/pricing';
+import QuickBillModal from '@/components/admin/QuickBillModal';
 import {
   fetchQuotes,
   fetchGangSheetOrders,
@@ -93,6 +94,8 @@ import {
   type Invoice,
   type InvoiceItem,
   type CreateInvoiceData,
+  type PriceBreakdown,
+  type OrderMoney,
   orderNumber,
   fetchInvoices,
   fetchInvoice,
@@ -103,6 +106,7 @@ import {
   sendInvoice,
   sendInvoiceSms,
   deleteInvoice,
+  archiveInvoice,
   recordPayment,
   type BlogPost,
   fetchAdminBlogPosts,
@@ -321,6 +325,7 @@ const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800',
   sent: 'bg-blue-100 text-blue-800',
   paid: 'bg-green-100 text-green-800',
+  partial: 'bg-lime-100 text-lime-800',
   overdue: 'bg-red-100 text-red-800',
   // The order ladder between deposit and done. in_production and ready are
   // shared with the gang sheet queue — same word, same meaning, same colour.
@@ -368,7 +373,7 @@ const PRODUCTION_CHECKLIST = [
 // already tax-inclusive.
 const DEFAULT_INVOICE_TAX_RATE = '7.75';
 
-type InvoiceFilter = 'all' | 'draft' | 'sent' | 'paid' | 'overdue';
+type InvoiceFilter = 'all' | 'draft' | 'sent' | 'partial' | 'paid' | 'overdue' | 'archived';
 type InvoiceView = 'list' | 'create' | 'preview';
 
 // Customer private asset library panel — admin uploads graphics that only this
@@ -1008,7 +1013,7 @@ export default function AdminPage() {
             shipping: String(inv.shipping || 0),
             discount: String(inv.discount || 0),
             notes: inv.notes || '',
-            due_date: inv.due_date || '',
+            due_date: dateInputValue(inv.due_date),
             mockup_id: inv.mockup_id ?? null,
             mockup_preview_url: inv.mockup_preview_url ?? null,
             mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
@@ -1054,15 +1059,21 @@ export default function AdminPage() {
         ? { top: r.bottom + 4, right, maxHeight: Math.max(160, below) }
         : { bottom: window.innerHeight - r.top + 4, right, maxHeight: Math.max(160, above) }
     );
+    actionMenuOpenedAt.current = Date.now();
     setOpenActionMenu(id);
   };
+  const actionMenuOpenedAt = useRef(0);
   useEffect(() => {
     if (!openActionMenu) return;
     // Scrolling the menu's own overflow must not count as the page moving
-    // out from under it.
+    // out from under it. Nor does the scroll the opening click itself
+    // causes: focusing the button nudges the table's overflow-x wrapper,
+    // which fired this listener and closed the menu before it was seen —
+    // every row menu took two clicks.
     const close = (e: Event) => {
       const t = e.target as HTMLElement | null;
       if (t?.closest?.('[data-row-action-menu]')) return;
+      if (Date.now() - actionMenuOpenedAt.current < 350) return;
       setOpenActionMenu(null);
     };
     window.addEventListener('scroll', close, true);
@@ -1192,32 +1203,111 @@ export default function AdminPage() {
     window.open(`/invoice/view/${id}?print=1`, '_blank', 'noopener');
   }
 
-  function convertQuoteToInvoice(q: Quote) {
-    const total = Number(q.estimated_price || 0);
-    const qty = Number(q.quantity || 1);
-    const unit = qty > 0 ? +(total / qty).toFixed(2) : 0;
+  // Build invoice line items from a quote. One line per quote item — product,
+  // color and the size run in the description, the quote's own quantity and
+  // unit price — plus its fee lines. The old conversion collapsed the whole
+  // quote into "Custom printing order × qty", so the invoice the customer
+  // got never showed what they'd actually ordered.
+  function quoteToInvoiceLines(q: Quote): { items: InvoiceItem[]; taxRate: string; shipping: number; discount: number } {
+    const items: InvoiceItem[] = [];
+    const sizesLabel = (sizes: unknown): string => {
+      if (!Array.isArray(sizes)) return '';
+      const parts = (sizes as Array<{ size?: string; quantity?: number }>)
+        .filter((x) => x && x.size && Number(x.quantity) > 0)
+        .map((x) => `${x.size}×${Number(x.quantity)}`);
+      return parts.join(', ');
+    };
+    const rows = Array.isArray(q.items) ? q.items : [];
+    for (const it of rows) {
+      const isFee = it.item_type === 'fee';
+      const fromSizes = Array.isArray(it.sizes)
+        ? (it.sizes as Array<{ quantity?: number }>).reduce((n, x) => n + (Number(x?.quantity) || 0), 0)
+        : 0;
+      const qty = Math.max(1, isFee ? 1 : (fromSizes || Number(it.quantity) || 1));
+      const lineTotal = Number(it.line_total);
+      const unit = Number.isFinite(Number(it.unit_price)) && Number(it.unit_price) > 0
+        ? Number(it.unit_price)
+        : (Number.isFinite(lineTotal) && lineTotal > 0 ? +(lineTotal / qty).toFixed(2) : 0);
+      const sizeStr = isFee ? '' : sizesLabel(it.sizes);
+      const desc = [it.product_name || (isFee ? 'Fee' : 'Custom printing'), !isFee && it.color ? it.color : '', sizeStr ? `(${sizeStr})` : '']
+        .filter(Boolean).join(' · ').replace(' · (', ' (');
+      items.push({
+        description: desc,
+        quantity: qty,
+        unit_price: unit,
+        ...(isFee ? { item_type: 'fee' as const } : {}),
+        ...(!isFee && it.color ? { color: String(it.color) } : {}),
+      });
+    }
+    const pb = (q.price_breakdown || null) as PriceBreakdown | null;
+    const quoted = Number(q.estimated_price || 0);
+    const shipping = Number(pb?.shipping || 0);
+    const discount = Number(pb?.discountAmount || 0);
+    // Only a priced line set is worth itemizing; otherwise fall back to one
+    // line carrying the quoted total so the customer is billed what they
+    // were quoted.
+    const lineSum = items.reduce((n, it) => n + it.quantity * it.unit_price, 0);
+    if (items.length === 0 || lineSum <= 0) {
+      const qty = Number(q.quantity || 1);
+      return {
+        items: [{ description: q.product_name || q.productName || 'Custom printing order', quantity: qty, unit_price: qty > 0 ? +(quoted / qty).toFixed(2) : 0 }],
+        taxRate: '0', shipping: 0, discount: 0,
+      };
+    }
+    const taxRate = pb && !pb.taxExempt && Number.isFinite(Number(pb.taxRate)) && Number(pb.taxRate) > 0
+      ? String(Number(pb.taxRate) <= 1 ? +(Number(pb.taxRate) * 100).toFixed(4) : Number(pb.taxRate))
+      : '0';
+    const tax = +(lineSum * (parseFloat(taxRate) / 100)).toFixed(2);
+    const computed = +(lineSum + tax + shipping - discount).toFixed(2);
+    // The quoted figure is the promise; reconcile any gap (print setup
+    // priced outside the lines, rounding) as a visible line rather than
+    // silently billing a different total.
+    const gap = +(quoted - computed).toFixed(2);
+    if (quoted > 0 && Math.abs(gap) >= 0.05) {
+      items.push({ description: gap > 0 ? 'Printing & setup (per quote)' : 'Quote adjustment', quantity: 1, unit_price: +(gap / (1 + parseFloat(taxRate) / 100)).toFixed(2), item_type: 'fee' });
+    }
+    return { items, taxRate, shipping, discount };
+  }
+
+  async function convertQuoteToInvoice(q: Quote) {
+    // Accepting a quote already books an invoice (the Stripe deposit webhook
+    // writes one), so "Invoice" on an accepted quote must OPEN that bill,
+    // not mint a second one next to it.
+    let existing: Invoice | undefined = invoiceByQuoteId.get(Number(q.id));
+    if (!existing) {
+      try {
+        const all = await fetchInvoices('all');
+        existing = all.find((inv) => inv.quote_id != null && Number(inv.quote_id) === Number(q.id));
+      } catch { /* fall through and build a fresh one */ }
+    }
+    if (existing) {
+      setActiveSection('invoices');
+      openInvoiceEditor(existing);
+      toast(`Opened ${existing.invoice_number} — this order already has an invoice`);
+      return;
+    }
+
+    const lines = quoteToInvoiceLines(q);
     setInvoiceForm({
       customer_name: q.customer_name || q.customerName || '',
       customer_email: q.customer_email || q.customerEmail || '',
       customer_phone: q.customer_phone || q.customerPhone || '',
       cc_emails: (q.cc_emails || []).join(', '),
       customer_address: '',
-      items: [{
-        description: q.product_name || q.productName || 'Custom printing order',
-        quantity: qty,
-        unit_price: unit,
-      }],
-      tax: '0', shipping: '0', discount: '0',
+      items: lines.items,
+      tax: '0', shipping: String(lines.shipping || 0), discount: String(lines.discount || 0),
       notes: q.notes || '',
       due_date: '',
       mockup_id: null, mockup_preview_url: null, mockup_preview_url_back: null, extra_mockups: [],
     });
-    // A quote's estimated_price already contains its sales tax
-    // (price_breakdown.tax), so the line items we just built are
-    // tax-inclusive. Leaving the rate at the default would make the
-    // auto-recompute effect add tax a second time — that's how quote #215
-    // picked up $147.85 of phantom tax on a $1,848.17 order.
-    setInvoiceTaxRate('0');
+    // The auto-recompute effect derives tax from this rate × the line
+    // subtotal, so the quote's own rate reproduces its tax exactly; a quote
+    // with no breakdown stays tax-inclusive at 0% (quote #215 once picked up
+    // $147.85 of phantom tax from the default rate).
+    setInvoiceTaxRate(lines.taxRate);
+    // A quote accepted with a deposit opens its invoice half-paid; the server
+    // seeds the payment on save, so no deposit ask on top of it.
+    setInvoiceRequireDeposit(!q.accepted_at);
     setInvoiceQuoteId(Number(q.id) || null);
     setActiveSection('invoices');
     setInvoiceView('create');
@@ -1240,7 +1330,7 @@ export default function AdminPage() {
   const [ratesError, setRatesError] = useState('');
   const [recordPaymentInvoice, setRecordPaymentInvoice] = useState<Invoice | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState('card');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   // Deliberate overpayment. The server refuses anything that takes an invoice
   // past its total unless this is set — two invoices drifted that way by
   // recording a Stripe payment a second time by hand.
@@ -2235,6 +2325,24 @@ export default function AdminPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] }),
   });
 
+  // Close out: the invoice leaves the list and the order pipeline but keeps
+  // its history. This is the "done with this" action that was missing — the
+  // only exits used to be Delete (destructive) or leaving it to sit forever.
+  const archiveInvoiceMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => archiveInvoice(id, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+      if (invoiceView !== 'list') { setInvoiceView('list'); resetInvoiceForm(); }
+      toast('Invoice closed and archived');
+    },
+    onError: (err) => toast(`Failed to archive: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error'),
+  });
+
+  // Quick Bill — a one-screen bill for a customer at the counter or on the
+  // phone, with no quote behind it: who, how much, send it / text it / they
+  // already paid. The full invoice editor stays for everything else.
+  const [quickBillOpen, setQuickBillOpen] = useState(false);
+
   const recordPaymentMutation = useMutation({
     mutationFn: ({ id, amount, method, overpay_ok }: { id: string; amount: number; method: string; overpay_ok?: boolean }) => recordPayment(id, { amount, method, overpay_ok }),
     onSuccess: (updated) => {
@@ -2247,15 +2355,16 @@ export default function AdminPage() {
       }
       setRecordPaymentInvoice(null);
       setPaymentAmount('');
-      setPaymentMethod('card');
+      setPaymentMethod('cash');
       setAllowOverpay(false);
+      toast(updated && Number(updated.amount_due) <= 0 ? `${updated.invoice_number} paid in full` : 'Payment recorded');
     },
-    onError: (err) => alert(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`),
+    onError: (err) => toast(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error'),
   });
 
   const sendPriceMutation = useMutation({
     mutationFn: (data: SendQuotePricePayload) => sendQuotePrice(data),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
       setPriceModalQuote(null);
@@ -2264,10 +2373,17 @@ export default function AdminPage() {
       setPriceDesignFee('0');
       setPriceRushFee('0');
       setPriceMessage('');
-      alert('Quote sent to customer!');
+      if (result?.emailError) {
+        // The price is saved and the accept link is live; only the email
+        // failed. Say exactly that, so the admin texts the link instead of
+        // re-sending (which used to re-mint the token) or re-typing the price.
+        toast(`Price saved — the email did not go out (${result.emailError}). Text the customer the quote link instead.`, 'error');
+      } else {
+        toast('Price sent to customer');
+      }
     },
     onError: (err) => {
-      alert(`Failed to send quote: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      toast(`Failed to send quote: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     },
   });
 
@@ -2517,7 +2633,7 @@ export default function AdminPage() {
       shipping: String(inv.shipping || 0),
       discount: String(inv.discount || 0),
       notes: inv.notes || '',
-      due_date: inv.due_date || '',
+      due_date: dateInputValue(inv.due_date),
       mockup_id: inv.mockup_id ?? null,
       mockup_preview_url: inv.mockup_preview_url ?? null,
       mockup_preview_url_back: inv.mockup_preview_url_back ?? null, extra_mockups: (inv.extra_mockups ?? []),
@@ -2611,8 +2727,10 @@ export default function AdminPage() {
   // will see amount_due === 0 and email a receipt instead of a payment link.
   async function handleSaveAndMarkPaid() {
     if (!previewInvoice) return;
-    const method = window.prompt('How was this paid? (cash, check, zelle, cashapp, card)', 'cash');
-    if (method === null) return;
+    // Method comes from the select beside the button (paymentMethod state),
+    // not a browser prompt — prompts are blocked inside the iOS wrapper and
+    // read as a bug on a phone at the counter.
+    const method = paymentMethod || 'cash';
     try {
       // Same duplicate guard as handleSendPreviewedInvoice: update in place
       // when editing an existing invoice.
@@ -3639,6 +3757,7 @@ export default function AdminPage() {
             onOpenInvoices={() => setActiveSection('invoices')}
             onOpenCustomers={() => setActiveSection('customers')}
             onNewInvoice={() => { setActiveSection('invoices'); setInvoiceView('create'); }}
+            onQuickBill={() => setQuickBillOpen(true)}
             onNewCustomer={() => { setActiveSection('customers'); setShowCustomerForm(true); }}
             onNewJob={() => setActiveSection('gangsheet')}
             toast={toast}
@@ -5696,13 +5815,23 @@ export default function AdminPage() {
                             ? `$${Number(o.estimated_price).toFixed(2)}`
                             : '--'}
                         </td>
+                        {/* Collected / due come from the resolved money block
+                            (invoice wins when one exists) — the quote's
+                            deposit_amount alone showed "$336 due" on orders
+                            the invoice list said were paid in full. */}
                         <td className="px-4 py-3 text-green-600 font-medium text-right whitespace-nowrap">
-                          {o.accepted_at && o.deposit_amount != null && Number(o.deposit_amount) > 0
-                            ? `$${Number(o.deposit_amount).toFixed(2)}`
-                            : '--'}
+                          {(() => {
+                            const m = (o as { money?: OrderMoney }).money;
+                            if (m) return m.collected > 0 ? `$${m.collected.toFixed(2)}` : '--';
+                            return o.accepted_at && o.deposit_amount != null && Number(o.deposit_amount) > 0
+                              ? `$${Number(o.deposit_amount).toFixed(2)}`
+                              : '--';
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-red-600 font-medium text-right whitespace-nowrap">
                           {(() => {
+                            const m = (o as { money?: OrderMoney }).money;
+                            if (m) return m.total <= 0 ? '--' : `$${m.due.toFixed(2)}`;
                             const total = o.estimated_price != null ? Number(o.estimated_price) : 0;
                             if (total <= 0) return '--';
                             if (o.balance_paid_at) return '$0.00';
@@ -5826,8 +5955,9 @@ export default function AdminPage() {
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 overflow-x-auto">
-                    {(['all', 'draft', 'sent', 'paid', 'overdue'] as InvoiceFilter[]).map(f => (
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                    {(['all', 'draft', 'sent', 'partial', 'paid', 'overdue', 'archived'] as InvoiceFilter[]).map(f => (
                       <button
                         key={f}
                         onClick={() => setInvoiceFilter(f)}
@@ -5838,6 +5968,15 @@ export default function AdminPage() {
                         {f}
                       </button>
                     ))}
+                   </div>
+                    <button
+                      onClick={() => setQuickBillOpen(true)}
+                      title="Bill a customer right now — name, amount, send or mark paid"
+                      className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap"
+                    >
+                      <DollarSign className="w-3.5 h-3.5" />
+                      Quick bill
+                    </button>
                     <button
                       onClick={() => { resetInvoiceForm(); setInvoiceView('create'); }}
                       className="flex items-center gap-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap"
@@ -5889,10 +6028,20 @@ export default function AdminPage() {
                               {textInvoiceMutation.isPending && textInvoiceMutation.variables === inv.id ? 'Texting…' : 'Text'}
                             </button>
                           )}
-                          {inv.status !== 'paid' && Number(inv.amount_due) > 0 && <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }} className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">Payment</button>}
+                          {canTakePayment(inv) && (
+                            <button onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(Math.max(0, Number(inv.total) - Number(inv.amount_paid || 0)).toFixed(2))); setPaymentMethod('cash'); }} className="text-xs font-semibold text-white bg-green-600 px-3 py-1.5 rounded-lg">
+                              {Number(inv.amount_paid) > 0 ? 'Collect balance' : 'Mark paid'}
+                            </button>
+                          )}
                           <button onClick={() => printInvoice(inv.id)} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Print</button>
                           <button onClick={() => { setPurchasingInvoiceId(inv.id); setActiveSection('purchasing'); }} className="text-xs font-medium text-gray-600 bg-gray-100 px-3 py-1.5 rounded-lg">Order blanks</button>
-                          <button onClick={() => { if (confirm('Delete?')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
+                          <button
+                            onClick={async () => { if (await confirmDestructive(`Close out ${inv.invoice_number}? It leaves the invoice list but keeps its history.`)) archiveInvoiceMutation.mutate({ id: inv.id, reason: inv.status === 'paid' ? 'closed' : 'void' }); }}
+                            className="text-xs font-medium text-gray-700 bg-gray-100 px-3 py-1.5 rounded-lg"
+                          >
+                            {inv.status === 'paid' ? 'Close out' : 'Void'}
+                          </button>
+                          <button onClick={async () => { if (await confirmDestructive('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }} className="text-xs font-medium text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">Delete</button>
                         </div>
                       </div>
                     ))}
@@ -5965,15 +6114,23 @@ export default function AdminPage() {
                                     <MessageSquare className="w-4 h-4" />
                                   </button>
                                 )}
-                                {mayOweMoney(inv) && (
+                                {canTakePayment(inv) && (
                                   <button
-                                    title="Record payment"
-                                    onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(inv.amount_due)); }}
-                                    className="p-1.5 text-green-600 hover:text-green-700 hover:bg-green-50 rounded transition-colors"
+                                    title={Number(inv.amount_paid) > 0 ? 'Collect the balance (cash, Zelle, card…)' : 'Mark paid — record cash, Zelle, check or card taken in person'}
+                                    onClick={() => { setRecordPaymentInvoice(inv); setPaymentAmount(String(Math.max(0, Number(inv.total) - Number(inv.amount_paid || 0)).toFixed(2))); setPaymentMethod('cash'); }}
+                                    className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 rounded transition-colors whitespace-nowrap"
                                   >
-                                    <DollarSign className="w-4 h-4" />
+                                    <DollarSign className="w-3.5 h-3.5" />
+                                    {Number(inv.amount_paid) > 0 ? 'Collect' : 'Mark paid'}
                                   </button>
                                 )}
+                                <button
+                                  title={inv.status === 'paid' ? 'Close out — archive this paid invoice' : 'Void — archive this invoice without deleting it'}
+                                  onClick={async () => { if (await confirmDestructive(`Close out ${inv.invoice_number}? It leaves the invoice list but keeps its history.`)) archiveInvoiceMutation.mutate({ id: inv.id, reason: inv.status === 'paid' ? 'closed' : 'void' }); }}
+                                  className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
+                                >
+                                  <Archive className="w-4 h-4" />
+                                </button>
                                 <button
                                   title="Print invoice"
                                   onClick={() => printInvoice(inv.id)}
@@ -5990,7 +6147,7 @@ export default function AdminPage() {
                                 </button>
                                 <button
                                   title="Delete"
-                                  onClick={() => { if (confirm('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
+                                  onClick={async () => { if (await confirmDestructive('Delete this invoice? This cannot be undone.')) deleteInvoiceMutation.mutate(inv.id); }}
                                   className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4" />
@@ -6379,7 +6536,7 @@ export default function AdminPage() {
                                     placeholder={item.item_type === 'fee' ? 'Fee / charge (pick one or type your own)' : 'Item description or search catalog…'}
                                   />
                                   {invoiceLineSearchIdx === idx && item.item_type !== 'fee' && (item.description || '').length >= 2 && (invoiceSearchProducts.length > 0 || matchingCustomProducts.length > 0) && (
-                                    <div className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                                    <div className="absolute left-0 top-full mt-1 z-30 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-y-auto divide-y divide-gray-100 w-full min-w-[22rem] max-w-[calc(100vw-2rem)]">
                                       {matchingCustomProducts.slice(0, 5).map((cp: CustomProduct) => (
                                         <button
                                           key={`line-custom-${cp.id}`}
@@ -6412,10 +6569,18 @@ export default function AdminPage() {
                                               openProductConfigurator(p, idx);
                                               setInvoiceLineSearchIdx(null);
                                             }}
-                                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center justify-between gap-2"
+                                            className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm flex items-center gap-3"
                                           >
-                                            <span className="truncate">{p.name} <span className="text-[10px] text-gray-400">{p.brand}</span></span>
-                                            {shown != null && <span className="text-xs font-semibold text-gray-700 flex-shrink-0">${shown.toFixed(2)}</span>}
+                                            {p.image_url ? (
+                                              <img src={String(p.image_url)} alt="" loading="lazy" className="h-12 w-12 rounded bg-gray-50 border border-gray-100 object-contain flex-shrink-0" />
+                                            ) : (
+                                              <div className="h-12 w-12 rounded bg-gray-100 flex-shrink-0" />
+                                            )}
+                                            <span className="min-w-0 flex-1">
+                                              <span className="block text-gray-900 leading-snug line-clamp-2">{p.name}</span>
+                                              <span className="block text-[11px] text-gray-500 truncate">{[p.brand, p.category].filter(Boolean).join(' · ')}</span>
+                                            </span>
+                                            {shown != null && <span className="text-sm font-semibold text-gray-800 flex-shrink-0">${shown.toFixed(2)}</span>}
                                           </button>
                                         );
                                       })}
@@ -6731,12 +6896,20 @@ export default function AdminPage() {
                           {due > 0 && (
                             <button
                               type="button"
-                              onClick={() => { setRecordPaymentInvoice(editingInvoice); setPaymentAmount(String(due)); }}
-                              className="text-xs font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 px-3 py-1.5 rounded-lg"
+                              onClick={() => { setRecordPaymentInvoice(editingInvoice); setPaymentAmount(due.toFixed(2)); setPaymentMethod('cash'); }}
+                              className="text-xs font-semibold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg"
+                              title={unsaved ? 'Records against the saved total — click Update Invoice first if you changed the lines' : undefined}
                             >
-                              <DollarSign className="w-3 h-3 inline mr-1" />Record Payment
+                              <DollarSign className="w-3 h-3 inline mr-1" />{paid > 0 ? 'Collect balance' : 'Mark paid'}
                             </button>
                           )}
+                          <button
+                            type="button"
+                            onClick={async () => { if (await confirmDestructive(`Close out ${editingInvoice.invoice_number}? It leaves the invoice list but keeps its history.`)) archiveInvoiceMutation.mutate({ id: editingInvoice.id, reason: due <= 0 ? 'closed' : 'void' }); }}
+                            className="text-xs font-medium text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-lg"
+                          >
+                            <Archive className="w-3 h-3 inline mr-1" />{due <= 0 ? 'Close out' : 'Void invoice'}
+                          </button>
                           {due > 0 && editingInvoice.status !== 'draft' && (
                             <button
                               type="button"
@@ -6910,15 +7083,25 @@ export default function AdminPage() {
                   <button onClick={() => setInvoiceView('create')} className="px-6 py-2.5 rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                     Edit
                   </button>
-                  <button
-                    onClick={handleSaveAndMarkPaid}
-                    disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending || recordPaymentMutation.isPending}
-                    title="Use this when the customer has already paid (cash, Zelle, etc.). Records the payment and emails a receipt."
-                    className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition disabled:opacity-50"
-                  >
-                    {(createInvoiceMutation.isPending || recordPaymentMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
-                    Save & Mark Paid
-                  </button>
+                  <div className="flex items-stretch rounded-lg overflow-hidden border border-green-700">
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      aria-label="How the customer paid"
+                      className="bg-green-50 text-green-900 text-sm px-2 border-r border-green-700 focus:outline-none"
+                    >
+                      {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                    </select>
+                    <button
+                      onClick={handleSaveAndMarkPaid}
+                      disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending || recordPaymentMutation.isPending}
+                      title="Use this when the customer has already paid. Records the payment and emails a receipt."
+                      className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition disabled:opacity-50"
+                    >
+                      {(createInvoiceMutation.isPending || recordPaymentMutation.isPending) ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
+                      Save & Mark Paid
+                    </button>
+                  </div>
                   <button
                     onClick={handleSendPreviewedInvoice}
                     disabled={createInvoiceMutation.isPending || sendInvoiceMutation.isPending}
@@ -7081,13 +7264,13 @@ export default function AdminPage() {
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                 <div className="bg-white rounded-2xl max-w-md w-full">
                   <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-                    <h3 className="font-display font-semibold text-gray-900">Record Payment</h3>
+                    <h3 className="font-display font-semibold text-gray-900">{Number(recordPaymentInvoice.amount_paid) > 0 ? 'Collect Balance' : 'Mark Paid'}</h3>
                     <button onClick={() => setRecordPaymentInvoice(null)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
                   </div>
                   <div className="p-6 space-y-4">
                     <div className="bg-gray-50 rounded-lg p-3 text-sm">
                       <p className="font-medium text-gray-900">{recordPaymentInvoice.invoice_number}</p>
-                      <p className="text-gray-500">{recordPaymentInvoice.customer_name} - Amount due: ${Number(recordPaymentInvoice.amount_due).toFixed(2)}</p>
+                      <p className="text-gray-500">{recordPaymentInvoice.customer_name} · Total ${Number(recordPaymentInvoice.total).toFixed(2)}{Number(recordPaymentInvoice.amount_paid) > 0 ? ` · Paid $${Number(recordPaymentInvoice.amount_paid).toFixed(2)}` : ''} · Due ${Math.max(0, Number(recordPaymentInvoice.total) - Number(recordPaymentInvoice.amount_paid || 0)).toFixed(2)}</p>
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Amount</label>
@@ -7097,16 +7280,25 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
-                      <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
-                        {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                      </select>
+                      <label className="block text-xs text-gray-500 mb-1">Paid by</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PAYMENT_METHODS.map((m) => (
+                          <button
+                            key={m.value}
+                            type="button"
+                            onClick={() => setPaymentMethod(m.value)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${paymentMethod === m.value ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400'}`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    {Number(paymentAmount) > Number(recordPaymentInvoice.amount_due) + 0.01 && (
+                    {Number(paymentAmount) > Math.max(0, Number(recordPaymentInvoice.total) - Number(recordPaymentInvoice.amount_paid || 0)) + 0.01 && (
                       <label className="flex gap-2 items-start bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
                         <input type="checkbox" checked={allowOverpay} onChange={e => setAllowOverpay(e.target.checked)} className="mt-0.5" />
                         <span>
-                          This is more than the ${Number(recordPaymentInvoice.amount_due).toFixed(2)} still due.
+                          This is more than the ${Math.max(0, Number(recordPaymentInvoice.total) - Number(recordPaymentInvoice.amount_paid || 0)).toFixed(2)} still due.
                           Check that it wasn't already recorded when it cleared Stripe, then tick to record it anyway.
                         </span>
                       </label>
@@ -7122,7 +7314,7 @@ export default function AdminPage() {
                         className="flex-1 flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition disabled:opacity-50"
                       >
                         {recordPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <DollarSign className="w-4 h-4" />}
-                        Record Payment
+                        {Math.abs(Number(paymentAmount) - Math.max(0, Number(recordPaymentInvoice.total) - Number(recordPaymentInvoice.amount_paid || 0))) < 0.005 ? 'Mark Paid in Full' : 'Record Payment'}
                       </button>
                     </div>
                   </div>
@@ -7130,6 +7322,30 @@ export default function AdminPage() {
               </div>
             )}
           </div>
+        )}
+
+        {quickBillOpen && (
+          <QuickBillModal
+            customers={customers}
+            onClose={() => setQuickBillOpen(false)}
+            onDone={(inv, what) => {
+              setQuickBillOpen(false);
+              queryClient.invalidateQueries({ queryKey: ['admin', 'invoices'] });
+              queryClient.invalidateQueries({ queryKey: ['admin', 'quotes'] });
+              queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
+              toast(what === 'paid'
+                ? `${inv.invoice_number} paid in full — receipt ${inv.customer_email ? 'emailed' : 'ready to print'}`
+                : what === 'paid_receipt_failed'
+                  ? `${inv.invoice_number} paid in full and recorded`
+                : what === 'texted'
+                  ? `${inv.invoice_number} texted to ${inv.customer_phone}`
+                  : what === 'emailed'
+                    ? `${inv.invoice_number} emailed to ${inv.customer_email}`
+                    : `${inv.invoice_number} saved as a draft`);
+            }}
+            onOpenInvoice={(inv) => { setQuickBillOpen(false); setActiveSection('invoices'); openInvoiceEditor(inv); }}
+            toast={toast}
+          />
         )}
 
         {/* Settings Section */}
@@ -9969,7 +10185,10 @@ export default function AdminPage() {
         {/* Send Price Modal */}
         {priceModalQuote && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-auto">
+            {/* Widens when the line-item editor is open: at max-w-lg the
+                product picker, color, and size columns were squeezed to the
+                point of truncating names and clipping the suggestion list. */}
+            <div className={`bg-white rounded-2xl w-full max-h-[90vh] overflow-auto ${priceItemsOpen ? 'max-w-4xl' : 'max-w-lg'}`}>
               <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
                 <h3 className="font-display font-semibold text-gray-900">Send Price Quote</h3>
                 <button
@@ -11648,11 +11867,30 @@ function MockupSideScroller({ images, alt }: { images: Array<{ src: string; labe
  * look at the invoice and decide. Trusting `status` alone hid every control
  * on the 11 invoices marked paid that still show a balance.
  */
+// <input type="date"> only accepts yyyy-MM-dd; the API hands back a full
+// timestamp, which the field rejected and rendered blank.
+function dateInputValue(v: string | null | undefined): string {
+  if (!v) return '';
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v));
+  return m?.[1] ?? '';
+}
+
 function mayOweMoney(inv: Invoice & { may_owe_money?: boolean }): boolean {
   if (typeof inv.may_owe_money === 'boolean') return inv.may_owe_money;
   if (inv.status === 'cancelled' || inv.status === 'draft') return false;
   if (inv.amount_due != null) return Number(inv.amount_due) > 0;
   return Number(inv.total) > 0 && Number(inv.amount_paid) < Number(inv.total);
+}
+
+// Can money be recorded against this invoice? Broader than mayOweMoney: a
+// DRAFT is not yet a bill the customer owes, but a customer who pays cash
+// at the counter before the bill was ever sent still needs that payment
+// recorded — hiding the button on drafts was why "I couldn't close out an
+// invoice" happened.
+function canTakePayment(inv: Invoice & { may_owe_money?: boolean }): boolean {
+  if (inv.status === 'cancelled') return false;
+  if (inv.status === 'draft') return Number(inv.total) > 0 && Number(inv.amount_paid || 0) < Number(inv.total);
+  return mayOweMoney(inv);
 }
 
 function paidState(q: Quote): { label: string; className: string } {

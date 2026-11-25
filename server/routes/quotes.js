@@ -454,7 +454,7 @@ router.get('/:id/public', async (req, res, next) => {
     if (!token) return res.status(400).json({ error: 'token is required' });
     const result = await pool.query(
       `SELECT id, customer_name, product_name, estimated_price, deposit_amount,
-              balance_paid_at, status, accept_token,
+              balance_paid_at, accepted_at, archived_at, status, accept_token,
               mockup_image_url, mockup_image_url_back,
               mockup_image_url_sleeve, mockup_image_url_sleeve_left,
               extra_mockups
@@ -852,7 +852,9 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
     // the accept page and the invoice all read back.
     const { basePrice, printingCost, designFee, rushFee, shipping, tax, taxExempt, taxRate, total, discountPct, discountReason, discountAmount, lineFees, lineFeesTotal } = priceBreakdown;
 
-    // Generate an accept token
+    // Accept token: minted once, then kept. Re-sending a price used to mint
+    // a fresh token, which silently killed the link in the email the
+    // customer already had.
     const acceptToken = crypto.randomBytes(32).toString('hex');
     const depositAmount = (Number(total) * 0.5).toFixed(2);
 
@@ -864,7 +866,7 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
        SET estimated_price = $1,
            calculated_price = $1,
            status = 'quoted',
-           accept_token = $2,
+           accept_token = COALESCE(accept_token, $2),
            price_breakdown = $3,
            admin_message = $4,
            deposit_amount = $5
@@ -886,7 +888,20 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
 
     const quote = result.rows[0];
 
-    // Send the price quote email to the customer
+    // The admin's total is the price; make the line items say the same
+    // thing. The customer's checkout page and the order page both list
+    // quote_items, so an override that touched only estimated_price showed
+    // "$666.90" on the line and "$642.00" in the total for the same shirts.
+    await syncQuoteItemPricesToTotal(quoteId, {
+      total: Number(total), tax: Number(tax) || 0, shipping: Number(shipping) || 0,
+      lineFeesTotal: Number(lineFeesTotal) || 0,
+    }).catch((err) => console.error(`[send-price] item price sync failed for quote ${quoteId}:`, err.message));
+
+    // Send the price quote email to the customer. The price is saved either
+    // way — a mail outage must not read as "the price didn't take", and the
+    // admin can text the link instead. Reported, not thrown.
+    let emailError = null;
+    try {
     await sendQuotePriceToCustomer(quote, {
       basePrice,
       printingCost,
@@ -904,6 +919,10 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       total,
       message,
     });
+    } catch (err) {
+      emailError = err?.message || 'The mail provider rejected the message.';
+      console.error(`[send-price] email failed for quote ${quoteId}:`, err);
+    }
     smsQuotePriceToCustomer(quote, total).catch(() => {});
     sendPushToUser(quote.user_id, {
       title: 'Your quote is ready',
@@ -911,11 +930,39 @@ router.post('/admin/send-price', authenticate, adminOnly, async (req, res, next)
       data: { type: 'quote-priced', id: quote.id },
     }).catch(() => {});
 
-    res.json({ success: true, quote });
+    res.json({ success: true, quote, ...(emailError ? { emailError } : {}) });
   } catch (err) {
     next(err);
   }
 });
+
+// Spread the admin's garment total across the quote's product lines so the
+// per-line prices the customer sees add up to the figure they were sent.
+// Fee lines keep their own totals; tax/shipping sit outside the lines.
+async function syncQuoteItemPricesToTotal(quoteId, { total, tax, shipping, lineFeesTotal }) {
+  const { rows } = await pool.query(
+    `SELECT id, quantity, item_type FROM quote_items WHERE quote_id = $1 AND item_type <> 'fee' ORDER BY position`,
+    [quoteId],
+  );
+  const garments = rows.filter((r) => Number(r.quantity) > 0);
+  const qty = garments.reduce((n, r) => n + Number(r.quantity), 0);
+  if (qty <= 0) return;
+  const net = Math.max(0, Number(total) - Number(tax) - Number(shipping) - Number(lineFeesTotal));
+  const unit = Math.round((net / qty) * 100) / 100;
+  // Rounding remainder lands on the last line so the lines sum exactly.
+  let remaining = Math.round(net * 100);
+  for (let i = 0; i < garments.length; i++) {
+    const r = garments[i];
+    const q = Number(r.quantity);
+    let lineCents = i === garments.length - 1 ? remaining : Math.round(unit * q * 100);
+    lineCents = Math.max(0, Math.min(lineCents, remaining));
+    remaining -= lineCents;
+    await pool.query(
+      'UPDATE quote_items SET unit_price = $1, line_total = $2, updated_at = NOW() WHERE id = $3',
+      [Math.round((lineCents / q)) / 100, lineCents / 100, r.id],
+    );
+  }
+}
 
 // POST /accept/:id - Redirect customer to payment checkout (deposit required to accept)
 router.post('/accept/:id', async (req, res, next) => {

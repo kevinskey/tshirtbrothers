@@ -180,6 +180,7 @@ export interface Quote {
   } | null;
   items?: QuoteItem[];
   inputs_json?: unknown | null;
+  accepted_at?: string | null;
   balance_paid_at?: string | null;
   /** Production sub-stage timestamps: blanks_ordered / print_ordered /
    *  press_in_progress / pressed, plus delivered ('pickup'|'mailed') and
@@ -659,7 +660,9 @@ export interface SendQuotePricePayload {
 }
 
 export async function sendQuotePrice(data: SendQuotePricePayload) {
-  return authRequest<{ success: boolean; quote: unknown }>('/quotes/admin/send-price', {
+  // emailError: the price was saved and the quote is live, but the email
+  // could not be sent (mail outage / bad address) — text the link instead.
+  return authRequest<{ success: boolean; quote: unknown; emailError?: string }>('/quotes/admin/send-price', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -1311,8 +1314,10 @@ export interface Invoice {
   amount_due: number;
   notes: string | null;
   due_date: string | null;
-  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  status: 'draft' | 'sent' | 'partial' | 'paid' | 'overdue' | 'cancelled';
   quote_id: string | null;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   mockup_id: number | null;
   extra_mockups?: ExtraMockup[];
   /** Additional addresses copied on every customer-facing send. */
@@ -1346,6 +1351,7 @@ export function orderNumber(quoteId: string | number | null | undefined): string
 
 export interface CreateInvoiceData {
   customer_name: string;
+  /** Email or phone — the server needs at least one way to reach them. */
   customer_email: string;
   customer_phone?: string;
   cc_emails?: string[];
@@ -1438,6 +1444,21 @@ export async function recordPayment(id: string, data: { amount: number; method: 
 
 export async function deleteInvoice(id: string): Promise<{ deleted: boolean }> {
   return authRequest<{ deleted: boolean }>(`/invoices/${id}`, { method: 'DELETE' });
+}
+
+// Archive = "close this out without deleting it". The row leaves the normal
+// invoice list and the order pipeline but keeps its history; the server has
+// had these routes since the quote archive landed, the UI just never called
+// them.
+export async function archiveInvoice(id: string, reason = 'closed'): Promise<{ ok: boolean }> {
+  return authRequest<{ ok: boolean }>(`/invoices/${id}/archive`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function unarchiveInvoice(id: string): Promise<{ ok: boolean }> {
+  return authRequest<{ ok: boolean }>(`/invoices/${id}/unarchive`, { method: 'POST' });
 }
 
 // Blog

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Trash2, Copy, Loader2, Search, Calculator, LayoutGrid, X } from 'lucide-react';
 import type { Product, Quote, QuoteItem } from '@/lib/api';
 import { fetchAdminProducts, replaceQuoteItems, calculateInstantPrice } from '@/lib/api';
@@ -1118,6 +1119,7 @@ function ProductPicker({
   const [loading, setLoading] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
 
   // Keep the input in sync if the parent draft changes the product_name from
   // outside (e.g. when initial draft is loaded from server).
@@ -1145,7 +1147,9 @@ function ProductPicker({
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if ((t as Element).closest?.('[data-qie-suggestions]')) return;
+      if (rootRef.current && !rootRef.current.contains(t)) setOpen(false);
     };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
@@ -1160,7 +1164,7 @@ function ProductPicker({
   return (
     <div ref={rootRef} className="relative">
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+        <div ref={anchorRef} className="relative flex-1">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             type="text"
@@ -1183,12 +1187,16 @@ function ProductPicker({
           title="Browse the catalog with photos"
           className="flex-shrink-0 flex items-center gap-1.5 text-xs font-medium border border-gray-200 rounded px-2.5 py-2 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
         >
-          <LayoutGrid className="w-3.5 h-3.5" /> Browse
+          <LayoutGrid className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Browse</span>
         </button>
       </div>
       {browsing && (
         <ProductBrowser
-          initialQuery={query}
+          // A line that already holds a catalog product carries its full
+          // name, and the search treats the whole name as the query ("Gildan
+          // Heavy Cotton T-Shirt" → 0 results). Browse starts clean for those;
+          // free text the admin typed is still worth searching.
+          initialQuery={productId ? '' : query.trim().split(/\s+/).slice(0, 2).join(' ')}
           onPick={pick}
           onClose={() => setBrowsing(false)}
         />
@@ -1199,40 +1207,95 @@ function ProductPicker({
         </p>
       )}
       {open && (results.length > 0 || loading) && (
-        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-auto">
+        <SuggestionLayer anchor={anchorRef.current}>
           {loading && results.length === 0 && (
             <div className="px-3 py-2 text-xs text-gray-400 flex items-center gap-1.5">
               <Loader2 className="w-3 h-3 animate-spin" /> Searching…
             </div>
           )}
-          {results.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => pick(p)}
-              className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 border-b border-gray-100 last:border-b-0"
-            >
-              {('image_url' in p && (p as Product & { image_url?: string }).image_url) ? (
-                <img
-                  src={(p as Product & { image_url?: string }).image_url}
-                  alt=""
-                  className="w-8 h-8 object-cover rounded border border-gray-100 flex-shrink-0"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded bg-gray-100 flex-shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-gray-900 truncate">{p.name}</p>
-                {('category' in p && (p as Product & { category?: string }).category) && (
-                  <p className="text-[11px] text-gray-500 truncate">
-                    {(p as Product & { category?: string }).category}
-                  </p>
+          {results.map((p) => {
+            const rich = p as Product & { image_url?: string; category?: string; style_number?: string; base_price?: number | string; retail_price?: number | string };
+            const blank = Number(rich.base_price);
+            const retail = Number(rich.retail_price ?? rich.custom_price);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                // mousedown + preventDefault so the pick wins over the input's blur
+                onMouseDown={(e) => { e.preventDefault(); pick(p); }}
+                className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-3 border-b border-gray-100 last:border-b-0"
+              >
+                {rich.image_url ? (
+                  <img
+                    src={rich.image_url}
+                    alt=""
+                    loading="lazy"
+                    className="w-14 h-14 object-contain rounded bg-gray-50 border border-gray-100 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded bg-gray-100 flex-shrink-0 flex items-center justify-center text-[10px] text-gray-400">No photo</div>
                 )}
-              </div>
-            </button>
-          ))}
-        </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-gray-900 leading-snug line-clamp-2">{p.name}</p>
+                  <p className="text-[11px] text-gray-500 truncate">
+                    {[rich.brand, rich.style_number ? `Style ${rich.style_number}` : null, rich.category].filter(Boolean).join(' · ')}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0 leading-tight">
+                  {Number.isFinite(retail) && retail > 0 && <p className="text-sm font-semibold text-gray-900">${retail.toFixed(2)}</p>}
+                  {Number.isFinite(blank) && blank > 0 && <p className="text-[10px] text-gray-400">blank ${blank.toFixed(2)}</p>}
+                </div>
+              </button>
+            );
+          })}
+        </SuggestionLayer>
       )}
     </div>
+  );
+}
+
+// The suggestion list is rendered into <body>, positioned under its input.
+// Inside the quote drawer and the Send Price modal the picker sits in an
+// overflow-auto container, and an absolutely positioned list was clipped at
+// the container's edge — the admin saw two half rows and no photos. A fixed
+// layer in a portal is not subject to the ancestor's overflow, and it can be
+// wider than the input, so the product name, brand, style and price fit.
+function SuggestionLayer({ anchor, children }: { anchor: HTMLElement | null; children: ReactNode }) {
+  const [box, setBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!anchor) return;
+    const place = () => {
+      const r = anchor.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const width = Math.min(Math.max(r.width, 440), vw - 16);
+      const left = Math.max(8, Math.min(r.left, vw - width - 8));
+      const below = vh - r.bottom - 8;
+      // Flip above the input when there is more room there than below.
+      const openUp = below < 220 && r.top > below;
+      const maxHeight = Math.max(160, Math.min(360, openUp ? r.top - 16 : below));
+      setBox({ top: openUp ? r.top - 4 - maxHeight : r.bottom + 4, left, width, maxHeight });
+    };
+    place();
+    window.addEventListener('resize', place);
+    // Scroll anywhere (the drawer, the modal, the page) must move it along.
+    document.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      document.removeEventListener('scroll', place, true);
+    };
+  }, [anchor]);
+
+  if (!anchor || !box) return null;
+  return createPortal(
+    <div
+      data-qie-suggestions
+      className="fixed z-[70] bg-white border border-gray-200 rounded-lg shadow-xl overflow-auto"
+      style={{ top: box.top, left: box.left, width: box.width, maxHeight: box.maxHeight }}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 }

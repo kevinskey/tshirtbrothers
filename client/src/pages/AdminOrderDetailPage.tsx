@@ -284,8 +284,14 @@ export default function AdminOrderDetailPage() {
   const invoicePaid = invoices.reduce((s, i) => s + Number(i.amount_paid || 0), 0);
   const quoteDeposit = quote.accepted_at ? Number((quote as { deposit_amount?: string | null }).deposit_amount || 0) : 0;
   const totalPaid = invoicePaid > 0 ? invoicePaid : quoteDeposit;
-  const totalDue = invoices.length > 0
-    ? invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0)
+  // When the invoices never booked the deposit the quote collected (older
+  // orders: deposit via quote, invoice written later at full price), the
+  // invoice due still includes it. Net it out, as lib/orderMoney.js does,
+  // so the header stops reading "Paid $336 / Due $690".
+  const invoiceDue = invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0);
+  // A declined quote owes nothing, whatever its price says.
+  const totalDue = quote.status === 'rejected' ? 0 : invoices.length > 0
+    ? Math.max(0, invoiceDue - (invoicePaid > 0 ? 0 : quoteDeposit))
     : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};
 
@@ -445,7 +451,12 @@ export default function AdminOrderDetailPage() {
               final payment" hops. Mark Ready emails+texts that the order
               is done (with a pay-balance button when money is due); the
               balance request can be re-sent on its own any time. */}
-          {quote.status !== 'completed' && (
+          {quote.status === 'rejected' && (
+            <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-600">
+              This quote was declined by the customer — nothing to collect or complete. Re-quote it from the Quotes list if they come back.
+            </div>
+          )}
+          {quote.status !== 'completed' && quote.status !== 'rejected' && (
             <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-gray-700">Notify customer:</span>
               {quote.status !== 'ready' && (
@@ -478,7 +489,7 @@ export default function AdminOrderDetailPage() {
               and no toggle. Calls the fulfill endpoint: sets status to
               completed, stamps the date, notifies the customer, and sends
               the review request. */}
-          {quote.status !== 'completed' ? (
+          {quote.status === 'rejected' ? null : quote.status !== 'completed' ? (
             <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-gray-700">Complete this order:</span>
               <button

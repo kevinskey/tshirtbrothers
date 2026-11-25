@@ -180,7 +180,10 @@ test('new standalone invoice creates an unpaid quote and then synchronizes it', 
   database(t, [
     { match: /SELECT invoice_number FROM invoices/ },
     { match: /INSERT INTO invoices/, rows: [created], check(args, sql) {
-      assert.match(sql, /\$11,0,\$12/); assert.match(sql, /'draft'/);
+      // amount_paid is a parameter now (a quote's collected deposit is
+      // carried onto its first invoice); with no quote behind it, it is 0.
+      assert.match(sql, /\$11,\$20,\$12/); assert.match(sql, /'draft'/);
+      assert.equal(args[19], 0); assert.equal(args[20], '[]');
     } },
     { match: syncSql, rows: [quote()] },
   ]);
@@ -231,4 +234,45 @@ test('order page cannot net an invoice overpayment against another invoice due o
   const source = readFileSync(new URL('../../client/src/pages/AdminOrderDetailPage.tsx', import.meta.url), 'utf8');
   assert.match(source, /invoices\.reduce\(\(s, i\) => s \+ Math\.max\(0, Number\(i\.amount_due \|\| 0\)\), 0\)/);
   assert.match(source, /label: 'Final payment', done: totalDue <= 0 && totalPaid > 0/);
+});
+
+test('first invoice for an accepted quote opens with the quote deposit already recorded', async (t) => {
+  const created = invoice({ quote_id: 801, amount_paid: '150.00', amount_due: '150.00' });
+  database(t, [
+    { match: /SELECT invoice_number FROM invoices/ },
+    { match: /SELECT estimated_price, deposit_amount, accepted_at, balance_paid_at FROM quotes/, rows: [
+      { estimated_price: '300.00', deposit_amount: '150.00', accepted_at: '2026-11-01T00:00:00Z', balance_paid_at: null },
+    ] },
+    { match: /SELECT status, amount_paid FROM invoices WHERE quote_id/, rows: [] },
+    { match: /INSERT INTO invoices/, rows: [created], check(args) {
+      assert.equal(args[19], 150);
+      const payments = JSON.parse(args[20]);
+      assert.equal(payments.length, 1);
+      assert.equal(payments[0].amount, 150);
+      assert.match(payments[0].method, /deposit on quote/);
+      assert.equal(args[11], 150); // amount_due = total - carried
+    } },
+    { match: syncSql, rows: [quote({ status: 'accepted' })] },
+  ]);
+  const res = await call(invoicesRouter, 'post', '/', {
+    customer_name: 'Deposit Payer', customer_email: 'dep@example.test', total: 300, items: [], quote_id: 801,
+  });
+  assert.equal(res.statusCode, 201);
+});
+
+test('a second invoice on an order whose first already holds the deposit does not carry it again', async (t) => {
+  const created = invoice({ quote_id: 801 });
+  database(t, [
+    { match: /SELECT invoice_number FROM invoices/ },
+    { match: /SELECT estimated_price, deposit_amount, accepted_at, balance_paid_at FROM quotes/, rows: [
+      { estimated_price: '300.00', deposit_amount: '150.00', accepted_at: '2026-11-01T00:00:00Z', balance_paid_at: null },
+    ] },
+    { match: /SELECT status, amount_paid FROM invoices WHERE quote_id/, rows: [{ status: 'draft', amount_paid: '150.00' }] },
+    { match: /INSERT INTO invoices/, rows: [created], check(args) { assert.equal(args[19], 0); } },
+    { match: syncSql, rows: [quote({ status: 'accepted' })] },
+  ]);
+  const res = await call(invoicesRouter, 'post', '/', {
+    customer_name: 'Deposit Payer', customer_email: 'dep@example.test', total: 100, items: [], quote_id: 801,
+  });
+  assert.equal(res.statusCode, 201);
 });
