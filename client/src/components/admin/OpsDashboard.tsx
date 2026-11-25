@@ -405,12 +405,14 @@ function WorkBoard({ rows, onChanged, toast }: {
   );
 }
 
-export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onNewCustomer, onNewJob, toast }: {
+export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCustomers, onNewInvoice, onQuickBill, onNewCustomer, onNewJob, toast }: {
   onOpenQuotes: (filter?: string) => void;
   onOpenQuoteId?: (id: number) => void;
   onOpenInvoices: () => void;
   onOpenCustomers: () => void;
   onNewInvoice: () => void;
+  /** One-screen bill: who, how much, send / text / already paid. */
+  onQuickBill?: () => void;
   onNewCustomer: () => void;
   onNewJob: () => void;
   toast?: (msg: string, type?: 'error' | 'success') => void;
@@ -767,6 +769,13 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-600">
             <Plus className="h-4 w-4" /> New Quote
           </button>
+          {onQuickBill && (
+            <button onClick={onQuickBill}
+              title="Bill a customer right now — name, amount, send it or mark it paid"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-green-700">
+              <DollarSign className="h-4 w-4" /> Quick Bill
+            </button>
+          )}
           <button onClick={onNewInvoice}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-orange-300 bg-white px-4 py-2.5 text-sm font-bold text-orange-600 hover:bg-orange-50">
             <Plus className="h-4 w-4" /> New Order

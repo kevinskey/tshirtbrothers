@@ -7,7 +7,7 @@ import { Resend } from 'resend';
 import PDFDocument from 'pdfkit';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { tokenMatches } from '../lib/acceptToken.js';
-import { invoiceMayOweMoney } from '../lib/orderMoney.js';
+import { invoiceMayOweMoney, quoteCollected, billableInvoices } from '../lib/orderMoney.js';
 import { invoiceViewUrl, invoicePdfUrl } from '../lib/invoiceLinks.js';
 import pool from '../db.js';
 import { ensureOrderForInvoice, promoteOrderForInvoicePayment, syncInvoiceArtworkToOrder } from '../lib/orderFromInvoice.js';
@@ -477,6 +477,15 @@ router.post('/public/:id/verify', invoiceVerifyLimiter, async (req, res, next) =
   } catch (err) { next(err); }
 });
 
+function publicPayments(raw) {
+  let list = raw;
+  if (typeof list === 'string') { try { list = JSON.parse(list); } catch { list = []; } }
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((p) => p && Number(p.amount) > 0)
+    .map((p) => ({ amount: Number(p.amount), method: p.method || null, date: p.date || null }));
+}
+
 // Public: minimal invoice view (for customer print/share link). Returns only
 // customer-visible fields. Needs ?token= (or an admin/owner session).
 router.get('/public/:id', async (req, res, next) => {
@@ -528,6 +537,8 @@ router.get('/public/:id', async (req, res, next) => {
       mockup_preview_url_sleeve_left: i.mockup_preview_url_sleeve_left,
       // Linked order, shown as TSB-<id> next to the invoice number.
       quote_id: i.quote_id,
+      // Payment history — amount/method/date only; no provider refs or notes.
+      payments: publicPayments(i.payments),
     });
   } catch (err) { next(err); }
 });
@@ -895,6 +906,43 @@ function cleanExtraMockups(v) {
     }));
 }
 
+// What a quote has already collected that a NEW invoice for it should start
+// from. Zero unless the quote shows money actually arrived (accepted_at /
+// balance_paid_at — see quoteCollected) AND no other billable invoice is
+// already carrying that order's money.
+async function carriedQuotePayment(quoteId) {
+  const none = { amount: 0, method: 'quote', date: new Date().toISOString() };
+  const id = parseInt(quoteId, 10);
+  if (!Number.isInteger(id)) return none;
+  try {
+    const { rows: qrows } = await pool.query(
+      'SELECT estimated_price, deposit_amount, accepted_at, balance_paid_at FROM quotes WHERE id = $1',
+      [id],
+    );
+    if (qrows.length === 0) return none;
+    const collected = quoteCollected(qrows[0]);
+    if (!(collected > 0)) return none;
+    // Another invoice on this order already carries its money — either a
+    // sent/partial/paid bill, or a draft the Stripe webhook booked the
+    // deposit onto (payments.js writes the deposit to the newest invoice
+    // for the quote whatever its status). Seeding again would double it.
+    const { rows: irows } = await pool.query(
+      'SELECT status, amount_paid FROM invoices WHERE quote_id = $1 AND archived_at IS NULL',
+      [id],
+    );
+    if (billableInvoices(irows).length > 0) return none;
+    if (irows.some((r) => Number(r.amount_paid) > 0)) return none;
+    return {
+      amount: +collected.toFixed(2),
+      method: qrows[0].balance_paid_at ? 'card (paid on quote)' : 'card (deposit on quote)',
+      date: new Date(qrows[0].balance_paid_at || qrows[0].accepted_at || Date.now()).toISOString(),
+    };
+  } catch (err) {
+    console.error('[invoices] could not read quote money for invoice seed:', err.message);
+    return none;
+  }
+}
+
 // POST / - Create invoice
 router.post('/', async (req, res, next) => {
   try {
@@ -904,32 +952,53 @@ router.post('/', async (req, res, next) => {
       deposit_percent, mockup_id, extra_mockups, cc_emails,
     } = req.body;
 
-    if (!customer_name || !customer_email) {
-      return res.status(400).json({ error: 'customer_name and customer_email are required' });
+    // A bill needs a name and SOME way to reach the customer. Email is the
+    // norm, but a walk-in paying by text link may only give a phone number
+    // — the Quick Bill path sends the pay link by SMS in that case.
+    const email = typeof customer_email === 'string' ? customer_email.trim() : '';
+    const phone = typeof customer_phone === 'string' ? customer_phone.trim() : '';
+    if (!customer_name || (!email && !phone)) {
+      return res.status(400).json({ error: 'customer_name and an email or phone number are required' });
     }
 
     const cc = normalizeCcEmails(cc_emails);
     if (cc.error) return res.status(400).json({ error: cc.error });
 
     const invoice_number = await generateInvoiceNumber();
-    const amount_due = Number(total) || 0;
+    const totalNum = Number(total) || 0;
     const depositPct = Math.max(0, Math.min(100, parseInt(deposit_percent, 10) || 0));
+
+    // Money already collected on the order this bill is written against.
+    // A customer who accepted a quote paid its deposit through Stripe on
+    // the QUOTE; when the admin later converts that quote into an invoice,
+    // the invoice used to open with amount_paid 0 and the emailed Pay Now
+    // asked for the deposit a second time. Seed the invoice with what the
+    // quote already collected — but only on the first bill for the order,
+    // so a second invoice on the same job doesn't double-credit it.
+    const carried = await carriedQuotePayment(quote_id);
+    const amountPaid = Math.min(totalNum, carried.amount);
+    const amount_due = +(totalNum - amountPaid).toFixed(2);
+    const seedPayments = amountPaid > 0
+      ? [{ amount: amountPaid, method: carried.method, date: carried.date, note: 'Collected on the quote before this invoice was written' }]
+      : [];
 
     const { rows } = await pool.query(
       `INSERT INTO invoices
         (invoice_number, customer_name, customer_email, customer_phone, customer_address,
          items, subtotal, tax, shipping, discount, total, amount_paid, amount_due,
-         notes, due_date, quote_id, status, deposit_percent, mockup_id, extra_mockups, cc_emails)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,0,$12,$13,$14,$15,'draft',$16,$17,$18::jsonb,$19::jsonb)
+         notes, due_date, quote_id, status, deposit_percent, mockup_id, extra_mockups, cc_emails, payments)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$20,$12,$13,$14,$15,'draft',$16,$17,$18::jsonb,$19::jsonb,$21::jsonb)
        RETURNING *`,
       [
-        invoice_number, customer_name, customer_email, customer_phone || null,
+        invoice_number, customer_name, email || null, phone || null,
         (customer_address && customer_address !== '') ? (typeof customer_address === 'string' ? JSON.stringify({ address: customer_address }) : JSON.stringify(customer_address)) : null,
-        JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, Number(total) || 0,
+        JSON.stringify(items || []), Number(subtotal) || 0, Number(tax) || 0, Number(shipping) || 0, Number(discount) || 0, totalNum,
         amount_due, notes || null, due_date || null, quote_id || null, depositPct,
         mockup_id ? Number(mockup_id) : null,
         JSON.stringify(cleanExtraMockups(extra_mockups)),
         JSON.stringify(cc.emails),
+        amountPaid,
+        JSON.stringify(seedPayments),
       ]
     );
 
@@ -1150,7 +1219,12 @@ router.post('/:id/send', async (req, res, next) => {
     const updated = await pool.query(
       isReceipt
         ? `UPDATE invoices SET sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`
-        : `UPDATE invoices SET status = 'sent', sent_at = NOW(), updated_at = NOW() WHERE id = $1 RETURNING *`,
+        // Re-sending a balance request must not relabel a 'partial' invoice
+        // as merely 'sent' — the badge would then hide that money came in.
+        : `UPDATE invoices
+              SET status = CASE WHEN amount_paid > 0 AND amount_due > 0 THEN 'partial' ELSE 'sent' END,
+                  sent_at = NOW(), updated_at = NOW()
+            WHERE id = $1 RETURNING *`,
       [id]
     );
 

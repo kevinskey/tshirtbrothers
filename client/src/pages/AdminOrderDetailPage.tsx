@@ -445,7 +445,12 @@ export default function AdminOrderDetailPage() {
               final payment" hops. Mark Ready emails+texts that the order
               is done (with a pay-balance button when money is due); the
               balance request can be re-sent on its own any time. */}
-          {quote.status !== 'completed' && (
+          {quote.status === 'rejected' && (
+            <div className="mt-3 pt-3 border-t border-gray-200 text-sm text-gray-600">
+              This quote was declined by the customer — nothing to collect or complete. Re-quote it from the Quotes list if they come back.
+            </div>
+          )}
+          {quote.status !== 'completed' && quote.status !== 'rejected' && (
             <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-gray-700">Notify customer:</span>
               {quote.status !== 'ready' && (
@@ -478,7 +483,7 @@ export default function AdminOrderDetailPage() {
               and no toggle. Calls the fulfill endpoint: sets status to
               completed, stamps the date, notifies the customer, and sends
               the review request. */}
-          {quote.status !== 'completed' ? (
+          {quote.status === 'rejected' ? null : quote.status !== 'completed' ? (
             <div className="mt-3 pt-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium text-gray-700">Complete this order:</span>
               <button

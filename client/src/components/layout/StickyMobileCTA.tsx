@@ -17,7 +17,9 @@ import { Tag, Sparkles } from 'lucide-react';
 //      would visually collide with this bar. Hiding here is cheaper than
 //      conditionally not rendering Layout for those pages.
 
-const HIDE_ON_PATHS = ['/quote', '/design', '/dtf'];
+// /payment and /invoice are money pages: the bar sat on top of the
+// "Pay in full" card and the Pay Now button on a phone.
+const HIDE_ON_PATHS = ['/quote', '/design', '/dtf', '/payment', '/invoice'];
 
 export default function StickyMobileCTA() {
   const { pathname } = useLocation();
