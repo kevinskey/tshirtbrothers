@@ -13,6 +13,7 @@ original droplet at 134.199.194.178, which no longer exists._
 | API | pm2 app `tshirtbrothers-api` → `server/index.js` on **:3001**, runs as user `tsb` |
 | Database | local PostgreSQL 16, db `tshirtbrothers`, app user `tsbadmin` (env in `server/.env` as `DB_*`, not `DATABASE_URL`) |
 | File storage | DigitalOcean Spaces bucket `tshirtbrothers` (region `atl1`); gang-sheet customer files are **private** ACL |
+| In-house DTF | `integrations/digirip-print-agent` on the shop PC pulls paid gang sheets from Spaces into DigiRIP's hot folder; needs `PRINT_AGENT_KEY` in `server/.env` |
 | Analytics | self-hosted Umami (docker `umami`, port 3070) at https://stats.tshirtbrothers.com |
 | Stripe webhook | `POST /api/payments/webhook` (raw-body route; quote deposits, invoices, store orders, gang-sheet orders) |
 

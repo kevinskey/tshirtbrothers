@@ -1,0 +1,9 @@
+{
+  "api_base": "https://tshirtbrothers.com",
+  "api_key": "PASTE-PRINT_AGENT_KEY-FROM-SERVER-ENV",
+  "hot_folder": "C:\\TSB\\HotFolder",
+  "archive_dir": "C:\\TSB\\PrintedSheets",
+  "poll_seconds": 30,
+  "max_width_in": 24,
+  "printer_name": "Prestige L2 Pro"
+}

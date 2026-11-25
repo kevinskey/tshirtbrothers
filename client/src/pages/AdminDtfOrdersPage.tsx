@@ -41,6 +41,10 @@ type OrderRow = {
   vendor_name: string | null;
   vendor_email: string | null;
   vendor_sent_at: string | null;
+  // Set by the shop PC's DigiRIP print agent when it drops the sheet into
+  // the hot folder (integrations/digirip-print-agent).
+  printer_pulled_at: string | null;
+  printer_name: string | null;
 };
 
 // Server-side height check (1 ft = 3,600 px) as a display value, so a
@@ -968,6 +972,12 @@ function DtfOrdersQueue() {
                             <span className="text-[11px] text-gray-500">
                               Sent to {order.vendor_name || order.vendor_email}{' '}
                               {new Date(order.vendor_sent_at).toLocaleDateString()}
+                            </span>
+                          )}
+                          {order.printer_pulled_at && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-gray-500">
+                              <Printer className="h-3 w-3" /> Pulled to {order.printer_name || 'printer'}{' '}
+                              {new Date(order.printer_pulled_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                             </span>
                           )}
                           {order.customer_email && (
