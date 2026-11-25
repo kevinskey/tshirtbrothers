@@ -1339,6 +1339,123 @@ router.get('/admin/orders/:id/file', ...adminGuard, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// ── In-house printing: the DigiRIP print agent ────────────────────────────
+//
+// integrations/digirip-print-agent runs on the shop PC wired to the Prestige.
+// It polls /print-agent/queue, downloads each paid sheet from the presigned
+// link, writes it into DigiRIP's hot folder, then POSTs /pulled so the order
+// moves to in_production and is never offered again. The agent authenticates
+// with a single shared key (PRINT_AGENT_KEY) rather than an admin JWT: a
+// long-lived browser token on an unattended Windows box is the wrong shape,
+// and a dedicated key can be rotated without touching anyone's login.
+
+function printAgentGuard(req, res, next) {
+  const expected = process.env.PRINT_AGENT_KEY;
+  if (!expected) return res.status(503).json({ error: 'Print agent not configured on this server' });
+  const supplied = req.headers['x-print-agent-key'];
+  if (typeof supplied !== 'string' || supplied.length === 0) {
+    return res.status(401).json({ error: 'Missing x-print-agent-key header' });
+  }
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  // timingSafeEqual needs equal lengths; a length mismatch is just a miss.
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(403).json({ error: 'Bad print agent key' });
+  }
+  next();
+}
+
+const PRINT_AGENT_LINK_SECONDS = 3600;
+
+router.get('/print-agent/ping', printAgentGuard, (req, res) => {
+  res.json({ ok: true, bucket: SPACES_BUCKET });
+});
+
+// Paid sheets nobody has started on yet: not pulled to the printer, not sent
+// to a vendor. The agent filters on width itself (it knows the press), so a
+// 34" sheet on a 24" printer is skipped there, stays in this list, and keeps
+// showing in the admin queue for a vendor send.
+router.get('/print-agent/queue', printAgentGuard, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, customer_name, length_ft, width_in, tier, delivery, note, admin_note,
+              white_bg_flag, file_key, file_width_px, file_height_px, paid_at
+         FROM gang_sheet_orders
+        WHERE status IN ('paid', 'in_production')
+          AND printer_pulled_at IS NULL
+          AND vendor_sent_at IS NULL
+        ORDER BY (tier = 'hot_rush') DESC, (tier = 'rush') DESC, paid_at ASC NULLS LAST, created_at ASC
+        LIMIT 50`,
+    );
+    const client = getSpacesClient();
+    const orders = [];
+    for (const o of rows) {
+      // HeadObject gives the byte size so the agent can confirm a complete
+      // download before the file is renamed into the hot folder -- a RIP
+      // that picks up a truncated PNG prints a truncated sheet.
+      let bytes = null;
+      try {
+        const head = await client.send(new HeadObjectCommand({ Bucket: SPACES_BUCKET, Key: o.file_key }));
+        bytes = head.ContentLength ?? null;
+      } catch (err) {
+        console.error(`[print-agent] order #${o.id}: file missing in Spaces (${o.file_key}):`, err.message);
+        continue; // nothing to print; admin sees the order in the queue and can chase it
+      }
+      const file_url = await getSignedUrl(
+        client,
+        new GetObjectCommand({ Bucket: SPACES_BUCKET, Key: o.file_key }),
+        { expiresIn: PRINT_AGENT_LINK_SECONDS },
+      );
+      orders.push({
+        id: o.id,
+        customer_name: o.customer_name,
+        length_ft: o.length_ft,
+        width_in: o.width_in,
+        tier: o.tier,
+        delivery: o.delivery,
+        note: o.note,
+        admin_note: o.admin_note,
+        white_bg_flag: o.white_bg_flag === true,
+        file_width_px: o.file_width_px,
+        file_height_px: o.file_height_px,
+        bytes,
+        file_url,
+        file_url_expires_in: PRINT_AGENT_LINK_SECONDS,
+        paid_at: o.paid_at,
+      });
+    }
+    res.json({ orders });
+  } catch (err) { next(err); }
+});
+
+// The agent reports a sheet landed in the hot folder. Marks the pull and
+// advances paid -> in_production in one statement; an order already in
+// production (admin clicked first) just gets the pull recorded. A second
+// call for the same order is a no-op 200, so an agent that crashed between
+// writing the file and reading our reply can safely retry.
+router.post('/print-agent/orders/:id/pulled', printAgentGuard, async (req, res, next) => {
+  try {
+    const { printer, filename } = req.body || {};
+    const printerName = typeof printer === 'string' && printer.trim() ? printer.trim().slice(0, 80) : 'DigiRIP';
+    const { rows } = await pool.query(
+      `UPDATE gang_sheet_orders
+          SET printer_pulled_at = COALESCE(printer_pulled_at, now()),
+              printer_name = COALESCE(printer_name, $2),
+              status = CASE WHEN status = 'paid' THEN 'in_production' ELSE status END
+        WHERE id = $1 AND status IN ('paid', 'in_production', 'ready')
+        RETURNING id, status, printer_pulled_at, printer_name`,
+      [req.params.id, printerName],
+    );
+    if (!rows[0]) {
+      const { rows: existing } = await pool.query('SELECT status FROM gang_sheet_orders WHERE id = $1', [req.params.id]);
+      if (!existing[0]) return res.status(404).json({ error: 'Order not found' });
+      return res.status(400).json({ error: `Order is ${existing[0].status}, not printable` });
+    }
+    console.log(`[print-agent] order #${rows[0].id} pulled to ${printerName}${filename ? ` as ${String(filename).slice(0, 200)}` : ''}`);
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 // ── Admin: outsource a sheet to a print vendor ────────────────────────────
 //
 // Production files are private in Spaces, so the vendor gets a presigned
