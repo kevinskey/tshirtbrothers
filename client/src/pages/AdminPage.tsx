@@ -7316,6 +7316,8 @@ export default function AdminPage() {
               queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] });
               toast(what === 'paid'
                 ? `${inv.invoice_number} paid in full — receipt ${inv.customer_email ? 'emailed' : 'ready to print'}`
+                : what === 'paid_receipt_failed'
+                  ? `${inv.invoice_number} paid in full and recorded`
                 : what === 'texted'
                   ? `${inv.invoice_number} texted to ${inv.customer_phone}`
                   : what === 'emailed'

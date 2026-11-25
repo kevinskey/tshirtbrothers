@@ -24,7 +24,7 @@ import { PAYMENT_METHODS } from '@/lib/paymentMethods';
 // amount the admin types at the counter is the amount being charged.
 const TAX_RATE_PCT = 7.75;
 
-type Outcome = 'emailed' | 'texted' | 'paid' | 'draft';
+type Outcome = 'emailed' | 'texted' | 'paid' | 'paid_receipt_failed' | 'draft';
 type Line = { description: string; quantity: string; unit_price: string };
 
 
@@ -122,7 +122,9 @@ export default function QuickBillModal({ customers, onClose, onDone, onOpenInvoi
         if (emailOk) {
           // Nothing owed → the send route emails a receipt, not a pay link.
           try { invoice = await sendInvoice(invoice.id); } catch (err) {
-            toast(`Paid and recorded, but the receipt email failed: ${err instanceof Error ? err.message : 'mail error'}`, 'error');
+            toast(`Receipt email failed: ${err instanceof Error ? err.message : 'mail error'}. The payment is recorded — print the invoice as a receipt.`, 'error');
+            onDone(invoice, 'paid_receipt_failed');
+            return;
           }
         }
       }
@@ -134,7 +136,10 @@ export default function QuickBillModal({ customers, onClose, onDone, onOpenInvoi
     }
   }
 
-  const field = 'w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white';
+  // No width here: the line-item row sizes its own cells (a `w-full` on
+  // the quantity box out-ranked `w-14` and squeezed the description to 0).
+  const box = 'border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white';
+  const field = `w-full ${box}`;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -228,7 +233,7 @@ export default function QuickBillModal({ customers, onClose, onDone, onOpenInvoi
                       value={l.description}
                       onChange={(e) => updateLine(i, { description: e.target.value })}
                       placeholder={i === 0 ? '3 black tees, front print' : 'Another item'}
-                      className={`${field} flex-1 min-w-0`}
+                      className={`${box} flex-1 min-w-0`}
                       style={{ fontSize: '16px' }}
                     />
                     <input
@@ -236,10 +241,10 @@ export default function QuickBillModal({ customers, onClose, onDone, onOpenInvoi
                       onChange={(e) => updateLine(i, { quantity: e.target.value })}
                       inputMode="numeric"
                       aria-label="Quantity"
-                      className={`${field} w-14 text-center px-1`}
+                      className={`${box} w-14 flex-none text-center px-1`}
                       style={{ fontSize: '16px' }}
                     />
-                    <div className="relative w-24">
+                    <div className="relative w-24 flex-none">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                       <input
                         value={l.unit_price}
