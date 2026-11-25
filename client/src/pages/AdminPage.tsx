@@ -165,6 +165,7 @@ import OpsDashboard from '@/components/admin/OpsDashboard';
 import type { ExtraMockup } from '@/lib/api';
 import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
 import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
+import { PAYMENT_METHODS, paymentMethodLabel } from '@/lib/paymentMethods';
 import QuoteCustomerEditor from '@/components/admin/QuoteCustomerEditor';
 import PurchasingAdmin from '@/components/admin/PurchasingAdmin';
 import ShipLabelModal from '@/components/admin/ShipLabelModal';
@@ -2622,7 +2623,9 @@ export default function AdminPage() {
         await recordPaymentMutation.mutateAsync({
           id: String(created.id),
           amount: Number(previewInvoice.total),
-          method: method.trim() || 'cash',
+          // Lower-cased so it matches the stored values the rest of the admin
+          // labels off — one older row went in as 'Card'.
+          method: method.trim().toLowerCase() || 'cash',
         });
         await sendInvoiceMutation.mutateAsync(String(created.id));
       }
@@ -6718,7 +6721,7 @@ export default function AdminPage() {
                           <div className="text-xs text-gray-600 space-y-1 mb-3 bg-white rounded p-2 border border-gray-100">
                             {recordedPayments.map((p: { amount: number; method: string; date: string }, idx: number) => (
                               <div key={idx} className="flex items-center justify-between">
-                                <span>{new Date(p.date).toLocaleDateString()} · {p.method}</span>
+                                <span>{new Date(p.date).toLocaleDateString()} · {paymentMethodLabel(p.method)}</span>
                                 <span className="font-medium text-gray-900">${Number(p.amount).toFixed(2)}</span>
                               </div>
                             ))}
@@ -7096,11 +7099,7 @@ export default function AdminPage() {
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
                       <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500">
-                        <option value="card">Credit Card</option>
-                        <option value="cash">Cash</option>
-                        <option value="check">Check</option>
-                        <option value="transfer">Bank Transfer</option>
-                        <option value="other">Other</option>
+                        {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
                     </div>
                     {Number(paymentAmount) > Number(recordPaymentInvoice.amount_due) + 0.01 && (

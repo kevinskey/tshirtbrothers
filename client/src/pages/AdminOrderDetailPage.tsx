@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
 import { orderNumber } from '@/lib/api';
+import { PAYMENT_METHODS, paymentMethodLabel } from '@/lib/paymentMethods';
 
 // Full order dossier: one page with everything about an order (keyed by
 // quote id) — status timeline, items, money, blanks POs, vendor sends,
@@ -604,7 +605,7 @@ export default function AdminOrderDetailPage() {
                     <div className="mt-1 text-xs text-gray-600 space-y-0.5">
                       {(inv.payments || []).map((p, i) => (
                         <div key={i}>
-                          {money(p.amount)} via {p.method || 'payment'}{p.date || p.recorded_at ? ` — ${day(p.date || p.recorded_at)}` : ''}
+                          {money(p.amount)} via {paymentMethodLabel(p.method)}{p.date || p.recorded_at ? ` — ${day(p.date || p.recorded_at)}` : ''}
                         </div>
                       ))}
                     </div>
@@ -639,12 +640,7 @@ export default function AdminOrderDetailPage() {
                       onChange={(e) => setOfflineMethod(e.target.value)}
                       className="border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-500"
                     >
-                      <option value="cash">Cash</option>
-                      <option value="zelle">Zelle</option>
-                      <option value="cashapp">Cash App</option>
-                      <option value="card">Card (in person)</option>
-                      <option value="check">Check</option>
-                      <option value="other">Other</option>
+                      {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                   </div>
                   <div className="flex gap-2">
