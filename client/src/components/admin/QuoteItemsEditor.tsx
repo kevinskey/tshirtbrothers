@@ -1196,7 +1196,7 @@ function ProductPicker({
           // name, and the search treats the whole name as the query ("Gildan
           // Heavy Cotton T-Shirt" → 0 results). Browse starts clean for those;
           // free text the admin typed is still worth searching.
-          initialQuery={productId ? '' : query}
+          initialQuery={productId ? '' : query.trim().split(/\s+/).slice(0, 2).join(' ')}
           onPick={pick}
           onClose={() => setBrowsing(false)}
         />

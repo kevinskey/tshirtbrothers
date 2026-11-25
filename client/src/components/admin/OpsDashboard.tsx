@@ -555,8 +555,8 @@ export default function OpsDashboard({ onOpenQuotes, onOpenInvoices, onOpenCusto
       </div>
 
       {/* Schedule + Attention */}
-      <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 grid gap-4 lg:grid-cols-[1.6fr_1fr] min-w-0">
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm min-w-0">
           <CardHeader icon={CalendarDays} title={`Open Orders${d.schedule.length ? ` (${d.schedule.length})` : ''}`} linkText="View All" onLink={() => onOpenQuotes('accepted')} />
           {d.schedule.length === 0 ? (
             <p className="py-8 text-center text-sm text-gray-400">No open orders — this fills in as quotes are accepted.</p>

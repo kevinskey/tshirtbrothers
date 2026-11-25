@@ -141,6 +141,19 @@ export function PaymentCheckout() {
       .then((res) => res.json())
       .then((data) => {
         if (data?.id) {
+          // Settle the page before showing Pay buttons: an accepted, paid
+          // or declined quote must not offer the deposit again (the server
+          // refuses it anyway, but the customer should not see the choice).
+          const st = String(data.status || '');
+          if (data.balance_paid_at) {
+            setBlocked({ code: 'paid', message: 'This order is already paid in full. Nothing more is due.' });
+          } else if (st === 'rejected' || st === 'declined') {
+            setBlocked({ code: 'declined', message: 'This quote was declined, so it can no longer be paid. Call us if you changed your mind \u2014 we\u2019ll be glad to re-quote it.' });
+          } else if (data.archived_at) {
+            setBlocked({ code: 'expired', message: 'This quote has expired (quotes are valid for 14 days). Please request a new quote \u2014 we\u2019d love to work with you.' });
+          } else if (data.accepted_at || ['accepted', 'paid', 'awaiting_approval', 'in_production', 'ready', 'completed'].includes(st)) {
+            setBlocked({ code: 'accepted', message: 'Your deposit is already in and this order is underway. Any remaining balance is collected when it\u2019s ready.', redirectUrl: `/quote/accepted/${data.id}` });
+          }
           setQuote({
             id: data.id,
             customer_name: data.customer_name ?? null,

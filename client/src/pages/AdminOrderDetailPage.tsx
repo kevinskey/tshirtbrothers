@@ -289,7 +289,8 @@ export default function AdminOrderDetailPage() {
   // invoice due still includes it. Net it out, as lib/orderMoney.js does,
   // so the header stops reading "Paid $336 / Due $690".
   const invoiceDue = invoices.reduce((s, i) => s + Math.max(0, Number(i.amount_due || 0)), 0);
-  const totalDue = invoices.length > 0
+  // A declined quote owes nothing, whatever its price says.
+  const totalDue = quote.status === 'rejected' ? 0 : invoices.length > 0
     ? Math.max(0, invoiceDue - (invoicePaid > 0 ? 0 : quoteDeposit))
     : Math.max(0, Number(quote.estimated_price || 0) - totalPaid);
   const stages = quote.order_stages || {};

@@ -5956,7 +5956,7 @@ export default function AdminPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 w-full md:w-auto">
-                   <div className="flex items-center gap-2 overflow-x-auto flex-1 min-w-0 pb-0.5">
+                   <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                     {(['all', 'draft', 'sent', 'partial', 'paid', 'overdue', 'archived'] as InvoiceFilter[]).map(f => (
                       <button
                         key={f}

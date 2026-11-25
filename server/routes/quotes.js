@@ -454,7 +454,7 @@ router.get('/:id/public', async (req, res, next) => {
     if (!token) return res.status(400).json({ error: 'token is required' });
     const result = await pool.query(
       `SELECT id, customer_name, product_name, estimated_price, deposit_amount,
-              balance_paid_at, status, accept_token,
+              balance_paid_at, accepted_at, archived_at, status, accept_token,
               mockup_image_url, mockup_image_url_back,
               mockup_image_url_sleeve, mockup_image_url_sleeve_left,
               extra_mockups
