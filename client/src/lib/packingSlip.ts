@@ -224,20 +224,59 @@ export function packingSlipHtml(d: PackingSlipData): string {
 </body></html>`;
 }
 
-/** Print the slip without leaving the page: render it into a hidden iframe,
- *  wait for the logo and thumbnails, then open the print dialog. */
+/** Last resort when the iframe can't print: put the slip in its own tab and
+ *  let that tab print itself. Returns false if the popup was blocked, which
+ *  is the only remaining outcome worth telling the user about. */
+function printInNewTab(html: string): boolean {
+  const tab = window.open('', '_blank');
+  if (!tab) return false;
+  tab.document.open();
+  // The tab prints itself once its own images have settled — onload covers
+  // them, and the close-after-print keeps the shop from collecting tabs.
+  tab.document.write(html.replace(
+    '</body>',
+    `<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},150);};`
+    + `window.onafterprint=function(){window.close();};<\/script></body>`,
+  ));
+  tab.document.close();
+  return true;
+}
+
+/** Print the slip without leaving the page: render it into an off-screen
+ *  iframe, wait for the logo and thumbnails, then open the print dialog.
+ *
+ *  Two things here are load-bearing, both found 2026-11-25 when the DTF
+ *  queue's Packing slip button did nothing at all for gang sheet order #27:
+ *
+ *  1. The iframe is off-screen but RENDERED (real dimensions, opacity 0).
+ *     The old `width:0;height:0;visibility:hidden` is skipped by the print
+ *     pipeline in some browsers, and a skipped print is silent — no dialog,
+ *     no error, nothing in the console.
+ *  2. If no print dialog materialises within a second (`beforeprint` never
+ *     fires), it falls back to a real tab. iOS Safari and the TSB app's
+ *     webview ignore iframe printing outright, so without this the button
+ *     is dead on every phone and tablet.
+ *
+ *  `printed` guards the two paths against both firing for one click. */
 export function printPackingSlip(d: PackingSlipData): void {
+  const html = packingSlipHtml(d);
   const iframe = document.createElement('iframe');
   iframe.setAttribute('aria-hidden', 'true');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+  iframe.style.cssText =
+    'position:fixed;left:-10000px;top:0;width:816px;height:1056px;border:0;opacity:0;';
   document.body.appendChild(iframe);
   const win = iframe.contentWindow;
   const doc = iframe.contentDocument;
-  if (!win || !doc) { iframe.remove(); return; }
+  if (!win || !doc) {
+    iframe.remove();
+    if (!printInNewTab(html)) alert('Your browser blocked the packing slip window — allow pop-ups for this site and try again.');
+    return;
+  }
   doc.open();
-  doc.write(packingSlipHtml(d));
+  doc.write(html);
   doc.close();
 
+  let printed = false;
   const cleanup = () => setTimeout(() => iframe.remove(), 500);
   const images = Array.from(doc.images);
   const loaded = Promise.all(images.map((img) => (img.complete
@@ -245,9 +284,25 @@ export function printPackingSlip(d: PackingSlipData): void {
     : new Promise<void>((r) => { img.onload = () => r(); img.onerror = () => r(); }))));
   const timeout = new Promise<void>((r) => setTimeout(r, 4000));
   void Promise.race([loaded, timeout]).then(() => {
+    // Chrome, Firefox and desktop Safari all fire `beforeprint` on the
+    // printing window; some fire it on the host window instead, so listen on
+    // both rather than printing twice for a dialog that did open.
+    const markPrinted = () => { printed = true; };
+    win.addEventListener('beforeprint', markPrinted);
+    window.addEventListener('beforeprint', markPrinted, { once: true });
     win.addEventListener('afterprint', cleanup);
-    win.focus();
-    win.print();
-    setTimeout(() => iframe.remove(), 60_000);
+    try {
+      if (typeof win.print !== 'function') throw new Error('no print');
+      win.focus();
+      win.print();
+    } catch {
+      printed = false;
+    }
+    setTimeout(() => {
+      if (printed) return;
+      iframe.remove();
+      if (!printInNewTab(html)) alert('Your browser blocked the packing slip window — allow pop-ups for this site and try again.');
+    }, 1000);
+    setTimeout(() => { if (printed) iframe.remove(); }, 60_000);
   });
 }
