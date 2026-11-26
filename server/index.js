@@ -12,6 +12,7 @@ import cspReportRouter from './routes/cspReport.js';
 import productsRouter from './routes/products.js';
 import categoriesRouter from './routes/categories.js';
 import quotesRouter from './routes/quotes.js';
+import shopStatusRouter from './routes/shopStatus.js';
 import authRouter from './routes/auth.js';
 import eventsRouter from './routes/events.js';
 import adminRouter from './routes/admin.js';
@@ -120,6 +121,7 @@ app.use('/api/csp-report', cspReportRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/categories', categoriesRouter);
 app.use('/api/quotes', quotesRouter);
+app.use('/api/shop-status', shopStatusRouter); // Whole-shop closed switch (public read + admin)
 app.use('/api/quote', instantQuoteRouter); // Instant Quote Calculator (singular path, distinct from /api/quotes)
 app.use('/api/admin/instant-quote-pricing', instantQuotePricingAdminRouter); // Admin: edit pricing tables
 app.use('/api/auth', authRouter);

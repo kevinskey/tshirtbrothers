@@ -166,6 +166,7 @@ import ProductDetailModal from '@/components/admin/ProductDetailModal';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor, { FEE_PRESETS } from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
+import ShopStatusCard from '@/components/admin/ShopStatusCard';
 import type { ExtraMockup } from '@/lib/api';
 import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
 import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
@@ -3788,6 +3789,7 @@ export default function AdminPage() {
         {/* Quotes pipeline — search / filter / list */}
         {activeSection === 'quotes' && (
           <div>
+            <ShopStatusCard />
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Quotes</h2>
               <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>

@@ -21,6 +21,7 @@ import NotFoundPage from '@/pages/NotFoundPage';
 import { PaymentCheckout, PaymentSuccess, PaymentCancel } from '@/pages/PaymentPage';
 
 import { getStoreSubdomain } from '@/lib/storeSubdomain';
+import ShopClosedBanner from '@/components/ShopClosedBanner';
 
 // Route-level code splitting.
 //
@@ -126,6 +127,7 @@ function SubdomainApp() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ScrollToTop />
+        <ShopClosedBanner />
         <Suspense fallback={null}>
           {/* Deliberately empty.
             //
@@ -168,6 +170,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <ScrollToTop />
+        <ShopClosedBanner />
         <Suspense fallback={null}>
           {/* Deliberately empty.
             //
