@@ -689,44 +689,54 @@ function GangSheetList() {
 
   return (
     <div className="space-y-3">
-      {sheets.map(s => (
-        <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4 hover:border-orange-300 transition">
-          {s.preview_url ? (
-            <img src={s.preview_url} alt="" className="w-14 h-14 object-cover object-top rounded-lg border border-gray-200 bg-white flex-shrink-0" />
-          ) : (
-            <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Layers className="w-5 h-5 text-orange-600" />
+      {sheets.map(s => {
+        const count = s.design_count || 0;
+        // Phones: the sheet's info on one line and the actions on a second,
+        // full-width row with thumb-sized buttons. From sm up it's one row.
+        const actionCls = 'flex-1 sm:flex-none flex items-center justify-center p-2.5 sm:p-2 text-gray-400 rounded-lg';
+        return (
+        <div key={s.id} className="bg-white rounded-xl border border-gray-200 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 hover:border-orange-300 transition">
+          <Link to={`/admin/gangsheet/${s.id}`} className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+            {s.preview_url ? (
+              <img src={s.preview_url} alt="" className="w-14 h-14 object-cover object-top rounded-lg border border-gray-200 bg-white flex-shrink-0" />
+            ) : (
+              <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Layers className="w-5 h-5 text-orange-600" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900 truncate">{s.name || `Gang sheet #${s.id}`}</p>
+              <p className="text-xs text-gray-500 truncate">
+                {count} design{count === 1 ? '' : 's'} · {Number(s.sheet_length_ft || 1).toFixed(1).replace(/\.0$/, '')} ft · {s.pricing_tier || 'standard'}
+              </p>
             </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-gray-900 truncate">{s.name}</p>
-            <p className="text-xs text-gray-500">{s.design_count || 0} designs · {s.sheet_length_ft || 1}ft · {s.pricing_tier || 'standard'}</p>
-          </div>
-          <div className="text-right flex-shrink-0">
-            <p className="font-bold text-green-700">${Number(s.total_cost || 0).toFixed(2)}</p>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${s.status === 'exported' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-              {s.status || 'draft'}
-            </span>
-          </div>
-          <div className="flex gap-1 flex-shrink-0">
-            <Link to={`/admin/gangsheet/${s.id}`} title="Open" className="p-2 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg">
+            <div className="text-right flex-shrink-0">
+              <p className="font-bold text-green-700 whitespace-nowrap">${Number(s.total_cost || 0).toFixed(2)}</p>
+              <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${s.status === 'exported' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                {s.status || 'draft'}
+              </span>
+            </div>
+          </Link>
+          <div className="flex gap-1 flex-shrink-0 border-t border-gray-100 pt-2 sm:border-0 sm:pt-0">
+            <Link to={`/admin/gangsheet/${s.id}`} title="Open" aria-label="Open" className={`${actionCls} hover:text-orange-500 hover:bg-orange-50`}>
               <Edit3 className="w-4 h-4" />
             </Link>
-            <button onClick={() => handleCopy(s.id)} title="Make a copy" className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg">
+            <button onClick={() => handleCopy(s.id)} title="Make a copy" aria-label="Make a copy" className={`${actionCls} hover:text-blue-500 hover:bg-blue-50`}>
               <Copy className="w-4 h-4" />
             </button>
-            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'email' }); setShareTo(''); setShareMsg(null); }} title="Email print file" className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg">
+            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'email' }); setShareTo(''); setShareMsg(null); }} title="Email print file" aria-label="Email print file" className={`${actionCls} hover:text-green-600 hover:bg-green-50`}>
               <Mail className="w-4 h-4" />
             </button>
-            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'sms' }); setShareTo(''); setShareMsg(null); }} title="Text print file" className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg">
+            <button onClick={() => { setShareTarget({ id: s.id, name: s.name, kind: 'sms' }); setShareTo(''); setShareMsg(null); }} title="Text print file" aria-label="Text print file" className={`${actionCls} hover:text-purple-600 hover:bg-purple-50`}>
               <MessageSquare className="w-4 h-4" />
             </button>
-            <button onClick={() => handleDelete(s.id)} title="Delete" className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+            <button onClick={() => handleDelete(s.id)} title="Delete" aria-label="Delete" className={`${actionCls} hover:text-red-500 hover:bg-red-50`}>
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
-      ))}
+        );
+      })}
 
       {shareTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => { if (!shareBusy) { setShareTarget(null); setShareMsg(null); } }}>
@@ -7838,7 +7848,7 @@ export default function AdminPage() {
 
         {activeSection === 'gangsheet' && (
           <div>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
               <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Gang Sheets</h2>
               <Link to="/admin/gangsheet" className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white text-sm font-medium rounded-lg hover:bg-orange-600 transition">
                 <Plus className="w-4 h-4" /> New Gang Sheet

@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Canvas as FabricCanvas, FabricImage, Line, FabricText, Rect } from 'fabric';
+import { Canvas as FabricCanvas, FabricImage, FabricObject, Line, FabricText, Rect } from 'fabric';
 import {
   ArrowLeft, Maximize, Layout, Download, Save, Upload,
   FolderOpen, Trash2, Loader2, Plus, Minus, Check,
-  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send, Crop, Maximize2
+  DollarSign, Info, X, Wand2, Eraser, RotateCw, Undo2, Send, Crop, Maximize2, MoreVertical
 } from 'lucide-react';
 import SendToVendorDialog, { type VendorSendPayload } from './SendToVendorDialog';
 import { logActivityOnce } from '@/lib/activity';
@@ -450,6 +450,18 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
 
   const initCanvas = useCallback(() => {
     if (!canvasRef.current || fabricRef.current) return;
+
+    // Phones and tablets: Fabric's default 13px corner handles are too small
+    // to grab with a finger. Bigger, solid handles on touch screens only;
+    // a mouse keeps the desktop defaults.
+    if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches) {
+      Object.assign(FabricObject.ownDefaults, {
+        cornerSize: 22,
+        touchCornerSize: 44,
+        transparentCorners: false,
+        cornerStyle: 'circle',
+      });
+    }
 
     const initialHeight = feetToPx(1); // 12 inches (1 ft) — user changes via the Length input
     const canvas = new FabricCanvas(canvasRef.current, {
@@ -2515,6 +2527,44 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           </div>
         )}
 
+        {/* Phone menu (admin): the File menu and Send to Vendor are hidden
+            below md. No Export here: full-res client export fails on iOS. */}
+        {mode === 'admin' && (
+          <div className="relative md:hidden order-last">
+            <button
+              onClick={() => setFileMenuOpen((o) => !o)}
+              aria-label="More actions"
+              className={`p-2 rounded-lg ${fileMenuOpen ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+            {fileMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setFileMenuOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-40 py-1.5 text-sm">
+                  {([
+                    { label: 'New sheet', action: () => navigate('/admin/gangsheet') },
+                    { label: 'Open (sheets folder)', action: () => navigate('/admin?section=gangsheet') },
+                    { label: 'Save a copy', action: () => void handleDuplicateSheet() },
+                    { label: 'Email sheet…', action: () => setShareKind('email') },
+                    { label: 'Text sheet…', action: () => setShareKind('sms') },
+                    { label: 'Send to vendor…', action: () => setVendorDialogOpen(true), disabled: exporting || designs.length === 0 },
+                  ] as Array<{ label: string; action: () => void; disabled?: boolean }>).map((item) => (
+                    <button
+                      key={item.label}
+                      disabled={item.disabled}
+                      onClick={() => { setFileMenuOpen(false); item.action(); }}
+                      className="w-full text-left px-4 py-2.5 text-gray-700 hover:bg-orange-50 hover:text-orange-700 disabled:opacity-40"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Sheet name */}
         <input
           type="text" value={sheetName}
@@ -2782,13 +2832,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           {fitError && (
             <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
               <span className="font-semibold">⚠ Doesn't fit:</span>
-              <span className="flex-1">{fitError}</span>
+              <span className="flex-1 min-w-0">{fitError}</span>
               <button onClick={() => setFitError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
             </div>
           )}
           {!fitError && trimSuggestFt != null && trimSuggestFt < sheetLengthFt && (
-            <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
-              <span className="flex-1">
+            <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-sm px-4 py-2 flex flex-wrap items-center gap-2 flex-shrink-0">
+              <span className="flex-1 min-w-[12rem]">
                 💡 Your designs fit in <strong>{trimSuggestFt} ft</strong> — you&apos;re paying for {sheetLengthFt} ft
                 ({sheetLengthFt - trimSuggestFt} ft blank).
               </span>
@@ -2804,7 +2854,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           {checkoutError && (
             <div className="bg-red-50 border-b border-red-200 text-red-800 text-sm px-4 py-2 flex items-center gap-2 flex-shrink-0">
               <span className="font-semibold">⚠ Checkout:</span>
-              <span className="flex-1">{checkoutError}</span>
+              <span className="flex-1 min-w-0">{checkoutError}</span>
               <button onClick={() => setCheckoutError(null)} className="text-red-500 hover:text-red-700 text-xs">Dismiss</button>
             </div>
           )}
@@ -2865,7 +2915,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
               <div className="space-y-4">
                 <label className="flex flex-col items-center gap-2 border-2 border-dashed border-gray-200 rounded-xl p-6 cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition">
                   <Upload className="w-8 h-8 text-gray-300" />
-                  <span className="text-sm font-medium text-gray-500">Drop designs here or click to upload</span>
+                  <span className="text-sm font-medium text-gray-500">
+                    <span className="md:hidden">Tap to add your designs</span>
+                    <span className="hidden md:inline">Drop designs here or click to upload</span>
+                  </span>
                   <span className="text-[10px] text-gray-400">PNG, JPG, SVG · 300 DPI recommended</span>
                   <span className="text-[10px] text-gray-400">PNGs with transparent backgrounds print clean; JPGs print their full rectangle.</span>
                   <input type="file" multiple accept=".png,.jpg,.jpeg,.svg,.webp,.tiff" className="hidden"
@@ -2913,7 +2966,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                       <span className="ml-1.5 text-[10px] font-semibold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">{configLimits.minFt}–{BUILDER_MAX_FT} ft</span>
                     </span>
                     <div className="flex items-center gap-1">
-                      <button onClick={() => updateSheetLength(sheetLengthFt - 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">−</button>
+                      <button onClick={() => updateSheetLength(sheetLengthFt - 1)} className="w-9 h-9 md:w-6 md:h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-sm md:text-xs hover:bg-gray-100">−</button>
                       <input
                         type="number"
                         min={configLimits.minFt}
@@ -2922,7 +2975,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                         onChange={(e) => updateSheetLength(parseInt(e.target.value) || configLimits.minFt)}
                         className="w-14 px-2 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
                       />
-                      <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-100">+</button>
+                      <button onClick={() => updateSheetLength(sheetLengthFt + 1)} className="w-9 h-9 md:w-6 md:h-6 rounded bg-white border border-gray-200 text-gray-600 flex items-center justify-center text-sm md:text-xs hover:bg-gray-100">+</button>
                     </div>
                   </label>
                   <p className="text-[10px] text-gray-400">{sheetWidthIn}&quot; wide · length {configLimits.minFt}–{BUILDER_MAX_FT} ft, sold in 1 ft (12&quot;) steps. Set the length manually — if your graphics don&apos;t fit you&apos;ll get a warning.</p>
@@ -2951,8 +3004,8 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                                 {d.dpi} DPI · {d.resampled ? 'Resampled, not sharper' : colors.label}
                               </span>
                             </div>
-                            <button onClick={() => removeDesign(d.id)} className="text-red-400 hover:text-red-600 flex-shrink-0">
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <button onClick={() => removeDesign(d.id)} aria-label={`Remove ${d.name}`} className="p-2 -m-1 md:p-0 md:m-0 text-red-400 hover:text-red-600 flex-shrink-0">
+                              <Trash2 className="w-4 h-4 md:w-3.5 md:h-3.5" />
                             </button>
                           </div>
                           <div className="grid grid-cols-2 gap-2 mt-2">
@@ -2988,7 +3041,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                           <label className="flex flex-col gap-0.5 mt-2">
                             <span className="text-[10px] text-gray-500 font-medium">Quantity</span>
                             <div className="flex items-center gap-1">
-                              <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">−</button>
+                              <button onClick={() => updateDesignQuantity(d.id, d.quantity - 1)} className="w-9 h-9 md:w-6 md:h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-sm md:text-xs hover:bg-gray-200">−</button>
                               <input
                                 type="number"
                                 min={1}
@@ -2996,7 +3049,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                                 onChange={(e) => updateDesignQuantity(d.id, parseInt(e.target.value) || 1)}
                                 className="flex-1 min-w-0 px-1 py-1 text-xs text-center border border-gray-200 rounded focus:outline-none focus:border-orange-500"
                               />
-                              <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-6 h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-xs hover:bg-gray-200">+</button>
+                              <button onClick={() => updateDesignQuantity(d.id, d.quantity + 1)} className="w-9 h-9 md:w-6 md:h-6 rounded bg-gray-100 text-gray-600 flex items-center justify-center text-sm md:text-xs hover:bg-gray-200">+</button>
                             </div>
                           </label>
                           {d.whiteBg && (
@@ -3371,6 +3424,32 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
           )}
         </div>
       </div>
+
+      {/* ── Mobile: selected design quick actions ────────────────────── */}
+      {selectedDesign && !mobilePanelOpen && (() => {
+        const sel = designs.find((d) => d.id === selectedDesign);
+        if (!sel) return null;
+        return (
+          <div className="md:hidden bg-orange-50 border-t border-orange-200 px-3 py-2 flex items-center gap-2 flex-shrink-0">
+            <span className="flex-1 min-w-0 truncate text-xs text-gray-700">
+              <span className="font-semibold">{sel.name}</span> · {sel.printWidthInches.toFixed(1)}&quot; × {sel.printHeightInches.toFixed(1)}&quot;
+            </span>
+            <button
+              onClick={() => { setActivePanel('upload'); setMobilePanelOpen(true); }}
+              className="px-3 py-2 bg-white border border-gray-200 text-gray-700 text-xs font-semibold rounded-lg flex-shrink-0"
+            >
+              Size &amp; qty
+            </button>
+            <button
+              onClick={() => removeDesign(sel.id)}
+              aria-label={`Remove ${sel.name}`}
+              className="p-2 bg-white border border-red-200 text-red-500 rounded-lg flex-shrink-0"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── Mobile Bottom Bar ──────────────────────────────────────────── */}
       <div className="md:hidden bg-white border-t border-gray-200 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-2 flex-shrink-0">
