@@ -3769,6 +3769,7 @@ export default function AdminPage() {
         {/* Dashboard — stats overview only. The quote pipeline moved to its
             own Quotes section (Kevin, 2026-09-09: "Quotes should have a
             link and not be included in dashboard"). */}
+        {activeSection === 'dashboard' && <ShopStatusCard />}
         {activeSection === 'dashboard' && (
           <OpsDashboard
             onOpenQuotes={(filter) => {
@@ -3789,7 +3790,6 @@ export default function AdminPage() {
         {/* Quotes pipeline — search / filter / list */}
         {activeSection === 'quotes' && (
           <div>
-            <ShopStatusCard />
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-xl md:text-2xl font-display font-bold text-gray-900">Quotes</h2>
               <p className="text-xs text-gray-500 hidden sm:block">Quotes, accepted orders, and completed jobs in one list</p>
