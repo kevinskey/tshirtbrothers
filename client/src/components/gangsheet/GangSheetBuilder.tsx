@@ -300,7 +300,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   const BUILDER_MAX_FT = configLimits.maxFt;
 
   /* ── Sheet width ────────────────────────────────────────────────────
-     The store sells a 22" and a 34" roll. Width drives the canvas, the
+     The store sells a 12", a 22" and a 34" roll. Width drives the canvas, the
      bin packer, every clamp, and the $/ft rate, so it lives here and
      everything below reads sheetWidthPx rather than a constant. */
   const [sheetWidthIn, setSheetWidthIn] = useState<SheetWidthIn>(DEFAULT_SHEET_WIDTH_IN);
@@ -319,7 +319,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // about 50%.
   const [liveRatesByWidth, setLiveRatesByWidth] =
     useState<Record<number, Record<PricingTier, number>> | null>(null);
-  // Widths the store is actually selling right now. 34" can be switched
+  // Widths the store is actually selling right now. 12" and 34" can be switched
   // off in /admin, and the selector must not offer what checkout rejects.
   const [offeredWidths, setOfferedWidths] = useState<readonly number[]>(SHEET_WIDTH_OPTIONS_IN);
   useEffect(() => {
@@ -2846,7 +2846,7 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
                   {offeredWidths.length > 1 && (
                     <div>
                       <span className="text-xs text-gray-600">Width</span>
-                      <div className="mt-1 grid grid-cols-2 gap-1.5">
+                      <div className={`mt-1 grid ${offeredWidths.length > 2 ? 'grid-cols-3' : 'grid-cols-2'} gap-1.5`}>
                         {offeredWidths.map((w) => {
                           const active = w === sheetWidthIn;
                           const rate = liveRatesByWidth?.[w]?.[pricingTier];

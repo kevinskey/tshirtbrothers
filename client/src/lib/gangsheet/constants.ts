@@ -6,17 +6,17 @@ export const INCHES_PER_FOOT = 12;
 export const PX_PER_FOOT = INCHES_PER_FOOT * DPI; // 3,600
 
 /* ── Sheet widths ──────────────────────────────────────────────────────
-   The store sells two rolls, both by the linear foot. Mirrors
+   The store sells three rolls (12", 22", 34"), all by the linear foot. Mirrors
    SHEET_WIDTHS in server/routes/gangsheetStore.js — the server is
    authoritative (it re-derives the width from the rendered pixels and
    prices off that), these are for layout and display. */
-export const SHEET_WIDTH_OPTIONS_IN = [22, 34] as const;
+export const SHEET_WIDTH_OPTIONS_IN = [12, 22, 34] as const;
 export type SheetWidthIn = (typeof SHEET_WIDTH_OPTIONS_IN)[number];
 
 export const DEFAULT_SHEET_WIDTH_IN: SheetWidthIn = 22;
 
 export function sheetWidthPx(widthIn: number): number {
-  return Math.round(widthIn * DPI); // 22" → 6,600 · 34" → 10,200
+  return Math.round(widthIn * DPI); // 12" → 3,600 · 22" → 6,600 · 34" → 10,200
 }
 
 export function isSheetWidth(v: unknown): v is SheetWidthIn {

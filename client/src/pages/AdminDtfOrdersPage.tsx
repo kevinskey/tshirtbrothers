@@ -236,6 +236,10 @@ type SettingsRow = {
   rate_34_rush_cents: number;
   rate_34_hot_rush_cents: number;
   width_34_active: boolean;
+  rate_12_standard_cents: number;
+  rate_12_rush_cents: number;
+  rate_12_hot_rush_cents: number;
+  width_12_active: boolean;
   cutoff_rush: string;      // 'HH:MM:SS' (Postgres TIME, as text)
   cutoff_hot_rush: string;
   min_ft: number;
@@ -258,6 +262,10 @@ type SettingsForm = {
   rate_34_rush: string;
   rate_34_hot_rush: string;
   width_34_active: boolean;
+  rate_12_standard: string;
+  rate_12_rush: string;
+  rate_12_hot_rush: string;
+  width_12_active: boolean;
   cutoff_rush: string;     // 'HH:MM' (type="time" shape)
   cutoff_hot_rush: string;
   min_ft: string;
@@ -287,6 +295,10 @@ function settingsToForm(s: SettingsRow): SettingsForm {
     rate_34_rush: centsToDollarStr(s.rate_34_rush_cents),
     rate_34_hot_rush: centsToDollarStr(s.rate_34_hot_rush_cents),
     width_34_active: s.width_34_active,
+    rate_12_standard: centsToDollarStr(s.rate_12_standard_cents),
+    rate_12_rush: centsToDollarStr(s.rate_12_rush_cents),
+    rate_12_hot_rush: centsToDollarStr(s.rate_12_hot_rush_cents),
+    width_12_active: s.width_12_active,
     cutoff_rush: toHHMM(s.cutoff_rush),
     cutoff_hot_rush: toHHMM(s.cutoff_hot_rush),
     min_ft: String(s.min_ft),
@@ -349,12 +361,16 @@ function SettingsCard() {
     const rate34StandardCents = dollarsToCents(form.rate_34_standard);
     const rate34RushCents = dollarsToCents(form.rate_34_rush);
     const rate34HotRushCents = dollarsToCents(form.rate_34_hot_rush);
+    const rate12StandardCents = dollarsToCents(form.rate_12_standard);
+    const rate12RushCents = dollarsToCents(form.rate_12_rush);
+    const rate12HotRushCents = dollarsToCents(form.rate_12_hot_rush);
     const shippingFlatCents = dollarsToCents(form.shipping_flat);
     const minFt = intOrNull(form.min_ft);
     const maxFt = intOrNull(form.max_ft);
     if (
       rateStandardCents === null || rateRushCents === null || rateHotRushCents === null
       || rate34StandardCents === null || rate34RushCents === null || rate34HotRushCents === null
+      || rate12StandardCents === null || rate12RushCents === null || rate12HotRushCents === null
       || shippingFlatCents === null || minFt === null || maxFt === null
     ) {
       toast.error('Check your inputs — some values look invalid');
@@ -373,6 +389,10 @@ function SettingsCard() {
           rate_34_rush_cents: rate34RushCents,
           rate_34_hot_rush_cents: rate34HotRushCents,
           width_34_active: form.width_34_active,
+          rate_12_standard_cents: rate12StandardCents,
+          rate_12_rush_cents: rate12RushCents,
+          rate_12_hot_rush_cents: rate12HotRushCents,
+          width_12_active: form.width_12_active,
           cutoff_rush: form.cutoff_rush,
           cutoff_hot_rush: form.cutoff_hot_rush,
           min_ft: minFt,
@@ -438,6 +458,48 @@ function SettingsCard() {
                 </label>
               </div>
 
+              {/* 12" roll, same shape as the 34" block below: its own
+                  rates and its own on/off switch. */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                  <input
+                    type="checkbox" checked={form.width_12_active}
+                    onChange={(e) => patch({ width_12_active: e.target.checked })}
+                  />
+                  Offer 12&quot; wide sheets
+                </label>
+                <p className="mt-1 text-[11px] text-gray-500">
+                  Turn this off and the store stops selling 12&quot; — the builder drops it
+                  from the width picker and checkout rejects a 12&quot; upload.
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <label className={labelCls}>
+                    12&quot; standard ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_12_standard}
+                      onChange={(e) => patch({ rate_12_standard: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                  <label className={labelCls}>
+                    12&quot; rush ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_12_rush}
+                      onChange={(e) => patch({ rate_12_rush: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                  <label className={labelCls}>
+                    12&quot; hot rush ($/ft)
+                    <input
+                      type="number" step="0.01" min="0" value={form.rate_12_hot_rush}
+                      onChange={(e) => patch({ rate_12_hot_rush: e.target.value })}
+                      className={inputCls} style={{ fontSize: '16px' }}
+                    />
+                  </label>
+                </div>
+              </div>
+
               {/* 34" roll. Its own rates, not a multiplier on the 22"
                   ladder — the two are separate vendor SKUs whose prices
                   move independently. */}
@@ -450,8 +512,8 @@ function SettingsCard() {
                   Offer 34&quot; wide sheets
                 </label>
                 <p className="mt-1 text-[11px] text-gray-500">
-                  Turn this off and the store sells 22&quot; only — the builder hides the
-                  width picker and checkout rejects a 34&quot; upload.
+                  Turn this off and the store stops selling 34&quot; — the builder drops it
+                  from the width picker and checkout rejects a 34&quot; upload.
                 </p>
                 <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <label className={labelCls}>

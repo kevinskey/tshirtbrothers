@@ -36,7 +36,7 @@ type DtfConfig = {
 // `preview` is a small screen-resolution snapshot data-URL the builder
 // stashes at checkout so the customer can SEE the sheet they built —
 // the composed file itself is private in Spaces and not client-fetchable.
-// width_in is the roll the server MATCHED the file to (22 or 34) — not a
+// width_in is the roll the server MATCHED the file to (12, 22 or 34) — not a
 // guess from width_px, which carries the ±2% upload tolerance.
 type UploadedFile = { file_key: string; width_px: number; height_px: number; width_in?: number; fileName?: string; preview?: string };
 
@@ -176,7 +176,7 @@ function readUploadStash(): UploadedFile | null {
       // is a 34" roll, so the page showed $11.99/ft and Stripe then charged
       // the 34" rate. The builder stash carries no width_in, so fall back
       // to the file's pixel width, using the same ±2% match the server uses.
-      width_in: (stash.width_in === 22 || stash.width_in === 34)
+      width_in: (typeof stash.width_in === 'number' && (ROLL_WIDTHS_IN as readonly number[]).includes(stash.width_in))
         ? stash.width_in
         : rollFromWidthPx(stash.width_px),
       fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
@@ -187,11 +187,15 @@ function readUploadStash(): UploadedFile | null {
   } catch { return null; /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 }
 
-// Which roll a file is, from its pixel width (22" = 6,600 px, 34" =
-// 10,200 px at 300 DPI, ±2%). Mirrors widthInFromPx() in
+// Every roll the store can sell, whether or not it's switched on today.
+// Mirrors SHEET_WIDTHS in server/routes/gangsheetStore.js.
+const ROLL_WIDTHS_IN = [12, 22, 34] as const;
+
+// Which roll a file is, from its pixel width (12" = 3,600 px, 22" =
+// 6,600 px, 34" = 10,200 px at 300 DPI, ±2%). Mirrors widthInFromPx() in
 // server/routes/gangsheetStore.js, which is what checkout prices from.
 function rollFromWidthPx(px: number): number | undefined {
-  for (const w of [22, 34]) {
+  for (const w of ROLL_WIDTHS_IN) {
     if (Math.abs(px - w * 300) <= w * 300 * 0.02) return w;
   }
   return undefined;
@@ -324,7 +328,7 @@ export default function DtfStorePage() {
 
     const dims = await probeImageDimensions(file);
     // Mirror of the server check: the file has to BE one of the rolls we
-    // print (22" = 6,600 px, 34" = 10,200 px at 300 DPI), ±2%. Catching
+    // print (12" = 3,600 px, 22" = 6,600 px, 34" = 10,200 px at 300 DPI), ±2%. Catching
     // it here saves uploading a 90 MB file just to be told no.
     const offered = config?.widths?.length
       ? config.widths
@@ -475,13 +479,19 @@ export default function DtfStorePage() {
     !agree && 'the artwork agreement',
   ].filter(Boolean) as string[];
 
-  const heroRate = config ? money(config.rates.standard) : null;
+  // "From" is the cheapest roll on offer today, so it drops to the 12"
+  // rate while that roll is on and goes back to 22" if it's switched off.
+  const heroRate = config
+    ? money(Math.min(...(widthOptions.length ? widthOptions.map((w) => w.rates.standard) : [config.rates.standard])))
+    : null;
+  const heroWidths = (widthOptions.length ? widthOptions.map((w) => w.in) : [22])
+    .join(', ').replace(/, ([^,]*)$/, ' or $1');
 
   return (
     <Layout>
       <Seo
         title="DTF Transfers by the Foot · Order Gang Sheets Online · TShirt Brothers"
-        description="Upload your print-ready art and order a 22-inch DTF gang sheet by the foot. Standard, Rush, and Hot Rush turnaround — priced and printed in Fairburn, GA."
+        description="Upload your print-ready art and order a DTF gang sheet by the foot. Standard, Rush, and Hot Rush turnaround — priced and printed in Fairburn, GA."
         path="/dtf"
       />
 
@@ -503,7 +513,7 @@ export default function DtfStorePage() {
               <span className="block text-orange-500">By the foot.</span>
             </h1>
             <p className="mt-4 max-w-md text-sm leading-relaxed text-gray-300 sm:text-base">
-              22-inch gang sheets at 300 DPI with white-ink underbase, hot-peel film
+              {heroWidths}-inch gang sheets at 300 DPI with white-ink underbase, hot-peel film
               {heroRate && <>, from <strong className="text-white">{heroRate}/ft</strong></>}.
             </p>
             {/* The ONLY fork on the page. The builder leads because most
@@ -535,7 +545,7 @@ export default function DtfStorePage() {
                   <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                 </span>
                 <span className="mt-1 block text-[11px] leading-snug text-gray-400">
-                  Already print-ready? PNG, 300 DPI, 22&Prime; or 34&Prime; wide.
+                  Already print-ready? PNG, 300 DPI, 12&Prime;, 22&Prime; or 34&Prime; wide.
                 </span>
               </a>
             </div>
@@ -656,7 +666,7 @@ export default function DtfStorePage() {
                           stay put, or on a long sheet the one line naming
                           what you're buying scrolls out of view. */}
                       <div className="max-h-80 overflow-y-auto">
-                      {/* Frame = the sheet being purchased (22" × chosenFt) */}
+                      {/* Frame = the sheet being purchased (roll width × chosenFt) */}
                       {/* Width derives from the height cap via the ratio, so
                           the sheet never distorts: the old maxHeight clamp
                           squashed tall sheets because w-full held the width.
@@ -752,7 +762,7 @@ export default function DtfStorePage() {
                   <Plus className="h-5 w-5" />
                 </button>
                 <p className="ml-2 text-sm text-gray-600">
-                  22&quot; × <strong className="text-gray-900">{lengthFt} ft</strong>
+                  {uploadedFile?.width_in ?? 22}&quot; × <strong className="text-gray-900">{lengthFt} ft</strong>
                 </p>
               </div>
               {/* Jump buttons. The ±1 stepper was fine when the ceiling was
@@ -1117,7 +1127,7 @@ export default function DtfStorePage() {
               {
                 n: '1',
                 title: 'Send your art',
-                body: 'Upload a print-ready 22″ sheet above, or lay your designs out in the online builder — it packs them onto the film for you.',
+                body: 'Upload a print-ready sheet above, or lay your designs out in the online builder — it packs them onto the film for you.',
               },
               {
                 n: '2',
@@ -1191,7 +1201,7 @@ export default function DtfStorePage() {
             {[
               {
                 q: 'What files work?',
-                a: 'Transparent-background PNG, up to 500 MB — 6,600 px wide for a 22″ sheet or 10,200 px for a 34″ sheet (both 300 DPI). The width of your file picks the roll. What you upload is exactly what prints — we don’t edit your file.',
+                a: 'Transparent-background PNG, up to 500 MB — 3,600 px wide for a 12″ sheet, 6,600 px for a 22″ sheet or 10,200 px for a 34″ sheet (all 300 DPI). The width of your file picks the roll. What you upload is exactly what prints — we don’t edit your file.',
               },
               {
                 q: 'What do transfers press onto?',

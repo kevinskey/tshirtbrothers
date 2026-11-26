@@ -106,6 +106,7 @@ export const DTF_GANG_SHEET = {
    * did not cover widths at all -- so it was invisible twice over.
    */
   widths: [
+    { inches: 12, standardRatePerFoot: 6.99, rushRatePerFoot: 7.57, hotRushRatePerFoot: 9.91 },
     { inches: 22, standardRatePerFoot: 11.99, rushRatePerFoot: 12.99, hotRushRatePerFoot: 17.0 },
     { inches: 34, standardRatePerFoot: 17.99, rushRatePerFoot: 18.99, hotRushRatePerFoot: 23.0 },
   ],
