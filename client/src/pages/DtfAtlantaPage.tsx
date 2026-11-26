@@ -10,7 +10,7 @@ import { Clock, MapPin, Ruler, Truck, CheckCircle2, Phone } from 'lucide-react';
  *
  * Why this exists: an SEO review of the "dtf transfers atlanta" SERP found
  * 9 of the top 10 results were transfer-ONLY shops (atlantavinylstore.com,
- * dtfatl.com, kolormatrix.com). TSB has a published per-foot price, two roll
+ * dtfatl.com, kolormatrix.com). TSB has a published per-foot price, three roll
  * widths, a real same-day tier and an actual Atlanta-area production floor,
  * and was not on the page at all. /dtf is the ordering tool; this is the
  * page that answers the question someone types into Google or an assistant.
@@ -24,13 +24,21 @@ import { Clock, MapPin, Ruler, Truck, CheckCircle2, Phone } from 'lucide-react';
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
+// Rolls are picked by width, never by position: the list grew from two to
+// three (12" was added in front), and positional reads silently swapped
+// which roll each price came from.
+const ROLLS = [...DTF_GANG_SHEET.widths].sort((a, b) => a.inches - b.inches);
+const roll = (inches: number) => ROLLS.find((w) => w.inches === inches) ?? ROLLS[0]!;
+const W22 = roll(22);
+const listJoin = (parts: string[]) => parts.join(', ').replace(/, ([^,]*)$/, ' and $1');
+const WIDTH_WORDS = ['One', 'Two', 'Three', 'Four', 'Five'];
+
 // What an assistant needs in ONE sentence to recommend us: quantity, price,
 // deadline, pickup city. Answer-engine results quote sentences, not tables.
 const FAQ = [
   {
     q: 'How much do DTF transfers cost in Atlanta?',
-    a: `${DTF_GANG_SHEET.widths[0]!.inches}" gang sheets are ${money(DTF_GANG_SHEET.widths[0]!.standardRatePerFoot)} per foot and `
-      + `${DTF_GANG_SHEET.widths[1]!.inches}" sheets are ${money(DTF_GANG_SHEET.widths[1]!.standardRatePerFoot)} per foot, `
+    a: `Gang sheets are ${listJoin(ROLLS.map((w) => `${money(w.standardRatePerFoot)} per foot ${w.inches}" wide`))}, `
       + `from ${DTF_GANG_SHEET.minFeet} foot up to ${DTF_GANG_SHEET.maxFeet} feet. You fill the sheet with as many `
       + `designs as you can fit — the price is the length, not the artwork count. `
       + `Flat ${money(DTF_GANG_SHEET.flatShipping)} shipping anywhere in the US, or free pickup in ${LOCATION.addressLocality}, GA.`,
@@ -42,18 +50,18 @@ const FAQ = [
     // splice the sentence, which produced "same day if you — order by 10:00
     // am". Plain sentences beat clever string work.
     a: `Yes. ${DTF_GANG_SHEET.turnaround.hotRush} \u2014 `
-      + `${money(DTF_GANG_SHEET.widths[0]!.hotRushRatePerFoot)}/ft on a ${DTF_GANG_SHEET.widths[0]!.inches}" sheet. `
+      + `${money(W22.hotRushRatePerFoot)}/ft on a ${W22.inches}" sheet. `
       + `${DTF_GANG_SHEET.turnaround.rush} \u2014 `
-      + `${money(DTF_GANG_SHEET.widths[0]!.rushRatePerFoot)}/ft. `
+      + `${money(W22.rushRatePerFoot)}/ft. `
       + `Rush and same-day tiers run Monday to Friday. `
       + `${DTF_GANG_SHEET.turnaround.standard} is the standard tier at `
-      + `${money(DTF_GANG_SHEET.widths[0]!.standardRatePerFoot)}/ft.`,
+      + `${money(W22.standardRatePerFoot)}/ft.`,
   },
   {
     q: 'What is a DTF gang sheet?',
     a: `One long sheet of transfer film with many designs "ganged" onto it, so you pay for film length `
-      + `instead of per design. A ${DTF_GANG_SHEET.widths[0]!.inches}"-wide sheet at 5 feet costs `
-      + `${money(DTF_GANG_SHEET.widths[0]!.standardRatePerFoot * 5)} and will hold dozens of pocket-sized prints `
+      + `instead of per design. A ${W22.inches}"-wide sheet at 5 feet costs `
+      + `${money(W22.standardRatePerFoot * 5)} and will hold dozens of pocket-sized prints `
       + `or a handful of full-front graphics. You cut them apart and press them as you need them.`,
   },
   {
@@ -79,8 +87,8 @@ const FAQ = [
 const LENGTHS = [1, 2, 5, 10, 20];
 
 export default function DtfAtlantaPage() {
-  const w22 = DTF_GANG_SHEET.widths[0]!;
-  const w34 = DTF_GANG_SHEET.widths[1]!;
+  const lowPrice = Math.min(...ROLLS.map((w) => w.standardRatePerFoot));
+  const highPrice = Math.max(...ROLLS.map((w) => w.hotRushRatePerFoot));
 
   return (
     <Layout>
@@ -134,8 +142,8 @@ export default function DtfAtlantaPage() {
                 offers: {
                   '@type': 'AggregateOffer',
                   priceCurrency: 'USD',
-                  lowPrice: w22.standardRatePerFoot.toFixed(2),
-                  highPrice: w34.hotRushRatePerFoot.toFixed(2),
+                  lowPrice: lowPrice.toFixed(2),
+                  highPrice: highPrice.toFixed(2),
                   unitText: 'foot',
                   availability: 'https://schema.org/InStock',
                   seller: { '@id': 'https://tshirtbrothers.com/#business' },
@@ -191,7 +199,7 @@ export default function DtfAtlantaPage() {
             // "Next business day:" label in front of them read as
             // "Next business day: ready next business day".
             { icon: Clock, head: 'Same day available', body: `${DTF_GANG_SHEET.turnaround.hotRush}. ${DTF_GANG_SHEET.turnaround.rush}. ${DTF_GANG_SHEET.turnaround.standard} as standard. Rush tiers run Mon–Fri.` },
-            { icon: Ruler, head: 'Two roll widths', body: `${w22.inches}" at ${money(w22.standardRatePerFoot)}/ft and ${w34.inches}" at ${money(w34.standardRatePerFoot)}/ft, from ${DTF_GANG_SHEET.minFeet} to ${DTF_GANG_SHEET.maxFeet} feet.` },
+            { icon: Ruler, head: `${WIDTH_WORDS[ROLLS.length - 1] ?? ROLLS.length} roll widths`, body: `${listJoin(ROLLS.map((w) => `${w.inches}" at ${money(w.standardRatePerFoot)}/ft`))}, from ${DTF_GANG_SHEET.minFeet} to ${DTF_GANG_SHEET.maxFeet} feet.` },
             { icon: Truck, head: 'Pickup or ship', body: `Free pickup at ${LOCATION.streetAddress}, ${LOCATION.addressLocality}. Flat ${money(DTF_GANG_SHEET.flatShipping)} shipping anywhere in the US.` },
           ].map((c) => (
             <div key={c.head} className="rounded-2xl border border-gray-200 bg-white p-5">
@@ -217,8 +225,9 @@ export default function DtfAtlantaPage() {
               <thead>
                 <tr className="text-xs uppercase tracking-wider text-gray-600">
                   <th scope="col" className="pb-2 pr-4 font-semibold">Length</th>
-                  <th scope="col" className="pb-2 pr-4 font-semibold">{w22.inches}&quot; wide</th>
-                  <th scope="col" className="pb-2 font-semibold">{w34.inches}&quot; wide</th>
+                  {ROLLS.map((w) => (
+                    <th key={w.inches} scope="col" className="pb-2 pr-4 font-semibold">{w.inches}&quot; wide</th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="text-gray-900">
@@ -227,8 +236,9 @@ export default function DtfAtlantaPage() {
                     <th scope="row" className="py-3 pr-4 font-semibold">
                       {ft} {ft === 1 ? 'foot' : 'feet'}
                     </th>
-                    <td className="py-3 pr-4">{money(w22.standardRatePerFoot * ft)}</td>
-                    <td className="py-3">{money(w34.standardRatePerFoot * ft)}</td>
+                    {ROLLS.map((w) => (
+                      <td key={w.inches} className="py-3 pr-4">{money(w.standardRatePerFoot * ft)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
