@@ -322,6 +322,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // Widths the store is actually selling right now. 12" and 34" can be switched
   // off in /admin, and the selector must not offer what checkout rejects.
   const [offeredWidths, setOfferedWidths] = useState<readonly number[]>(SHEET_WIDTH_OPTIONS_IN);
+  // Set when the shop is closed from /admin. Layout and saving still work;
+  // only the checkout handoff is held, since /dtf would refuse it anyway.
+  const [closedLabel, setClosedLabel] = useState<string | null>(null);
   useEffect(() => {
     type RateShape = { standard?: unknown; rush?: unknown; hot_rush?: unknown };
     const toTiers = (r: RateShape): Record<PricingTier, number> | null => (
@@ -336,7 +339,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       .then((data: {
         rates?: RateShape; min_ft?: unknown; max_ft?: unknown;
         widths?: Array<{ in?: unknown; rates?: RateShape }>;
+        closure?: { closed?: unknown; reopens_label?: unknown };
       }) => {
+        if (data.closure?.closed === true) {
+          setClosedLabel(typeof data.closure.reopens_label === 'string'
+            ? `Closed — reopens ${data.closure.reopens_label}`
+            : 'Closed right now');
+        }
         const byWidth: Record<number, Record<PricingTier, number>> = {};
         // Preferred shape. Falls back to the flat `rates` key, which is
         // the 22" ladder and predates widths — an older server still
@@ -2548,11 +2557,11 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         {mode === 'customer' && (
           <button
             onClick={handleCheckoutSheet}
-            disabled={checkingOut || exporting || !liveRates}
+            disabled={checkingOut || exporting || !liveRates || !!closedLabel}
             className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
             <DollarSign className="w-3 h-3" />
-            {checkingOut ? 'Preparing…' : !liveRates ? 'Loading current pricing…' : 'Checkout this sheet'}
+            {closedLabel ?? (checkingOut ? 'Preparing…' : !liveRates ? 'Loading current pricing…' : 'Checkout this sheet')}
           </button>
         )}
       </header>
@@ -3366,10 +3375,10 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         {mode === 'customer' ? (
           <button
             onClick={handleCheckoutSheet}
-            disabled={checkingOut || exporting || !liveRates}
-            className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0"
+            disabled={checkingOut || exporting || !liveRates || !!closedLabel}
+            className="px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg whitespace-nowrap flex-shrink-0 disabled:opacity-50"
           >
-            {checkingOut ? '...' : !liveRates ? 'Loading…' : 'Checkout'}
+            {closedLabel ? 'Closed' : checkingOut ? '...' : !liveRates ? 'Loading…' : 'Checkout'}
           </button>
         ) : null}
         {/* No Export on the mobile bar in either mode: full-res client-side
