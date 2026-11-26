@@ -325,6 +325,33 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
   // Set when the shop is closed from /admin. Layout and saving still work;
   // only the checkout handoff is held, since /dtf would refuse it anyway.
   const [closedLabel, setClosedLabel] = useState<string | null>(null);
+  // The mount fetch below sets this once. A closure can end while the tab
+  // stays open (the reopen date arrives, or admin reopens), so look again
+  // whenever the customer comes back to the tab, and clear it when open.
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState !== 'visible') return;
+      fetch('/api/gangsheet-store/config')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: { closure?: { closed?: unknown; reopens_label?: unknown } } | null) => {
+          if (!data) return;
+          if (data.closure?.closed === true) {
+            setClosedLabel(typeof data.closure.reopens_label === 'string'
+              ? `Closed — reopens ${data.closure.reopens_label}`
+              : 'Closed right now');
+          } else {
+            setClosedLabel(null);
+          }
+        })
+        .catch(() => { /* keep whatever we last knew */ });
+    };
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+    return () => {
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, []);
   useEffect(() => {
     type RateShape = { standard?: unknown; rush?: unknown; hot_rush?: unknown };
     const toTiers = (r: RateShape): Record<PricingTier, number> | null => (
