@@ -495,6 +495,13 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
       const obj = e.selected?.[0];
       if ((obj as any)?.data?.designId) setSelectedDesign((obj as any).data.designId);
     });
+    // Tapping design B while A is selected fires 'updated', not 'created'.
+    // Without this the highlight (and the phone quick bar's Remove) stayed
+    // on A.
+    canvas.on('selection:updated', () => {
+      const obj = canvas.getActiveObject();
+      setSelectedDesign((obj as any)?.data?.designId ?? null);
+    });
     canvas.on('selection:cleared', () => setSelectedDesign(null));
 
     // Keep the VISIBLE art inside the printable margin while dragging or
