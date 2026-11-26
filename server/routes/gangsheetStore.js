@@ -139,7 +139,68 @@ function beforeCutoff(nowMinutes, cutoff /* 'HH:MM:SS' or 'HH:MM' */) {
   return nowMinutes < h * 60 + m;
 }
 
+/* ── Shop closed ────────────────────────────────────────────────────────
+   One switch in /admin for holidays and days off. While it's on, every
+   tier reads unavailable, so /config shows the shop as closed and
+   /checkout refuses new orders. An optional reopen date turns it off by
+   itself at midnight Atlanta time on that day, so nobody has to remember
+   to flip it back. Orders already paid are untouched. */
+
+// 'YYYY-MM-DD' for today in Atlanta.
+function atlantaDate(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+}
+
+// pg returns a DATE column as a JS Date at LOCAL midnight (or a string if
+// a type parser is set). Read the local parts back out so the calendar day
+// survives whatever time zone the server runs in.
+function dateOnly(v) {
+  if (!v) return null;
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return null;
+    const mm = String(v.getMonth() + 1).padStart(2, '0');
+    const dd = String(v.getDate()).padStart(2, '0');
+    return `${v.getFullYear()}-${mm}-${dd}`;
+  }
+  const m = String(v).match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+// 'YYYY-MM-DD' -> 'Fri, Nov 27'. Built at noon UTC so no time zone can
+// tip it onto the neighbouring day.
+function prettyDate(ymd) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
+  }).format(new Date(`${ymd}T12:00:00Z`));
+}
+
+export function shopClosure(settings, now = new Date()) {
+  const reopensOn = dateOnly(settings.shop_reopens_on);
+  const closed = !!settings.shop_closed && (!reopensOn || atlantaDate(now) < reopensOn);
+  if (!closed) return { closed: false };
+  const note = typeof settings.shop_closed_note === 'string' && settings.shop_closed_note.trim()
+    ? settings.shop_closed_note.trim()
+    : null;
+  return {
+    closed: true,
+    reopens_on: reopensOn,
+    reopens_label: reopensOn ? prettyDate(reopensOn) : null,
+    note,
+    // One line the store, the builder and checkout errors all reuse.
+    message: reopensOn
+      ? `We're closed right now and reopen ${prettyDate(reopensOn)}.`
+      : 'We\'re closed right now and not taking new orders.',
+  };
+}
+
 export function tierAvailability(settings, now = new Date()) {
+  const closure = shopClosure(settings, now);
+  if (closure.closed) {
+    const reason = closure.reopens_label ? `Closed — reopens ${closure.reopens_label}` : 'Closed';
+    return Object.fromEntries(TIER_ORDER.map((t) => [t, { available: false, reason }]));
+  }
   const { weekday, minutes } = atlantaNow(now);
   const weekend = weekday === 'Sat' || weekday === 'Sun';
   const out = {};
@@ -256,6 +317,7 @@ router.get('/config', async (req, res, next) => {
         rates: ratesForWidth(s, w),
       })),
       tiers: tierAvailability(s),
+      closure: shopClosure(s),
       min_ft: s.min_ft,
       max_ft: s.max_ft,
       shipping_flat_cents: s.shipping_flat_cents,
@@ -542,6 +604,10 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     const s = await loadSettings();
     if (!['standard', 'rush', 'hot_rush'].includes(tier)) {
       return res.status(400).json({ error: 'Pick a turnaround option' });
+    }
+    const closure = shopClosure(s);
+    if (closure.closed) {
+      return res.status(400).json({ error: closure.message, closed: true });
     }
     const avail = tierAvailability(s)[tier];
     if (!avail.available) {
@@ -1044,9 +1110,15 @@ router.post('/compose', authenticate, composeLimiter, async (req, res, next) => 
 
 const adminGuard = [authenticate, adminOnly];
 
+// The admin form wants the reopen date as plain 'YYYY-MM-DD', not the
+// midnight timestamp pg turns a DATE into.
+function adminSettingsOut(row) {
+  return { ...row, shop_reopens_on: dateOnly(row.shop_reopens_on) };
+}
+
 router.get('/admin/settings', ...adminGuard, async (req, res, next) => {
   try {
-    res.json(await loadSettings());
+    res.json(adminSettingsOut(await loadSettings()));
   } catch (err) { next(err); }
 });
 
@@ -1074,6 +1146,12 @@ const SETTINGS_FIELDS = [
   ['standard_active', (v) => typeof v === 'boolean'],
   ['rush_active', (v) => typeof v === 'boolean'],
   ['hot_rush_active', (v) => typeof v === 'boolean'],
+  ['shop_closed', (v) => typeof v === 'boolean'],
+  // null clears it; a real calendar date only.
+  ['shop_reopens_on', (v) => v === null || (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    && !Number.isNaN(new Date(`${v}T12:00:00Z`).getTime())
+    && new Date(`${v}T12:00:00Z`).toISOString().slice(0, 10) === v)],
+  ['shop_closed_note', (v) => v === null || (typeof v === 'string' && v.length <= 280)],
 ];
 
 router.patch('/admin/settings', ...adminGuard, async (req, res, next) => {
@@ -1109,7 +1187,7 @@ router.patch('/admin/settings', ...adminGuard, async (req, res, next) => {
       `UPDATE gang_sheet_store_settings SET ${setClauses.join(', ')} WHERE id = 1 RETURNING *`,
       values,
     );
-    res.json(rows[0]);
+    res.json(adminSettingsOut(rows[0]));
   } catch (err) { next(err); }
 });
 

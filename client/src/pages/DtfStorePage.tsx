@@ -28,6 +28,15 @@ type DtfConfig = {
   max_ft: number;
   shipping_flat_cents: number;
   promises: Record<TierKey, string>;
+  // Set from /admin. Absent on an older server, which never closes.
+  closure?: ShopClosure;
+};
+type ShopClosure = {
+  closed: boolean;
+  reopens_on?: string | null;
+  reopens_label?: string | null;
+  note?: string | null;
+  message?: string;
 };
 
 // fileName is display-only (never sent to the server) — carried along so a
@@ -461,7 +470,9 @@ export default function DtfStorePage() {
   // Same rule the quote form and server use: 10–15 digits, any formatting.
   const phoneDigits = phone.replace(/\D/g, '').length;
   const phoneValid = phoneDigits >= 10 && phoneDigits <= 15;
-  const canCheckout = !!uploadedFile
+  const shopClosed = !!config?.closure?.closed;
+  const canCheckout = !shopClosed
+    && !!uploadedFile
     && agree
     && !!name.trim()
     && emailValid
@@ -631,6 +642,22 @@ export default function DtfStorePage() {
             Couldn&apos;t load pricing right now — refresh the page, or{' '}
             <Link to="/quote" className="text-orange-700 underline">get a quote instead</Link>.
           </p>
+        )}
+
+        {shopClosed && config?.closure && (
+          <div role="status" className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 sm:p-5">
+            <p className="font-display text-base sm:text-lg font-bold text-amber-900">
+              {config.closure.reopens_label
+                ? `We're closed and reopen ${config.closure.reopens_label}.`
+                : "We're closed right now."}
+            </p>
+            {config.closure.note && (
+              <p className="mt-1 text-sm text-amber-900">{config.closure.note}</p>
+            )}
+            <p className="mt-1 text-sm text-amber-800">
+              You can still lay out or upload your sheet. Checkout opens again when we do.
+            </p>
+          </div>
         )}
 
         {config && lengthFt !== null && tier !== null && (
@@ -1109,7 +1136,11 @@ export default function DtfStorePage() {
               >
                 {checkingOut ? 'Redirecting to checkout…' : 'Checkout'}
               </button>
-              {!checkingOut && !uploading && missing.length > 0 && (
+              {shopClosed ? (
+                <p className="mt-2 text-center text-xs text-amber-800">
+                  {config?.closure?.message ?? "We're closed right now."}
+                </p>
+              ) : !checkingOut && !uploading && missing.length > 0 && (
                 <p className="mt-2 text-center text-xs text-gray-500">Still needed: {missing.join(', ')}</p>
               )}
             </div>
