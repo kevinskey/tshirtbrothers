@@ -974,7 +974,7 @@ export default function DtfStorePage() {
                 ) : (
                   <>
                     <Upload className="h-6 w-6" />
-                    <span>Click or drop a PNG here</span>
+                    <span><span className="md:hidden">Tap to choose your PNG</span><span className="hidden md:inline">Click or drop a PNG here</span></span>
                   </>
                 )}
                 <input
