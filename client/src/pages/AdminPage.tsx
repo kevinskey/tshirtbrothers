@@ -166,6 +166,7 @@ import ProductDetailModal from '@/components/admin/ProductDetailModal';
 import HeroSlidesAdmin from '@/components/admin/HeroSlidesAdmin';
 import QuoteItemsEditor, { FEE_PRESETS } from '@/components/admin/QuoteItemsEditor';
 import OpsDashboard from '@/components/admin/OpsDashboard';
+import ShopStatusCard from '@/components/admin/ShopStatusCard';
 import type { ExtraMockup } from '@/lib/api';
 import { dismissOnBackdrop } from '@/lib/dismissOnBackdrop';
 import { printQuotePackingSlip } from '@/lib/quotePackingSlip';
@@ -3768,6 +3769,7 @@ export default function AdminPage() {
         {/* Dashboard — stats overview only. The quote pipeline moved to its
             own Quotes section (Kevin, 2026-09-09: "Quotes should have a
             link and not be included in dashboard"). */}
+        {activeSection === 'dashboard' && <ShopStatusCard />}
         {activeSection === 'dashboard' && (
           <OpsDashboard
             onOpenQuotes={(filter) => {

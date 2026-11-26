@@ -8,6 +8,7 @@ import { recordActivity } from './events.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 import { cardFeeCents } from './invoices.js';
 import { retailPrice } from '../lib/pricing.js';
+import { requireShopOpen } from '../lib/shopStatus.js';
 import { tierForWholesale, garmentFamilyFor } from '../lib/garmentTier.js';
 
 const router = Router();
@@ -638,7 +639,7 @@ router.post('/save', async (req, res, next) => {
  * look up calculated_price, halve it for the deposit, and return a Stripe
  * URL. The customer redirects to Stripe; the webhook does the rest.
  * ------------------------------------------------------------------------- */
-router.post('/lock-in', async (req, res, next) => {
+router.post('/lock-in', requireShopOpen({ extra: 'Your quote is saved and we\u2019ll follow up when we reopen.' }), async (req, res, next) => {
   try {
     const { quote_id } = req.body;
     if (!quote_id) return res.status(400).json({ error: 'quote_id is required' });

@@ -644,20 +644,11 @@ export default function DtfStorePage() {
           </p>
         )}
 
+        {/* The sitewide banner says we're closed; this adds what it means here. */}
         {shopClosed && config?.closure && (
-          <div role="status" className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 sm:p-5">
-            <p className="font-display text-base sm:text-lg font-bold text-amber-900">
-              {config.closure.reopens_label
-                ? `We're closed and reopen ${config.closure.reopens_label}.`
-                : "We're closed right now."}
-            </p>
-            {config.closure.note && (
-              <p className="mt-1 text-sm text-amber-900">{config.closure.note}</p>
-            )}
-            <p className="mt-1 text-sm text-amber-800">
-              You can still lay out or upload your sheet. Checkout opens again when we do.
-            </p>
-          </div>
+          <p role="status" className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Checkout is paused while we&rsquo;re closed. You can still lay out or upload your sheet.
+          </p>
         )}
 
         {config && lengthFt !== null && tier !== null && (

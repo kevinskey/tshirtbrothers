@@ -22,6 +22,7 @@ import { fetchJdsProducts } from '../services/jds.js';
 import { parcelOunces, shippingChoicesForOunces } from '../lib/shippingRates.js';
 import { categorizeCgcProduct } from '../lib/cgcCategories.js';
 import { normalizeTiers } from '../lib/tierPricing.js';
+import { requireShopOpen } from '../lib/shopStatus.js';
 
 const router = Router();
 
@@ -64,7 +65,7 @@ router.get('/products', async (req, res, next) => {
 
 // ── Public: checkout ─────────────────────────────────────────────────────
 // Body: { sku, qty?, buyer_email?, success_url?, cancel_url? }
-router.post('/checkout', async (req, res, next) => {
+router.post('/checkout', requireShopOpen(), async (req, res, next) => {
   try {
     const { sku, qty: qtyRaw, buyer_email, success_url, cancel_url } = req.body ?? {};
     if (!sku) return res.status(400).json({ error: 'sku required' });

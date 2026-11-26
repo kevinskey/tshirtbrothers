@@ -90,6 +90,13 @@ function cardFeeLineItem(feeCents) {
 import { recordActivity } from './events.js';
 import { parcelOunces, tierForOunces } from '../lib/shippingRates.js';
 import { sizeUpchargeCents } from '../lib/sizeUpcharges.js';
+import { requireShopOpen } from '../lib/shopStatus.js';
+
+// Webstore checkouts pause while the shop is closed. Live Hard Truth is a
+// separate brand that rides the same endpoints, so it stays open.
+const webstoreShopOpen = requireShopOpen({
+  skip: (req) => String(req.body?.store_slug || '').toLowerCase() === 'live-hard-truth',
+});
 
 const router = Router();
 
@@ -797,7 +804,7 @@ router.post('/create-balance-checkout', async (req, res, next) => {
 //   success_url?: string,      // frontend post-purchase redirect
 //   cancel_url?: string,
 // }
-router.post('/create-store-checkout', async (req, res, next) => {
+router.post('/create-store-checkout', webstoreShopOpen, async (req, res, next) => {
   try {
     const {
       store_slug, product_slug, qty: qtyRaw, variant,
@@ -1116,7 +1123,7 @@ router.post('/create-store-checkout', async (req, res, next) => {
 //   items: [{ product_slug, qty, variant? }],   // 1..10 lines
 //   buyer_email?, success_url?, cancel_url?
 // }
-router.post('/create-store-cart-checkout', async (req, res, next) => {
+router.post('/create-store-cart-checkout', webstoreShopOpen, async (req, res, next) => {
   try {
     const { store_slug, items, buyer_email, success_url, cancel_url, promo_code } = req.body ?? {};
     if (!store_slug || !Array.isArray(items) || items.length === 0) {

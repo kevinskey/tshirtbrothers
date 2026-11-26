@@ -248,9 +248,6 @@ type SettingsRow = {
   standard_active: boolean;
   rush_active: boolean;
   hot_rush_active: boolean;
-  shop_closed?: boolean;
-  shop_reopens_on?: string | null;   // 'YYYY-MM-DD'
-  shop_closed_note?: string | null;
 };
 
 // Everything in the form is a controlled text/checkbox input, so the form
@@ -328,146 +325,6 @@ function intOrNull(v: string): number | null {
 
 const inputCls = 'mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500';
 const labelCls = 'block text-xs font-semibold text-gray-600';
-
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Shop open / closed — always visible, its own Save                       */
-/* ────────────────────────────────────────────────────────────────────── */
-
-// Today in Atlanta as 'YYYY-MM-DD', the same clock the server closes on.
-function atlantaToday(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
-}
-
-function prettyDay(ymd: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
-  }).format(new Date(`${ymd}T12:00:00Z`));
-}
-
-function ShopStatusCard() {
-  const queryClient = useQueryClient();
-  const { data: settings } = useQuery<SettingsRow>({
-    queryKey: ['dtf-admin-settings'],
-    queryFn: async () => {
-      const r = await fetch('/api/gangsheet-store/admin/settings', { headers: authHeaders() });
-      if (!r.ok) throw new Error('Failed to load settings');
-      return r.json();
-    },
-  });
-  const [reopensOn, setReopensOn] = useState('');
-  const [note, setNote] = useState('');
-  const [seeded, setSeeded] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (settings && !seeded) {
-      setReopensOn(settings.shop_reopens_on ?? '');
-      setNote(settings.shop_closed_note ?? '');
-      setSeeded(true);
-    }
-  }, [settings, seeded]);
-
-  if (!settings) return null;
-
-  const today = atlantaToday();
-  const storedReopen = settings.shop_reopens_on ?? null;
-  // Mirrors shopClosure() on the server: the switch, unless its reopen
-  // date has already arrived.
-  const closedNow = !!settings.shop_closed && (!storedReopen || today < storedReopen);
-
-  async function save(closed: boolean) {
-    if (reopensOn && reopensOn <= today && closed) {
-      toast.error('Pick a reopen date after today, or leave it blank');
-      return;
-    }
-    setSaving(true);
-    try {
-      const r = await fetch('/api/gangsheet-store/admin/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeaders() },
-        body: JSON.stringify({
-          shop_closed: closed,
-          shop_reopens_on: closed && reopensOn ? reopensOn : null,
-          shop_closed_note: closed && note.trim() ? note.trim().slice(0, 280) : null,
-        }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        throw new Error(body.error || 'Save failed');
-      }
-      const row = await r.json();
-      queryClient.setQueryData(['dtf-admin-settings'], row);
-      if (!closed) { setReopensOn(''); setNote(''); }
-      toast.success(closed ? 'Shop closed — new orders are paused' : 'Shop is open again');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className={`mb-4 rounded-xl border-2 p-4 ${closedNow ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white'}`}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-bold text-gray-900">
-            {closedNow
-              ? (storedReopen ? `Shop is closed — reopens ${prettyDay(storedReopen)}` : 'Shop is closed')
-              : 'Shop is open'}
-          </p>
-          <p className="text-xs text-gray-600">
-            {closedNow
-              ? 'Customers see a closed notice and checkout is paused. Paid orders are unaffected.'
-              : 'Close it for a holiday or a day off. Customers can still build sheets; checkout pauses.'}
-          </p>
-        </div>
-        {closedNow ? (
-          <button
-            type="button" disabled={saving} onClick={() => save(false)}
-            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Open the shop'}
-          </button>
-        ) : (
-          <button
-            type="button" disabled={saving} onClick={() => save(true)}
-            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : 'Close the shop'}
-          </button>
-        )}
-      </div>
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className={labelCls}>
-          Reopen on (optional — opens by itself that morning)
-          <input
-            type="date" min={today} value={reopensOn}
-            onChange={(e) => setReopensOn(e.target.value)}
-            className={inputCls} style={{ fontSize: '16px' }}
-          />
-        </label>
-        <label className={labelCls}>
-          Note to customers (optional)
-          <input
-            type="text" maxLength={280} value={note} placeholder="Happy Thanksgiving!"
-            onChange={(e) => setNote(e.target.value)}
-            className={inputCls} style={{ fontSize: '16px' }}
-          />
-        </label>
-      </div>
-      {closedNow && (
-        <button
-          type="button" disabled={saving} onClick={() => save(true)}
-          className="mt-3 text-xs font-semibold text-amber-800 underline disabled:opacity-50"
-        >
-          Update reopen date and note
-        </button>
-      )}
-    </div>
-  );
-}
 
 function SettingsCard() {
   const queryClient = useQueryClient();
@@ -993,7 +850,6 @@ function DtfOrdersQueue() {
       </nav>
       <div className="p-4 sm:p-6">
       <div className="mx-auto max-w-6xl">
-        <ShopStatusCard />
         <SettingsCard />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="font-display text-xl font-bold text-gray-900">DTF Gang Sheet Orders</h1>
