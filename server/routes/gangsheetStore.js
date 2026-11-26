@@ -160,7 +160,7 @@ export function tierAvailability(settings, now = new Date()) {
 }
 
 /* ── Sheet widths ───────────────────────────────────────────────────────
-   The store sells two rolls, both by the linear foot. Width lives here as
+   The store sells three rolls (12", 22", 34"), all by the linear foot. Width lives here as
    data rather than the bare 6600 that used to be sprinkled through this
    file, so every pixel bound, price lookup and validation reads the same
    source. Adding a third roll means one entry here plus its rate columns.
@@ -168,6 +168,7 @@ export function tierAvailability(settings, now = new Date()) {
    `px` is the width at 300 DPI, which is also the exact pixel width an
    uploaded print-ready file must match. */
 export const SHEET_WIDTHS = {
+  12: { in: 12, px: 3600, rateCols: ['rate_12_standard_cents', 'rate_12_rush_cents', 'rate_12_hot_rush_cents'] },
   22: { in: 22, px: 6600, rateCols: ['rate_standard_cents', 'rate_rush_cents', 'rate_hot_rush_cents'] },
   34: { in: 34, px: 10200, rateCols: ['rate_34_standard_cents', 'rate_34_rush_cents', 'rate_34_hot_rush_cents'] },
 };
@@ -208,10 +209,15 @@ export function ratesForWidth(settings, widthIn) {
 }
 
 // Which widths a customer may actually pick right now. 22" is always on —
-// it's the house roll and there's no kill switch for it; 34" can be turned
-// off in /admin without a deploy if KolorMatrix's wide roll is out.
+// it's the house roll and there's no kill switch for it; 12" and 34" can
+// each be turned off in /admin without a deploy if that roll is out.
+// Narrowest first, so every list a customer sees reads 12" / 22" / 34".
 export function activeWidths(settings) {
-  return [22, ...(settings.width_34_active ? [34] : [])];
+  return [
+    ...(settings.width_12_active ? [12] : []),
+    22,
+    ...(settings.width_34_active ? [34] : []),
+  ];
 }
 
 // sharp's limitInputPixels for anything that reads or creates a whole
@@ -561,7 +567,8 @@ router.post('/checkout', checkoutLimiter, async (req, res, next) => {
     // Price the roll the FILE is, not the roll the request claims to be.
     const widthIn = widthInFromPx(fileWidthPx);
     if (!widthIn) {
-      return res.status(400).json({ error: 'That file isn\'t a width we print — re-upload a 22" or 34" sheet' });
+      const printed = activeWidths(s).map((w) => `${w}"`).join(', ').replace(/, ([^,]*)$/, ' or $1');
+      return res.status(400).json({ error: `That file isn't a width we print — re-upload a ${printed} sheet` });
     }
     if (!activeWidths(s).includes(widthIn)) {
       return res.status(400).json({ error: `${widthIn}" sheets aren't available right now.` });
@@ -1057,6 +1064,10 @@ const SETTINGS_FIELDS = [
   ['rate_34_rush_cents', (v) => Number.isInteger(v) && v >= 0],
   ['rate_34_hot_rush_cents', (v) => Number.isInteger(v) && v >= 0],
   ['width_34_active', (v) => typeof v === 'boolean'],
+  ['rate_12_standard_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_12_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['rate_12_hot_rush_cents', (v) => Number.isInteger(v) && v >= 0],
+  ['width_12_active', (v) => typeof v === 'boolean'],
   ['min_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
   ['max_ft', (v) => Number.isInteger(v) && v >= 1 && v <= 40],
   ['shipping_flat_cents', (v) => Number.isInteger(v) && v >= 0],
