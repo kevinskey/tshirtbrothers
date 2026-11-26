@@ -9110,23 +9110,34 @@ export default function AdminPage() {
           const productName = (q as Quote).product_name || (q as Quote).productName || '';
           const createdAt = (q as Quote).created_at || (q as Quote).createdAt || '';
           const shippingAddress = (q as Quote).shipping_address as { street?: string; city?: string; state?: string; zip?: string } | undefined;
-          const total = q.estimated_price != null ? Number(q.estimated_price) : 0;
-          // deposit_amount is the *required* deposit (50% of total), not
-          // what's been paid. Only count it as paid once the customer
-          // has accepted (deposit hit Stripe) — and the balance is only
-          // settled once balance_paid_at is set.
+          const quotePrice = q.estimated_price != null ? Number(q.estimated_price) : 0;
           const acceptedAt = (q as Quote & { accepted_at?: string | null }).accepted_at || null;
           const balancePaidAt = q.balance_paid_at || null;
+          // The resolved money block wins, exactly as it does for the row in
+          // the list (see paidState). An invoice-billed job collects on the
+          // invoice: quote 331 took a $54.95 Stripe deposit on its invoice,
+          // and because the webhook stamps accepted_at but NOT
+          // deposit_amount, the arithmetic below read "Deposit Paid $0.00 /
+          // Balance Due $99.13" while the list two clicks away said "Deposit
+          // paid". Same job, two answers.
+          const money = (q as Quote).money;
           // Until the deposit is actually paid, what's DUE is 50% of the
           // current total — the stored deposit_amount is a snapshot from the
           // last send-price and goes stale when line items change after it.
           // Once accepted, the column holds what was actually paid (the
           // webhook overwrites it), so show that.
+          const total = money && money.total > 0 ? money.total : quotePrice;
           const depositRequired = acceptedAt
             ? (q.deposit_amount != null ? Number(q.deposit_amount) : 0)
             : Math.round(total * 50) / 100;
-          const paid = (balancePaidAt ? total : (acceptedAt ? depositRequired : 0));
-          const balance = total - paid;
+          const paid = money
+            ? money.collected
+            : (balancePaidAt ? total : (acceptedAt ? depositRequired : 0));
+          const balance = money ? money.due : total - paid;
+          // Money having arrived is the thing worth showing, whatever the
+          // quote's own columns say about acceptance.
+          const collectedSomething = paid > 0 || !!acceptedAt;
+          const settled = money ? money.paidInFull : !!balancePaidAt;
 
           return (
             <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailQuote(null)}>
@@ -9684,13 +9695,13 @@ export default function AdminPage() {
                           <span className="text-gray-600">Total</span>
                           <span className="font-semibold text-gray-900">${total.toFixed(2)}</span>
                         </div>
-                        {acceptedAt ? (
+                        {collectedSomething ? (
                           <>
                             <div className="flex justify-between">
                               {/* deposit_amount accumulates: once the balance
                                   clears it holds everything collected, not the
                                   deposit, so "Deposit Paid" would be a lie. */}
-                              <span className="text-gray-600">{balancePaidAt ? 'Paid in Full' : 'Deposit Paid'}</span>
+                              <span className="text-gray-600">{settled ? 'Paid in Full' : 'Deposit Paid'}</span>
                               <span className="font-semibold text-green-600">${paid.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between pt-1 border-t border-gray-200">
