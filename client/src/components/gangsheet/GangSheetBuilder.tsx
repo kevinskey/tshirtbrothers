@@ -2036,6 +2036,9 @@ export default function GangSheetBuilder({ mode = 'admin' }: GangSheetBuilderPro
         file_key: composeData.file_key,
         width_px: composeData.width_px,
         height_px: composeData.height_px,
+        // The roll this sheet was built on. /dtf prices and labels from
+        // it; without it a 34" sheet showed the 22" rate there.
+        width_in: sheetWidthIn,
         fileName: `${sheetName || 'Untitled Sheet'}.png`,
         at: Date.now(),
         ...(preview ? { preview } : {}),
