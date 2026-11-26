@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Minus, Plus, Upload, Loader2, CheckCircle2, AlertTriangle, ArrowUpCircle,
+  Minus, Plus, Upload, Loader2, CheckCircle2, AlertTriangle,
   LayoutGrid, ArrowRight,
 } from 'lucide-react';
 import Layout from '@/components/layout/Layout';
@@ -156,7 +156,8 @@ function readUploadStash(): UploadedFile | null {
     const raw = sessionStorage.getItem(UPLOAD_STASH_KEY);
     if (!raw) return null;
     const stash = JSON.parse(raw) as {
-      file_key?: unknown; width_px?: unknown; height_px?: unknown; fileName?: unknown; at?: unknown; preview?: unknown;
+      file_key?: unknown; width_px?: unknown; height_px?: unknown; width_in?: unknown;
+      fileName?: unknown; at?: unknown; preview?: unknown;
     };
     if (
       typeof stash.file_key !== 'string' || typeof stash.width_px !== 'number'
@@ -170,6 +171,14 @@ function readUploadStash(): UploadedFile | null {
       file_key: stash.file_key,
       width_px: stash.width_px,
       height_px: stash.height_px,
+      // Without this every restored sheet (the builder handoff, a back
+      // button from Stripe) priced and labelled as 22" even when the file
+      // is a 34" roll, so the page showed $11.99/ft and Stripe then charged
+      // the 34" rate. The builder stash carries no width_in, so fall back
+      // to the file's pixel width, using the same ±2% match the server uses.
+      width_in: (stash.width_in === 22 || stash.width_in === 34)
+        ? stash.width_in
+        : rollFromWidthPx(stash.width_px),
       fileName: typeof stash.fileName === 'string' ? stash.fileName : undefined,
       // Only trust an inline image data-URL — never let a tampered stash
       // inject an arbitrary URL into an <img src>.
@@ -178,27 +187,36 @@ function readUploadStash(): UploadedFile | null {
   } catch { return null; /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 }
 
+// Which roll a file is, from its pixel width (22" = 6,600 px, 34" =
+// 10,200 px at 300 DPI, ±2%). Mirrors widthInFromPx() in
+// server/routes/gangsheetStore.js, which is what checkout prices from.
+function rollFromWidthPx(px: number): number | undefined {
+  for (const w of [22, 34]) {
+    if (Math.abs(px - w * 300) <= w * 300 * 0.02) return w;
+  }
+  return undefined;
+}
+
 function money(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-// Probes a raster file's pixel dimensions client-side (no upload needed).
-// Returns null if the browser can't decode it as an image — callers should
-// treat that as "let the server be the judge" rather than a hard failure.
-function probeImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      URL.revokeObjectURL(url);
-    };
-    img.onerror = () => {
-      resolve(null);
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  });
+// Reads a PNG's pixel dimensions from its IHDR header (bytes 16-23), the
+// same way the server's pngDimensions() does. The old version decoded the
+// whole file into an <img> just to read its size: on a phone, a 20 ft sheet
+// is hundreds of millions of pixels, which can stall or crash the tab
+// before the upload even starts. Returns null when the header isn't a
+// PNG's -- callers treat that as "let the server be the judge".
+async function probeImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
+  try {
+    const head = new Uint8Array(await file.slice(0, 24).arrayBuffer());
+    const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    if (head.length < 24 || sig.some((b, i) => head[i] !== b)) return null;
+    const view = new DataView(head.buffer);
+    return { width: view.getUint32(16), height: view.getUint32(20) };
+  } catch {
+    return null;
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -260,7 +278,9 @@ export default function DtfStorePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [bumpSuggestion, setBumpSuggestion] = useState<{ ft: number; extraCents: number } | null>(null);
+  // The length we set from the file, so the note under the upload can say
+  // so until the customer changes it themselves.
+  const [fittedFt, setFittedFt] = useState<number | null>(null);
 
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -294,7 +314,7 @@ export default function DtfStorePage() {
 
   async function handleFileSelected(file: File) {
     setUploadError(null);
-    setBumpSuggestion(null);
+    setFittedFt(null);
     setUploadedFile(null);
 
     if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
@@ -337,20 +357,23 @@ export default function DtfStorePage() {
         sessionStorage.setItem(UPLOAD_STASH_KEY, JSON.stringify({ ...uploaded, at: Date.now() }));
       } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 
-      const currentFt = lengthFt ?? 0;
-      if (config && uploaded.height_px > currentFt * 3600) {
+      // Size the sheet to the file. The length used to stay at the 5 ft
+      // default unless the file was LONGER, so a 1 ft file checked out as
+      // a 5 ft sheet: the customer paid for 4 ft of blank film. Shorter or
+      // longer, the length now follows the file, and the customer can
+      // still raise it with the stepper if they want extra.
+      if (config) {
         const neededFt = Math.ceil(uploaded.height_px / 3600);
         if (neededFt > config.max_ft) {
-          // Bumping to config.max_ft still wouldn't fit the file — a bump
-          // button here would be an un-actionable dead end, so tell the
-          // customer to split the sheet instead (server enforces the same
-          // ceiling in /upload, this is the client-side mirror of it).
+          // The server enforces the same ceiling in /upload; this is the
+          // client-side mirror of it.
           setUploadError(`Your file is ${neededFt} ft long — our max sheet is ${config.max_ft} ft. Split it into two sheets.`);
         } else {
-          const clampedFt = clamp(neededFt, config.min_ft, config.max_ft);
-          const rate = (uploaded.width_in && config.widths?.find((w) => w.in === uploaded.width_in)?.rates
-            || config.rates)[tier ?? 'standard'];
-          setBumpSuggestion({ ft: clampedFt, extraCents: Math.max(0, (clampedFt - currentFt) * rate) });
+          const fitFt = clamp(neededFt, config.min_ft, config.max_ft);
+          if (fitFt !== lengthFt) {
+            setLengthFt(fitFt);
+            setFittedFt(fitFt);
+          }
         }
       }
     } catch (err) {
@@ -364,12 +387,6 @@ export default function DtfStorePage() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file) handleFileSelected(file);
-  }
-
-  function applyBump() {
-    if (!bumpSuggestion) return;
-    setLengthFt(bumpSuggestion.ft);
-    setBumpSuggestion(null);
   }
 
   async function handleCheckout() {
@@ -948,15 +965,10 @@ export default function DtfStorePage() {
                   <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" /> {uploadError}
                 </p>
               )}
-              {bumpSuggestion && (
-                <button
-                  type="button"
-                  onClick={applyBump}
-                  className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-orange-400 bg-orange-50 px-4 py-2.5 text-sm font-bold text-orange-800 hover:bg-orange-100"
-                >
-                  <ArrowUpCircle className="h-4 w-4" />
-                  Bump to {bumpSuggestion.ft} ft (+{money(bumpSuggestion.extraCents)})
-                </button>
+              {fittedFt !== null && fittedFt === lengthFt && (
+                <p className="mt-3 text-sm font-medium text-gray-700">
+                  Length set to {fittedFt} ft to match your file.
+                </p>
               )}
             </section>
 
