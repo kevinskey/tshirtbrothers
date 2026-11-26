@@ -3381,8 +3381,15 @@ export default function AdminPage() {
       });
   }, [pipelineInvoicesQuery.data, quoteFilter, quoteSearch, quotes]);
 
-  // One list, newest first. Gang sheets sort by when the money arrived and
-  // fall back to created_at for the rare row with no paid_at.
+  // One list: live work first, newest first inside each group. Gang sheets
+  // sort by when the money arrived and fall back to created_at for the rare
+  // row with no paid_at.
+  //
+  // Finished jobs sink to the bottom rather than leaving the list (the
+  // status tabs are still how you see only one kind). Two thirds of the
+  // quote table is `completed` — 65 of them against a handful in production
+  // — so date order alone buried today's live work under last week's
+  // finished work.
   const dashboardRows = useMemo(() => {
     const rows: DashboardRow[] = [
       ...quotes.map((q: Quote) => ({
@@ -3401,7 +3408,21 @@ export default function AdminPage() {
         invoice: inv,
       })),
     ];
-    return rows.sort((a, b) => b.at - a.at);
+    // A row is finished when the job is handed over or dead: completed or
+    // rejected for a quote, completed for a gang sheet. Pipeline invoices
+    // are open money by construction (paid and cancelled ones are filtered
+    // out upstream), so none of them is ever finished here.
+    const isFinished = (row: DashboardRow): boolean => {
+      if (row.kind === 'quote') return quoteIsDone(row.quote.status);
+      if (row.kind === 'gangsheet') return row.order.status === 'completed';
+      return false;
+    };
+    return rows.sort((a, b) => {
+      const fa = isFinished(a) ? 1 : 0;
+      const fb = isFinished(b) ? 1 : 0;
+      if (fa !== fb) return fa - fb;
+      return b.at - a.at;
+    });
   }, [quotes, gangSheetRows, invoicePipelineRows]);
 
   // When deep-linked to a specific quote (?id=X), scroll the row into view
