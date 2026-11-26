@@ -347,6 +347,19 @@ router.get('/me/quotes', authenticate, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Customer-owned embroidery intake, including requests not yet linked to a quote.
+router.get('/me/embroidery-requests', authenticate, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, status, quantity, desired_size, date_needed::text AS date_needed, access_token
+         FROM embroidery_requests
+        WHERE lower(customer_email) = (SELECT lower(email) FROM users WHERE id = $1 AND deleted_at IS NULL)
+        ORDER BY created_at DESC LIMIT 100`, [req.user.id]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 // GET /me/designs - Customer's saved designs
 router.get('/me/designs', authenticate, async (req, res, next) => {
   try {

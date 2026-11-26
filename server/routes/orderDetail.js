@@ -19,7 +19,7 @@ router.get('/:quoteId', async (req, res, next) => {
     const quote = quoteQ.rows[0];
     const email = (quote.customer_email || '').toLowerCase();
 
-    const [items, invoices, purchaseOrders, vendorSends, emails, activity, notes] = await Promise.all([
+    const [items, invoices, purchaseOrders, vendorSends, emails, activity, notes, mockups] = await Promise.all([
       pool.query(
         `SELECT qi.*, p.name AS catalog_name, p.brand, p.ss_id
            FROM quote_items qi LEFT JOIN products p ON p.id = qi.product_id
@@ -66,6 +66,11 @@ router.get('/:quoteId', async (req, res, next) => {
         'SELECT * FROM order_notes WHERE quote_id = $1 ORDER BY created_at DESC',
         [quoteId]
       ),
+      pool.query(
+        `SELECT id, name, preview_image_url, preview_image_url_back, back_preview_image_url,
+                preview_image_url_sleeve, preview_image_url_sleeve_left
+           FROM mockups WHERE quote_id = $1 ORDER BY id`, [quoteId]
+      ),
     ]);
 
     res.json({
@@ -77,6 +82,7 @@ router.get('/:quoteId', async (req, res, next) => {
       emails: emails.rows,
       activity: activity.rows,
       notes: notes.rows,
+      mockups: mockups.rows,
     });
   } catch (err) {
     next(err);

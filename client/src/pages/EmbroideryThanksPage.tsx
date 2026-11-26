@@ -8,6 +8,7 @@ import Seo from '@/components/Seo';
 import { Check, Loader2 } from 'lucide-react';
 
 interface RequestStatus {
+  date_needed: string | null;
   id: number;
   status: string;
   digitization_paid_at: string | null;
@@ -44,11 +45,13 @@ export default function EmbroideryThanksPage() {
   }, [id, token, tries, req?.digitization_paid_at]);
 
   // Paid the fee, or brought a stitch file (ready_to_quote, no fee owed).
+  const requestedDate = req?.date_needed ? new Date(`${req.date_needed.slice(0, 10)}T12:00:00`).toLocaleDateString() : null;
   const paid = !!req?.digitization_paid_at || req?.status === 'ready_to_quote';
 
   return (
     <div className="mx-auto max-w-xl px-4 py-16 text-center">
       <Seo path="/embroidery/thanks" title="Embroidery Request Received — T-Shirt Brothers" description="Your digitization is underway." />
+      {requestedDate && <p className="mb-4 text-sm font-semibold text-orange-700">Requested need-by date: {requestedDate}</p>}
       {paid ? (
         <>
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-100">

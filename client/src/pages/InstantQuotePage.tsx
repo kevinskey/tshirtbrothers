@@ -593,7 +593,7 @@ export default function InstantQuotePage() {
   // One date for the whole order. When it lands inside the standard
   // turnaround window, every item is priced with the rush surcharge —
   // the customer picks a date, never a "rush vs standard" jargon choice.
-  const [dateNeeded, setDateNeeded] = useState<string>('');
+  const [dateNeeded, setDateNeeded] = useState<string>(() => location.state?.requestedNeedBy || '');
   const standardDays = options?.settings.standard_turnaround ?? 10;
   const rushDays = options?.settings.rush_turnaround ?? 2;
   const rushPct = Math.round((options?.settings.rush_surcharge_pct ?? 0.25) * 100);
@@ -833,6 +833,52 @@ export default function InstantQuotePage() {
             pick a product — price updates live
           </span>
         </h1>
+        {/* ─── Date needed — one date for the whole order; drives whether
+            rush pricing applies. ─── */}
+        <div className="mt-6 rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
+          <h2 className="font-display font-bold text-base sm:text-lg text-gray-900">
+            📅 When do you need these?
+          </h2>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label
+              className={`inline-flex cursor-pointer items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition ${
+                dateNeeded ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
+              }`}
+            >
+              Need by
+              <input
+                type="date"
+                required
+                value={dateNeeded}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(e) => setDateNeeded(e.target.value)}
+                className="bg-transparent text-sm font-semibold focus:outline-none"
+                style={{ fontSize: '16px' }}
+                aria-label="Date needed"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs sm:text-sm">
+            {!dateNeeded && (
+              <span className="text-gray-500">Standard turnaround is {standardDays} days — no rush fee.</span>
+            )}
+            {dateNeeded && !rushNeeded && (
+              <span className="text-green-700">✓ Fits our standard {standardDays}-day turnaround — no rush fee.</span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded >= rushDays && (
+              <span className="text-amber-700">
+                Needed in {daysUntilNeeded} day{daysUntilNeeded === 1 ? '' : 's'} — rush turnaround applies (+{rushPct}%).
+              </span>
+            )}
+            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded < rushDays && (
+              <span className="text-amber-700">
+                That's a very tight window — rush pricing applies (+{rushPct}%), and we'll confirm
+                feasibility as soon as we see your quote.
+              </span>
+            )}
+          </p>
+        </div>
+
         {/* ─── Items ─── */}
         <div className="space-y-6">
           {items.map((item, i) => (
@@ -876,59 +922,7 @@ export default function InstantQuotePage() {
           <Plus className="h-5 w-5" /> Add another product
         </button>
 
-        {/* ─── Date needed — one date for the whole order; drives whether
-            rush pricing applies. ─── */}
-        <div className="mt-6 rounded-2xl border-2 border-gray-200 bg-white p-4 sm:p-5">
-          <h2 className="font-display font-bold text-base sm:text-lg text-gray-900">
-            📅 When do you need these?
-          </h2>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDateNeeded('')}
-              className={`rounded-full border-2 px-4 py-2.5 text-sm font-semibold transition ${
-                !dateNeeded ? 'border-orange-600 bg-orange-600 text-white shadow-sm' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              I'm flexible
-            </button>
-            <label
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition ${
-                dateNeeded ? 'border-orange-600 bg-orange-50 text-orange-800' : 'border-gray-300 text-gray-700 hover:border-orange-400 hover:bg-orange-50/40'
-              }`}
-            >
-              Need by
-              <input
-                type="date"
-                value={dateNeeded}
-                min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => setDateNeeded(e.target.value)}
-                className="bg-transparent text-sm font-semibold focus:outline-none"
-                style={{ fontSize: '16px' }}
-                aria-label="Date needed"
-              />
-            </label>
-          </div>
-          <p className="mt-2 text-xs sm:text-sm">
-            {!dateNeeded && (
-              <span className="text-gray-500">Standard turnaround is {standardDays} days — no rush fee.</span>
-            )}
-            {dateNeeded && !rushNeeded && (
-              <span className="text-green-700">✓ Fits our standard {standardDays}-day turnaround — no rush fee.</span>
-            )}
-            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded >= rushDays && (
-              <span className="text-amber-700">
-                Needed in {daysUntilNeeded} day{daysUntilNeeded === 1 ? '' : 's'} — rush turnaround applies (+{rushPct}%).
-              </span>
-            )}
-            {dateNeeded && rushNeeded && daysUntilNeeded !== null && daysUntilNeeded < rushDays && (
-              <span className="text-amber-700">
-                That's a very tight window — rush pricing applies (+{rushPct}%), and we'll confirm
-                feasibility as soon as we see your quote.
-              </span>
-            )}
-          </p>
-        </div>
+
 
         {/* ─── Grand-total card — last, right above the CTAs so the
             customer sees the price they're committing to. ─── */}
@@ -1590,6 +1584,7 @@ function SaveQuoteModal({
     && items.every((it) => it.kind === 'custom' && it.custom.service !== 'press-only');
 
   async function submit() {
+    if (!dateNeeded) { toast.error('Choose a need-by date'); return; }
     if (!name.trim()) {
       toast.error('Enter your name');
       return;
@@ -1629,6 +1624,10 @@ function SaveQuoteModal({
         const cp = item.pickedProduct;
         return {
           kind: 'catalog',
+          mockups: [
+            { url: item.mockupUrl, placement: 'front' },
+            { url: item.mockupUrlBack, placement: 'back' },
+          ].filter(m => m.url),
           design_url: designUrls[0] || null,
           extra_design_urls: designUrls.slice(1),
           inputs: {
@@ -1673,6 +1672,7 @@ function SaveQuoteModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          requested_need_by: dateNeeded,
           customer_name: name || null,
           customer_email: email,
           customer_phone: phone,

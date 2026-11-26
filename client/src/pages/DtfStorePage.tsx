@@ -40,12 +40,16 @@ type DtfConfig = {
 // guess from width_px, which carries the ±2% upload tolerance.
 type UploadedFile = { file_key: string; width_px: number; height_px: number; width_in?: number; fileName?: string; preview?: string };
 
+type CartSheet = UploadedFile & { length_ft: number; copies: number };
+
 type ShipAddress = { line1: string; city: string; state: string; zip: string };
 
 // width_px/height_px are deliberately absent — the server now derives both
 // from the /upload-issued file_key itself (embedded in the key as
 // <uuid>-<width>x<height>.png) rather than trusting client-sent values.
 type CheckoutBody = {
+  date_needed: string;
+  sheets: Array<{ file_key: string; length_ft: number; copies: number; name?: string }>;
   length_ft: number;
   tier: TierKey;
   delivery: 'pickup' | 'ship';
@@ -167,6 +171,7 @@ function readUploadStash(): UploadedFile | null {
       return null;
     }
     return {
+      width_in: typeof (stash as { width_in?: number }).width_in === 'number' ? (stash as { width_in?: number }).width_in : undefined,
       file_key: stash.file_key,
       width_px: stash.width_px,
       height_px: stash.height_px,
@@ -199,6 +204,20 @@ function probeImageDimensions(file: File): Promise<{ width: number; height: numb
     };
     img.src = url;
   });
+}
+
+async function smallPreview(file: File): Promise<string | undefined> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image(); image.src = url; await image.decode();
+    const scale = Math.min(1, 280 / image.width, 360 / image.height);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  } catch { return undefined; }
+  finally { URL.revokeObjectURL(url); }
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -255,10 +274,13 @@ export default function DtfStorePage() {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
+  const [needBy, setNeedBy] = useState('');
   const [agree, setAgree] = useState(false);
 
   const [uploading, setUploading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [primaryCopies, setPrimaryCopies] = useState(1);
+  const [extraSheets, setExtraSheets] = useState<CartSheet[]>([]);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [bumpSuggestion, setBumpSuggestion] = useState<{ ft: number; extraCents: number } | null>(null);
 
@@ -292,10 +314,81 @@ export default function DtfStorePage() {
     return () => clearTimeout(t);
   }, [lengthFt]);
 
+  const reorderId = searchParams.get('reorder');
+  useEffect(() => {
+    if (!reorderId) return;
+    let active = true;
+    setUploadedFile(null);
+    setCheckoutError(null);
+    const token = localStorage.getItem('tsb_token');
+    if (!token) { setCheckoutError('Sign in to your account to reorder a saved sheet.'); return; }
+    fetch(`/api/gangsheet-store/customer/orders/${encodeURIComponent(reorderId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then(async response => {
+      const order = await response.json();
+      if (!response.ok) throw new Error(order.error || 'Could not load that order');
+      if (!active) return;
+      const file: UploadedFile = { file_key: order.file_key, width_px: order.file_width_px,
+        height_px: order.file_height_px, width_in: order.width_in, fileName: `DTF order #${order.id}` };
+      const saved = Array.isArray(order.sheets) && order.sheets.length ? order.sheets : null;
+      setUploadedFile(saved ? { file_key: saved[0].file_key, width_px: saved[0].width_px,
+        height_px: saved[0].height_px, width_in: saved[0].width_in, fileName: saved[0].name } : file);
+      setLengthFt(Number(saved ? saved[0].length_ft : order.length_ft));
+      setPrimaryCopies(saved ? saved[0].copies : 1);
+      setExtraSheets(saved ? saved.slice(1).map((sheet: { file_key: string; width_px: number; height_px: number; width_in: number; length_ft: number; copies: number; name: string }) => ({ ...sheet, fileName: sheet.name })) : []);
+      // A reorder is a new order: ask for a fresh date and current turnaround.
+      setNeedBy('');
+      try { sessionStorage.setItem(UPLOAD_STASH_KEY, JSON.stringify({ ...file, at: Date.now() })); } catch { /* optional */ }
+    }).catch(error => { if (active) setCheckoutError(error.message); });
+    return () => { active = false; };
+  }, [reorderId]);
+
+  // Restore an entire cart after returning from Stripe, while preserving the
+  // builder's existing single-sheet stash contract.
+  useEffect(() => {
+    if (fromBuilder || reorderId) return;
+    try {
+      const cart = JSON.parse(sessionStorage.getItem('dtf_cart_stash') || 'null');
+      const validFile = (file: UploadedFile) => file && typeof file.file_key === 'string'
+        && /^gangsheet-orders\//.test(file.file_key) && Number.isFinite(file.width_px) && Number.isFinite(file.height_px);
+      if (!cart || !Number.isFinite(cart.at) || Date.now() - cart.at > UPLOAD_STASH_MAX_AGE_MS || !validFile(cart.primary)) return;
+      const safeFile = <T extends UploadedFile>(file: T): T => ({ ...file,
+        preview: typeof file.preview === 'string' && file.preview.startsWith('data:image/') ? file.preview : undefined });
+      setUploadedFile(safeFile(cart.primary)); setLengthFt(cart.lengthFt);
+      setPrimaryCopies(cart.copies || 1); setExtraSheets(Array.isArray(cart.extra) ? cart.extra.filter(validFile).slice(0, 49).map(safeFile) : []);
+      setNeedBy(typeof cart.needBy === 'string' ? cart.needBy : '');
+    } catch { /* optional tab-local draft */ }
+  }, [fromBuilder, reorderId]);
+  useEffect(() => {
+    if (!uploadedFile) return;
+    try { sessionStorage.setItem('dtf_cart_stash', JSON.stringify({ primary: uploadedFile,
+      lengthFt, copies: primaryCopies, extra: extraSheets, needBy, at: Date.now() })); }
+    catch { /* drafts are optional; production files are stored on the server */ }
+  }, [uploadedFile, lengthFt, primaryCopies, extraSheets, needBy]);
+
+  async function addSheetFiles(files: File[], replaceIndex?: number) {
+    if (uploading || !config) return;
+    setUploading(true); setUploadError(null);
+    try {
+      if (replaceIndex === undefined && extraSheets.length + files.length > 49) throw Error('A cart supports up to 50 different sheets.');
+      for (const file of files) {
+        if (!file.name.toLowerCase().endsWith('.png') || file.size > MAX_UPLOAD_BYTES) throw Error(`${file.name}: use a PNG up to 500 MB`);
+        const body = await uploadSheetFile(file);
+        const length = Math.max(config.min_ft, Math.ceil(body.height_px / 3600));
+        if (length > config.max_ft) throw Error(`${file.name}: split this file into shorter sheets`);
+        const sheet: CartSheet = { ...body, length_ft: length, copies: 1,
+          fileName: file.name, preview: await smallPreview(file) };
+        setExtraSheets(current => replaceIndex === undefined ? [...current, sheet]
+          : current.map((existing, index) => index === replaceIndex ? { ...sheet, copies: existing.copies } : existing));
+      }
+    } catch (err) { setUploadError(err instanceof Error ? err.message : 'Upload failed'); }
+    finally { setUploading(false); }
+  }
+
   async function handleFileSelected(file: File) {
+    if (uploading) return;
     setUploadError(null);
     setBumpSuggestion(null);
-    setUploadedFile(null);
 
     if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
       setUploadError('File must be a PNG');
@@ -330,7 +423,7 @@ export default function DtfStorePage() {
       const body = await uploadSheetFile(file);
       const uploaded: UploadedFile = {
         file_key: body.file_key, width_px: body.width_px, height_px: body.height_px,
-        width_in: body.width_in, fileName: file.name,
+        width_in: body.width_in, fileName: file.name, preview: await smallPreview(file),
       };
       setUploadedFile(uploaded);
       try {
@@ -374,6 +467,7 @@ export default function DtfStorePage() {
 
   async function handleCheckout() {
     if (!config || lengthFt === null || tier === null || !uploadedFile) return;
+    if (!needBy) { setCheckoutError('Choose a need-by date'); return; }
     setCheckingOut(true);
     setCheckoutError(null);
     trackEvent('dtf-checkout-start', { ft: lengthFt, tier });
@@ -385,6 +479,11 @@ export default function DtfStorePage() {
     } catch { /* sessionStorage unavailable (private mode etc.) — non-fatal */ }
 
     const body: CheckoutBody = {
+      date_needed: needBy,
+      sheets: [
+        { file_key: uploadedFile.file_key, length_ft: lengthFt, copies: primaryCopies, name: uploadedFile.fileName },
+        ...extraSheets.map(sheet => ({ file_key: sheet.file_key, length_ft: sheet.length_ft, copies: sheet.copies, name: sheet.fileName })),
+      ],
       length_ft: lengthFt,
       tier,
       delivery,
@@ -405,7 +504,7 @@ export default function DtfStorePage() {
       });
       const respBody = await r.json();
       if (!r.ok) throw new Error(respBody.error || 'Checkout failed');
-      try { sessionStorage.removeItem(UPLOAD_STASH_KEY); } catch { /* non-fatal */ }
+      // Keep the cart draft through Stripe cancellation/back navigation.
       window.location.href = respBody.url;
     } catch (err) {
       setCheckoutError(err instanceof Error ? err.message : 'Checkout failed');
@@ -426,12 +525,17 @@ export default function DtfStorePage() {
   const widthOptions: SheetWidthOption[] = config
     ? (config.widths?.length ? config.widths : [{ in: 22, px: 6600, rates: config.rates }])
     : [];
-  const activeWidth = widthOptions.find((w) => w.in === uploadedFile?.width_in)
+  const activeWidth = widthOptions.find((w) => w.in === uploadedFile?.width_in || (uploadedFile && Math.abs(w.px - uploadedFile.width_px) <= w.px * 0.02))
     ?? widthOptions.find((w) => w.in === 22)
     ?? widthOptions[0];
   const ratesForSheet = activeWidth?.rates ?? config?.rates;
   const rateCents = ratesForSheet && tier ? ratesForSheet[tier] : 0;
-  const lineTotalCents = (lengthFt ?? 0) * rateCents;
+  const extraTotalCents = extraSheets.reduce((total, sheet) => {
+    const width = widthOptions.find(w => w.in === sheet.width_in || Math.abs(w.px - sheet.width_px) <= w.px * 0.02);
+    return total + sheet.length_ft * (tier ? width?.rates[tier] || 0 : 0) * sheet.copies;
+  }, 0);
+  const lineTotalCents = (lengthFt ?? 0) * rateCents * primaryCopies + extraTotalCents;
+  const copyCount = primaryCopies + extraSheets.reduce((total, sheet) => total + sheet.copies, 0);
   const shippingCents = delivery === 'ship' ? (config?.shipping_flat_cents ?? 0) : 0;
   const totalCents = lineTotalCents + shippingCents;
 
@@ -440,17 +544,25 @@ export default function DtfStorePage() {
   // Same rule the quote form and server use: 10–15 digits, any formatting.
   const phoneDigits = phone.replace(/\D/g, '').length;
   const phoneValid = phoneDigits >= 10 && phoneDigits <= 15;
-  const canCheckout = !!uploadedFile
-    && agree
-    && !!name.trim()
-    && emailValid
-    && phoneValid
-    && !checkingOut
-    && !uploading
+  const copiesValid = Number.isInteger(primaryCopies) && primaryCopies >= 1 && primaryCopies <= 1000
+    && extraSheets.every(sheet => Number.isInteger(sheet.copies) && sheet.copies >= 1 && sheet.copies <= 1000);
+  const lengthsValid = !!config && lengthFt !== null && Number.isInteger(lengthFt)
+    && lengthFt >= config.min_ft && lengthFt <= config.max_ft
+    && (!uploadedFile || uploadedFile.height_px <= lengthFt * 3600 * 1.02)
+    && extraSheets.every(sheet => Number.isInteger(sheet.length_ft) && sheet.length_ft >= config.min_ft
+      && sheet.length_ft <= config.max_ft && sheet.height_px <= sheet.length_ft * 3600 * 1.02);
+  const widthsValid = (!uploadedFile || widthOptions.some(width => Math.abs(width.px - uploadedFile.width_px) <= width.px * 0.02))
+    && extraSheets.every(sheet => widthOptions.some(width => Math.abs(width.px - sheet.width_px) <= width.px * 0.02));
+  const canCheckout = !!uploadedFile && !!needBy && copiesValid && lengthsValid && widthsValid
+    && agree && !!name.trim() && emailValid && phoneValid && !checkingOut && !uploading
     && (delivery !== 'ship' || !!shipFieldsFilled);
   // Spelled out under the button so a greyed-out Checkout is never a mystery.
   const missing = [
     !uploadedFile && 'your sheet',
+    !needBy && 'need-by date',
+    !copiesValid && 'whole-number copies (1–1000)',
+    !lengthsValid && 'whole-foot lengths that fit your artwork',
+    !widthsValid && 'available sheet widths',
     !name.trim() && 'name',
     !emailValid && 'email',
     !phoneValid && 'phone',
@@ -608,6 +720,12 @@ export default function DtfStorePage() {
 
         {config && lengthFt !== null && tier !== null && (
           <div className="space-y-6">
+            <section className="rounded-2xl border-2 border-orange-200 bg-white p-4 sm:p-5">
+              <label htmlFor="dtf-need-by" className="block font-bold text-gray-900">When do you need your transfers?</label>
+              <input id="dtf-need-by" required type="date" value={needBy} onChange={e => setNeedBy(e.target.value)}
+                className="mt-3 w-full rounded-xl border border-gray-300 p-3 text-base" />
+              <p className="mt-2 text-xs text-gray-600">Your requested in-hands date stays with your order. Choose a turnaround below that meets it; shipping time is additional.</p>
+            </section>
             {fromBuilder && uploadedFile && (() => {
               // The preview must track the LENGTH the customer is buying,
               // not the length the sheet was built at — otherwise the
@@ -935,6 +1053,7 @@ export default function DtfStorePage() {
                 <input
                   type="file"
                   accept="image/png,.png"
+                  disabled={uploading}
                   className="hidden"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -943,6 +1062,41 @@ export default function DtfStorePage() {
                   }}
                 />
               </label>
+              {uploadedFile && <div className="mt-4 space-y-3">
+                <div className="flex gap-3 items-center rounded-xl border p-3">
+                  {uploadedFile.preview && <img src={uploadedFile.preview} alt="First sheet preview" className="h-24 w-20 object-contain bg-gray-100" />}
+                  <div className="flex-1 text-sm"><p className="font-bold">Sheet 1 · {uploadedFile.fileName || 'Your sheet'}</p>
+                    <p className="text-xs text-gray-500">{activeWidth?.in || 22}″ × {lengthFt} ft · {money((lengthFt || 0) * rateCents)} per copy</p>
+                    <label className="mt-2 flex items-center gap-2 text-xs">Copies<input aria-label="Sheet 1 copies" type="number" min="1" max="1000" step="1" value={primaryCopies} disabled={uploading}
+                      onChange={e => setPrimaryCopies(Number(e.target.value))} className="w-20 rounded border p-2 text-base" /></label>
+                  </div>
+                  <button type="button" disabled={uploading} className="text-xs text-red-700" onClick={() => {
+                    const next = extraSheets[0];
+                    setUploadedFile(next || null); setLengthFt(next?.length_ft || lengthFt); setPrimaryCopies(next?.copies || 1);
+                    setExtraSheets(extraSheets.slice(1));
+                    if (!next) { try { sessionStorage.removeItem(UPLOAD_STASH_KEY); sessionStorage.removeItem('dtf_cart_stash'); } catch { /* optional */ } }
+                  }}>Remove</button>
+                </div>
+                {extraSheets.map((sheet, index) => <div key={`${sheet.file_key}-${index}`} className="rounded-xl border p-3 flex items-start gap-3">
+                  {sheet.preview && <img src={sheet.preview} alt={`Sheet ${index + 2} preview`} className="h-24 w-20 object-contain bg-gray-100" />}
+                  <div className="min-w-0 flex-1"><p className="text-sm font-bold truncate">Sheet {index + 2} · {sheet.fileName}</p>
+                    <p className="text-xs text-gray-500">{sheet.width_in || Math.round(sheet.width_px / 300)}″ · {sheet.width_px} × {sheet.height_px} px</p>
+                    <p className="mt-1 text-xs font-semibold text-gray-700">{money(sheet.length_ft * (tier ? widthOptions.find(width => width.in === sheet.width_in || Math.abs(width.px - sheet.width_px) <= width.px * 0.02)?.rates[tier] || 0 : 0) * sheet.copies)} for {sheet.copies} copies</p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <label className="text-xs">Length (ft)<input aria-label={`Sheet ${index + 2} length`} type="number" min={Math.max(config.min_ft, Math.ceil(sheet.height_px / 3600))} max={config.max_ft} step="1" value={sheet.length_ft} disabled={uploading}
+                        onChange={e => setExtraSheets(current => current.map((row, i) => i === index ? { ...row, length_ft: Number(e.target.value) } : row))} className="block w-20 rounded border p-2 text-base" /></label>
+                      <label className="text-xs">Copies<input aria-label={`Sheet ${index + 2} copies`} type="number" min="1" max="1000" step="1" value={sheet.copies} disabled={uploading}
+                        onChange={e => setExtraSheets(current => current.map((row, i) => i === index ? { ...row, copies: Number(e.target.value) } : row))} className="block w-20 rounded border p-2 text-base" /></label>
+                    </div>
+                    <label className="mt-2 inline-block text-xs font-semibold text-orange-700 cursor-pointer">Replace file<input type="file" accept="image/png,.png" disabled={uploading} className="hidden" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void addSheetFiles([file], index); }} /></label>
+                    <button type="button" disabled={uploading} className="ml-4 text-xs text-red-700" onClick={() => setExtraSheets(current => current.filter((_, i) => i !== index))}>Remove</button>
+                  </div>
+                </div>)}
+                <label className="block rounded-xl border-2 border-dashed border-orange-300 p-4 text-center text-sm font-bold text-orange-700 cursor-pointer">
+                  {uploading ? 'Uploading sheets…' : 'Add more finished gang sheets'}
+                  <input type="file" multiple accept="image/png,.png" className="hidden" disabled={uploading || extraSheets.length >= 49} onChange={e => { const files = Array.from(e.target.files || []); e.target.value = ''; void addSheetFiles(files); }} />
+                </label>
+              </div>}
               {uploadError && (
                 <p className="mt-2 flex items-start gap-1.5 text-sm text-red-600">
                   <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" /> {uploadError}
@@ -1070,7 +1224,7 @@ export default function DtfStorePage() {
           <div className="container mx-auto max-w-4xl lg:px-4 lg:pb-10">
             <div className="rounded-2xl border-2 border-orange-500 bg-white p-4 sm:p-5 shadow-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-sm text-gray-700">
-                <span>{lengthFt} ft × {money(rateCents)} = <strong className="text-gray-900">{money(lineTotalCents)}</strong></span>
+                <span>{extraSheets.length ? `${extraSheets.length + 1} sheets · ${copyCount} copies` : `${lengthFt} ft × ${money(rateCents)} × ${primaryCopies}`} = <strong className="text-gray-900">{money(lineTotalCents)}</strong></span>
                 {shippingCents > 0 && <span>Shipping: {money(shippingCents)}</span>}
                 <span className="font-display text-lg font-bold text-gray-900">Total: {money(totalCents)}</span>
               </div>

@@ -91,6 +91,7 @@ export default function QuotePage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dateNeeded) { toast.error('Choose a need-by date'); return; }
     if (items.length === 0) { toast.error('Add at least one gift to quote'); return; }
     if (phone.replace(/\D/g, '').length < 10) { toast.error('A phone number is required so we can reach you'); return; }
     setSubmitting(true);
@@ -263,8 +264,8 @@ export default function QuotePage() {
           <h2 className="font-extrabold text-cgc-ink">Details</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="q-date" className="block text-sm font-semibold text-cgc-ink mb-1">Need it by (optional)</label>
-              <input id="q-date" type="date" value={dateNeeded} onChange={(e) => setDateNeeded(e.target.value)} className={inputCls} />
+              <label htmlFor="q-date" className="block text-sm font-semibold text-cgc-ink mb-1">Need it by</label>
+              <input id="q-date" type="date" required value={dateNeeded} onChange={(e) => setDateNeeded(e.target.value)} className={inputCls} />
             </div>
             <div>
               <span className="block text-sm font-semibold text-cgc-ink mb-1">Artwork or logo (optional)</span>

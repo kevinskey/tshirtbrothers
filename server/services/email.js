@@ -1,3 +1,4 @@
+import { orderSheets } from '../lib/dtfCart.js';
 import { Resend } from 'resend';
 import { TIER_PROMISES } from '../routes/gangsheetStore.js';
 import * as theme from './emailTheme.js';
@@ -2171,6 +2172,7 @@ export async function sendInstantQuoteToCustomer({ quote, items, grandTotal, gra
   const body = `
     <p>${es ? 'Hola' : 'Hi'} ${quote.customer_name || (es ? '' : 'there')},</p>
     ${intro}
+    ${quote.date_needed ? `<p><strong>${es ? 'Fecha solicitada' : 'Requested need-by date'}:</strong> ${String(quote.date_needed).slice(0, 10)}. ${es ? 'Confirmaremos la disponibilidad al revisar tu pedido.' : 'We will confirm availability when reviewing your order.'}</p>` : ''}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${footerNote}
@@ -2197,6 +2199,7 @@ export async function sendInstantQuoteToAdmin({ quote, items, grandTotal, grandQ
   const subject = `New instant quote: ${quote.customer_name || quote.customer_email} — ${formatCurrency(grandTotal)}`;
   const body = `
     <p><strong>${quote.customer_name || '(no name)'} &lt;${quote.customer_email}&gt;</strong> just saved an instant quote.</p>
+    ${quote.date_needed ? `<p><strong>Requested need-by date:</strong> ${String(quote.date_needed).slice(0, 10)} (requires confirmation).</p>` : ''}
     ${instantQuoteItemsHtml(items)}
     ${instantQuoteGrandTotalHtml({ grandTotal, grandQuantity, items })}
     ${primaryButton('Open in Admin', `${DOMAIN}/admin?section=quotes&id=${quote.id}`)}
@@ -2245,20 +2248,37 @@ function parseShipAddress(raw) {
   return null;
 }
 
+function gangSheetSizeLabel(order) {
+  const sheets = orderSheets(order);
+  return order.sheets_json ? `${sheets.length} sheets · ${sheets.reduce((sum, sheet) => sum + sheet.copies, 0)} copies`
+    : `${order.width_in || 22}in × ${order.length_ft} ft`;
+}
+
+function gangSheetManifestHtml(order) {
+  const sheets = orderSheets(order);
+  if (!order.sheets_json) return '';
+  return `<h3>Purchased sheets</h3>${detailsTable(sheets.map((sheet, index) =>
+    detailRow(escapeHtml(sheet.name || `Sheet ${index + 1}`),
+      `${sheet.width_in}in &times; ${sheet.length_ft} ft &middot; <strong>${sheet.copies} copies</strong>`)
+  ).join(''))}`;
+}
+
 export async function sendGangSheetPaidToCustomer({ order }) {
   const total = formatCurrency((order.price_cents + order.shipping_cents) / 100);
   const deliveryValue = order.delivery === 'ship'
     ? 'Ships to you — we\'ll email tracking once it\'s on the way'
     : `Pickup — ${SHOP_ADDRESS}`;
   const turnaround = await gangSheetTurnaround(order.tier);
-  const subject = `Order #${order.id} confirmed — DTF Gang Sheet ${order.width_in || 22}in × ${order.length_ft} ft`;
+  const subject = `Order #${order.id} confirmed — ${gangSheetSizeLabel(order)}`;
   const body = `
+    ${gangSheetManifestHtml(order)}
     <p>Hi ${escapeHtml(order.customer_name || 'there')},</p>
     <p>Thanks for your order — we've got it and we're getting started.</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
-      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
+      detailRow('Size', gangSheetSizeLabel(order)) +
       detailRow('Turnaround', turnaround) +
+      (order.date_needed ? detailRow('Requested need-by date', escapeHtml(theme.fmtDate(order.date_needed))) : '') +
       detailRow('Total', `<strong>${total}</strong>`) +
       detailRow('Delivery', deliveryValue)
     )}
@@ -2291,11 +2311,12 @@ export async function sendGangSheetReadyToCustomer({ order }) {
       </div>
     `;
   const body = `
+    ${gangSheetManifestHtml(order)}
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.customer_name || 'there')},</p>
     <p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Good news — your DTF gang sheet order is ready!</p>
     ${detailsTable(
       detailRow('Order', `#${order.id}`) +
-      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
+      detailRow('Size', gangSheetSizeLabel(order)) +
       detailRow('Total', `<strong>${total}</strong>`)
     )}
     ${deliveryBlock}
@@ -2328,6 +2349,7 @@ export async function sendGangSheetQuoteToCustomer({ order, message, amountCents
     `
     : detailsTable(detailRow('Order', `#${order.id}`));
   const body = `
+    ${gangSheetManifestHtml(order)}
     <p style="margin:0 0 4px;font-size:15px;color:#6b7280;">Hi ${escapeHtml(order.customer_name || 'there')},</p>
     ${paragraphs}
     ${payBlock}
@@ -2491,9 +2513,10 @@ export async function sendGangSheetPaidToAdmin({ order }) {
   const turnaround = await gangSheetTurnaround(order.tier);
   const shipAddr = order.delivery === 'ship' ? parseShipAddress(order.ship_address) : null;
   const body = `
+    ${gangSheetManifestHtml(order)}
     <p><strong>${escapeHtml(order.customer_name || '(no name)')} &lt;${escapeHtml(order.customer_email || 'no email')}&gt;</strong> just paid for a gang sheet order.</p>
     ${detailsTable(
-      detailRow('Size', `${order.width_in || 22}in &times; ${order.length_ft} ft`) +
+      detailRow('Size', gangSheetSizeLabel(order)) +
       detailRow('Tier', turnaround) +
       detailRow('Delivery', order.delivery === 'ship' ? 'Ship' : 'Pickup') +
       (shipAddr ? detailRow('Ship to', escapeHtml(`${shipAddr.line1 || ''}, ${shipAddr.city || ''}, ${shipAddr.state || ''} ${shipAddr.zip || ''}`)) : '') +
