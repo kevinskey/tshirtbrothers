@@ -2334,7 +2334,6 @@ export default function DesignStudioPage() {
   }, [fontsReady]);
 
   // --- Drag / resize state ---
-  const canvasRef = useRef<HTMLDivElement>(null);
   // Ref to the inner "product photo + design overlay" surface. Used by the
   // mockup save flow to screenshot exactly what the admin sees instead of
   // running a server-side compose with a placement constant.
@@ -2348,6 +2347,25 @@ export default function DesignStudioPage() {
   // The product photo node — toggled hidden during Save-to-Library so the
   // captured PNG is just the design elements on a transparent background.
   const productImgRef = useRef<HTMLImageElement | null>(null);
+
+  // THE basis for every element coordinate.
+  //
+  // el.x/el.y/el.width are percentages of the design surface, because that
+  // is the box they are rendered into. Pointer math used to measure
+  // canvasRef instead — the outer wrapper, which is wider (it carries
+  // `md:px-4` and `max-w-*` and centers the surface inside itself). Every
+  // drag and resize delta was therefore divided by the wrong width, so
+  // artwork lagged the finger by the ratio between the two boxes, and the
+  // error changed at each breakpoint. Capture and export always used the
+  // surface, so what the customer dragged and what we printed disagreed.
+  //
+  // Anything converting pixels to canvas-% goes through here.
+  const surfaceRect = useCallback(() => {
+    const node = designSurfaceRef.current;
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    return r.width && r.height ? r : null;
+  }, []);
 
   // Admin-supplied garment photo, per view. Overrides the S&S catalog shot
   // when set — for house blanks, styled flat-lays, or anything the catalog
@@ -3423,10 +3441,10 @@ export default function DesignStudioPage() {
     // knowable from state alone, and the free-resize math needs the real
     // visual height to anchor the drag.
     let startHeight = el.height ?? el.width;
-    if (el.height == null && canvasRef.current) {
-      const node = canvasRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
-      const c = canvasRef.current.getBoundingClientRect();
-      if (node && c.height) {
+    const c = surfaceRect();
+    if (el.height == null && c && designSurfaceRef.current) {
+      const node = designSurfaceRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
+      if (node) {
         startHeight = (node.getBoundingClientRect().height / c.height) * 100;
       }
     }
@@ -3443,7 +3461,7 @@ export default function DesignStudioPage() {
       startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
       startStretchY: el.type === 'text' ? (el.stretchY ?? 1) : undefined,
     });
-  }, [designElements]);
+  }, [designElements, surfaceRect]);
 
   const handleElementMouseDown = useCallback((e: React.MouseEvent, elementId: string, mode: 'move' | 'resize', corner?: ResizeCorner) => {
     e.stopPropagation();
@@ -3471,10 +3489,10 @@ export default function DesignStudioPage() {
     // Same height derivation as startDrag: images and text have no stored
     // height, so measure the rendered box or the scale anchor is wrong.
     let startHeight = el.height ?? el.width;
-    if (el.height == null && canvasRef.current) {
-      const node = canvasRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
-      const c = canvasRef.current.getBoundingClientRect();
-      if (node && c.height) startHeight = (node.getBoundingClientRect().height / c.height) * 100;
+    const c = surfaceRect();
+    if (el.height == null && c && designSurfaceRef.current) {
+      const node = designSurfaceRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
+      if (node) startHeight = (node.getBoundingClientRect().height / c.height) * 100;
     }
 
     const { dist, angle } = touchGeometry(a, b);
@@ -3490,7 +3508,7 @@ export default function DesignStudioPage() {
       startRotation: el.rotation ?? 0,
       startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
     });
-  }, [designElements]);
+  }, [designElements, surfaceRect]);
 
   const handleElementTouchStart = useCallback((e: React.TouchEvent, elementId: string, mode: 'move' | 'resize', corner?: ResizeCorner) => {
     e.stopPropagation();
@@ -3506,8 +3524,8 @@ export default function DesignStudioPage() {
     if (!dragState) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!canvasRef.current) return;
-      const rect = canvasRef.current.getBoundingClientRect();
+      const rect = surfaceRect();
+      if (!rect) return;
       const { elementId, mode, corner, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize, startStretchY } = dragState;
       // A left-edge corner grows when the pointer moves LEFT, and a top-edge
       // corner grows when it moves UP, so those deltas invert. Default to
@@ -3649,7 +3667,7 @@ export default function DesignStudioPage() {
       window.removeEventListener('touchend', handleTouchEnd);
       window.removeEventListener('touchcancel', handleDragCancel);
     };
-  }, [dragState]);
+  }, [dragState, surfaceRect]);
 
   // Pinch-to-scale + two-finger rotate. Listeners go on the window, not
   // the element, so the gesture survives fingers drifting off the artwork
@@ -5270,7 +5288,7 @@ export default function DesignStudioPage() {
           print rectangle. Generous pb-64 on main gives the scroll container
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
-      <div className="relative w-full max-w-none md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-0 md:px-4 grid place-items-center" ref={canvasRef}>
+      <div className="relative w-full max-w-none md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-0 md:px-4 grid place-items-center">
         {/* Product backdrop — fills a square area at the wrapper width.
             Print-zone overlay is positioned in % of THIS box, not of the
             old canvasInches-aspect design surface. */}
