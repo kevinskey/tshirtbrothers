@@ -15,7 +15,9 @@ import {
 } from '@tshirtbrothers/design-studio';
 import type { FabricRendererBridgeHandle } from '@tshirtbrothers/design-studio';
 import Seo from '@/components/Seo';
+import { toast } from 'sonner';
 import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
+import { hapticLight, hapticMedium, hapticSnap, hapticWarn, hapticSuccess } from '@/lib/haptics';
 import { logActivityOnce } from '@/lib/activity';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
@@ -550,6 +552,17 @@ type ToolName = 'upload' | 'text' | 'art' | 'shapes' | 'products' | 'details' | 
 // Geometric shape types renderable as SVG inside a positioned div.
 type ShapeType = 'rect' | 'circle' | 'triangle' | 'line' | 'star' | 'heart';
 type ViewName = 'front' | 'back' | 'sleeve' | 'sleeve_left';
+// Which corner handle a resize drag started from. The grabbed corner
+// follows the pointer and the opposite corner stays pinned, so the sign of
+// each delta — and whether the origin moves — depends on this.
+const RESIZE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
+type ResizeCorner = (typeof RESIZE_CORNERS)[number];
+const CORNER_CURSOR: Record<ResizeCorner, string> = {
+  'top-left': 'cursor-nwse-resize',
+  'top-right': 'cursor-nesw-resize',
+  'bottom-left': 'cursor-nesw-resize',
+  'bottom-right': 'cursor-nwse-resize',
+};
 
 // Default product when none is passed via ?product=. Gildan Softstyle
 // (S&S style 32) — the shop's most popular blank and the featured pin
@@ -641,7 +654,7 @@ export default function DesignStudioPage() {
         localStorage.setItem(STORE_ADMIN_STORAGE_KEY(storeSlugParam), JSON.stringify(session));
         setStoreAdminSession(session);
       } catch (err) {
-        if (!cancelled) alert(`One-click sign-in failed: ${err instanceof Error ? err.message : 'unknown'}`);
+        if (!cancelled) toast.error(`One-click sign-in failed: ${err instanceof Error ? err.message : 'unknown'}`);
       } finally {
         url.searchParams.delete('gwsso');
         window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
@@ -1219,7 +1232,7 @@ export default function DesignStudioPage() {
   async function handleSaveToLibrary() {
     if (!librarySaveName.trim() || librarySaving) return;
     const front = designElements.filter(el => (el.side ?? 'front') === 'front');
-    if (front.length === 0) { alert('Place at least one text or image element before saving to the library.'); return; }
+    if (front.length === 0) { toast.error('Place at least one text or image element before saving to the library.'); return; }
     // This is the moment an identity is actually needed — not the moment
     // somebody opened the studio. Stashes the work and comes back to it.
     if (!localStorage.getItem('tsb_token') && !storeAdminSession) {
@@ -1244,7 +1257,7 @@ export default function DesignStudioPage() {
     // it visible. The library item ends up including the shirt backdrop;
     // we can crop / remove the background as a follow-up.
     const surface = designSurfaceRef.current;
-    if (!surface) { setLibrarySaving(false); alert('Save failed: no canvas'); return; }
+    if (!surface) { setLibrarySaving(false); toast.error('Save failed: no canvas'); return; }
     await ensureImageFiltersBaked();
     const prevSelected = selectedElementId;
     setSelectedElementId(null);
@@ -1372,7 +1385,7 @@ export default function DesignStudioPage() {
           throw new Error(j?.error || `Submit failed (HTTP ${draftRes.status})`);
         }
         console.log('[saveToLibrary] draft submitted');
-        alert('Design submitted! TSB will review and publish it to your store shortly.');
+        toast.success('Design submitted! TSB will review and publish it to your store shortly.');
       } else {
         console.log('[saveToLibrary] saving library record…');
         const saveRes = await withTimeout(fetch('/api/admin/designs-library', {
@@ -1394,7 +1407,7 @@ export default function DesignStudioPage() {
       setLibrarySaveName('');
     } catch (e) {
       console.error('[saveToLibrary] error:', e);
-      alert(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      toast.error(`Save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       if (prevSelected) setSelectedElementId(prevSelected);
       setLibrarySaving(false);
@@ -1535,13 +1548,13 @@ export default function DesignStudioPage() {
     const productImg = selectedProduct
       ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
       : null;
-    if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
+    if (!productImg) { toast.error('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
     // Sleeves count: the capture below already renders them, so refusing a
     // sleeve-only design here was rejecting an order the studio can draw.
     if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
-      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      toast.error('Add at least one element to the front, back or a sleeve before saving the mockup.');
       return;
     }
 
@@ -1600,7 +1613,7 @@ export default function DesignStudioPage() {
       // Return to admin invoice editor with the new invoice id loaded.
       navigate(`/admin?section=invoices&editInvoice=${encodeURIComponent(attachToInvoiceId)}`);
     } catch (e) {
-      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      toast.error(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       setSavingInvoiceMockup(false);
     }
@@ -1618,13 +1631,13 @@ export default function DesignStudioPage() {
     const productImg = selectedProduct
       ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
       : null;
-    if (!productImg) { alert('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
+    if (!productImg) { toast.error('Pick a product first — the mockup needs a shirt photo to render onto.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
     // Sleeves count: the capture below already renders them, so refusing a
     // sleeve-only design here was rejecting an order the studio can draw.
     if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
-      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      toast.error('Add at least one element to the front, back or a sleeve before saving the mockup.');
       return;
     }
 
@@ -1681,7 +1694,7 @@ export default function DesignStudioPage() {
       ]);
       navigate(`/admin?section=quotes&openQuote=${encodeURIComponent(attachToQuoteId)}`);
     } catch (e) {
-      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      toast.error(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       setSavingQuoteMockup(false);
     }
@@ -1700,13 +1713,13 @@ export default function DesignStudioPage() {
     const productImg = selectedProduct
       ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
       : null;
-    if (!productImg) { alert('Pick a product first.'); return; }
+    if (!productImg) { toast.error('Pick a product first.'); return; }
     const hasFront = designElements.some((e) => (e.side ?? 'front') === 'front');
     const hasBack = designElements.some((e) => (e.side ?? 'front') === 'back');
     // Sleeves count: the capture below already renders them, so refusing a
     // sleeve-only design here was rejecting an order the studio can draw.
     if (!designElements.some((e) => ['front', 'back', 'sleeve', 'sleeve_left'].includes(e.side ?? 'front'))) {
-      alert('Add at least one element to the front, back or a sleeve before saving the mockup.');
+      toast.error('Add at least one element to the front, back or a sleeve before saving the mockup.');
       return;
     }
 
@@ -1749,7 +1762,7 @@ export default function DesignStudioPage() {
       await studioQueryClient.refetchQueries({ queryKey: ['mockups'] });
       navigate('/admin?section=mockups');
     } catch (e) {
-      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      toast.error(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       setSavingNewMockup(false);
     }
@@ -1760,7 +1773,7 @@ export default function DesignStudioPage() {
     const productImg = selectedProduct
       ? (customBlanks.front || productColors[selectedColorIdx]?.image || selectedProduct.image_url)
       : null;
-    if (!productImg) { alert('Pick a product first.'); return; }
+    if (!productImg) { toast.error('Pick a product first.'); return; }
     setSavingMockupEdit(true);
     try {
       const token = getAuthToken();
@@ -1820,7 +1833,7 @@ export default function DesignStudioPage() {
         navigate('/admin?section=mockups');
       }
     } catch (e) {
-      alert(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      toast.error(`Mockup save failed: ${e instanceof Error ? e.message : 'unknown'}`);
     } finally {
       setSavingMockupEdit(false);
     }
@@ -1865,7 +1878,7 @@ export default function DesignStudioPage() {
     if (storeAdminSession) {
       const front = designElements.filter(el => (el.side ?? 'front') === 'front');
       if (front.length === 0) {
-        alert('Add at least one element (text, image, or shape) before submitting.');
+        toast.error('Add at least one element (text, image, or shape) before submitting.');
         return;
       }
       setLibrarySaveName(designName?.trim() || `${storeAdminSession.slug} design`);
@@ -1931,9 +1944,10 @@ export default function DesignStudioPage() {
       }
       const data = await res.json();
       if (!savedDesignId && data.id) setSavedDesignId(data.id);
-      alert('Design saved!');
+      hapticSuccess();
+      toast.success('Design saved!');
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to save design');
+      toast.error(e instanceof Error ? e.message : 'Failed to save design');
     } finally {
       setIsSaving(false);
     }
@@ -2159,18 +2173,18 @@ export default function DesignStudioPage() {
   const handleCgcUseDesign = async () => {
     if (cgcBusy) return;
     if (!cgcSku) {
-      alert('Pick a Custom Gift Club product first — open Products and search the gift catalog.');
+      toast.error('Pick a Custom Gift Club product first — open Products and search the gift catalog.');
       return;
     }
     if (designElements.length === 0) {
-      alert('Add some text or artwork first.');
+      toast.error('Add some text or artwork first.');
       return;
     }
     setCgcBusy(true);
     try {
       const { mockupUrl, graphicUrl } = await captureSideMockupAndGraphic('front');
       if (!mockupUrl && !graphicUrl) {
-        alert('Could not capture the design — please try again.');
+        toast.error('Could not capture the design — please try again.');
         return;
       }
       // Prefer the PDP we arrived from (keeps host + path mount) when it
@@ -2228,7 +2242,7 @@ export default function DesignStudioPage() {
     setShowShareMenu(false);
   };
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(getShareUrl()).then(() => alert('Link copied to clipboard!'));
+    navigator.clipboard.writeText(getShareUrl()).then(() => toast.success('Link copied to clipboard!'));
     setShowShareMenu(false);
   };
 
@@ -2320,7 +2334,6 @@ export default function DesignStudioPage() {
   }, [fontsReady]);
 
   // --- Drag / resize state ---
-  const canvasRef = useRef<HTMLDivElement>(null);
   // Ref to the inner "product photo + design overlay" surface. Used by the
   // mockup save flow to screenshot exactly what the admin sees instead of
   // running a server-side compose with a placement constant.
@@ -2334,6 +2347,25 @@ export default function DesignStudioPage() {
   // The product photo node — toggled hidden during Save-to-Library so the
   // captured PNG is just the design elements on a transparent background.
   const productImgRef = useRef<HTMLImageElement | null>(null);
+
+  // THE basis for every element coordinate.
+  //
+  // el.x/el.y/el.width are percentages of the design surface, because that
+  // is the box they are rendered into. Pointer math used to measure
+  // canvasRef instead — the outer wrapper, which is wider (it carries
+  // `md:px-4` and `max-w-*` and centers the surface inside itself). Every
+  // drag and resize delta was therefore divided by the wrong width, so
+  // artwork lagged the finger by the ratio between the two boxes, and the
+  // error changed at each breakpoint. Capture and export always used the
+  // surface, so what the customer dragged and what we printed disagreed.
+  //
+  // Anything converting pixels to canvas-% goes through here.
+  const surfaceRect = useCallback(() => {
+    const node = designSurfaceRef.current;
+    if (!node) return null;
+    const r = node.getBoundingClientRect();
+    return r.width && r.height ? r : null;
+  }, []);
 
   // Admin-supplied garment photo, per view. Overrides the S&S catalog shot
   // when set — for house blanks, styled flat-lays, or anything the catalog
@@ -2403,6 +2435,10 @@ export default function DesignStudioPage() {
   const [dragState, setDragState] = useState<{
     elementId: string;
     mode: 'move' | 'resize';
+    // Which corner was grabbed. All four used to run the same
+    // `startWidth + dx` math, so the three corners that grow leftward or
+    // upward resized backwards — drag out and the element shrank.
+    corner?: ResizeCorner;
     startMx: number;
     startMy: number;
     startX: number;
@@ -2413,6 +2449,25 @@ export default function DesignStudioPage() {
     // value avoids compounding rounding across mousemove ticks.
     startFontSize?: number;
     startStretchY?: number;
+  } | null>(null);
+
+  // Two-finger pinch-to-scale / rotate on the SELECTED element.
+  //
+  // Deliberately scoped to the element, not the canvas surface: the surface
+  // keeps `touch-action: pinch-zoom` so the browser's own accessibility
+  // zoom still works over the largest thing on the page. The element
+  // wrapper already sets `touch-action: none`, so two fingers landing on
+  // artwork are ours to interpret.
+  const [pinchState, setPinchState] = useState<{
+    elementId: string;
+    startDist: number;
+    startAngle: number;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+    startRotation: number;
+    startFontSize?: number;
   } | null>(null);
 
   /* ---------------------------------------------------------------- */
@@ -2726,14 +2781,16 @@ export default function DesignStudioPage() {
   // storage path to secure.
   const uploadCustomBlank = async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      alert('Pick an image file.');
+      hapticWarn();
+      toast.error('Pick an image file.');
       return;
     }
     // 20 MB is the express.json limit on the upload route, and base64
     // inflates by a third — fail here with a readable message instead of
     // letting the request bounce off the body parser.
     if (file.size > 12 * 1024 * 1024) {
-      alert('That image is over 12MB — please shrink it first.');
+      hapticWarn();
+      toast.error('That image is over 12MB — please shrink it first.');
       return;
     }
     setBlankUploading(true);
@@ -2760,7 +2817,7 @@ export default function DesignStudioPage() {
       // the confirmation.
       setCustomBlanks((prev) => ({ ...prev, [currentView]: url }));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not upload that photo');
+      toast.error(err instanceof Error ? err.message : 'Could not upload that photo');
     } finally {
       setBlankUploading(false);
       if (blankFileRef.current) blankFileRef.current.value = '';
@@ -2983,7 +3040,7 @@ export default function DesignStudioPage() {
           setPendingUpload(cv.toDataURL('image/png'));
         } catch (e) {
           console.error('[upload] SVG rasterize failed:', e);
-          alert('That SVG could not be read. Please export it as a PNG and upload that instead.');
+          toast.error('That SVG could not be read. Please export it as a PNG and upload that instead.');
         }
       };
       reader.readAsText(file);
@@ -3200,7 +3257,7 @@ export default function DesignStudioPage() {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[remove-bg] failed:', msg);
       showDebugToast(`Rm BG FAILED: ${msg}`);
-      alert(`Background removal failed: ${msg}. Keeping the original image.`);
+      toast.error(`Background removal failed: ${msg}. Keeping the original image.`);
     } finally {
       setIsRemovingBg(false);
     }
@@ -3365,8 +3422,12 @@ export default function DesignStudioPage() {
   /*  Drag / Resize handlers                                           */
   /* ---------------------------------------------------------------- */
 
-  const startDrag = useCallback((clientX: number, clientY: number, elementId: string, mode: 'move' | 'resize') => {
+  const startDrag = useCallback((clientX: number, clientY: number, elementId: string, mode: 'move' | 'resize', corner?: ResizeCorner) => {
     setSelectedElementId(elementId);
+    // Confirm the grab in the hand. This is the single highest-value
+    // haptic in the studio: without it there is no feedback that a touch
+    // actually caught the element rather than the canvas behind it.
+    hapticLight();
     // On mobile, auto-close any open tool panel when the user grabs an
     // element — otherwise the sheet covers the canvas during drag.
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
@@ -3380,16 +3441,17 @@ export default function DesignStudioPage() {
     // knowable from state alone, and the free-resize math needs the real
     // visual height to anchor the drag.
     let startHeight = el.height ?? el.width;
-    if (el.height == null && canvasRef.current) {
-      const node = canvasRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
-      const c = canvasRef.current.getBoundingClientRect();
-      if (node && c.height) {
+    const c = surfaceRect();
+    if (el.height == null && c && designSurfaceRef.current) {
+      const node = designSurfaceRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
+      if (node) {
         startHeight = (node.getBoundingClientRect().height / c.height) * 100;
       }
     }
     setDragState({
       elementId,
       mode,
+      corner,
       startMx: clientX,
       startMy: clientY,
       startX: el.x,
@@ -3399,27 +3461,82 @@ export default function DesignStudioPage() {
       startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
       startStretchY: el.type === 'text' ? (el.stretchY ?? 1) : undefined,
     });
-  }, [designElements]);
+  }, [designElements, surfaceRect]);
 
-  const handleElementMouseDown = useCallback((e: React.MouseEvent, elementId: string, mode: 'move' | 'resize') => {
+  const handleElementMouseDown = useCallback((e: React.MouseEvent, elementId: string, mode: 'move' | 'resize', corner?: ResizeCorner) => {
     e.stopPropagation();
     e.preventDefault();
-    startDrag(e.clientX, e.clientY, elementId, mode);
+    startDrag(e.clientX, e.clientY, elementId, mode, corner);
   }, [startDrag]);
 
-  const handleElementTouchStart = useCallback((e: React.TouchEvent, elementId: string, mode: 'move' | 'resize') => {
+  // Measure the two-finger span and angle. Both gestures key off these.
+  const touchGeometry = (a: React.Touch | Touch, b: React.Touch | Touch) => ({
+    dist: Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY),
+    angle: (Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX) * 180) / Math.PI,
+  });
+
+  const startPinch = useCallback((e: React.TouchEvent, elementId: string) => {
+    const [a, b] = [e.touches[0], e.touches[1]];
+    if (!a || !b) return;
+    const el = designElements.find(d => d.id === elementId);
+    if (!el) return;
+    setSelectedElementId(elementId);
+    // A pinch supersedes any single-finger drag already in flight —
+    // otherwise the first finger keeps translating while the pair scales.
+    setDragState(null);
+    if (typeof window !== 'undefined' && window.innerWidth < 768) setActiveTool(null);
+
+    // Same height derivation as startDrag: images and text have no stored
+    // height, so measure the rendered box or the scale anchor is wrong.
+    let startHeight = el.height ?? el.width;
+    const c = surfaceRect();
+    if (el.height == null && c && designSurfaceRef.current) {
+      const node = designSurfaceRef.current.querySelector(`[data-el-id="${CSS.escape(elementId)}"]`);
+      if (node) startHeight = (node.getBoundingClientRect().height / c.height) * 100;
+    }
+
+    const { dist, angle } = touchGeometry(a, b);
+    hapticLight();
+    setPinchState({
+      elementId,
+      startDist: dist || 1,
+      startAngle: angle,
+      startX: el.x,
+      startY: el.y,
+      startWidth: el.width,
+      startHeight,
+      startRotation: el.rotation ?? 0,
+      startFontSize: el.type === 'text' ? (el.fontSize ?? 24) : undefined,
+    });
+  }, [designElements, surfaceRect]);
+
+  const handleElementTouchStart = useCallback((e: React.TouchEvent, elementId: string, mode: 'move' | 'resize', corner?: ResizeCorner) => {
     e.stopPropagation();
+    if (e.touches.length >= 2) {
+      startPinch(e, elementId);
+      return;
+    }
     const touch = e.touches[0];
-    if (touch) startDrag(touch.clientX, touch.clientY, elementId, mode);
-  }, [startDrag]);
+    if (touch) startDrag(touch.clientX, touch.clientY, elementId, mode, corner);
+  }, [startDrag, startPinch]);
 
   useEffect(() => {
     if (!dragState) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!canvasRef.current) return;
-      const rect = canvasRef.current.getBoundingClientRect();
-      const { elementId, mode, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize, startStretchY } = dragState;
+      const rect = surfaceRect();
+      if (!rect) return;
+      const { elementId, mode, corner, startMx, startMy, startX, startY, startWidth, startHeight, startFontSize, startStretchY } = dragState;
+      // A left-edge corner grows when the pointer moves LEFT, and a top-edge
+      // corner grows when it moves UP, so those deltas invert. Default to
+      // bottom-right (+1/+1) when no corner was passed, which is how every
+      // corner behaved before.
+      const growX = corner?.includes('left') ? -1 : 1;
+      const growY = corner?.includes('top') ? -1 : 1;
+      // Dragging a left/top corner moves the origin too — the opposite
+      // corner has to stay put, so x shifts by whatever width was gained.
+      const movesOriginX = growX === -1;
+      const movesOriginY = growY === -1;
 
       if (mode === 'move') {
         const dx = ((e.clientX - startMx) / rect.width) * 100;
@@ -3440,8 +3557,8 @@ export default function DesignStudioPage() {
           ),
         );
       } else {
-        const dx = ((e.clientX - startMx) / rect.width) * 100;
-        const dy = ((e.clientY - startMy) / rect.height) * 100;
+        const dx = (((e.clientX - startMx) / rect.width) * 100) * growX;
+        const dy = (((e.clientY - startMy) / rect.height) * 100) * growY;
         const shiftHeld = e.shiftKey;
         setDesignElements(prev =>
           prev.map(el => {
@@ -3455,7 +3572,15 @@ export default function DesignStudioPage() {
               const newH = shiftHeld
                 ? newW * (startHeight / startWidth)
                 : Math.max(5, Math.min(100, startHeight + dy));
-              return { ...el, width: newW, height: newH };
+              return {
+                ...el,
+                width: newW,
+                height: newH,
+                // Pin the opposite corner. newW is already clamped, so
+                // using it (not dx) keeps the anchor honest at the limits.
+                ...(movesOriginX ? { x: startX + (startWidth - newW) } : null),
+                ...(movesOriginY ? { y: startY + (startHeight - newH) } : null),
+              };
             }
             // Text can grow well past the old 80% cap — the user decides
             // how much of the product the text covers, not the box.
@@ -3483,14 +3608,24 @@ export default function DesignStudioPage() {
                 ? (startStretchY ?? 1)
                 : Math.max(0.25, Math.min(4,
                     (startStretchY ?? 1) * (newH / startHeight) / widthScale));
+              const finalW = Number.isFinite(measured) ? measured : newW;
               return {
                 ...el,
                 fontSize: newFontSize,
-                width: Number.isFinite(measured) ? measured : newW,
+                width: finalW,
                 stretchY: newStretch,
+                // Anchor off the MEASURED width, not newW — the glyph
+                // re-measure above can disagree with the box, and pinning
+                // to the wrong number makes the text creep sideways.
+                ...(movesOriginX ? { x: startX + (startWidth - finalW) } : null),
+                ...(movesOriginY ? { y: startY + (startHeight - newH) } : null),
               };
             }
-            return { ...el, width: newW };
+            return {
+              ...el,
+              width: newW,
+              ...(movesOriginX ? { x: startX + (startWidth - newW) } : null),
+            };
           }),
         );
       }
@@ -3507,19 +3642,114 @@ export default function DesignStudioPage() {
       e.preventDefault();
       handleMouseMove({ clientX: touch.clientX, clientY: touch.clientY } as MouseEvent);
     };
-    const handleTouchEnd = () => setDragState(null);
+    // Touch only — a mouse drop gets no haptic, and firing this from
+    // handleMouseUp would buzz twice on devices that synthesize both.
+    const handleTouchEnd = () => {
+      hapticMedium();
+      setDragState(null);
+    };
+    const handleDragCancel = () => setDragState(null);
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     window.addEventListener('touchmove', handleTouchMove, { passive: false });
     window.addEventListener('touchend', handleTouchEnd);
+    // An interrupted touch (incoming call, Control Center swipe, the system
+    // stealing the gesture) fires touchcancel and NOT touchend. Without
+    // this the drag never ends: the element stays welded to the finger and
+    // the preventDefault in handleTouchMove keeps blocking page scroll.
+    // No haptic on cancel — the drag was interrupted, not committed.
+    window.addEventListener('touchcancel', handleDragCancel);
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleDragCancel);
     };
-  }, [dragState]);
+  }, [dragState, surfaceRect]);
+
+  // Pinch-to-scale + two-finger rotate. Listeners go on the window, not
+  // the element, so the gesture survives fingers drifting off the artwork
+  // mid-pinch — which they always do as it grows.
+  useEffect(() => {
+    if (!pinchState) return;
+    const {
+      elementId, startDist, startAngle, startX, startY,
+      startWidth, startHeight, startRotation, startFontSize,
+    } = pinchState;
+
+    const onMove = (e: TouchEvent) => {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      if (!a || !b) return;
+      e.preventDefault();
+      const { dist, angle } = touchGeometry(a, b);
+
+      // Clamp the scale per-gesture so a frantic pinch can't send an
+      // element to 0.05% or past the canvas in one frame.
+      const scale = Math.max(0.1, Math.min(10, dist / startDist));
+      let rotation = startRotation + (angle - startAngle);
+      // Snap near the cardinals. Getting a design exactly straight by hand
+      // is impossible, and crooked-by-two-degrees is what gets reprinted.
+      const nearest = Math.round(rotation / 90) * 90;
+      if (Math.abs(rotation - nearest) <= 3) {
+        if (rotation !== nearest) hapticSnap();
+        rotation = nearest;
+      }
+      // Keep rotation readable in the inspector rather than unbounded.
+      rotation = ((rotation % 360) + 360) % 360;
+
+      setDesignElements(prev => prev.map(el => {
+        if (el.id !== elementId) return el;
+        const maxW = el.type === 'shape' ? 100 : el.type === 'text' ? 300 : 80;
+        const newW = Math.max(5, Math.min(maxW, startWidth * scale));
+        // Derive the realised scale from the CLAMPED width so height and
+        // font stop growing at the same moment width does.
+        const applied = newW / startWidth;
+        const newH = Math.max(5, Math.min(100, startHeight * applied));
+        // Pinch scales about the element's centre — the midpoint between
+        // the fingers is the natural anchor, and anchoring at the
+        // top-left makes the art crawl away from the hand.
+        const x = startX + (startWidth - newW) / 2;
+        const y = startY + (startHeight - newH) / 2;
+
+        if (el.type === 'text' && startFontSize) {
+          const fontSize = Math.max(4, startFontSize * applied);
+          const measured = measureTextWidthPct({
+            content: el.content,
+            fontSize,
+            fontFamily: el.fontFamily,
+            letterSpacing: el.letterSpacing,
+            wordSpacing: el.wordSpacing,
+          });
+          const finalW = Number.isFinite(measured) ? measured : newW;
+          return {
+            ...el,
+            fontSize,
+            width: finalW,
+            rotation,
+            x: startX + (startWidth - finalW) / 2,
+            y,
+          };
+        }
+        return { ...el, width: newW, height: newH, rotation, x, y };
+      }));
+    };
+
+    // Lifting either finger ends the gesture. Resuming with one finger
+    // would otherwise jump the element, because the drag handlers never
+    // saw a touchstart and have no anchor.
+    const onEnd = () => setPinchState(null);
+
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('touchcancel', onEnd);
+    return () => {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchcancel', onEnd);
+    };
+  }, [pinchState]);
 
   /* ---------------------------------------------------------------- */
   /*  Tool definitions for the left toolbar                            */
@@ -3671,7 +3901,13 @@ export default function DesignStudioPage() {
         {/* Undo / redo (Phase 2 PR #11). Lives next to Save so users find
             them where they expect. Disabled when the stack is empty.
             Keyboard shortcuts (Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z) work
-            regardless. */}
+            regardless.
+
+            These were `hidden sm:flex`, which meant the undo stack was
+            maintained and completely unreachable on a portrait phone —
+            the app's primary surface, since this ships inside the iOS
+            build. Visible at every width now, at a 44px touch target
+            below sm (Apple's minimum) and the original compact size up. */}
         <button
           type="button"
           onClick={() => {
@@ -3684,7 +3920,7 @@ export default function DesignStudioPage() {
           }}
           disabled={!undoRedo.canUndo}
           title="Undo (⌘Z)"
-          className="hidden sm:flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Undo2 className="h-4 w-4 md:h-5 md:w-5" />
         </button>
@@ -3700,7 +3936,7 @@ export default function DesignStudioPage() {
           }}
           disabled={!undoRedo.canRedo}
           title="Redo (⇧⌘Z)"
-          className="hidden sm:flex items-center justify-center w-8 h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+          className="flex items-center justify-center w-11 h-11 sm:w-8 sm:h-8 md:w-9 md:h-9 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
         >
           <Redo2 className="h-4 w-4 md:h-5 md:w-5" />
         </button>
@@ -5052,7 +5288,7 @@ export default function DesignStudioPage() {
           print rectangle. Generous pb-64 on main gives the scroll container
           enough runway to bring the full canvas into view past any bottom
           panel / mobile toolbar. */}
-      <div className="relative w-full max-w-none md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-0 md:px-4 grid place-items-center" ref={canvasRef}>
+      <div className="relative w-full max-w-none md:max-w-5xl lg:max-w-6xl xl:max-w-7xl px-0 md:px-4 grid place-items-center">
         {/* Product backdrop — fills a square area at the wrapper width.
             Print-zone overlay is positioned in % of THIS box, not of the
             old canvasInches-aspect design surface. */}
@@ -5430,17 +5666,17 @@ export default function DesignStudioPage() {
                 {isSelected && (
                   <>
                     {/* Corner resize handles */}
-                    {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map(corner => (
+                    {RESIZE_CORNERS.map(corner => (
                       <div
                         key={corner}
-                        onMouseDown={e => handleElementMouseDown(e, el.id, 'resize')}
-                        onTouchStart={e => handleElementTouchStart(e, el.id, 'resize')}
+                        onMouseDown={e => handleElementMouseDown(e, el.id, 'resize', corner)}
+                        onTouchStart={e => handleElementTouchStart(e, el.id, 'resize', corner)}
                         // Visible handle is small on desktop, larger on
                         // mobile. The wrapping div has a 24px touch hit-area
                         // (-inset-3) so corner grabs land on a finger-sized
                         // target without making the visible handle huge.
                         style={{ touchAction: 'none' }}
-                        className={`absolute z-10 cursor-se-resize flex items-center justify-center -m-3 p-3 ${
+                        className={`absolute z-10 ${CORNER_CURSOR[corner]} flex items-center justify-center -m-3 p-3 ${
                           corner === 'top-left'
                             ? '-top-3 -left-3'
                             : corner === 'top-right'

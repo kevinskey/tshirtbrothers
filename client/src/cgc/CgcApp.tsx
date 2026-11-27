@@ -4,6 +4,7 @@
 //     (VITE_CGC_HOSTS) — that mount brings its own providers because it
 //     replaces the whole TSB app rather than nesting inside it.
 
+import { Suspense, lazy } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { HelmetProvider } from 'react-helmet-async';
@@ -12,7 +13,13 @@ import { Toaster } from 'sonner';
 // The full TSB Design Studio, reused as CGC's studio. It renders its own
 // full-screen chrome (rebranded via useStoreBrand → builtin "cgc"), so it
 // mounts OUTSIDE the CGC Header/Footer wrapper.
-import DesignStudioPage from '@/pages/DesignStudioPage';
+//
+// Lazy, and it has to stay lazy. App.tsx already lazy-loads the studio for
+// /design, but App.tsx imports this file eagerly — so a static import here
+// pulled all 6,400-odd lines of the studio back into the entry chunk and
+// every TSB homepage visitor paid to parse it. Keep both sides lazy or the
+// split silently stops working.
+const DesignStudioPage = lazy(() => import('@/pages/DesignStudioPage'));
 import { CgcBaseContext } from './lib/base';
 import { CgcCartProvider } from './lib/cart';
 import Header from './components/Header';
@@ -86,7 +93,14 @@ export default function CgcStandaloneApp() {
             {/* Full-screen Design Studio — no CGC header/footer. On TSB
                 hosts /design is already served by the main app's route;
                 this one makes it exist on customgiftclub.com too. */}
-            <Route path="/design" element={<DesignStudioPage />} />
+            <Route
+              path="/design"
+              element={
+                <Suspense fallback={null}>
+                  <DesignStudioPage />
+                </Suspense>
+              }
+            />
             <Route path="/*" element={<CgcRoutes base="" />} />
           </Routes>
         </BrowserRouter>
