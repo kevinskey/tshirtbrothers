@@ -18,6 +18,7 @@ import Seo from '@/components/Seo';
 import { toast } from 'sonner';
 import { measureTextWidthPct, recenteredX } from '@/lib/textMeasure';
 import { hapticLight, hapticMedium, hapticSnap, hapticWarn, hapticSuccess } from '@/lib/haptics';
+import { imprintAreaFor, imprintRectPct, imprintLabel } from '@/lib/printAreas';
 import { logActivityOnce } from '@/lib/activity';
 import { generateDesignImage } from '@/services/deepseek';
 import { useStoreBrand } from '@/hooks/useStoreBrand';
@@ -555,6 +556,18 @@ type ViewName = 'front' | 'back' | 'sleeve' | 'sleeve_left';
 // Which corner handle a resize drag started from. The grabbed corner
 // follows the pointer and the opposite corner stays pinned, so the sign of
 // each delta — and whether the origin moves — depends on this.
+// Editing aids drawn on the design surface — the typical-print-area box
+// and the JDS decorable-zone hint. They exist for the person editing and
+// must never bake into a captured PNG: these captures become the mockup we
+// email for approval, the saved-design thumbnail, and the art the press
+// works from. Every html2canvas call on the surface filters through this.
+//
+// The zone hint was already leaking into those captures before the print
+// area existed — only the 3D-preview path filtered it.
+function isGuideOverlay(el: Element): boolean {
+  return el instanceof HTMLElement && ('printArea' in el.dataset || 'zoneHint' in el.dataset);
+}
+
 const RESIZE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
 type ResizeCorner = (typeof RESIZE_CORNERS)[number];
 const CORNER_CURSOR: Record<ResizeCorner, string> = {
@@ -1285,7 +1298,9 @@ export default function DesignStudioPage() {
           // For staff library saves, drop the product photo so the
           // captured PNG is transparent-on-nothing. For tenant submits,
           // keep it so the mockup shows the design on the shirt.
-          ignoreElements: isStoreSubmit ? undefined : (el) => el === productImg,
+          ignoreElements: isStoreSubmit
+            ? isGuideOverlay
+            : (el) => el === productImg || isGuideOverlay(el),
           onclone: isStoreSubmit ? undefined : clearSurfaceBg,
         }),
         30_000,
@@ -1475,7 +1490,7 @@ export default function DesignStudioPage() {
     let dataUrl: string;
     try {
       const html2canvas = (await import('html2canvas')).default;
-      const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit };
+      const opts = { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit, ignoreElements: isGuideOverlay };
 
       // html2canvas ignores CSS mix-blend-mode, so 'multiply' elements
       // would export as opaque stickers. Capture in two passes instead:
@@ -2046,13 +2061,13 @@ export default function DesignStudioPage() {
         if (surface) {
           try {
             const html2canvas = (await import('html2canvas')).default;
-            const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit });
+            const cvAll = await html2canvas(surface, { backgroundColor: null, useCORS: true, scale: 2, logging: false, onclone: fixProductPhotoFit, ignoreElements: isGuideOverlay });
             mockupDataUrl = cvAll.toDataURL('image/png');
             const productImg = productImgRef.current;
             if (productImg) {
               const cvDesign = await html2canvas(surface, {
                 backgroundColor: null, useCORS: true, scale: 2, logging: false,
-                ignoreElements: (el) => el === productImg,
+                ignoreElements: (el) => el === productImg || isGuideOverlay(el),
                 onclone: clearSurfaceBg,
               });
               graphicDataUrl = cvDesign.toDataURL('image/png');
@@ -2733,7 +2748,7 @@ export default function DesignStudioPage() {
           // blacklist there.
           ignoreElements: (el) => {
             if (el === productImg) return true;
-            if (useFabricRenderer) return el instanceof HTMLElement && 'zoneHint' in el.dataset;
+            if (useFabricRenderer) return isGuideOverlay(el);
             if (el.closest('[data-el-wrapper]')) return false;
             if (el.querySelector('[data-el-wrapper]')) return false;
             return true;
@@ -5706,6 +5721,32 @@ export default function DesignStudioPage() {
               </div>
             );
           })}
+
+          {/* Typical print area — a GUIDE, not a fence. Nothing is clamped
+              against it; artwork still goes anywhere on the garment. It
+              exists so a customer can see where a print normally lands
+              instead of finding out at proof time. Sizes are
+              industry-standard adult maxima from lib/printAreas, not our
+              platens — swap them for the shop's real numbers and the
+              label stops being conventional and starts being true.
+              Rendered under the elements and the ghost, and before them in
+              the DOM so it never catches a click. */}
+          {!useFabricRenderer && !isJdsProduct && displayImage && (() => {
+            const hooded = /hood/i.test(`${selectedProduct?.category ?? ''} ${selectedProduct?.name ?? ''}`);
+            const area = imprintAreaFor(currentView, hooded);
+            const r = imprintRectPct(area, currentView, hooded, canvasInches, canvasInchesH);
+            return (
+              <div
+                data-print-area
+                className="absolute pointer-events-none border border-dashed border-gray-400/50 rounded"
+                style={{ left: `${r.left}%`, top: `${r.top}%`, width: `${r.width}%`, height: `${r.height}%` }}
+              >
+                <span className="absolute -top-px left-1 -translate-y-full text-[9px] md:text-[10px] font-medium text-gray-400 whitespace-nowrap">
+                  {imprintLabel(area)}
+                </span>
+              </div>
+            );
+          })()}
 
           {/* Placeholder when no elements on the current side. Suppressed
               under ?canvas=fabric — the Fabric canvas paints its own
