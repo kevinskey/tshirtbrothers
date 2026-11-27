@@ -44,6 +44,6 @@ jobs:
             work=$(mktemp -d /var/tmp/stonecut-runner.XXXXXX)
             trap 'rm -rf "$work"' EXIT
             git clone --quiet https://github.com/kevinskey/stonecut.git "$work/source"
-            git -C "$work/source" checkout --quiet --detach 2a3e650c9f8d7a9abe0ee92c66f120443ad207fb
-            STONECUT_REF=2a3e650c9f8d7a9abe0ee92c66f120443ad207fb bash "$work/source/deploy.sh"
+            git -C "$work/source" checkout --quiet --detach 35a11a3b85cf02e61ec2e1ffda0de761c5f826dd
+            STONECUT_REF=35a11a3b85cf02e61ec2e1ffda0de761c5f826dd bash "$work/source/deploy.sh"
             STONECUT_RELEASE
