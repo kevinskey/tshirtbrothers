@@ -269,16 +269,16 @@ router.put('/:id', async (req, res, next) => {
       && original_legacy_payload != null
       && Array.isArray(original_legacy_payload);
 
-    if (shouldArchive) {
-      await pool.query(
-        `UPDATE saved_designs
-           SET elements_legacy = $1, legacy_archived_at = NOW()
-         WHERE id = $2 AND elements_legacy IS NULL`,
-        [JSON.stringify(original_legacy_payload), designId]
-      );
-    }
-
     // Admins can edit any design; customers can only edit their own.
+    // Declared before the archive write below, which needs the same rule —
+    // it used to run with `WHERE id = $2 AND elements_legacy IS NULL` and
+    // no owner predicate at all, so any signed-in user could stamp
+    // elements_legacy and legacy_archived_at onto a stranger's design by
+    // POSTing a v2 payload with an original_legacy_payload at someone
+    // else's id. It could only ever fire once per row (the IS NULL guard)
+    // and never touched the live `elements`, so it was vandalism of a
+    // rollback snapshot rather than design takeover — but it is a
+    // cross-tenant write and it has no business being reachable.
     const isAdmin = req.user?.role === 'admin';
     const newSchemaVersion = v2Save ? 2 : null;
     // canvas_inches / canvas_inches_h pass through if the client sends a
@@ -291,27 +291,61 @@ router.put('/:id', async (req, res, next) => {
     const canvasInchesH = canvasInchesHIn != null
       ? Math.max(1, Math.min(48, Number(canvasInchesHIn) || 12))
       : null;
-    const result = await pool.query(
-      `UPDATE saved_designs SET
-        name = COALESCE($1, name),
-        product_ss_id = COALESCE($2, product_ss_id),
-        product_name = COALESCE($3, product_name),
-        product_image = COALESCE($4, product_image),
-        color_index = COALESCE($5, color_index),
-        elements = COALESCE($6, elements),
-        thumbnail = COALESCE($7, thumbnail),
-        schema_version = COALESCE($8, schema_version),
-        canvas_inches = COALESCE($9, canvas_inches),
-        canvas_inches_h = COALESCE($10, canvas_inches_h),
-        updated_at = NOW()
-       WHERE id = $11 ${isAdmin ? '' : 'AND user_id = $12'}
-       RETURNING id, name, updated_at`,
-      isAdmin
-        ? [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, canvasInchesH, designId]
-        : [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, canvasInchesH, designId, req.user.id],
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Design not found' });
+    // Both writes go in one transaction. The archive is a snapshot OF the
+    // save it accompanies, so a committed archive beside a failed update
+    // would leave a rollback target pointing at a version that never
+    // shipped.
+    const client = await pool.connect();
+    let result;
+    try {
+      await client.query('BEGIN');
+
+      if (shouldArchive) {
+        await client.query(
+          `UPDATE saved_designs
+             SET elements_legacy = $1, legacy_archived_at = NOW()
+           WHERE id = $2 AND elements_legacy IS NULL
+             ${isAdmin ? '' : 'AND user_id = $3'}`,
+          isAdmin
+            ? [JSON.stringify(original_legacy_payload), designId]
+            : [JSON.stringify(original_legacy_payload), designId, req.user.id]
+        );
+      }
+
+      result = await client.query(
+        `UPDATE saved_designs SET
+          name = COALESCE($1, name),
+          product_ss_id = COALESCE($2, product_ss_id),
+          product_name = COALESCE($3, product_name),
+          product_image = COALESCE($4, product_image),
+          color_index = COALESCE($5, color_index),
+          elements = COALESCE($6, elements),
+          thumbnail = COALESCE($7, thumbnail),
+          schema_version = COALESCE($8, schema_version),
+          canvas_inches = COALESCE($9, canvas_inches),
+          canvas_inches_h = COALESCE($10, canvas_inches_h),
+          updated_at = NOW()
+         WHERE id = $11 ${isAdmin ? '' : 'AND user_id = $12'}
+         RETURNING id, name, updated_at`,
+        isAdmin
+          ? [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, canvasInchesH, designId]
+          : [name, product_ss_id, product_name, product_image, color_index, elements ? JSON.stringify(elements) : null, thumbnailUrl, newSchemaVersion, canvasInches, canvasInchesH, designId, req.user.id],
+      );
+
+      if (result.rows.length === 0) {
+        // Not ours (or not there). Roll the archive back with it — without
+        // this, the archive would stand on a row the caller can't edit,
+        // which is the whole bug.
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Design not found' });
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
     }
     res.json(result.rows[0]);
   } catch (err) {
