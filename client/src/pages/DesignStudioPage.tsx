@@ -4541,7 +4541,12 @@ export default function DesignStudioPage() {
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
-                    {cat}
+                    {/* Slugs are the category ids; `capitalize` alone left
+                        a two-word category reading "Brand-Logos". The chip
+                        list is built from the art's own category slugs and
+                        never calls /art-categories, so display_name is not
+                        available here — humanise the slug instead. */}
+                    {cat.replace(/-/g, ' ')}
                   </button>
                 ))}
               </div>
