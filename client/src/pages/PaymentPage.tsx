@@ -380,6 +380,8 @@ export function PaymentCheckout() {
 }
 
 interface PaymentSuccessData {
+  /** false when no paid Stripe session backs the request; nothing else is sent then. */
+  verified?: boolean;
   payment_type: string;
   business_name: string;
   customer_name?: string;
@@ -453,6 +455,26 @@ export function PaymentSuccess() {
             <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
             <h1 className="text-2xl font-bold text-gray-900">Payment Successful</h1>
             <p className="text-gray-500 mt-2">We couldn't load the receipt details, but your payment went through.</p>
+            <Link to="/" className="inline-block mt-6 text-orange-600 font-medium hover:underline">Return Home</Link>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // No paid checkout behind this link (opened without its Stripe session,
+  // or the payment didn't go through). Never show a receipt for it: this
+  // page used to say "Success!" with today's date for any order number.
+  if (data.verified === false) {
+    return (
+      <Layout>
+        <div className="min-h-[60vh] flex items-center justify-center text-center px-4">
+          <div className="max-w-md">
+            <h1 className="text-2xl font-bold text-gray-900">We couldn't confirm a payment</h1>
+            <p className="text-gray-500 mt-2">
+              This link doesn't show a completed payment. If you just paid, your receipt is on its way by email.
+              Questions? Reply to any email from us and we'll check.
+            </p>
             <Link to="/" className="inline-block mt-6 text-orange-600 font-medium hover:underline">Return Home</Link>
           </div>
         </div>
