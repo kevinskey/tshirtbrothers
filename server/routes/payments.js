@@ -1954,7 +1954,11 @@ async function loadStripePaymentDetails(sessionId) {
   try {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent.latest_charge.payment_method_details'],
+      // latest_charge already carries payment_method_details; that field is
+      // an embedded object, not an expandable one, and naming it in expand
+      // makes Stripe reject the whole retrieve. The success page now
+      // requires this lookup to succeed, so it has to be a valid expand.
+      expand: ['payment_intent.latest_charge'],
     });
     const charge = session.payment_intent?.latest_charge;
     const pmDetails = charge?.payment_method_details;
