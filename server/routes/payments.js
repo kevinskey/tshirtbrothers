@@ -1954,7 +1954,11 @@ async function loadStripePaymentDetails(sessionId) {
   try {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ['payment_intent.latest_charge.payment_method_details'],
+      // latest_charge already carries payment_method_details; that field is
+      // an embedded object, not an expandable one, and naming it in expand
+      // makes Stripe reject the whole retrieve. The success page now
+      // requires this lookup to succeed, so it has to be a valid expand.
+      expand: ['payment_intent.latest_charge'],
     });
     const charge = session.payment_intent?.latest_charge;
     const pmDetails = charge?.payment_method_details;
@@ -1979,6 +1983,10 @@ async function loadStripePaymentDetails(sessionId) {
   }
 }
 
+// What the success page gets when no paid Stripe session backs the request.
+// Carries nothing about the order, so it can't be used to read one.
+const UNVERIFIED_PAYMENT = Object.freeze({ verified: false, business_name: 'TShirt Brothers' });
+
 // Public success-page payload. Accepts either ?quote=ID or ?invoice=ID
 // (plus session_id from Stripe). Returns a uniform shape so the frontend
 // can render the same QB-style summary regardless of which flow paid.
@@ -1997,13 +2005,24 @@ router.get('/success', async (req, res, next) => {
 
     // ---------- Invoice flow (came from /api/invoices/:id/send) ----------
     if (invoiceIdQuery) {
+      // The receipt is only for the session that paid this invoice. This
+      // endpoint is public, so without a paid Stripe session for THIS
+      // invoice it says nothing: it used to answer any ?invoice=N with a
+      // "Success!" receipt dated today and the invoice's tokened PDF link,
+      // which let anyone walk the invoice ids and open other customers'
+      // invoices.
+      const invoiceVerified = Boolean(
+        stripeDetails?.paid && stripeDetails.session?.metadata?.invoice_id === String(invoiceIdQuery),
+      );
+      if (!invoiceVerified) return res.json(UNVERIFIED_PAYMENT);
+
       const invRes = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceIdQuery]);
       if (invRes.rows.length === 0) return res.status(404).json({ error: 'Invoice not found' });
 
       // If Stripe says paid and our DB hasn't recorded it yet, apply the
       // payment now so the success page never shows "amount due > 0" right
       // after a paid checkout (in case the webhook is slow / not delivered).
-      if (stripeDetails?.paid && stripeDetails.session?.metadata?.invoice_id === String(invoiceIdQuery)) {
+      if (invoiceVerified) {
         // Mirror the webhook: strip the card-processing-fee line before
         // crediting the invoice (idempotent with it via payment_intent_id).
         const feeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
@@ -2018,6 +2037,7 @@ router.get('/success', async (req, res, next) => {
       const fresh = await pool.query('SELECT * FROM invoices WHERE id = $1', [invoiceIdQuery]);
       const inv = fresh.rows[0];
       return res.json({
+        verified: true,
         payment_type: stripeDetails?.session?.metadata?.payment_type || 'invoice',
         business_name: 'TShirt Brothers',
         customer_name: inv.customer_name,
@@ -2034,13 +2054,23 @@ router.get('/success', async (req, res, next) => {
     }
 
     // ---------- Quote flow (existing deposit/balance behaviour) ----------
+    // Same rule as the invoice flow: no paid Stripe session for this quote,
+    // no receipt. Opening /payment/success?quote=N with no session used to
+    // render "Success! Deposit date <today>" with the 50% deposit we had
+    // only ASKED for (send-price stamps deposit_amount on every quoted
+    // quote), plus the customer's name and product, for any quote id.
+    const quoteVerified = Boolean(
+      stripeDetails?.paid && stripeDetails.session?.metadata?.quoteId === String(quoteId),
+    );
+    if (!quoteVerified) return res.json(UNVERIFIED_PAYMENT);
+
     const result = await pool.query('SELECT * FROM quotes WHERE id = $1', [quoteId]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Quote not found' });
     let quote = result.rows[0];
     let invoiceForQuote = null;
     let paymentType = type || stripeDetails?.session?.metadata?.type || 'deposit';
 
-    if (stripeDetails?.paid && stripeDetails.session?.metadata?.quoteId === String(quoteId)) {
+    if (quoteVerified) {
       // Mirror the webhook: amounts credited to the quote exclude any
       // card-processing-fee line the session carried.
       const fbFeeCents = parseInt(stripeDetails.session?.metadata?.card_fee_cents || '0', 10) || 0;
@@ -2150,6 +2180,7 @@ router.get('/success', async (req, res, next) => {
     }
 
     res.json({
+      verified: true,
       payment_type: paymentType,
       business_name: 'TShirt Brothers',
       customer_name: quote.customer_name,
